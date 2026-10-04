@@ -1,0 +1,28 @@
+# Environment configuration (secrets & local paths)
+.env
+
+# Application runtime data & storage
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# User configuration containing personal categories & local source path
+config.json
+
+# Local systemd service file (use media-library.service.example instead)
+media-library.service
+
+# Python virtual environment & caches
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Operating system files
+.DS_Store
+Thumbs.db

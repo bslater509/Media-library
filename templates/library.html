@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Media Library</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Fancybox 5 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    /* Custom scrollbars and Fancybox tweaks */
+    .f-button[data-fancybox-close] {
+      background: rgba(15, 23, 42, 0.75);
+      border-radius: 8px;
+    }
+    .fancybox__caption {
+      background: rgba(15, 23, 42, 0.9) !important;
+      backdrop-filter: blur(8px);
+      padding: 12px 20px !important;
+    }
+    .fancybox__thumbs {
+      background: rgba(15, 23, 42, 0.95) !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-slate-900/95 border-b border-slate-800 backdrop-blur sticky top-0 z-30 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] flex items-center">
+    <div class="max-w-[1920px] w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
+      
+      <!-- Brand & Mobile Drawer Trigger -->
+      <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
+        <!-- Mobile Sidebar Toggle (Placed as drawer trigger on far left) -->
+        <button id="toggleSidebarBtn" class="md:hidden p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-300 hover:text-white transition shrink-0" title="Categories & Folders">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+
+        <span class="text-base sm:text-xl shrink-0">📁</span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1">
+            <h1 class="text-xs sm:text-sm md:text-base font-bold tracking-tight text-white truncate">Media Library</h1>
+            <span class="hidden sm:inline text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">Gallery</span>
+          </div>
+          <p id="headerPathSubtitle" class="text-[10px] md:text-xs text-slate-400 font-mono truncate hidden sm:block">Loading destination...</p>
+        </div>
+      </div>
+
+      <!-- Top Navigation Tabs (Library vs Sorter) -->
+      <nav class="flex items-center bg-slate-950/80 p-0.5 sm:p-1 rounded-xl border border-slate-800 shrink-0">
+        <a href="/" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow-sm flex items-center gap-1 sm:gap-1.5 transition">
+          <span>📁</span>
+          <span class="hidden xs:inline sm:inline">Library</span>
+        </a>
+        <a href="/sorter" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>🎬</span>
+          <span class="hidden xs:inline sm:inline">Sorter</span>
+        </a>
+      </nav>
+
+      <!-- Action Buttons & Switcher -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+
+        <!-- SQLite Index Status Pill & Sync Button (Visible on md+ screens to avoid mobile clutter) -->
+        <div class="hidden md:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+          <div id="indexStatusPill" title="SQLite Search Index" class="px-2 py-1 rounded-lg text-[11px] font-mono flex items-center gap-1.5 text-slate-300 whitespace-nowrap">
+            <span id="indexDot" class="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shrink-0"></span>
+            <span id="indexStatusText">Indexed</span>
+          </div>
+          <button id="syncIndexBtn" title="Sync / Re-scan Library Index" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition active:scale-95 shrink-0">
+            <span id="syncIcon" class="inline-block transition-transform duration-500">↻</span>
+            <span class="hidden lg:inline text-[11px]">Sync</span>
+          </button>
+        </div>
+
+        <!-- Background Tasks Status Badge & Dropdown -->
+        <div class="relative">
+          <button id="transferBadgeBtn" title="View background activity" class="hidden px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shrink-0">
+            <span id="transferSpinner" class="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
+            <span id="transferCountText" class="whitespace-nowrap">0 tasks</span>
+          </button>
+
+          <!-- Mobile Backdrop Overlay -->
+          <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-40 sm:hidden"></div>
+
+          <!-- Background Activity Dropdown Panel (Fixed on mobile to prevent left-side clipping) -->
+          <div id="transferDropdown" class="hidden fixed inset-x-3 top-[48px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-sm bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-3 sm:p-3.5 flex flex-col gap-3 backdrop-blur-xl max-h-[80vh] overflow-y-auto">
+            
+            <!-- Panel Header (Title + Mobile Close Button) -->
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="text-xs font-bold text-white uppercase tracking-wider">Background Tasks</span>
+              </div>
+              <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-md text-xs sm:hidden flex items-center justify-center w-6 h-6 bg-slate-800 border border-slate-700 active:scale-95 transition" title="Close Panel">
+                ✕
+              </button>
+            </div>
+
+            <!-- SECTION 0: File Transfers -->
+            <div id="cloudTransfersSection" class="flex flex-col gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>📁</span> File Transfers
+                </h4>
+                <span id="transferDropdownSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+              </div>
+              
+              <!-- Active Transfer Box -->
+              <div id="activeTransferBox" class="bg-slate-950 p-2.5 rounded-xl border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-emerald-200 font-medium truncate flex-1 min-w-0" id="activeTransferFilename">clip.mp4</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTransferPercent">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="activeTransferProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="activeTransferTarget" class="truncate max-w-[180px]">→ /destination</span>
+                  <span id="activeTransferSize">0 / 0 MB</span>
+                </div>
+              </div>
+
+              <!-- Queued Transfers List -->
+              <div id="queuedTransfersContainer" class="hidden flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Transfers (<span id="queuedTransfersCount">0</span>):</span>
+                </div>
+                <div id="queuedTransfersList" class="flex flex-col gap-1 max-h-24 overflow-y-auto no-scrollbar text-xs"></div>
+              </div>
+            </div>
+
+            <!-- SECTION 1: Automatic Pre-Transcoding (Auto-MP4) -->
+            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>⚙️</span> Auto-MP4 Pre-Transcoder
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="transcodeSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="toggleTranscodePauseBtn" title="Pause or resume background pre-transcoding" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
+                    Pause
+                  </button>
+                </div>
+              </div>
+
+              <!-- Active Conversion Box -->
+              <div id="activeTranscodeBox" class="bg-slate-950 p-2.5 rounded-xl border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <div class="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                    <span id="activeTranscodeMethodBadge" class="text-[9px] uppercase px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Encode</span>
+                    <span class="text-emerald-200 font-medium truncate" id="activeTranscodeFilename">clip.mkv</span>
+                  </div>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTranscodePercent">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="activeTranscodeProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="activeTranscodeSpeed">0 fps</span>
+                  <span id="activeTranscodeEta" class="text-emerald-300">ETA: --</span>
+                </div>
+              </div>
+
+              <!-- Queued Transcodes List -->
+              <div id="queuedTranscodesContainer" class="hidden flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming (<span id="queuedTranscodesCount">0</span>):</span>
+                  <button id="cancelAllTranscodesBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition">Cancel All</button>
+                </div>
+                <div id="queuedTranscodesList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+              </div>
+
+              <!-- Convert All Library Videos Action Button -->
+              <button id="convertAllLibraryBtn" class="w-full mt-0.5 py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-98 shadow-sm">
+                <span>⚡</span>
+                <span id="convertAllLibraryBtnText">Convert All Library Videos to MP4</span>
+                <span id="convertAllLibraryBadge" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-mono border border-emerald-500/30">0</span>
+              </button>
+            </div>
+
+            <!-- SECTION 2: Thumbnail Generator -->
+            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>🖼️</span> Thumbnail Generator
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="thumbSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="toggleThumbPauseBtn" title="Pause or resume background thumbnail generation" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
+                    Pause
+                  </button>
+                </div>
+              </div>
+
+              <!-- Thumbnail Progress Box -->
+              <div id="thumbProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="thumbCurrentFile">Checking thumbnails...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="thumbPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="thumbProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="thumbCountsText">0 / 0</span>
+                  <span id="thumbStatusLabel" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 3: Completed Activity -->
+            <div class="flex flex-col gap-1.5">
+              <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed</span>
+              <div id="transcodeHistoryList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
+                <span class="text-slate-600 italic">No conversions yet</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+
+
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Notification Banner / Toaster -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- Main Dual-Pane Layout -->
+  <div class="flex-1 flex max-w-[1920px] w-full mx-auto relative overflow-hidden">
+    
+    <!-- Left Sidebar: Folder Browser -->
+    <aside id="sidebarDrawer" class="fixed inset-y-[53px] left-0 z-40 w-72 sm:w-80 bg-slate-900 border-r border-slate-800 p-3.5 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 md:static md:h-[calc(100vh-53px)] shrink-0 shadow-2xl md:shadow-none">
+      
+      <!-- Sidebar Header & Search -->
+      <div class="flex flex-col gap-2.5 pb-3 border-b border-slate-800">
+        <div class="flex items-center justify-between">
+          <span class="text-xs uppercase font-bold tracking-wider text-slate-400">Categories</span>
+          <span id="folderCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 folders</span>
+        </div>
+        <div class="relative">
+          <input 
+            type="text" 
+            id="folderSearchInput" 
+            placeholder="Search folders..." 
+            class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
+          />
+          <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        </div>
+      </div>
+
+      <!-- Root Folders List -->
+      <div id="rootFolderList" class="flex-1 overflow-y-auto no-scrollbar py-2 space-y-0.5">
+        <div class="text-center py-8 text-xs text-slate-500">Loading categories...</div>
+      </div>
+      
+    </aside>
+
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-30 hidden md:hidden"></div>
+
+    <!-- Right Main Stage: Media Gallery -->
+    <main class="flex-1 flex flex-col min-w-0 h-[calc(100vh-49px)] overflow-y-auto p-2.5 sm:p-4 md:p-6 gap-2 sm:gap-3.5">
+      
+      <!-- Breadcrumb Bar -->
+      <div class="flex items-center justify-between gap-2 bg-slate-900/60 px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/80 shrink-0">
+        <nav id="breadcrumbNav" class="flex items-center gap-1.5 text-xs sm:text-sm font-medium overflow-x-auto no-scrollbar py-0.5 min-w-0">
+          <span class="text-slate-500">Loading path...</span>
+        </nav>
+        <button id="refreshFolderBtn" title="Refresh folder" class="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border border-slate-700 transition shrink-0">
+          <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        </button>
+      </div>
+
+      <!-- Nested Subfolders Chips Section (if any) -->
+      <div id="subfoldersContainer" class="hidden flex flex-col gap-1 bg-slate-900/40 p-2 sm:p-2.5 rounded-xl border border-slate-800/60 shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Subfolders</span>
+          <span id="subfolderCountBadge" class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">0</span>
+        </div>
+        <div id="subfolderChips" class="flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar py-0.5"></div>
+      </div>
+
+      <!-- Toolbar: Controls & Filters -->
+      <div class="flex flex-col gap-1.5 sm:gap-2 bg-slate-900/60 p-2 sm:p-2.5 rounded-xl border border-slate-800/80 shrink-0">
+        
+        <!-- Row 1: Search Scope + Filename Search + Sort -->
+        <div class="flex items-center gap-1.5 sm:gap-2 w-full">
+          
+          <!-- Search Scope Toggle -->
+          <div class="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 text-[10px] sm:text-[11px] font-medium shrink-0 shadow-inner">
+            <button id="scopeCurrentBtn" title="Search only inside current folder" class="px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap">
+              📁 <span class="hidden sm:inline">This Folder</span><span class="sm:hidden">Folder</span>
+            </button>
+            <button id="scopeGlobalBtn" title="Search all folders across entire Library" class="px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap">
+              🌐 <span class="hidden sm:inline">All Folders</span><span class="sm:hidden">All</span>
+            </button>
+          </div>
+
+          <!-- Search Input -->
+          <div class="relative flex-1 min-w-0">
+            <input 
+              type="text" 
+              id="fileSearchInput" 
+              placeholder="Search filename..." 
+              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-7 sm:pl-8 pr-7 py-1 sm:py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
+            />
+            <svg class="w-3.5 h-3.5 absolute left-2 sm:left-2.5 top-1.5 sm:top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <button id="clearFileSearchBtn" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-white text-xs">✕</button>
+          </div>
+
+          <!-- Sort Select -->
+          <div class="relative shrink-0">
+            <select id="sortSelect" class="bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-2 pr-5 sm:pr-6 py-1 sm:py-1.5 text-[11px] sm:text-xs text-slate-200 focus:outline-none transition cursor-pointer font-sans appearance-none">
+              <option value="name_asc">A → Z</option>
+              <option value="name_desc">Z → A</option>
+              <option value="date_desc">Newest</option>
+              <option value="date_asc">Oldest</option>
+              <option value="size_desc">Largest</option>
+              <option value="size_asc">Smallest</option>
+            </select>
+            <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 absolute right-1 sm:right-1.5 top-2 sm:top-2.5 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+
+        </div>
+
+        <!-- Row 2: Filter Tabs & Action Buttons (Horizontally scrollable if needed) -->
+        <div class="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          
+          <!-- Media Type Filters -->
+          <div class="flex items-center gap-1 bg-slate-950/70 p-0.5 rounded-lg border border-slate-800 text-[11px] sm:text-xs shrink-0">
+            <button id="filterAllBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap">
+              All <span id="countAllBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+            </button>
+            <button id="filterVideosBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
+              🎬 Videos <span id="countVideosBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+            </button>
+            <button id="filterImagesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
+              🖼️ Images <span id="countImagesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+            </button>
+          </div>
+
+          <!-- Action Buttons (Convert Non-MP4s & Cache Thumbs) -->
+          <div class="flex items-center gap-1 shrink-0">
+            <!-- Convert Non-MP4s Button -->
+            <button id="convertAllNonMp4Btn" title="Convert all non-MP4 videos in this folder to standard MP4" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+              <span>⚙️</span>
+              <span id="convertBtnText">Convert to MP4</span>
+            </button>
+
+            <!-- Pre-generate Folder Thumbs Button -->
+            <button id="generateFolderThumbsBtn" title="Pre-generate thumbnails for all items in this folder" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+              <span>🖼️</span>
+              <span id="thumbBtnText">Cache Thumbs</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Media Grid -->
+      <div id="mediaGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-4">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Loading / Infinite Scroll Sentinel -->
+      <div id="infiniteScrollSentinel" class="py-6 flex flex-col items-center justify-center text-slate-500 text-xs">
+        <div id="loadingMoreSpinner" class="hidden flex items-center gap-2 text-emerald-400">
+          <span class="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
+          <span>Loading more items...</span>
+        </div>
+      </div>
+
+      <!-- Empty State View -->
+      <div id="emptyState" class="hidden flex flex-col items-center justify-center py-20 text-center gap-3">
+        <div class="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl">
+          📂
+        </div>
+        <h3 class="text-base font-semibold text-white">No Media Found</h3>
+        <p id="emptyStateMsg" class="text-xs text-slate-400 max-w-sm">There are no video or image files in this folder.</p>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Rename Modal -->
+  <div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <span>✏️</span> Rename File
+        </h3>
+        <button id="closeRenameModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="newFileNameInput" class="text-xs text-slate-400">File Name:</label>
+        <input 
+          type="text" 
+          id="newFileNameInput" 
+          class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono"
+        />
+        <p class="text-[10px] text-slate-500">Include the file extension (e.g. .mp4, .jpg)</p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="cancelRenameBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmRenameBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">
+          Save Name
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-red-900/50 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 text-lg">
+          ⚠️
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white">Permanently Delete File?</h3>
+          <p class="text-xs text-slate-400">This action cannot be undone.</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1">
+        <span id="deleteFileName" class="text-xs font-mono text-red-300 break-all">filename.mp4</span>
+        <span id="deleteFileSize" class="text-[10px] text-slate-500 font-mono">0 MB</span>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelDeleteBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmDeleteBtn" class="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition shadow-sm">
+          Delete File
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Convert All Library Videos Confirmation Modal -->
+  <div id="convertAllModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-emerald-900/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 text-base">
+            ⚡
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Convert All Library Videos</h3>
+            <p class="text-[11px] text-slate-400">Batch convert non-MP4 videos to MP4</p>
+          </div>
+        </div>
+        <button id="closeConvertAllModalBtn" class="text-slate-400 hover:text-white text-base p-1">✕</button>
+      </div>
+
+      <!-- Stats Summary Card -->
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400">Pending Videos:</span>
+          <span id="convertAllModalCount" class="text-xs font-mono font-bold text-emerald-400">Loading...</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400">Estimated Total Size:</span>
+          <span id="convertAllModalSize" class="text-xs font-mono font-bold text-slate-200">--</span>
+        </div>
+        <!-- Format breakdown chips -->
+        <div class="pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
+          <span class="text-[10px] uppercase font-bold text-slate-500">Formats to Convert:</span>
+          <div id="convertAllBreakdownChips" class="flex flex-wrap gap-1.5">
+            <span class="text-[11px] text-slate-500 italic">Checking formats...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Details -->
+      <div class="text-[11px] text-slate-400 flex flex-col gap-1.5 bg-slate-800/40 p-2.5 rounded-xl border border-slate-800">
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>Smallest files first:</strong> Short clips and WebMs convert rapidly before larger movies.</span>
+        </div>
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>In-place replacement:</strong> Originals are replaced with verified web-compatible <code>.mp4</code>.</span>
+        </div>
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>Background task:</strong> Runs with low CPU priority; you can pause or cancel anytime.</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelConvertAllModalBtn" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmConvertAllModalBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
+          <span>Start Conversion</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fancybox 5 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+  <!-- Library Script -->
+  <script src="/static/library.js?v=6"></script>
+</body>
+</html>

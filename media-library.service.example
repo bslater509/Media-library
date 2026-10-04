@@ -1,0 +1,15 @@
+[Unit]
+Description=Media Library & Video Sorter Service
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/media-library
+ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
