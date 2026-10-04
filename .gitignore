@@ -23,6 +23,8 @@ __pycache__/
 *.so
 .pytest_cache/
 
-# Operating system files
+# Operating system & editor temporary files
 .DS_Store
 Thumbs.db
+*.swp
+.*.swp
