@@ -2435,7 +2435,8 @@
       }
     }
     if (els.webpSavedText) {
-      els.webpSavedText.textContent = `Saved: ${data.saved_formatted || '0 B'}`;
+      const isNeg = (data.saved_bytes || 0) < 0;
+      els.webpSavedText.textContent = `${isNeg ? 'Net' : 'Saved'}: ${data.saved_formatted || '0 B'}`;
     }
   }
 

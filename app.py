@@ -51,6 +51,7 @@ WEBP_STAGING_DIR = Path(os.environ.get("WEBP_STAGING_DIR", DATA_DIR / "webp_stag
 WEBP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 WEBP_WORKER_CONCURRENCY = max(1, int(os.environ.get("WEBP_WORKER_CONCURRENCY", "1")))
 WEBP_QUALITY = max(1, min(100, int(os.environ.get("WEBP_QUALITY", "85"))))
+WEBP_SKIP_LARGER = os.environ.get("WEBP_SKIP_LARGER", "false").lower() in ("true", "1", "yes")
 WEBP_AUTO_OPTIMIZE = os.environ.get("WEBP_AUTO_OPTIMIZE", "true").lower() in ("true", "1", "yes")
 
 # Supported video extensions
@@ -984,8 +985,11 @@ async def thumb_hash_worker():
 
 def convert_image_file_to_webp(file_path: str, quality: Optional[int] = None) -> dict:
     fpath = Path(file_path).resolve()
-    if not fpath.exists():
-        return {"status": "error", "error": "File not found", "path": str(fpath)}
+    try:
+        if not fpath.exists():
+            return {"status": "error", "error": "File not found", "path": str(fpath)}
+    except OSError as e:
+        return {"status": "error", "error": str(e), "path": str(fpath)}
 
     if quality is None:
         quality = WEBP_QUALITY
@@ -1002,6 +1006,14 @@ def convert_image_file_to_webp(file_path: str, quality: Optional[int] = None) ->
             conn.close()
         return {"status": "already_webp", "path": str(fpath)}
     if ext not in (".jpg", ".jpeg", ".png", ".bmp", ".tiff"):
+        conn = get_db()
+        try:
+            with conn:
+                conn.execute("UPDATE files SET webp_optimized = -2 WHERE path = ?", (str(fpath),))
+        except Exception:
+            pass
+        finally:
+            conn.close()
         return {"status": "unsupported", "path": str(fpath)}
 
     orig_size = fpath.stat().st_size
@@ -1051,8 +1063,8 @@ def convert_image_file_to_webp(file_path: str, quality: Optional[int] = None) ->
 
         webp_size = temp_path.stat().st_size
 
-        # Size safety: NEVER replace original image if WebP is larger than or equal to original size
-        if webp_size >= orig_size:
+        # Only skip if WEBP_SKIP_LARGER is explicitly enabled
+        if WEBP_SKIP_LARGER and webp_size >= orig_size:
             temp_path.unlink(missing_ok=True)
             conn = get_db()
             try:
@@ -1264,14 +1276,20 @@ async def webp_converter_worker():
             # Execute batch
             results = await asyncio.gather(*[optimize_single_file(r["path"], r["name"]) for r in pending_rows], return_exceptions=True)
 
+            has_progress = False
             for res in results:
                 if isinstance(res, dict) and res.get("status") == "converted":
+                    has_progress = True
                     webp_worker_state["saved_bytes"] += res.get("saved_bytes", 0)
                     webp_worker_state["saved_formatted"] = format_size(webp_worker_state["saved_bytes"])
                 elif isinstance(res, dict) and res.get("status") == "skipped":
+                    has_progress = True
                     webp_worker_state["skipped_count"] = webp_worker_state.get("skipped_count", 0) + 1
 
-            await asyncio.sleep(0.1)
+            if not has_progress:
+                await asyncio.sleep(2.0)
+            else:
+                await asyncio.sleep(0.1)
 
         except asyncio.CancelledError:
             break
