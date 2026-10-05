@@ -202,6 +202,66 @@
               </div>
             </div>
 
+            <!-- SECTION 3: Duplicate Hash Pre-Verifier -->
+            <div class="flex flex-col gap-2 pt-1">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>🔍</span> Duplicate Hash Verifier
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="hashSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="toggleHashPauseBtn" title="Pause or resume background duplicate hash verification" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
+                    Pause
+                  </button>
+                </div>
+              </div>
+
+              <!-- Hash Progress Box -->
+              <div id="hashProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="hashCurrentFile">Checking candidate hashes...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="hashPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="hashProgressBar" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="hashCountsText">0 / 0</span>
+                  <span id="hashStatusLabel" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 4: WebP Image Optimizer -->
+            <div class="flex flex-col gap-2 pt-1">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>⚡</span> WebP Image Optimizer
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="webpSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="toggleWebpPauseBtn" title="Pause or resume background WebP optimization" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
+                    Pause
+                  </button>
+                </div>
+              </div>
+
+              <!-- WebP Progress Box -->
+              <div id="webpProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="webpCurrentFile">Checking images...</span>
+                  <span class="text-teal-400 font-mono text-[10px] font-bold shrink-0" id="webpPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="webpProgressBar" class="bg-gradient-to-r from-teal-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="webpCountsText">0 / 0 converted</span>
+                  <span id="webpSavedText" class="text-emerald-400 font-semibold">Saved: 0 B</span>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -250,6 +310,65 @@
           <button id="renameHeaderBtn" title="Rename video (R)" class="p-1.5 sm:p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
             <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Duplicate Warning Alert Banner -->
+      <div id="duplicateBanner" class="hidden mb-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl p-3 flex flex-col gap-2.5 backdrop-blur shadow-xl animate-in fade-in slide-in-from-top duration-200">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 text-base shrink-0">
+              ⚠️
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-amber-200 tracking-wide uppercase">Duplicate Detected in Backup</span>
+                <span id="duplicateBadgeType" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Exact Content</span>
+              </div>
+              <p id="duplicateMatchInfo" class="text-xs text-slate-300 font-mono truncate max-w-xl">Existing in: /Category/folder/file.mp4</p>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-auto">
+            <label class="hidden sm:flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-300 hover:text-white select-none bg-amber-950/80 px-2.5 py-1.5 rounded-xl border border-amber-500/30 transition" title="Automatically delete incoming duplicate video from seedhost if it 100% matches an existing Backup video">
+              <input type="checkbox" id="autoTrashDuplicateToggle" class="rounded bg-slate-900 border-slate-700 text-rose-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer">
+              <span class="font-medium text-amber-300">⚡ Auto-delete on 100% match</span>
+            </label>
+            <button id="toggleDuplicateCompareBtn" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+              <span>👁️</span> <span id="duplicateCompareText">Compare</span>
+            </button>
+            <button id="trashIncomingDuplicateBtn" title="Permanently delete incoming duplicate file (Press X)" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm active:scale-95">
+              <span>🗑️</span> Trash Incoming <kbd class="bg-rose-700/80 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold">X</kbd>
+            </button>
+            <button id="dismissDuplicateBtn" title="Dismiss warning and proceed with normal sorting" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-medium transition">
+              Move Anyway
+            </button>
+          </div>
+        </div>
+
+        <!-- Side-by-side comparison section (collapsible) -->
+        <div id="duplicateCompareContainer" class="hidden pt-2 border-t border-amber-500/20 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- Incoming File Preview -->
+          <div class="bg-black/60 rounded-xl p-2.5 border border-slate-800 flex flex-col gap-1.5">
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span class="text-amber-300 font-semibold">Incoming File:</span>
+              <span id="compareIncomingSize">0 MB</span>
+            </div>
+            <span id="compareIncomingName" class="text-xs text-white font-mono truncate">clip.mp4</span>
+          </div>
+
+          <!-- Existing Library File Preview -->
+          <div class="bg-black/60 rounded-xl p-2.5 border border-slate-800 flex flex-col gap-1.5">
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span class="text-emerald-300 font-semibold">Existing in Backup:</span>
+              <span id="compareExistingSize">0 MB</span>
+            </div>
+            <span id="compareExistingName" class="text-xs text-white font-mono truncate">clip.mp4</span>
+            <div class="relative bg-black rounded-lg overflow-hidden aspect-video border border-slate-800 mt-1">
+              <video id="compareExistingVideo" class="w-full h-full object-contain" controls preload="metadata"></video>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -612,6 +731,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>

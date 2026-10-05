@@ -22,12 +22,31 @@ let state = {
   isTranscodePaused: false,
   totalPendingTranscodes: 0,
   pollTimer: null,
+  currentDuplicate: null,
+  isComparingDuplicate: false,
+  autoTrashDuplicate: localStorage.getItem("sorter_autotrash_duplicates") === "true",
 };
 
 // DOM Elements
 const videoPlayer = document.getElementById("mainVideoPlayer");
 const preloadVideoPlayer = document.getElementById("preloadVideoPlayer");
 const videoContainer = document.getElementById("videoContainer");
+
+// Duplicate Alert UI Elements
+const duplicateBanner = document.getElementById("duplicateBanner");
+const autoTrashDuplicateToggle = document.getElementById("autoTrashDuplicateToggle");
+const duplicateBadgeType = document.getElementById("duplicateBadgeType");
+const duplicateMatchInfo = document.getElementById("duplicateMatchInfo");
+const toggleDuplicateCompareBtn = document.getElementById("toggleDuplicateCompareBtn");
+const duplicateCompareText = document.getElementById("duplicateCompareText");
+const trashIncomingDuplicateBtn = document.getElementById("trashIncomingDuplicateBtn");
+const dismissDuplicateBtn = document.getElementById("dismissDuplicateBtn");
+const duplicateCompareContainer = document.getElementById("duplicateCompareContainer");
+const compareIncomingName = document.getElementById("compareIncomingName");
+const compareIncomingSize = document.getElementById("compareIncomingSize");
+const compareExistingName = document.getElementById("compareExistingName");
+const compareExistingSize = document.getElementById("compareExistingSize");
+const compareExistingVideo = document.getElementById("compareExistingVideo");
 const emptyVideoState = document.getElementById("emptyVideoState");
 const currentVideoTitle = document.getElementById("currentVideoTitle");
 const currentVideoSize = document.getElementById("currentVideoSize");
@@ -95,6 +114,26 @@ const thumbPercentText = document.getElementById("thumbPercentText");
 const thumbProgressBar = document.getElementById("thumbProgressBar");
 const thumbCountsText = document.getElementById("thumbCountsText");
 const thumbStatusLabel = document.getElementById("thumbStatusLabel");
+
+// Duplicate Hash Verifier UI
+const hashSummaryText = document.getElementById("hashSummaryText");
+const toggleHashPauseBtn = document.getElementById("toggleHashPauseBtn");
+const hashProgressBox = document.getElementById("hashProgressBox");
+const hashCurrentFile = document.getElementById("hashCurrentFile");
+const hashPercentText = document.getElementById("hashPercentText");
+const hashProgressBar = document.getElementById("hashProgressBar");
+const hashCountsText = document.getElementById("hashCountsText");
+const hashStatusLabel = document.getElementById("hashStatusLabel");
+
+// WebP Optimizer UI
+const webpSummaryText = document.getElementById("webpSummaryText");
+const toggleWebpPauseBtn = document.getElementById("toggleWebpPauseBtn");
+const webpProgressBox = document.getElementById("webpProgressBox");
+const webpCurrentFile = document.getElementById("webpCurrentFile");
+const webpPercentText = document.getElementById("webpPercentText");
+const webpProgressBar = document.getElementById("webpProgressBar");
+const webpCountsText = document.getElementById("webpCountsText");
+const webpSavedText = document.getElementById("webpSavedText");
 
 // Mobile Thumb Bar Buttons
 const mobilePrevBtn = document.getElementById("mobilePrevBtn");
@@ -195,9 +234,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateUI();
   }
 
-  // Start background transfers & thumbnails polling
+  // Start background transfers, thumbnails, & duplicate hash polling
   startTransfersPolling();
   startThumbnailPolling();
+  startDuplicateHashPolling();
+  startWebpPolling();
 });
 
 function showToast(message, type = "info", duration = 3000) {
@@ -456,6 +497,7 @@ function updateUI() {
     streamTypeBadge.className = "bg-slate-800 text-slate-400 border border-slate-700 px-1.5 py-0.5 rounded font-mono text-[10px]";
     toggleStreamModeBtn.classList.add("hidden");
     primaryMoveBtn.disabled = true;
+    hideDuplicateBanner();
     return;
   }
 
@@ -471,6 +513,10 @@ function updateUI() {
 
   // Instant Next Video Preloading
   preloadNextVideo();
+
+  // Real-time Duplicate Check against Backup v2
+  hideDuplicateBanner();
+  checkCurrentVideoDuplicate(video);
 }
 
 function loadVideoSource(video, direct) {
@@ -522,6 +568,149 @@ function preloadNextVideo() {
   } else {
     preloadVideoPlayer.removeAttribute("src");
     preloadVideoPlayer.dataset.loadedId = "";
+  }
+}
+
+// ==========================================
+// Duplicate Detection Flow (Incoming Sorter)
+// ==========================================
+
+let duplicateCheckAbortCtrl = null;
+
+async function checkCurrentVideoDuplicate(video) {
+  if (duplicateCheckAbortCtrl) {
+    duplicateCheckAbortCtrl.abort();
+    duplicateCheckAbortCtrl = null;
+  }
+  if (!video || !duplicateBanner) return;
+  const videoId = video.id;
+
+  duplicateCheckAbortCtrl = new AbortController();
+  try {
+    const res = await fetch(`/api/sorter/check-duplicate?file_id=${encodeURIComponent(videoId)}`, {
+      signal: duplicateCheckAbortCtrl.signal
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Ensure we are still showing the same video
+    const curr = currentVideo();
+    if (!curr || curr.id !== videoId) return;
+
+    if (data.is_duplicate && data.matches && data.matches.length > 0) {
+      state.currentDuplicate = data;
+      showDuplicateBanner(data, curr);
+    } else {
+      state.currentDuplicate = null;
+      hideDuplicateBanner();
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    console.error("Error checking duplicate:", err);
+  } finally {
+    if (duplicateCheckAbortCtrl && duplicateCheckAbortCtrl.signal.aborted) {
+      duplicateCheckAbortCtrl = null;
+    }
+  }
+}
+
+function showDuplicateBanner(data, incomingVideo) {
+  if (!duplicateBanner) return;
+  const match = data.matches[0];
+  if (!match) return;
+
+  // Auto-trash incoming video if autoTrashDuplicate is enabled and content is exact 100% match
+  if (state.autoTrashDuplicate && data.match_type === "content") {
+    showToast(`⚡ 100% duplicate detected in Backup v2 — auto-trashing incoming video`, "warning", 3000);
+    trashCurrentDuplicate();
+    return;
+  }
+
+  if (duplicateBadgeType) {
+    if (data.match_type === "content") {
+      duplicateBadgeType.textContent = "Exact Content Match";
+      duplicateBadgeType.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30";
+    } else {
+      duplicateBadgeType.textContent = "Same Filename";
+      duplicateBadgeType.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30";
+    }
+  }
+
+  if (duplicateMatchInfo) {
+    duplicateMatchInfo.textContent = `Existing in: 📁 ${match.folder_display} / ${match.name} (${match.size_formatted})`;
+    duplicateMatchInfo.title = match.path;
+  }
+
+  // Populate compare previews
+  if (compareIncomingName) compareIncomingName.textContent = incomingVideo.filename;
+  if (compareIncomingSize) compareIncomingSize.textContent = incomingVideo.size_formatted;
+  if (compareExistingName) compareExistingName.textContent = match.name;
+  if (compareExistingSize) compareExistingSize.textContent = match.size_formatted;
+  if (compareExistingVideo) {
+    compareExistingVideo.src = match.media_url;
+    if (match.thumb_url) compareExistingVideo.poster = match.thumb_url;
+  }
+
+  duplicateBanner.classList.remove("hidden");
+}
+
+function hideDuplicateBanner() {
+  if (!duplicateBanner) return;
+  duplicateBanner.classList.add("hidden");
+  if (duplicateCompareContainer) duplicateCompareContainer.classList.add("hidden");
+  if (compareExistingVideo) {
+    try { compareExistingVideo.pause(); } catch (e) {}
+    compareExistingVideo.removeAttribute("src");
+    compareExistingVideo.load();
+  }
+  state.isComparingDuplicate = false;
+  if (duplicateCompareText) duplicateCompareText.textContent = "Compare";
+}
+
+function toggleDuplicateCompare() {
+  if (!duplicateCompareContainer) return;
+  state.isComparingDuplicate = !state.isComparingDuplicate;
+  if (state.isComparingDuplicate) {
+    duplicateCompareContainer.classList.remove("hidden");
+    if (duplicateCompareText) duplicateCompareText.textContent = "Hide Compare";
+    if (compareExistingVideo && compareExistingVideo.src) {
+      compareExistingVideo.load();
+      compareExistingVideo.play().catch(() => {});
+    }
+  } else {
+    duplicateCompareContainer.classList.add("hidden");
+    if (duplicateCompareText) duplicateCompareText.textContent = "Compare";
+    if (compareExistingVideo) {
+      try { compareExistingVideo.pause(); } catch (e) {}
+    }
+  }
+}
+
+async function trashCurrentDuplicate() {
+  const video = currentVideo();
+  if (!video) return;
+
+  try {
+    const res = await fetch("/api/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: video.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Failed to delete file");
+    }
+
+    showToast(`Deleted duplicate "${escapeHtml(video.filename)}"`, "warning");
+    hideDuplicateBanner();
+
+    state.queue = state.queue.filter((v) => v.id !== video.id);
+    if (state.currentIndex >= state.queue.length) {
+      state.currentIndex = Math.max(0, state.queue.length - 1);
+    }
+    updateUI();
+  } catch (err) {
+    showToast(`Delete error: ${err.message}`, "error");
   }
 }
 
@@ -861,7 +1050,8 @@ function renderTranscodeUI() {
 
   // Update Combined Header Badge Text
   const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
-  const totalTasks = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGenerating ? 1 : 0);
+  const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
+  const totalTasks = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0);
   if (totalTasks > 0) {
     transferBadgeBtn.classList.remove("hidden");
     if (state.totalPendingTranscodes > 0 && state.totalPendingTransfers > 0) {
@@ -872,6 +1062,8 @@ function renderTranscodeUI() {
       transferCountText.textContent = `${state.totalPendingTranscodes} converting`;
     } else if (isThumbGenerating) {
       transferCountText.textContent = `Thumbs ${Math.round(state.latestThumbData.percent || 0)}%`;
+    } else if (isWebpConverting) {
+      transferCountText.textContent = `WebP ${Math.round(state.latestWebpData.percent || 0)}%`;
     }
   } else {
     if (transferDropdown.classList.contains("hidden")) {
@@ -962,6 +1154,168 @@ async function toggleThumbnailPause() {
     }
   } catch (err) {
     console.error("Error toggling thumbnail pause:", err);
+  }
+}
+
+function startDuplicateHashPolling() {
+  if (state.dupHashPollTimer) clearTimeout(state.dupHashPollTimer);
+  pollDuplicateHashStatus();
+}
+
+async function pollDuplicateHashStatus() {
+  let nextDelay = 3500;
+  try {
+    const res = await fetch("/api/backup/duplicates/hash-status");
+    if (res.ok) {
+      const data = await res.json();
+      state.latestDupHashData = data;
+      renderDuplicateHashUI(data);
+      if (data.status === "hashing") {
+        nextDelay = 1500;
+      } else if (data.status === "paused") {
+        nextDelay = 5000;
+      } else {
+        nextDelay = 8000;
+      }
+    }
+  } catch (err) {
+    // Silent catch
+  } finally {
+    clearTimeout(state.dupHashPollTimer);
+    state.dupHashPollTimer = setTimeout(pollDuplicateHashStatus, nextDelay);
+  }
+}
+
+function renderDuplicateHashUI(data) {
+  if (!hashSummaryText) return;
+  const isPaused = data.is_paused;
+  const isHashing = data.status === "hashing";
+  const isDone = (data.pending_count === 0 && data.total_candidates > 0) || (data.status === "idle" && data.total_candidates > 0 && data.pending_count === 0);
+
+  if (toggleHashPauseBtn) {
+    toggleHashPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    toggleHashPauseBtn.className = isPaused
+      ? "px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition"
+      : "px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition";
+  }
+
+  if (isPaused) {
+    hashSummaryText.textContent = "Paused";
+    if (hashStatusLabel) hashStatusLabel.textContent = "Paused";
+  } else if (isHashing) {
+    hashSummaryText.textContent = "Verifying";
+    if (hashStatusLabel) hashStatusLabel.textContent = "Active";
+  } else if (isDone) {
+    hashSummaryText.textContent = "100% Pre-Hashed";
+    if (hashStatusLabel) hashStatusLabel.textContent = "Complete";
+  } else {
+    hashSummaryText.textContent = "Idle";
+    if (hashStatusLabel) hashStatusLabel.textContent = "Idle";
+  }
+
+  if (hashCurrentFile) {
+    hashCurrentFile.textContent = data.current_file || (isDone ? `All ${data.total_candidates} duplicate candidates verified in SQLite` : (isPaused ? "Hash verification paused" : "Idle"));
+  }
+  if (hashPercentText) hashPercentText.textContent = `${Math.round(data.percent || 0)}%`;
+  if (hashProgressBar) hashProgressBar.style.width = `${data.percent || 0}%`;
+  if (hashCountsText) hashCountsText.textContent = `${data.hashed_count || 0} / ${data.total_candidates || 0}`;
+}
+
+async function toggleDuplicateHashPause() {
+  try {
+    const res = await fetch("/api/backup/duplicates/hash-pause", { method: "POST" });
+    if (res.ok) {
+      pollDuplicateHashStatus();
+    }
+  } catch (err) {
+    console.error("Error toggling hash verification pause:", err);
+  }
+}
+
+function startWebpPolling() {
+  if (state.webpPollTimer) clearTimeout(state.webpPollTimer);
+  pollWebpStatus();
+}
+
+async function pollWebpStatus() {
+  let nextDelay = 3500;
+  try {
+    const res = await fetch("/api/backup/webp/status");
+    if (res.ok) {
+      const data = await res.json();
+      state.latestWebpData = data;
+      renderWebpUI(data);
+      updateTransferBadge(state.latestTransferData, state.latestTranscodeData);
+      if (data.status === "converting") {
+        nextDelay = 1500;
+      } else if (data.status === "paused") {
+        nextDelay = 5000;
+      } else {
+        nextDelay = 8000;
+      }
+    }
+  } catch (err) {
+    // Silent catch
+  } finally {
+    clearTimeout(state.webpPollTimer);
+    state.webpPollTimer = setTimeout(pollWebpStatus, nextDelay);
+  }
+}
+
+function renderWebpUI(data) {
+  if (!webpSummaryText) return;
+  const isPaused = data.is_paused || data.status === "paused";
+  const isConverting = data.status === "converting";
+  const isDone = data.pending_count === 0 && data.total_images > 0;
+
+  if (toggleWebpPauseBtn) {
+    toggleWebpPauseBtn.textContent = isPaused ? "Resume" : "Pause";
+    toggleWebpPauseBtn.className = isPaused
+      ? "px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition"
+      : "px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition";
+  }
+
+  if (isPaused) {
+    webpSummaryText.textContent = "Paused";
+    webpSummaryText.className = "text-[10px] text-amber-400 font-mono font-bold";
+  } else if (isConverting) {
+    webpSummaryText.textContent = `Optimizing (${data.concurrency || 1}w)`;
+    webpSummaryText.className = "text-[10px] text-teal-400 font-mono font-bold animate-pulse";
+  } else if (isDone) {
+    webpSummaryText.textContent = "100% WebP";
+    webpSummaryText.className = "text-[10px] text-emerald-400 font-mono font-bold";
+  } else {
+    webpSummaryText.textContent = "Idle";
+    webpSummaryText.className = "text-[10px] text-slate-400 font-mono";
+  }
+
+  if (webpCurrentFile) {
+    webpCurrentFile.textContent = data.current_file || (isDone ? `All ${data.total_images} images processed` : (isPaused ? "WebP optimization paused" : "Idle"));
+  }
+  if (webpPercentText) webpPercentText.textContent = `${Math.round(data.percent || 0)}%`;
+  if (webpProgressBar) webpProgressBar.style.width = `${data.percent || 0}%`;
+  if (webpCountsText) {
+    const conv = data.converted_count || 0;
+    const skipped = data.skipped_count || 0;
+    if (skipped > 0) {
+      webpCountsText.textContent = `${conv} converted (${skipped} kept original) / ${data.total_images || 0}`;
+    } else {
+      webpCountsText.textContent = `${conv} / ${data.total_images || 0} converted`;
+    }
+  }
+  if (webpSavedText) {
+    webpSavedText.textContent = `Saved: ${data.saved_formatted || "0 B"}`;
+  }
+}
+
+async function toggleWebpPause() {
+  try {
+    const res = await fetch("/api/backup/webp/pause", { method: "POST" });
+    if (res.ok) {
+      pollWebpStatus();
+    }
+  } catch (err) {
+    console.error("Error toggling WebP pause:", err);
   }
 }
 
@@ -1462,6 +1816,22 @@ function setupEventListeners() {
     });
   }
 
+  // Duplicate Hash Verifier Pause/Resume Toggle
+  if (toggleHashPauseBtn) {
+    toggleHashPauseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleDuplicateHashPause();
+    });
+  }
+
+  // WebP Optimizer Pause/Resume Toggle
+  if (toggleWebpPauseBtn) {
+    toggleWebpPauseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleWebpPause();
+    });
+  }
+
   // Folder Search Input
   folderSearchInput.addEventListener("input", (e) => {
     filterFolders(e.target.value);
@@ -1601,6 +1971,21 @@ function setupEventListeners() {
   shortcutsBtn.addEventListener("click", () => shortcutsModal.classList.remove("hidden"));
   closeShortcutsBtn.addEventListener("click", () => shortcutsModal.classList.add("hidden"));
 
+  // Duplicate Alert Banner Events
+  if (toggleDuplicateCompareBtn) toggleDuplicateCompareBtn.addEventListener("click", toggleDuplicateCompare);
+  if (trashIncomingDuplicateBtn) trashIncomingDuplicateBtn.addEventListener("click", trashCurrentDuplicate);
+  if (dismissDuplicateBtn) dismissDuplicateBtn.addEventListener("click", hideDuplicateBanner);
+  if (autoTrashDuplicateToggle) {
+    autoTrashDuplicateToggle.checked = !!state.autoTrashDuplicate;
+    autoTrashDuplicateToggle.addEventListener("change", (e) => {
+      state.autoTrashDuplicate = e.target.checked;
+      localStorage.setItem("sorter_autotrash_duplicates", e.target.checked ? "true" : "false");
+      if (state.autoTrashDuplicate && state.currentDuplicate && state.currentDuplicate.match_type === "content") {
+        trashCurrentDuplicate();
+      }
+    });
+  }
+
   // Global Keyboard Shortcuts
   window.addEventListener("keydown", (e) => {
     const activeTag = document.activeElement ? document.activeElement.tagName : "";
@@ -1665,6 +2050,12 @@ function setupEventListeners() {
       case "d":
         e.preventDefault();
         openDeleteModal();
+        break;
+      case "x":
+        if (state.currentDuplicate && duplicateBanner && !duplicateBanner.classList.contains("hidden")) {
+          e.preventDefault();
+          trashCurrentDuplicate();
+        }
         break;
       case "/":
         e.preventDefault();
