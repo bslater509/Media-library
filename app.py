@@ -2171,6 +2171,8 @@ def browse_directory(path: Optional[str] = Query(None)):
                     continue
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
+    except OSError as e:
+        print(f"Warning: could not scan {target_path}: {e}")
 
     folders.sort(key=lambda x: x["name"].lower())
     parent_path = str(Path(target_path).parent) if target_path != "/" else None
@@ -2975,6 +2977,11 @@ def validate_backup_path(path_str: Optional[str]) -> str:
         return base_dir
     clean_path = urllib.parse.unquote(path_str.strip())
     norm_path = os.path.abspath(os.path.normpath(clean_path))
+
+    # If path points to base_dir, its parent directory (e.g. /mnt/pcloud), or root, clamp safely to base_dir
+    if norm_path == base_dir or norm_path == os.path.dirname(base_dir) or norm_path == "/":
+        return base_dir
+
     try:
         common = os.path.commonpath([base_dir, norm_path])
         if common != base_dir:
@@ -3202,16 +3209,32 @@ def enqueue_all_transcodes_for_backup() -> List[Dict[str, Any]]:
 @app.get("/api/backup/browse")
 async def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[bool] = Query(False)):
     base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
-    target_path = validate_backup_path(path)
-    
-    if not os.path.exists(target_path):
+    try:
+        target_path = validate_backup_path(path)
+    except HTTPException:
         target_path = base_dir
 
-    if not os.path.isdir(target_path):
-        target_path = os.path.dirname(target_path) or base_dir
+    # Ensure target_path stays within base_dir
+    try:
+        common = os.path.commonpath([base_dir, target_path])
+        if common != base_dir:
+            target_path = base_dir
+    except (ValueError, OSError):
+        target_path = base_dir
+
+    if target_path != base_dir:
+        try:
+            if not os.path.isdir(target_path):
+                parent = os.path.dirname(target_path)
+                if parent and os.path.commonpath([base_dir, parent]) == base_dir:
+                    target_path = parent
+                else:
+                    target_path = base_dir
+        except (OSError, ValueError):
+            pass
 
     rel_path = os.path.relpath(target_path, base_dir)
-    is_root = (rel_path == ".")
+    is_root = (rel_path in (".", ""))
 
     breadcrumbs = [{"name": os.path.basename(base_dir) or "Library", "path": base_dir}]
     if not is_root:
@@ -3348,9 +3371,11 @@ async def browse_backup_library(path: Optional[str] = Query(None), refresh: Opti
                 conn.close()
 
         # Auto-enqueue non-MP4 videos for background conversion if browsing a folder
-        enqueue_transcode_for_backup(folder_path=target_path)
-        # Prioritize thumbnail generation for this folder
-        enqueue_folder_thumbnails(folder_path=target_path)
+        try:
+            enqueue_transcode_for_backup(folder_path=target_path)
+            enqueue_folder_thumbnails(folder_path=target_path)
+        except Exception as e:
+            print(f"Warning: could not enqueue background tasks for {target_path}: {e}")
     else:
         # At root, subfolders are the root folders
         subfolders = [{"name": rf["name"], "path": rf["path"]} for rf in root_folders]
