@@ -1,0 +1,71 @@
+"""Services module exports."""
+
+from media_library.services.media_service import (
+    get_lan_ip,
+    validate_backup_path,
+    scan_videos,
+    resolve_video_path,
+    search_backup_index,
+    do_transfer,
+)
+from media_library.services.ffmpeg_service import (
+    format_eta_str,
+    probe_video_meta,
+    generate_thumbnail,
+    convert_image_file_to_webp,
+)
+from media_library.services.deduplication_service import (
+    compute_quick_hash,
+    compute_thumbnail_phash,
+    compute_thumbnail_dhash,
+    normalize_pair,
+    get_ignored_pairs_set,
+    score_duplicate_file,
+    visual_duplicates_cache,
+    invalidate_visual_cache,
+    find_visual_duplicates,
+    get_backup_duplicates,
+    resolve_duplicate_group,
+    autodelete_verified_duplicates,
+)
+from media_library.services.backup_service import (
+    library_backup_state,
+    sync_thumbnail_db_cache,
+    get_library_backup_dir,
+    get_existing_backup_meta,
+    _create_library_backup_sync,
+    _restore_library_backup_sync,
+    check_and_auto_restore_library_backup,
+)
+
+__all__ = [
+    "get_lan_ip",
+    "validate_backup_path",
+    "scan_videos",
+    "resolve_video_path",
+    "search_backup_index",
+    "do_transfer",
+    "format_eta_str",
+    "probe_video_meta",
+    "generate_thumbnail",
+    "convert_image_file_to_webp",
+    "compute_quick_hash",
+    "compute_thumbnail_phash",
+    "compute_thumbnail_dhash",
+    "normalize_pair",
+    "get_ignored_pairs_set",
+    "score_duplicate_file",
+    "visual_duplicates_cache",
+    "invalidate_visual_cache",
+    "find_visual_duplicates",
+    "get_backup_duplicates",
+    "resolve_duplicate_group",
+    "autodelete_verified_duplicates",
+    "library_backup_state",
+    "sync_thumbnail_db_cache",
+    "get_library_backup_dir",
+    "get_existing_backup_meta",
+    "_create_library_backup_sync",
+    "_restore_library_backup_sync",
+    "check_and_auto_restore_library_backup",
+]

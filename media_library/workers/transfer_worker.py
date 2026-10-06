@@ -1,0 +1,71 @@
+"""Background file transfer worker managing sequential moves and copies."""
+
+import time
+import asyncio
+from typing import Optional, List, Dict, Any
+
+from media_library.workers.base import BaseWorker
+from media_library.services.media_service import do_transfer
+
+class TransferWorker(BaseWorker):
+    """Worker managing queued file transfers with chunking and cancellation support."""
+
+    def __init__(self):
+        super().__init__("transfer_worker")
+        self.transfer_queue: asyncio.Queue = asyncio.Queue()
+        self.active_transfer: Optional[Dict[str, Any]] = None
+        self.transfers_history: List[Dict[str, Any]] = []
+        self.transfer_items_map: Dict[str, Dict[str, Any]] = {}
+
+    def enqueue(self, item: Dict[str, Any]):
+        self.transfer_items_map[item["id"]] = item
+        self.transfer_queue.put_nowait(item)
+
+    def cancel(self, task_id: str) -> bool:
+        if task_id in self.transfer_items_map:
+            item = self.transfer_items_map[task_id]
+            item["status"] = "cancelled"
+            if item.get("abort_event"):
+                item["abort_event"].set()
+            return True
+        return False
+
+    def get_status(self) -> Dict[str, Any]:
+        return {
+            "active": self.active_transfer,
+            "queue_length": self.transfer_queue.qsize(),
+            "history": self.transfers_history[-20:],
+        }
+
+    async def _run_loop(self):
+        while True:
+            item = await self.transfer_queue.get()
+            try:
+                if item.get("status") == "cancelled":
+                    self.transfer_queue.task_done()
+                    continue
+
+                item["status"] = "transferring"
+                item["started_at"] = time.time()
+                self.active_transfer = item
+                self._status = "transferring"
+
+                # Import transcode items map if available
+                from media_library.workers.transcode_worker import transcode_worker_instance
+                transcode_map = transcode_worker_instance.transcode_items_map if transcode_worker_instance else None
+
+                await asyncio.to_thread(do_transfer, item, transcode_map)
+                self.transfers_history.append(item)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in transfer worker: {e}")
+                item["status"] = "failed"
+                item["error"] = str(e)
+                self.transfers_history.append(item)
+            finally:
+                self.active_transfer = None
+                self._status = "idle"
+                self.transfer_queue.task_done()
+
+transfer_worker_instance = TransferWorker()
