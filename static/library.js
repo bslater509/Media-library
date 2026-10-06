@@ -32,6 +32,8 @@
     latestThumbData: null,
     dupHashPollTimer: null,
     latestDupHashData: null,
+    libBackupPollTimer: null,
+    latestLibBackupData: null,
     duplicates: {
       isOpen: false,
       mode: 'content',
@@ -53,7 +55,6 @@
     duplicatesModal: document.getElementById('duplicatesModal'),
     closeDuplicatesModalBtn: document.getElementById('closeDuplicatesModalBtn'),
     dupModeContentBtn: document.getElementById('dupModeContentBtn'),
-    dupModeNameBtn: document.getElementById('dupModeNameBtn'),
     dupModeVisualBtn: document.getElementById('dupModeVisualBtn'),
     openIgnoredDuplicatesBtn: document.getElementById('openIgnoredDuplicatesBtn'),
     ignoredDuplicatesCount: document.getElementById('ignoredDuplicatesCount'),
@@ -124,6 +125,14 @@
     indexStatusText: document.getElementById('indexStatusText'),
     syncIndexBtn: document.getElementById('syncIndexBtn'),
     syncIcon: document.getElementById('syncIcon'),
+    indexSummaryText: document.getElementById('indexSummaryText'),
+    triggerIndexSyncDropdownBtn: document.getElementById('triggerIndexSyncDropdownBtn'),
+    indexSyncDropdownIcon: document.getElementById('indexSyncDropdownIcon'),
+    indexCurrentFolder: document.getElementById('indexCurrentFolder'),
+    indexPercentText: document.getElementById('indexPercentText'),
+    indexProgressBar: document.getElementById('indexProgressBar'),
+    indexCountsText: document.getElementById('indexCountsText'),
+    indexFilesText: document.getElementById('indexFilesText'),
     // Background Transcode Monitor
     transferBadgeBtn: document.getElementById('transferBadgeBtn'),
     transferSpinner: document.getElementById('transferSpinner'),
@@ -182,6 +191,17 @@
     webpProgressBar: document.getElementById('webpProgressBar'),
     webpCountsText: document.getElementById('webpCountsText'),
     webpSavedText: document.getElementById('webpSavedText'),
+    // Library Folder Backup Controls
+    libBackupSummaryText: document.getElementById('libBackupSummaryText'),
+    triggerLibBackupBtn: document.getElementById('triggerLibBackupBtn'),
+    libBackupIcon: document.getElementById('libBackupIcon'),
+    triggerLibRestoreBtn: document.getElementById('triggerLibRestoreBtn'),
+    libBackupProgressBox: document.getElementById('libBackupProgressBox'),
+    libBackupStatusText: document.getElementById('libBackupStatusText'),
+    libBackupPercentText: document.getElementById('libBackupPercentText'),
+    libBackupProgressBar: document.getElementById('libBackupProgressBar'),
+    libBackupCountsText: document.getElementById('libBackupCountsText'),
+    libBackupSizeText: document.getElementById('libBackupSizeText'),
     // Rename Modal
     renameModal: document.getElementById('renameModal'),
     newFileNameInput: document.getElementById('newFileNameInput'),
@@ -506,37 +526,116 @@
     }
   }
 
+  // Render Media Library Indexer Status (Header Pill + Dropdown Panel)
+  function renderIndexStatus(data) {
+    if (!data) return;
+    const isCrawling = data.status === 'crawling';
+    const scanned = data.scanned_folders || 0;
+    const total = data.total_folders || 0;
+    const filesCount = data.total_files || 0;
+    const pct = typeof data.percent === 'number' ? data.percent : (total > 0 ? (scanned / total * 100) : 100);
+
+    // Update Dropdown elements
+    if (els.indexSummaryText) {
+      if (isCrawling) {
+        els.indexSummaryText.textContent = 'Indexing';
+        els.indexSummaryText.className = 'text-[10px] text-amber-400 font-mono font-medium animate-pulse';
+      } else {
+        els.indexSummaryText.textContent = 'Indexed';
+        els.indexSummaryText.className = 'text-[10px] text-emerald-400 font-mono';
+      }
+    }
+
+    if (els.triggerIndexSyncDropdownBtn) {
+      els.triggerIndexSyncDropdownBtn.disabled = isCrawling;
+      if (isCrawling) {
+        els.triggerIndexSyncDropdownBtn.classList.add('opacity-50', 'pointer-events-none');
+      } else {
+        els.triggerIndexSyncDropdownBtn.classList.remove('opacity-50', 'pointer-events-none');
+      }
+    }
+    if (els.indexSyncDropdownIcon) {
+      if (isCrawling) {
+        els.indexSyncDropdownIcon.classList.add('animate-spin');
+      } else {
+        els.indexSyncDropdownIcon.classList.remove('animate-spin');
+      }
+    }
+
+    if (els.indexCurrentFolder) {
+      if (isCrawling && data.current_folder) {
+        els.indexCurrentFolder.textContent = `Scanning: ${data.current_folder}`;
+        els.indexCurrentFolder.title = data.current_folder;
+      } else if (isCrawling) {
+        els.indexCurrentFolder.textContent = 'Scanning folders...';
+        els.indexCurrentFolder.title = '';
+      } else {
+        els.indexCurrentFolder.textContent = 'All folders indexed';
+        els.indexCurrentFolder.title = '';
+      }
+    }
+
+    if (els.indexPercentText) {
+      els.indexPercentText.textContent = `${Math.min(100, Math.max(0, pct)).toFixed(0)}%`;
+    }
+
+    if (els.indexProgressBar) {
+      els.indexProgressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      if (isCrawling) {
+        els.indexProgressBar.className = 'bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200';
+      } else {
+        els.indexProgressBar.className = 'bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200';
+      }
+    }
+
+    if (els.indexCountsText) {
+      els.indexCountsText.textContent = `${scanned.toLocaleString()} / ${total.toLocaleString()} folders`;
+    }
+
+    if (els.indexFilesText) {
+      els.indexFilesText.textContent = `${filesCount.toLocaleString()} files`;
+    }
+
+    // Update Header Topbar Pill
+    if (isCrawling) {
+      if (els.indexDot) els.indexDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+      if (els.indexStatusText) els.indexStatusText.textContent = `Indexing (${scanned}/${total})...`;
+      if (els.syncIcon) els.syncIcon.classList.add('animate-spin');
+    } else {
+      if (els.indexDot) els.indexDot.className = 'w-2 h-2 rounded-full bg-emerald-500 shadow-sm';
+      if (els.indexStatusText) {
+        els.indexStatusText.textContent = filesCount > 0 
+          ? `Indexed (${filesCount.toLocaleString()} files)`
+          : 'Indexed';
+      }
+      if (els.syncIcon) els.syncIcon.classList.remove('animate-spin');
+    }
+
+    updateHeaderTaskBadge();
+  }
+
   // Poll SQLite index crawler status
   async function pollIndexStatus() {
+    let nextDelay = 8000;
     try {
       const res = await fetch('/api/backup/index/status');
-      if (!res.ok) return;
-      const data = await res.json();
-      state.indexStatus = data.status;
+      if (res.ok) {
+        const data = await res.json();
+        state.indexStatus = data.status;
+        state.latestIndexData = data;
+        renderIndexStatus(data);
 
-      if (data.status === 'crawling') {
-        if (els.indexDot) els.indexDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-        const scanned = data.scanned_folders || 0;
-        const total = data.total_folders || 0;
-        if (els.indexStatusText) els.indexStatusText.textContent = `Indexing (${scanned}/${total})...`;
-        if (els.syncIcon) els.syncIcon.classList.add('animate-spin');
-        clearTimeout(state.indexPollTimer);
-        state.indexPollTimer = setTimeout(pollIndexStatus, 1500);
-      } else {
-        if (els.indexDot) els.indexDot.className = 'w-2 h-2 rounded-full bg-emerald-500 shadow-sm';
-        const filesCount = data.total_files || 0;
-        if (els.indexStatusText) {
-          els.indexStatusText.textContent = filesCount > 0 
-            ? `Indexed (${filesCount.toLocaleString()} files)`
-            : 'Indexed';
+        if (data.status === 'crawling') {
+          nextDelay = 1200;
+        } else {
+          nextDelay = 8000;
         }
-        if (els.syncIcon) els.syncIcon.classList.remove('animate-spin');
-        clearTimeout(state.indexPollTimer);
-        state.indexPollTimer = setTimeout(pollIndexStatus, 10000);
       }
     } catch (err) {
+      console.error('Error polling index status:', err);
+    } finally {
       clearTimeout(state.indexPollTimer);
-      state.indexPollTimer = setTimeout(pollIndexStatus, 15000);
+      state.indexPollTimer = setTimeout(pollIndexStatus, nextDelay);
     }
   }
 
@@ -1105,17 +1204,17 @@
   }
 
   function setDuplicatesMode(newMode) {
+    if (newMode !== 'content' && newMode !== 'visual') newMode = 'content';
     if (state.duplicates.mode === newMode) return;
     state.duplicates.mode = newMode;
 
-    const baseClass = 'px-2 sm:px-2.5 py-1 rounded-lg transition text-center truncate font-medium';
+    const baseClass = 'px-2.5 sm:px-3 py-1 rounded-lg transition text-center truncate font-medium';
     const activeClass = `${baseClass} bg-amber-600 text-white font-semibold shadow-sm`;
     const visualActiveClass = `${baseClass} bg-sky-600 text-white font-semibold shadow-sm flex items-center justify-center gap-1`;
     const inactiveClass = `${baseClass} text-slate-400 hover:text-white`;
     const visualInactiveClass = `${baseClass} text-slate-400 hover:text-white flex items-center justify-center gap-1`;
 
     if (els.dupModeContentBtn) els.dupModeContentBtn.className = (newMode === 'content') ? activeClass : inactiveClass;
-    if (els.dupModeNameBtn) els.dupModeNameBtn.className = (newMode === 'name') ? activeClass : inactiveClass;
     if (els.dupModeVisualBtn) els.dupModeVisualBtn.className = (newMode === 'visual') ? visualActiveClass : visualInactiveClass;
 
     loadDuplicateGroups(true);
@@ -1222,16 +1321,27 @@
     els.prevDuplicateGroupBtn.disabled = (currentIdx === 0);
     els.nextDuplicateGroupBtn.disabled = (currentIdx === total - 1);
 
-    if (group.match_type === 'content') {
-      els.duplicatesSubtitle.textContent = `Matching byte size: ${group.size_formatted} each (${group.reclaimable_formatted} reclaimable)`;
-      els.duplicatesGroupSizeBadge.textContent = `Exact size: ${group.size_formatted} (${group.files_count} files)`;
-    } else if (group.match_type === 'visual') {
+    if (group.match_type === 'visual') {
       els.duplicatesSubtitle.textContent = `Visual Match: ~${group.similarity}% thumbnail similarity (${group.files_count} files, ${group.reclaimable_formatted} reclaimable)`;
-      els.duplicatesGroupSizeBadge.textContent = `Hamming diff: ${group.min_distance} / 64 bits`;
+      const isAllImages = group.files && group.files.every(f => f.type === 'image');
+      const diffText = (typeof group.max_distance === 'number') 
+        ? (group.max_distance === 0 ? (isAllImages ? '100% Exact Image Match' : 'Exact 0-bit match (100%)') : `Hamming diff: ≤ ${group.max_distance} / 64 bits`)
+        : `Hamming diff: ${group.min_distance ?? 0} / 64 bits`;
+      els.duplicatesGroupSizeBadge.textContent = diffText;
     } else {
-      els.duplicatesSubtitle.textContent = `Matching filename: "${group.name}" across ${group.files_count} folders`;
-      els.duplicatesGroupSizeBadge.textContent = `${group.files_count} copies with same name`;
+      els.duplicatesSubtitle.textContent = `Exact content match: ${group.size_formatted} each (${group.reclaimable_formatted} reclaimable)`;
+      els.duplicatesGroupSizeBadge.textContent = `Exact size & hash: ${group.size_formatted} (${group.files_count} files)`;
     }
+
+    // Explicitly abort and unload previous video streams to release network sockets immediately
+    const oldVideos = els.duplicateCardsContainer.querySelectorAll('video');
+    oldVideos.forEach(v => {
+      try {
+        v.pause();
+        v.removeAttribute('src');
+        v.load();
+      } catch (e) {}
+    });
 
     els.duplicateCardsContainer.innerHTML = group.files.map((file, fIdx) => {
       const isRecommended = (fIdx === group.suggested_keep_index);
@@ -1260,7 +1370,7 @@
                 src="${file.media_url}" 
                 poster="${file.thumb_url}" 
                 controls 
-                preload="metadata" 
+                preload="none" 
                 playsinline 
                 class="w-full h-full object-contain pointer-events-auto bg-black"
               ></video>
@@ -1331,11 +1441,6 @@
       return;
     }
 
-    if (group.match_type !== 'content') {
-      els.duplicatesVerificationBadge.className = 'text-[11px] font-mono px-2 sm:px-2.5 py-0.5 rounded-lg bg-slate-800 text-slate-400 flex items-center gap-1.5 border border-slate-700 min-w-0 truncate max-w-full';
-      els.duplicatesVerificationBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span> <span class="truncate">Filename Match</span>';
-      return;
-    }
 
     // If all files in group already have quick_hash cached, verify instantly in JS
     const knownHashes = group.files.map(f => f.quick_hash).filter(Boolean);
@@ -1637,9 +1742,15 @@
   // ==========================================
   // Ignored Duplicates Management
   // ==========================================
-  async function updateIgnoredCountBadge() {
+  async function updateIgnoredCountBadge(delta = null) {
+    if (typeof delta === 'number') {
+      state.duplicates.ignoredCount = Math.max(0, (state.duplicates.ignoredCount || 0) + delta);
+      if (els.ignoredDuplicatesCount) els.ignoredDuplicatesCount.textContent = state.duplicates.ignoredCount;
+      if (els.ignoredDuplicatesFooterCount) els.ignoredDuplicatesFooterCount.textContent = `${state.duplicates.ignoredCount} ignored pair${state.duplicates.ignoredCount === 1 ? '' : 's'}`;
+      return;
+    }
     try {
-      const res = await fetch('/api/backup/duplicates/ignored?limit=1');
+      const res = await fetch('/api/backup/duplicates/ignored?limit=0');
       if (res.ok) {
         const data = await res.json();
         const cnt = data.total || 0;
@@ -1662,42 +1773,60 @@
     const group = groups[currentIdx];
     if (!group || !group.files || group.files.length < 2) return;
 
-    isIgnoringCurrentGroup = true;
-    let origHtml = '';
-    if (btnEl) {
-      origHtml = btnEl.innerHTML;
-      btnEl.disabled = true;
-      btnEl.innerHTML = '<span class="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin shrink-0"></span> <span class="truncate">Ignoring...</span>';
+    // Calculate pair combinations
+    const numFiles = group.files.length;
+    const pairsCount = (numFiles * (numFiles - 1)) / 2;
+    const paths = group.files.map(f => f.path);
+    const matchType = group.match_type || state.duplicates.mode;
+
+    // Optimistic UI update: advance to next match immediately without waiting for network roundtrip
+    const [removedGroup] = state.duplicates.groups.splice(currentIdx, 1);
+    state.duplicates.totalGroups = Math.max(0, state.duplicates.totalGroups - 1);
+    if (state.duplicates.currentIndex >= state.duplicates.groups.length) {
+      state.duplicates.currentIndex = Math.max(0, state.duplicates.groups.length - 1);
     }
 
+    if (els.duplicatesHeaderBadge) {
+      if (state.duplicates.totalGroups > 0) {
+        els.duplicatesHeaderBadge.textContent = state.duplicates.totalGroups;
+        els.duplicatesHeaderBadge.classList.remove('hidden');
+      } else {
+        els.duplicatesHeaderBadge.classList.add('hidden');
+      }
+    }
+    if (els.duplicatesTotalSets) {
+      els.duplicatesTotalSets.textContent = `${state.duplicates.totalGroups} duplicate sets`;
+    }
+
+    updateIgnoredCountBadge(pairsCount);
+    renderCurrentDuplicateGroup();
+    showToast('Match ignored. It will not appear in duplicate scans.', 'info', 2000);
+
+    // Send API ignore request asynchronously in background
+    isIgnoringCurrentGroup = true;
     try {
       const res = await fetch('/api/backup/duplicates/ignore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paths: group.files.map(f => f.path),
-          match_type: group.match_type || state.duplicates.mode
+          paths: paths,
+          match_type: matchType
         })
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.detail || 'Failed to ignore match');
-
-      showToast('Match ignored. It will not appear in duplicate scans.', 'info');
-      state.duplicates.groups.splice(currentIdx, 1);
-      state.duplicates.totalGroups = Math.max(0, state.duplicates.totalGroups - 1);
-      if (state.duplicates.currentIndex >= state.duplicates.groups.length) {
-        state.duplicates.currentIndex = Math.max(0, state.duplicates.groups.length - 1);
+      if (!res.ok || !data.success) {
+        throw new Error(data.detail || 'Failed to ignore match');
       }
-      updateIgnoredCountBadge();
-      renderCurrentDuplicateGroup();
     } catch (err) {
+      console.error('Error ignoring match in background:', err);
       showToast('Error ignoring match: ' + err.message, 'error');
+      // Rollback optimistic removal
+      state.duplicates.groups.splice(currentIdx, 0, removedGroup);
+      state.duplicates.totalGroups += 1;
+      updateIgnoredCountBadge(-pairsCount);
+      renderCurrentDuplicateGroup();
     } finally {
       isIgnoringCurrentGroup = false;
-      if (btnEl) {
-        btnEl.disabled = false;
-        btnEl.innerHTML = origHtml || '<i class="fa-solid fa-ban text-amber-400 shrink-0"></i><span>Ignore<span class="hidden sm:inline"> Match</span></span>';
-      }
     }
   }
 
@@ -1961,11 +2090,15 @@
     const tData = state.latestTranscodeData;
     const thData = state.latestThumbData;
     const wData = state.latestWebpData;
+    const idxData = state.latestIndexData;
+    const bkData = state.latestLibBackupData;
 
     const trActive = trData && (trData.active || (trData.queued && trData.queued.length > 0));
+    const idxActive = idxData && idxData.status === 'crawling';
     const tActive = tData && (tData.active || (tData.queued && tData.queued.length > 0));
     const thActive = thData && thData.status === 'generating' && (thData.pending_count > 0);
     const wActive = wData && wData.status === 'converting' && (wData.pending_count > 0);
+    const bkActive = bkData && (bkData.status === 'backing_up' || bkData.status === 'restoring');
 
     if (trActive) {
       els.transferBadgeBtn.classList.remove('hidden');
@@ -1974,6 +2107,17 @@
       els.transferCountText.textContent = active 
         ? `Moving ${Math.round(active.percent || 0)}%`
         : `${queued.length} transfer${queued.length > 1 ? 's' : ''}`;
+      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
+    } else if (idxActive) {
+      els.transferBadgeBtn.classList.remove('hidden');
+      const pct = typeof idxData.percent === 'number' ? Math.round(idxData.percent) : 0;
+      els.transferCountText.textContent = `Indexing ${pct}%`;
+      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
+    } else if (bkActive) {
+      els.transferBadgeBtn.classList.remove('hidden');
+      const actionName = bkData.status === 'backing_up' ? 'Backup' : 'Restore';
+      const pct = Math.round(bkData.progress_percent || 0);
+      els.transferCountText.textContent = `${actionName} ${pct}%`;
       if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
     } else if (tActive) {
       els.transferBadgeBtn.classList.remove('hidden');
@@ -2440,6 +2584,167 @@
     }
   }
 
+  // Poll Library Folder Snapshot Backup Status
+  async function pollLibBackupStatus() {
+    let nextDelay = 8000;
+    try {
+      const res = await fetch('/api/backup/library-backup/status');
+      if (res.ok) {
+        const data = await res.json();
+        state.latestLibBackupData = data;
+        renderLibBackupStatus(data);
+        updateHeaderTaskBadge();
+
+        if (data.status === 'backing_up' || data.status === 'restoring') {
+          nextDelay = 1200;
+        } else {
+          nextDelay = 8000;
+        }
+      }
+    } catch (err) {
+      console.error('Error checking library backup status:', err);
+    } finally {
+      clearTimeout(state.libBackupPollTimer);
+      state.libBackupPollTimer = setTimeout(pollLibBackupStatus, nextDelay);
+    }
+  }
+
+  // Render Library Folder Backup Status
+  function renderLibBackupStatus(data) {
+    if (!els.libBackupSummaryText) return;
+    const isBackingUp = data.status === 'backing_up';
+    const isRestoring = data.status === 'restoring';
+    const hasBackup = !!data.backup_exists;
+
+    if (isBackingUp) {
+      els.libBackupSummaryText.textContent = 'Backing up...';
+      els.libBackupSummaryText.className = 'text-[10px] text-emerald-400 font-mono font-bold animate-pulse';
+      if (els.libBackupIcon) els.libBackupIcon.classList.add('animate-spin');
+    } else if (isRestoring) {
+      els.libBackupSummaryText.textContent = 'Restoring...';
+      els.libBackupSummaryText.className = 'text-[10px] text-amber-400 font-mono font-bold animate-pulse';
+      if (els.libBackupIcon) els.libBackupIcon.classList.remove('animate-spin');
+    } else if (data.status === 'error') {
+      els.libBackupSummaryText.textContent = 'Error';
+      els.libBackupSummaryText.className = 'text-[10px] text-rose-400 font-mono font-bold';
+      if (els.libBackupIcon) els.libBackupIcon.classList.remove('animate-spin');
+    } else if (hasBackup) {
+      els.libBackupSummaryText.textContent = data.last_backup_str ? `Saved: ${data.last_backup_str}` : 'Saved';
+      els.libBackupSummaryText.className = 'text-[10px] text-slate-400 font-mono';
+      if (els.libBackupIcon) els.libBackupIcon.classList.remove('animate-spin');
+    } else {
+      els.libBackupSummaryText.textContent = 'No Backup';
+      els.libBackupSummaryText.className = 'text-[10px] text-slate-500 font-mono';
+      if (els.libBackupIcon) els.libBackupIcon.classList.remove('animate-spin');
+    }
+
+    if (els.triggerLibBackupBtn) {
+      els.triggerLibBackupBtn.disabled = isBackingUp || isRestoring;
+      if (isBackingUp || isRestoring) {
+        els.triggerLibBackupBtn.classList.add('opacity-50', 'pointer-events-none');
+      } else {
+        els.triggerLibBackupBtn.classList.remove('opacity-50', 'pointer-events-none');
+      }
+    }
+
+    if (els.triggerLibRestoreBtn) {
+      els.triggerLibRestoreBtn.disabled = isBackingUp || isRestoring || !hasBackup;
+      if (isBackingUp || isRestoring || !hasBackup) {
+        els.triggerLibRestoreBtn.classList.add('opacity-50', 'pointer-events-none');
+      } else {
+        els.triggerLibRestoreBtn.classList.remove('opacity-50', 'pointer-events-none');
+      }
+    }
+
+    if (els.libBackupStatusText) {
+      if (isBackingUp || isRestoring) {
+        els.libBackupStatusText.textContent = data.current_step || (isBackingUp ? 'Saving snapshot...' : 'Restoring data...');
+        els.libBackupStatusText.title = data.current_step || '';
+      } else if (data.status === 'error') {
+        els.libBackupStatusText.textContent = `Error: ${data.error_message || 'Failed'}`;
+        els.libBackupStatusText.title = data.error_message || '';
+      } else if (hasBackup) {
+        els.libBackupStatusText.textContent = `Snapshot stored in ${data.backup_path || '.media_library_backup'}`;
+        els.libBackupStatusText.title = data.backup_path || '';
+      } else {
+        els.libBackupStatusText.textContent = 'No library snapshot saved yet';
+        els.libBackupStatusText.title = '';
+      }
+    }
+
+    const pct = (isBackingUp || isRestoring) ? (data.progress_percent || 0) : 100;
+    if (els.libBackupPercentText) {
+      els.libBackupPercentText.textContent = `${Math.round(pct)}%`;
+      els.libBackupPercentText.className = (isBackingUp || isRestoring) 
+        ? 'text-emerald-400 font-mono text-[10px] font-bold shrink-0 animate-pulse'
+        : 'text-emerald-400 font-mono text-[10px] font-bold shrink-0';
+    }
+    if (els.libBackupProgressBar) {
+      els.libBackupProgressBar.style.width = `${pct}%`;
+    }
+
+    if (els.libBackupCountsText) {
+      if (hasBackup) {
+        const fCount = (data.file_count || 0).toLocaleString();
+        const tCount = (data.thumb_count || 0).toLocaleString();
+        els.libBackupCountsText.textContent = `${fCount} files • ${tCount} thumbs`;
+      } else {
+        els.libBackupCountsText.textContent = 'Click "Backup Now" to create';
+      }
+    }
+
+    if (els.libBackupSizeText) {
+      if (hasBackup) {
+        els.libBackupSizeText.textContent = data.total_size_formatted || '0 B';
+      } else {
+        els.libBackupSizeText.textContent = '0 B';
+      }
+    }
+  }
+
+  // Trigger manual library snapshot backup
+  async function triggerLibBackup() {
+    try {
+      if (els.libBackupIcon) els.libBackupIcon.classList.add('animate-spin');
+      showToast('Starting snapshot backup to library folder...', 'info');
+      const res = await fetch('/api/backup/library-backup/save', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Library backup in progress', 'success');
+      } else {
+        showToast(data.message || 'Backup already running', 'info');
+      }
+      pollLibBackupStatus();
+    } catch (err) {
+      showToast('Failed to trigger library backup: ' + err.message, 'error');
+    }
+  }
+
+  // Trigger library snapshot restore
+  async function triggerLibRestore() {
+    const meta = state.latestLibBackupData;
+    let detailMsg = '';
+    if (meta && meta.last_backup_str) {
+      detailMsg = `\n\nBackup details:\n• Created: ${meta.last_backup_str}\n• Files: ${(meta.file_count || 0).toLocaleString()}\n• Thumbnails: ${(meta.thumb_count || 0).toLocaleString()}\n• Total size: ${meta.total_size_formatted || 'Unknown'}`;
+    }
+    const confirmMsg = `Are you sure you want to restore the media index and thumbnails from the library folder backup?${detailMsg}\n\nThis will safely reload the SQLite database and unpack all thumbnails.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      showToast('Starting restore from library backup...', 'info');
+      const res = await fetch('/api/backup/library-backup/restore', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Restoration started in background', 'success');
+      } else {
+        showToast(data.message || 'Operation already in progress', 'info');
+      }
+      pollLibBackupStatus();
+    } catch (err) {
+      showToast('Failed to trigger library restore: ' + err.message, 'error');
+    }
+  }
+
   // Toggle WebP Pause
   async function toggleWebpPause() {
     try {
@@ -2689,9 +2994,20 @@
       els.scopeGlobalBtn.addEventListener('click', () => setSearchScope('global'));
     }
 
-    // SQLite Index Sync Button
+    // SQLite Index Sync Buttons (Header Pill & Dropdown Panel)
     if (els.syncIndexBtn) {
       els.syncIndexBtn.addEventListener('click', triggerIndexSync);
+    }
+    if (els.triggerIndexSyncDropdownBtn) {
+      els.triggerIndexSyncDropdownBtn.addEventListener('click', triggerIndexSync);
+    }
+
+    // Library Folder Backup Buttons
+    if (els.triggerLibBackupBtn) {
+      els.triggerLibBackupBtn.addEventListener('click', triggerLibBackup);
+    }
+    if (els.triggerLibRestoreBtn) {
+      els.triggerLibRestoreBtn.addEventListener('click', triggerLibRestore);
     }
 
     // Refresh Button (force re-scans & updates folder index)
@@ -2808,7 +3124,6 @@
     if (els.openDuplicatesBtn) els.openDuplicatesBtn.addEventListener('click', openDuplicatesModal);
     if (els.closeDuplicatesModalBtn) els.closeDuplicatesModalBtn.addEventListener('click', closeDuplicatesModal);
     if (els.dupModeContentBtn) els.dupModeContentBtn.addEventListener('click', () => setDuplicatesMode('content'));
-    if (els.dupModeNameBtn) els.dupModeNameBtn.addEventListener('click', () => setDuplicatesMode('name'));
     if (els.dupModeVisualBtn) els.dupModeVisualBtn.addEventListener('click', () => setDuplicatesMode('visual'));
     if (els.openIgnoredDuplicatesBtn) els.openIgnoredDuplicatesBtn.addEventListener('click', openIgnoredDuplicatesModal);
     if (els.closeIgnoredDuplicatesModalBtn) els.closeIgnoredDuplicatesModalBtn.addEventListener('click', closeIgnoredDuplicatesModal);
@@ -2867,6 +3182,7 @@
     pollThumbnailStatus();
     pollDuplicateHashStatus();
     pollWebpStatus();
+    pollLibBackupStatus();
     fetchDuplicateSummary();
     updateIgnoredCountBadge();
   }

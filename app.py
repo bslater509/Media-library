@@ -1,5 +1,6 @@
 import os
 import shutil
+import tarfile
 import mimetypes
 import asyncio
 import socket
@@ -13,9 +14,11 @@ import sqlite3
 from typing import Optional, List, Dict, Any, Set, Tuple, Union
 from collections import defaultdict
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageStat
+from concurrent.futures import ThreadPoolExecutor
 import imagehash
 from contextlib import asynccontextmanager
+import anyio.to_thread
 from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +56,12 @@ WEBP_WORKER_CONCURRENCY = max(1, int(os.environ.get("WEBP_WORKER_CONCURRENCY", "
 WEBP_QUALITY = max(1, min(100, int(os.environ.get("WEBP_QUALITY", "85"))))
 WEBP_SKIP_LARGER = os.environ.get("WEBP_SKIP_LARGER", "false").lower() in ("true", "1", "yes")
 WEBP_AUTO_OPTIMIZE = os.environ.get("WEBP_AUTO_OPTIMIZE", "true").lower() in ("true", "1", "yes")
+
+# Library folder backup configuration
+LIBRARY_BACKUP_SUBDIR = os.environ.get("LIBRARY_BACKUP_SUBDIR", ".media_library_backup").strip() or ".media_library_backup"
+LIBRARY_BACKUP_DIR = os.environ.get("LIBRARY_BACKUP_DIR", "").strip()
+BACKUP_STAGING_DIR = Path(os.environ.get("BACKUP_STAGING_DIR", DATA_DIR / "backup_staging")).resolve()
+BACKUP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
 # Supported video extensions
 VIDEO_EXTENSIONS = {
@@ -277,6 +286,14 @@ def init_backup_db():
         UNIQUE(path1, path2)
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ignored_p1_p2 ON ignored_duplicates(path1, path2)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ignored_match_type ON ignored_duplicates(match_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ignored_created_at ON ignored_duplicates(created_at DESC)")
+
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS db_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""")
 
     conn.commit()
     conn.close()
@@ -298,23 +315,34 @@ def compute_quick_hash(filepath: str, chunk_size: int = 131072) -> Optional[str]
         print(f"Error computing quick_hash for {filepath}: {e}")
         return None
 
-def compute_thumbnail_dhash(thumb_path: Path) -> Optional[str]:
-    """Computes a 64-bit difference hash (dHash) from a cached JPEG thumbnail."""
+def compute_thumbnail_phash(thumb_path: Path) -> Optional[str]:
+    """Computes a 64-bit DCT perceptual hash (pHash) from a cached JPEG thumbnail.
+    Excludes solid/blank/fade-in frames by returning 'blank_thumb'."""
     try:
         if not thumb_path.exists() or thumb_path.stat().st_size == 0:
             return None
         with Image.open(thumb_path) as img:
-            return str(imagehash.dhash(img))
+            stat = ImageStat.Stat(img)
+            avg_std = sum(stat.stddev) / len(stat.stddev)
+            avg_mean = sum(stat.mean) / len(stat.mean)
+            if avg_std < 8.0 or avg_mean < 8.0:
+                return "blank_thumb"
+            return str(imagehash.phash(img))
     except Exception:
         return None
+
+compute_thumbnail_dhash = compute_thumbnail_phash
 
 def normalize_pair(p1: str, p2: str) -> Tuple[str, str]:
     return (p1, p2) if p1 < p2 else (p2, p1)
 
-def get_ignored_pairs_set() -> Set[Tuple[str, str]]:
+def get_ignored_pairs_set(match_type: Optional[str] = None) -> Set[Tuple[str, str]]:
     conn = get_db()
     try:
-        rows = conn.execute("SELECT path1, path2 FROM ignored_duplicates").fetchall()
+        if match_type:
+            rows = conn.execute("SELECT path1, path2 FROM ignored_duplicates WHERE match_type = ?", (match_type,)).fetchall()
+        else:
+            rows = conn.execute("SELECT path1, path2 FROM ignored_duplicates").fetchall()
         return {(r["path1"], r["path2"]) for r in rows}
     finally:
         conn.close()
@@ -465,6 +493,7 @@ def remove_file_from_index(file_path: str):
         conn = get_db()
         with conn:
             conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
+            conn.execute("DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ?", (file_path, file_path))
             cur = conn.execute("SELECT COUNT(*) FROM files WHERE folder_path = ?", (folder_path,))
             cnt = cur.fetchone()[0]
             conn.execute("UPDATE folders SET file_count = ?, last_scanned = ? WHERE path = ?", (cnt, time.time(), folder_path))
@@ -511,6 +540,7 @@ indexer_state = {
     "status": "idle", # "crawling" | "idle"
     "scanned_folders": 0,
     "total_folders": 0,
+    "scanned_files": 0,
     "total_files": 0,
     "current_folder": "",
     "last_synced": None,
@@ -529,10 +559,141 @@ def _scan_root_dirs(path: str) -> List[str]:
         print(f"Error scanning root dirs from {path}: {e}")
     return root_dirs
 
+def prune_stale_index_entries(
+    base_dir: Optional[str] = None,
+    visited_folders: Optional[Set[str]] = None,
+    clean_orphaned_thumbnails: bool = True
+) -> Dict[str, Any]:
+    """
+    Prunes stale directories, files, ignored duplicates, and orphaned thumbnails.
+    - If visited_folders set is provided (e.g. from run_background_crawler), candidate folders
+      under base_dir not in visited_folders are verified and pruned.
+    - If visited_folders is None, verifies folder existence on disk for each folder in DB.
+    - Safety guard: Aborts if base_dir does not exist or is unmounted.
+    """
+    resolved_base = os.path.realpath(base_dir or state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
+    if not os.path.exists(resolved_base):
+        print(f"[Prune] Base directory {resolved_base} is not accessible. Aborting prune to prevent accidental data loss.")
+        return {
+            "pruned_folders": 0,
+            "pruned_files": 0,
+            "pruned_orphaned_thumbs": 0,
+            "pruned_stale_duplicates": 0,
+            "aborted": True,
+            "reason": "Base directory unmounted or missing"
+        }
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    pruned_folders = 0
+    pruned_files = 0
+    pruned_orphaned_thumbs = 0
+    pruned_stale_duplicates = 0
+
+    try:
+        # 1. Identify missing/deleted folders
+        cur = conn.execute("SELECT path FROM folders")
+        db_folders = [r["path"] for r in cur.fetchall()]
+
+        stale_folders = []
+        for fp in db_folders:
+            is_under_base = (fp == resolved_base or fp.startswith(resolved_base + os.sep))
+            if is_under_base:
+                if visited_folders is not None:
+                    if fp not in visited_folders:
+                        # Double-check with os.path.exists to be 100% safe
+                        if not os.path.exists(fp):
+                            stale_folders.append(fp)
+                else:
+                    if not os.path.exists(fp):
+                        stale_folders.append(fp)
+
+        # 2. Collect files and thumbnail paths for stale folders
+        thumb_dir = THUMBNAIL_CACHE_DIR
+        for sf in stale_folders:
+            cur = conn.execute("SELECT path, mtime, size FROM files WHERE folder_path = ?", (sf,))
+            rows = cur.fetchall()
+            for r in rows:
+                k1 = f"{r['path']}_{r['mtime']}_{r['size']}"
+                h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
+                try:
+                    (thumb_dir / f"thumb_{h1}.jpg").unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+                k2 = r["path"]
+                h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
+                try:
+                    (thumb_dir / f"thumb_{h2}.jpg").unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+            with conn:
+                conn.execute("DELETE FROM files WHERE folder_path = ?", (sf,))
+                conn.execute("DELETE FROM folders WHERE path = ?", (sf,))
+            pruned_folders += 1
+            pruned_files += len(rows)
+
+        # 3. Clean up stale ignored duplicates where either path is no longer in files
+        with conn:
+            cur = conn.execute("""
+                DELETE FROM ignored_duplicates
+                WHERE path1 NOT IN (SELECT path FROM files)
+                   OR path2 NOT IN (SELECT path FROM files)
+            """)
+            pruned_stale_duplicates = cur.rowcount
+
+        # 4. Clean orphaned thumbnails in cache dir
+        if clean_orphaned_thumbnails and thumb_dir.exists():
+            cur = conn.execute("SELECT path, mtime, size FROM files")
+            valid_thumb_names = set()
+            for r in cur.fetchall():
+                p, m, s = r["path"], r["mtime"], r["size"]
+                k1 = f"{p}_{m}_{s}"
+                h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
+                valid_thumb_names.add(f"thumb_{h1}.jpg")
+                k2 = p
+                h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
+                valid_thumb_names.add(f"thumb_{h2}.jpg")
+
+            for t_file in thumb_dir.glob("thumb_*.jpg"):
+                if t_file.name not in valid_thumb_names:
+                    try:
+                        t_file.unlink(missing_ok=True)
+                        pruned_orphaned_thumbs += 1
+                    except OSError:
+                        pass
+
+        # 5. Invalidate duplicate cache
+        if "visual_duplicates_cache" in globals():
+            globals()["visual_duplicates_cache"]["timestamp"] = 0
+
+        # Update indexer totals
+        cur = conn.execute("SELECT COUNT(*) FROM files")
+        indexer_state["total_files"] = cur.fetchone()[0]
+        cur_folders = conn.execute("SELECT COUNT(*) FROM folders")
+        indexer_state["total_folders"] = cur_folders.fetchone()[0]
+
+        if pruned_folders > 0 or pruned_files > 0 or pruned_orphaned_thumbs > 0 or pruned_stale_duplicates > 0:
+            print(f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, and {pruned_stale_duplicates} stale duplicate records.")
+
+    except Exception as e:
+        print(f"Error in prune_stale_index_entries: {e}")
+    finally:
+        conn.close()
+
+    return {
+        "pruned_folders": pruned_folders,
+        "pruned_files": pruned_files,
+        "pruned_orphaned_thumbs": pruned_orphaned_thumbs,
+        "pruned_stale_duplicates": pruned_stale_duplicates,
+    }
+
 async def run_background_crawler():
     async with indexer_lock:
         indexer_state["status"] = "crawling"
         indexer_state["scanned_folders"] = 0
+        indexer_state["scanned_files"] = 0
         base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
         if not os.path.exists(base_dir):
             indexer_state["status"] = "idle"
@@ -543,19 +704,37 @@ async def run_background_crawler():
             indexer_state["total_folders"] = len(root_dirs)
 
             dirs_queue = list(root_dirs)
-            while dirs_queue:
-                folder = dirs_queue.pop(0)
-                indexer_state["current_folder"] = os.path.basename(folder)
-                
-                res = await asyncio.to_thread(index_folder, folder, base_dir)
-                indexer_state["scanned_folders"] += 1
+            visited_folders: Set[str] = set()
+            crawler_sem = asyncio.Semaphore(4)
 
-                if res.get("subfolders"):
-                    for sub in res["subfolders"]:
-                        dirs_queue.append(sub["path"])
-                        indexer_state["total_folders"] += 1
+            async def _crawl_single(folder_path: str):
+                async with crawler_sem:
+                    indexer_state["current_folder"] = os.path.basename(folder_path)
+                    res = await asyncio.to_thread(index_folder, folder_path, base_dir)
+                    indexer_state["scanned_folders"] += 1
+                    if isinstance(res, dict):
+                        indexer_state["scanned_files"] += res.get("file_count", 0)
+                    return res
+
+            while dirs_queue:
+                batch = []
+                while dirs_queue and len(batch) < 8:
+                    f = dirs_queue.pop(0)
+                    batch.append(f)
+                    visited_folders.add(os.path.realpath(f))
+
+                results = await asyncio.gather(*[_crawl_single(f) for f in batch], return_exceptions=True)
+                for res in results:
+                    if isinstance(res, dict) and res.get("subfolders"):
+                        for sub in res["subfolders"]:
+                            dirs_queue.append(sub["path"])
+                            indexer_state["total_folders"] += 1
 
                 await asyncio.sleep(0.04)
+
+            # Auto-prune stale entries, deleted folders & orphaned thumbnails
+            indexer_state["current_folder"] = "Pruning deleted folders & cache..."
+            await asyncio.to_thread(prune_stale_index_entries, base_dir, visited_folders, True)
 
             conn = get_db()
             cur = conn.execute("SELECT COUNT(*) FROM files")
@@ -896,31 +1075,95 @@ thumb_hash_state = {
 }
 
 async def thumb_hash_worker():
-    """Background worker that continuously computes 64-bit dHash for cached thumbnails."""
+    """Background worker that migrates and computes 64-bit DCT pHash for cached thumbnails."""
     await asyncio.sleep(4.0)
     concurrency_sem = asyncio.Semaphore(4)
+
+    # --------------------------------------------------------------------------
+    # Check if one-time pHash migration over local cached thumbnails is needed
+    # --------------------------------------------------------------------------
+    try:
+        conn = get_db()
+        try:
+            meta_row = conn.execute("SELECT value FROM db_meta WHERE key = 'phash_migration_complete'").fetchone()
+            is_migrated = bool(meta_row and meta_row[0] == "1")
+        finally:
+            conn.close()
+
+        if not is_migrated:
+            thumb_hash_state["status"] = "migrating"
+            conn = get_db()
+            try:
+                rows = conn.execute("SELECT path, name, mtime, size FROM files WHERE has_thumb = 1").fetchall()
+            finally:
+                conn.close()
+
+            total_m = len(rows)
+            thumb_hash_state["total_thumbnails"] = total_m
+            thumb_hash_state["hashed_count"] = 0
+            thumb_hash_state["pending_count"] = total_m
+            thumb_hash_state["percent"] = 0.0
+
+            def hash_task(r):
+                tpath = get_thumbnail_cache_path(r["path"], mtime=r["mtime"], size=r["size"])
+                ph = compute_thumbnail_phash(tpath)
+                return (ph if ph else "no_thumb", r["path"])
+
+            chunk_size = 500
+            for start_idx in range(0, total_m, chunk_size):
+                chunk = rows[start_idx : start_idx + chunk_size]
+                loop = asyncio.get_running_loop()
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    updates = await loop.run_in_executor(pool, lambda: list(map(hash_task, chunk)))
+
+                conn = get_db()
+                try:
+                    with conn:
+                        conn.executemany("UPDATE files SET thumb_hash = ? WHERE path = ?", updates)
+                finally:
+                    conn.close()
+
+                thumb_hash_state["hashed_count"] = min(total_m, start_idx + len(chunk))
+                thumb_hash_state["pending_count"] = max(0, total_m - thumb_hash_state["hashed_count"])
+                thumb_hash_state["percent"] = round((thumb_hash_state["hashed_count"] / total_m * 100.0), 1) if total_m > 0 else 100.0
+                await asyncio.sleep(0.01)
+
+            conn = get_db()
+            try:
+                with conn:
+                    conn.execute("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')")
+            finally:
+                conn.close()
+
+            visual_duplicates_cache["timestamp"] = 0
+            thumb_hash_state["status"] = "idle"
+            thumb_hash_state["percent"] = 100.0
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        print(f"Error during pHash migration in thumb_hash_worker: {e}")
 
     async def hash_single_thumb(row) -> tuple:
         async with concurrency_sem:
             fpath = row["path"]
             thumb_hash_state["current_file"] = row["name"]
             tpath = get_thumbnail_cache_path(fpath, mtime=row["mtime"], size=row["size"])
-            dh = await asyncio.to_thread(compute_thumbnail_dhash, tpath)
+            dh = await asyncio.to_thread(compute_thumbnail_phash, tpath)
             return fpath, dh
 
     while True:
         try:
             conn = get_db()
             try:
-                tot_row = conn.execute("SELECT COUNT(*) FROM files WHERE has_thumb = 1").fetchone()
+                tot_row = conn.execute("SELECT COUNT(*) FROM files WHERE type = 'video' AND has_thumb = 1").fetchone()
                 tot_thumbs = tot_row[0] if tot_row else 0
 
-                hashed_row = conn.execute("SELECT COUNT(*) FROM files WHERE has_thumb = 1 AND thumb_hash IS NOT NULL AND thumb_hash != ''").fetchone()
+                hashed_row = conn.execute("SELECT COUNT(*) FROM files WHERE type = 'video' AND has_thumb = 1 AND thumb_hash IS NOT NULL AND thumb_hash != ''").fetchone()
                 hashed_thumbs = hashed_row[0] if hashed_row else 0
 
                 pending_rows = conn.execute("""
                     SELECT path, name, mtime, size FROM files 
-                    WHERE has_thumb = 1 AND (thumb_hash IS NULL OR thumb_hash = '')
+                    WHERE type = 'video' AND has_thumb = 1 AND (thumb_hash IS NULL OR thumb_hash = '')
                     ORDER BY size DESC
                     LIMIT 100
                 """).fetchall()
@@ -1296,6 +1539,485 @@ async def webp_converter_worker():
         except Exception as e:
             print(f"Error in webp_converter_worker: {e}")
             await asyncio.sleep(5.0)
+
+
+# ==============================================================================
+# Library Folder Snapshot Backup & Restore Manager
+# Saves a clean snapshot of SQLite DB + uncompressed thumbnails.tar + config
+# directly into <LIBRARY_DIR>/.media_library_backup/ to eliminate redundant work
+# ==============================================================================
+
+library_backup_state = {
+    "status": "idle",  # "idle" | "backing_up" | "restoring" | "error"
+    "progress_percent": 100.0,
+    "current_step": "Idle",
+    "last_backup_time": None,
+    "last_backup_str": "",
+    "backup_exists": False,
+    "file_count": 0,
+    "folder_count": 0,
+    "thumb_count": 0,
+    "total_size_bytes": 0,
+    "total_size_formatted": "0 B",
+    "backup_path": "",
+    "error_message": None,
+}
+library_backup_lock = asyncio.Lock()
+
+
+def get_library_backup_dir() -> Path:
+    if LIBRARY_BACKUP_DIR:
+        return Path(LIBRARY_BACKUP_DIR).resolve()
+    base = state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    return Path(base).resolve() / LIBRARY_BACKUP_SUBDIR
+
+
+def get_existing_backup_meta() -> Optional[Dict[str, Any]]:
+    try:
+        meta_file = get_library_backup_dir() / "backup_meta.json"
+        if meta_file.exists() and meta_file.stat().st_size > 0:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[Library Backup] Error reading backup metadata: {e}")
+    return None
+
+
+def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> Dict[str, Any]:
+    """
+    Creates a clean snapshot of SQLite DB, bundles thumbnails into an uncompressed tar,
+    copies config.json, and writes metadata. Uses local staging and atomic file replacement
+    to ensure safety across rclone/FUSE network mounts.
+    """
+    bck_dir = get_library_backup_dir()
+    try:
+        if not bck_dir.parent.exists():
+            return {
+                "success": False,
+                "error": f"Destination parent directory {bck_dir.parent} does not exist or is unmounted."
+            }
+        bck_dir.mkdir(parents=True, exist_ok=True)
+        BACKUP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return {"success": False, "error": f"Failed to access library backup directory: {e}"}
+
+    stage_db = BACKUP_STAGING_DIR / f"temp_db_{uuid.uuid4().hex[:8]}.db"
+    stage_tar = BACKUP_STAGING_DIR / f"temp_thumbs_{uuid.uuid4().hex[:8]}.tar"
+
+    try:
+        if progress_cb:
+            progress_cb("Creating SQLite snapshot...", 10.0)
+
+        # 1. Safe SQLite snapshot via VACUUM INTO (or fallback to online backup API)
+        if stage_db.exists():
+            stage_db.unlink()
+
+        conn = get_db()
+        try:
+            clean_stage_db_path = str(stage_db).replace("'", "''")
+            conn.execute(f"VACUUM INTO '{clean_stage_db_path}'")
+        except Exception as e:
+            if stage_db.exists():
+                try:
+                    stage_db.unlink()
+                except OSError:
+                    pass
+            dst_conn = sqlite3.connect(str(stage_db))
+            with dst_conn:
+                conn.backup(dst_conn)
+            dst_conn.close()
+        finally:
+            conn.close()
+
+        # Query counts from snapshotted DB
+        chk_conn = sqlite3.connect(str(stage_db))
+        try:
+            db_file_count = chk_conn.execute("SELECT count(*) FROM files").fetchone()[0]
+            db_folder_count = chk_conn.execute("SELECT count(*) FROM folders").fetchone()[0]
+        except Exception:
+            db_file_count = 0
+            db_folder_count = 0
+        finally:
+            chk_conn.close()
+
+        db_size = stage_db.stat().st_size
+
+        if progress_cb:
+            progress_cb("Packaging thumbnails into archive...", 25.0)
+
+        # 2. Bundle thumbnails into uncompressed tar archive
+        if stage_tar.exists():
+            stage_tar.unlink()
+
+        thumb_files = list(THUMBNAIL_CACHE_DIR.glob("thumb_*.jpg")) if THUMBNAIL_CACHE_DIR.exists() else []
+        thumb_count = len(thumb_files)
+
+        with tarfile.open(str(stage_tar), "w") as tar:
+            for idx, tf in enumerate(thumb_files):
+                tar.add(tf, arcname=tf.name)
+                if progress_cb and idx % 2500 == 0 and thumb_count > 0:
+                    pct = 25.0 + (idx / thumb_count) * 45.0
+                    progress_cb(f"Archiving thumbnail {idx:,}/{thumb_count:,}...", pct)
+
+        tar_size = stage_tar.stat().st_size
+
+        if progress_cb:
+            progress_cb("Writing database snapshot to library...", 75.0)
+
+        # 3. Transfer database to library folder atomically
+        target_db = bck_dir / "backup_index.db"
+        target_db_tmp = bck_dir / f"backup_index.{uuid.uuid4().hex[:6]}.tmp"
+        shutil.copyfile(str(stage_db), str(target_db_tmp))
+        os.replace(str(target_db_tmp), str(target_db))
+
+        if progress_cb:
+            progress_cb("Writing thumbnail archive to library...", 85.0)
+
+        # 4. Transfer thumbnails.tar to library folder atomically
+        target_tar = bck_dir / "thumbnails.tar"
+        target_tar_tmp = bck_dir / f"thumbnails.{uuid.uuid4().hex[:6]}.tmp"
+        shutil.copyfile(str(stage_tar), str(target_tar_tmp))
+        os.replace(str(target_tar_tmp), str(target_tar))
+
+        # 5. Transfer config.json if exists
+        target_cfg = bck_dir / "config.json"
+        if CONFIG_FILE.exists():
+            target_cfg_tmp = bck_dir / f"config.{uuid.uuid4().hex[:6]}.tmp"
+            shutil.copyfile(str(CONFIG_FILE), str(target_cfg_tmp))
+            os.replace(str(target_cfg_tmp), str(target_cfg))
+
+        if progress_cb:
+            progress_cb("Saving backup metadata...", 95.0)
+
+        # 6. Save backup metadata
+        total_size = db_size + tar_size
+        meta = {
+            "timestamp": time.time(),
+            "datetime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "file_count": db_file_count,
+            "folder_count": db_folder_count,
+            "thumb_count": thumb_count,
+            "db_size_bytes": db_size,
+            "thumbnails_tar_size_bytes": tar_size,
+            "total_size_bytes": total_size,
+            "total_size_formatted": format_size(total_size),
+            "app_version": "2.0.0",
+        }
+        meta_tmp = bck_dir / f"backup_meta.{uuid.uuid4().hex[:6]}.tmp"
+        with open(meta_tmp, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+        os.replace(str(meta_tmp), str(bck_dir / "backup_meta.json"))
+
+        # Update in-memory state
+        library_backup_state["last_backup_time"] = meta["timestamp"]
+        library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"]))
+        library_backup_state["backup_exists"] = True
+        library_backup_state["file_count"] = db_file_count
+        library_backup_state["folder_count"] = db_folder_count
+        library_backup_state["thumb_count"] = thumb_count
+        library_backup_state["total_size_bytes"] = total_size
+        library_backup_state["total_size_formatted"] = meta["total_size_formatted"]
+        library_backup_state["backup_path"] = str(bck_dir)
+        library_backup_state["error_message"] = None
+
+        if progress_cb:
+            progress_cb("Backup complete", 100.0)
+
+        return {"success": True, "meta": meta}
+
+    except Exception as e:
+        print(f"[Library Backup] Exception during backup: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        if stage_db.exists():
+            try:
+                stage_db.unlink()
+            except OSError:
+                pass
+        if stage_tar.exists():
+            try:
+                stage_tar.unlink()
+            except OSError:
+                pass
+
+
+def _restore_library_backup_sync(progress_cb=None) -> Dict[str, Any]:
+    """
+    Restores SQLite database, extracts thumbnails.tar, and restores config.json
+    from <LIBRARY_DIR>/.media_library_backup/ into local server storage.
+    """
+    bck_dir = get_library_backup_dir()
+    source_db = bck_dir / "backup_index.db"
+    source_tar = bck_dir / "thumbnails.tar"
+    source_cfg = bck_dir / "config.json"
+
+    if not bck_dir.exists() or not source_db.exists() or source_db.stat().st_size == 0:
+        return {"success": False, "error": f"No valid database backup found in {bck_dir}"}
+
+    try:
+        if progress_cb:
+            progress_cb("Restoring SQLite index database...", 15.0)
+
+        # 1. Clean existing WAL files
+        for ext in ["-wal", "-shm", "-journal"]:
+            wal_p = Path(str(DB_PATH) + ext)
+            if wal_p.exists():
+                try:
+                    wal_p.unlink()
+                except OSError:
+                    pass
+
+        # Copy database snapshot
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp_target_db = DB_PATH.with_suffix(f".{uuid.uuid4().hex[:6]}.restore.tmp")
+        shutil.copyfile(str(source_db), str(tmp_target_db))
+        os.replace(str(tmp_target_db), str(DB_PATH))
+
+        # Re-initialize DB schema / indexes to ensure consistency
+        init_backup_db()
+
+        # 2. Extract thumbnails if archive exists
+        if source_tar.exists() and source_tar.stat().st_size > 0:
+            if progress_cb:
+                progress_cb("Extracting thumbnails archive...", 40.0)
+            THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(str(source_tar), "r") as tar:
+                tar.extractall(str(THUMBNAIL_CACHE_DIR))
+
+        # 3. Restore config if present
+        if source_cfg.exists() and source_cfg.stat().st_size > 0:
+            if progress_cb:
+                progress_cb("Restoring configuration...", 85.0)
+            try:
+                shutil.copyfile(str(source_cfg), str(CONFIG_FILE))
+                loaded = load_config_data()
+                state["recent_destinations"] = loaded.get("recent_destinations", [])
+                if loaded.get("source_dir"):
+                    state["source_dir"] = loaded.get("source_dir")
+            except Exception as e:
+                print(f"[Library Restore] Warning restoring config: {e}")
+
+        if progress_cb:
+            progress_cb("Synchronizing thumbnail cache...", 90.0)
+
+        # 4. Synchronize thumbnail DB flags
+        sync_thumbnail_db_cache()
+
+        # 5. Refresh crawler & thumbnail stats
+        conn = get_db()
+        try:
+            cur_files = conn.execute("SELECT count(*) FROM files").fetchone()[0]
+            cur_folders = conn.execute("SELECT count(*) FROM folders").fetchone()[0]
+            cur_thumbs = conn.execute("SELECT count(*) FROM files WHERE has_thumb = 1").fetchone()[0]
+            indexer_state["total_files"] = cur_files
+            indexer_state["total_folders"] = cur_folders
+            thumbnail_worker_state["total_files"] = cur_files
+            thumbnail_worker_state["cached_count"] = cur_thumbs
+            thumbnail_worker_state["pending_count"] = max(0, cur_files - cur_thumbs)
+            thumbnail_worker_state["percent"] = round((cur_thumbs / cur_files * 100.0), 1) if cur_files > 0 else 100.0
+        finally:
+            conn.close()
+
+        # Update meta state
+        meta = get_existing_backup_meta() or {}
+        library_backup_state["last_backup_time"] = meta.get("timestamp")
+        library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"])) if meta.get("timestamp") else ""
+        library_backup_state["backup_exists"] = True
+        library_backup_state["file_count"] = meta.get("file_count", cur_files)
+        library_backup_state["folder_count"] = meta.get("folder_count", cur_folders)
+        library_backup_state["thumb_count"] = meta.get("thumb_count", cur_thumbs)
+        library_backup_state["total_size_bytes"] = meta.get("total_size_bytes", 0)
+        library_backup_state["total_size_formatted"] = meta.get("total_size_formatted", "0 B")
+        library_backup_state["backup_path"] = str(bck_dir)
+        library_backup_state["error_message"] = None
+
+        if progress_cb:
+            progress_cb("Restore complete", 100.0)
+
+        return {"success": True, "restored_files": cur_files, "restored_thumbs": cur_thumbs}
+
+    except Exception as e:
+        print(f"[Library Restore] Exception during restore: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def check_and_auto_restore_library_backup() -> bool:
+    """
+    Called on startup before init_backup_db:
+    If local database is missing or empty, or local thumbnail cache is empty,
+    checks if a library backup exists in <LIBRARY_DIR>/.media_library_backup and restores it.
+    """
+    bck_dir = get_library_backup_dir()
+    bck_db = bck_dir / "backup_index.db"
+    bck_tar = bck_dir / "thumbnails.tar"
+
+    if not bck_dir.exists() or not bck_db.exists() or bck_db.stat().st_size == 0:
+        return False
+
+    need_db_restore = False
+    if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
+        need_db_restore = True
+    else:
+        try:
+            conn = sqlite3.connect(str(DB_PATH), timeout=5.0)
+            cnt = conn.execute("SELECT count(*) FROM files").fetchone()[0]
+            conn.close()
+            if cnt == 0:
+                need_db_restore = True
+        except Exception:
+            need_db_restore = True
+
+    need_thumb_restore = False
+    if bck_tar.exists() and bck_tar.stat().st_size > 0:
+        if not THUMBNAIL_CACHE_DIR.exists():
+            need_thumb_restore = True
+        else:
+            try:
+                local_thumb_count = len(list(THUMBNAIL_CACHE_DIR.glob("thumb_*.jpg")))
+                if local_thumb_count < 10:
+                    need_thumb_restore = True
+            except Exception:
+                pass
+
+    if need_db_restore or need_thumb_restore:
+        print(f"[Auto-Restore] Missing/empty local data (db={need_db_restore}, thumbs={need_thumb_restore}). Auto-restoring from {bck_dir}...")
+        res = _restore_library_backup_sync()
+        if res.get("success"):
+            print(f"[Auto-Restore] Successfully restored {res.get('restored_files', 0)} files and {res.get('restored_thumbs', 0)} thumbnails from library backup!")
+            return True
+        else:
+            print(f"[Auto-Restore] Failed to auto-restore: {res.get('error')}")
+            return False
+
+    # Database and thumbnails are already present locally; populate backup state metadata
+    meta = get_existing_backup_meta()
+    if meta:
+        library_backup_state["last_backup_time"] = meta.get("timestamp")
+        library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"])) if meta.get("timestamp") else ""
+        library_backup_state["backup_exists"] = True
+        library_backup_state["file_count"] = meta.get("file_count", 0)
+        library_backup_state["folder_count"] = meta.get("folder_count", 0)
+        library_backup_state["thumb_count"] = meta.get("thumb_count", 0)
+        library_backup_state["total_size_bytes"] = meta.get("total_size_bytes", 0)
+        library_backup_state["total_size_formatted"] = meta.get("total_size_formatted", "0 B")
+        library_backup_state["backup_path"] = str(bck_dir)
+
+    return False
+
+
+async def run_library_backup_async():
+    if library_backup_lock.locked():
+        return
+    async with library_backup_lock:
+        library_backup_state["status"] = "backing_up"
+        library_backup_state["progress_percent"] = 5.0
+        library_backup_state["current_step"] = "Preparing snapshot..."
+        library_backup_state["error_message"] = None
+
+        def progress_cb(step: str, pct: float):
+            library_backup_state["current_step"] = step
+            library_backup_state["progress_percent"] = round(pct, 1)
+
+        try:
+            res = await asyncio.to_thread(_create_library_backup_sync, progress_cb)
+            if not res.get("success"):
+                library_backup_state["status"] = "error"
+                library_backup_state["error_message"] = res.get("error", "Unknown error")
+            else:
+                library_backup_state["status"] = "idle"
+                library_backup_state["progress_percent"] = 100.0
+                library_backup_state["current_step"] = "Idle"
+        except Exception as e:
+            library_backup_state["status"] = "error"
+            library_backup_state["error_message"] = str(e)
+            print(f"[Library Backup] Async backup failed: {e}")
+
+
+async def run_library_restore_async():
+    if library_backup_lock.locked():
+        return
+    async with library_backup_lock:
+        library_backup_state["status"] = "restoring"
+        library_backup_state["progress_percent"] = 5.0
+        library_backup_state["current_step"] = "Restoring database and thumbnails..."
+        library_backup_state["error_message"] = None
+
+        def progress_cb(step: str, pct: float):
+            library_backup_state["current_step"] = step
+            library_backup_state["progress_percent"] = round(pct, 1)
+
+        try:
+            res = await asyncio.to_thread(_restore_library_backup_sync, progress_cb)
+            if not res.get("success"):
+                library_backup_state["status"] = "error"
+                library_backup_state["error_message"] = res.get("error", "Unknown error")
+            else:
+                library_backup_state["status"] = "idle"
+                library_backup_state["progress_percent"] = 100.0
+                library_backup_state["current_step"] = "Idle"
+        except Exception as e:
+            library_backup_state["status"] = "error"
+            library_backup_state["error_message"] = str(e)
+            print(f"[Library Restore] Async restore failed: {e}")
+
+
+async def library_backup_watcher():
+    """
+    Watches background tasks: When crawler, thumbnail worker, duplicate hash worker,
+    and webp worker transition to idle and remain idle for a cooldown period (60s),
+    checks if new files/thumbnails exist and triggers an automatic snapshot backup to the library folder.
+    """
+    await asyncio.sleep(20.0)
+    idle_since: Optional[float] = None
+    DEBOUNCE_COOLDOWN = 60.0
+
+    while True:
+        try:
+            await asyncio.sleep(10.0)
+
+            is_crawler_busy = (indexer_state.get("status") == "crawling")
+            is_thumb_busy = (thumbnail_worker_state.get("status") == "generating")
+            is_hash_busy = (duplicate_hash_state.get("status") == "hashing")
+            is_webp_busy = (webp_worker_state.get("status") == "converting")
+
+            all_idle = not (is_crawler_busy or is_thumb_busy or is_hash_busy or is_webp_busy)
+
+            if not all_idle:
+                idle_since = None
+                continue
+
+            if idle_since is None:
+                idle_since = time.time()
+                continue
+
+            if time.time() - idle_since >= DEBOUNCE_COOLDOWN:
+                conn = get_db()
+                try:
+                    cur_files = conn.execute("SELECT count(*) FROM files").fetchone()[0]
+                    cur_thumbs = conn.execute("SELECT count(*) FROM files WHERE has_thumb = 1").fetchone()[0]
+                finally:
+                    conn.close()
+
+                last_meta = get_existing_backup_meta()
+                needs_backup = False
+
+                if last_meta is None and cur_files > 0:
+                    needs_backup = True
+                elif last_meta is not None:
+                    meta_files = last_meta.get("file_count", 0)
+                    meta_thumbs = last_meta.get("thumb_count", 0)
+                    if abs(cur_files - meta_files) > 0 or abs(cur_thumbs - meta_thumbs) > 0:
+                        needs_backup = True
+
+                if needs_backup and library_backup_state["status"] == "idle":
+                    print(f"[Backup Watcher] Settled idle for {DEBOUNCE_COOLDOWN}s with changes detected (files: {cur_files}, thumbs: {cur_thumbs}). Creating library backup...")
+                    idle_since = time.time()
+                    asyncio.create_task(run_library_backup_async())
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Backup Watcher] Error in loop: {e}")
+            await asyncio.sleep(15.0)
 
 
 def search_backup_index(query: str, type_filter: Optional[str] = None, sort_by: str = "name_asc", limit: int = 150) -> List[Dict[str, Any]]:
@@ -1967,10 +2689,25 @@ def enqueue_pretranscode_for_source(source_dir: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Expand AnyIO worker threadpool capacity for high-concurrency FUSE I/O and streaming
+    try:
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        limiter.total_tokens = 100
+    except Exception as e:
+        print(f"Warning: could not set AnyIO thread limiter: {e}")
+
+    # Auto-restore database and thumbnails from library backup if local data is missing or empty
+    try:
+        auto_restored = await asyncio.to_thread(check_and_auto_restore_library_backup)
+        if auto_restored:
+            print("[Auto-Restore] Successfully restored database and thumbnails from library backup.")
+    except Exception as e:
+        print(f"[Auto-Restore] Warning during startup auto-restore check: {e}")
+
     # Initialize SQLite backup index
     init_backup_db()
 
-    # Start background transfer, pre-transcode, index crawler, thumbnail, duplicate hash, thumb hash, and webp workers
+    # Start background transfer, pre-transcode, index crawler, thumbnail, duplicate hash, thumb hash, webp, and backup watcher workers
     worker_task = asyncio.create_task(transfer_worker())
     transcode_task = asyncio.create_task(transcode_worker())
     crawler_task = asyncio.create_task(run_background_crawler())
@@ -1978,6 +2715,7 @@ async def lifespan(app: FastAPI):
     dup_hash_task = asyncio.create_task(duplicate_hash_worker())
     thumb_hash_task = asyncio.create_task(thumb_hash_worker())
     webp_task = asyncio.create_task(webp_converter_worker())
+    backup_watcher_task = asyncio.create_task(library_backup_watcher())
 
     # Auto-enqueue pre-transcoding for configured source directory
     if state["source_dir"] and os.path.isdir(state["source_dir"]):
@@ -1991,10 +2729,26 @@ async def lifespan(app: FastAPI):
     dup_hash_task.cancel()
     thumb_hash_task.cancel()
     webp_task.cancel()
+    backup_watcher_task.cancel()
     try:
-        await asyncio.gather(worker_task, transcode_task, crawler_task, thumb_task, dup_hash_task, thumb_hash_task, webp_task, return_exceptions=True)
+        await asyncio.gather(
+            worker_task, transcode_task, crawler_task, thumb_task,
+            dup_hash_task, thumb_hash_task, webp_task, backup_watcher_task,
+            return_exceptions=True
+        )
     except asyncio.CancelledError:
         pass
+
+    # Perform clean snapshot backup to library folder on clean shutdown
+    try:
+        print("[Shutdown] Creating clean snapshot backup in library folder...")
+        sh_res = await asyncio.to_thread(_create_library_backup_sync, is_shutdown=True)
+        if sh_res.get("success"):
+            print("[Shutdown] Clean snapshot backup created successfully.")
+        else:
+            print(f"[Shutdown] Warning creating library backup: {sh_res.get('error')}")
+    except Exception as e:
+        print(f"[Shutdown] Warning: Exception creating clean library backup on shutdown: {e}")
 
 # Initialize FastAPI app
 app = FastAPI(title="Video Sorter", version="2.0.0", lifespan=lifespan)
@@ -2832,10 +3586,14 @@ async def stream_video(file_id: str, request: Request):
         raise HTTPException(status_code=400, detail="No source directory configured")
 
     file_path = resolve_video_path(file_id)
-    if not file_path or not os.path.exists(file_path):
+    if not file_path:
         raise HTTPException(status_code=404, detail="Video file not found")
 
-    file_size = os.path.getsize(file_path)
+    file_exists = await asyncio.to_thread(os.path.exists, file_path)
+    if not file_exists:
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    file_size = await asyncio.to_thread(os.path.getsize, file_path)
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type:
         mime_type = "video/mp4"
@@ -2852,9 +3610,17 @@ async def stream_video(file_id: str, request: Request):
 
     if not range_header:
         async def full_file_sender():
-            with open(file_path, "rb") as f:
-                while chunk := f.read(1024 * 1024):
+            def _open():
+                return open(file_path, "rb")
+            f = await asyncio.to_thread(_open)
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(f.read, 1024 * 1024)
+                    if not chunk:
+                        break
                     yield chunk
+            finally:
+                await asyncio.to_thread(f.close)
 
         headers = {
             "Content-Length": str(file_size),
@@ -2882,17 +3648,24 @@ async def stream_video(file_id: str, request: Request):
 
         content_length = end - start + 1
 
-        def chunk_generator(filepath, start_pos, length):
-            with open(filepath, "rb") as f:
+        async def chunk_generator(filepath, start_pos, length):
+            def _open_and_seek():
+                f = open(filepath, "rb")
                 f.seek(start_pos)
+                return f
+
+            f = await asyncio.to_thread(_open_and_seek)
+            try:
                 bytes_left = length
                 while bytes_left > 0:
-                    read_size = min(bytes_left, 64 * 1024)
-                    data = f.read(read_size)
+                    read_size = min(bytes_left, 128 * 1024)
+                    data = await asyncio.to_thread(f.read, read_size)
                     if not data:
                         break
                     bytes_left -= len(data)
                     yield data
+            finally:
+                await asyncio.to_thread(f.close)
 
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
@@ -2991,68 +3764,61 @@ def validate_backup_path(path_str: Optional[str]) -> str:
     return norm_path
 
 
-async def generate_thumbnail(file_path: str, is_video: bool, update_db: bool = False) -> Optional[Path]:
-    thumb_path = get_thumbnail_cache_path(file_path)
+thumbnail_generation_sem = asyncio.Semaphore(4)
+
+def get_thumbnail_path_fast(file_path: str, mtime: Optional[float] = None, size: Optional[int] = None) -> Path:
+    if mtime is not None and size is not None:
+        return get_thumbnail_cache_path(file_path, mtime=mtime, size=size)
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT mtime, size FROM files WHERE path = ?", (file_path,)).fetchone()
+        conn.close()
+        if row and row["mtime"] is not None and row["size"] is not None:
+            return get_thumbnail_cache_path(file_path, mtime=row["mtime"], size=row["size"])
+    except Exception:
+        pass
+    return get_thumbnail_cache_path(file_path)
+
+
+async def generate_thumbnail(file_path: str, is_video: bool, update_db: bool = False, mtime: Optional[float] = None, size: Optional[int] = None) -> Optional[Path]:
+    thumb_path = await asyncio.to_thread(get_thumbnail_path_fast, file_path, mtime, size)
     if thumb_path.exists() and thumb_path.stat().st_size > 0:
         return thumb_path
 
-    temp_thumb = thumb_path.with_suffix(f".{uuid.uuid4().hex[:8]}.tmp.jpg")
-    try:
-        if is_video:
-            cmd = [
-                "nice", "-n", "15",
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-ss", "00:00:01",
-                "-i", file_path,
-                "-an", "-sn", "-dn",
-                "-frames:v", "1",
-                "-update", "1",
-                "-vf", "scale=360:-2:flags=fast_bilinear",
-                "-q:v", "3",
-                str(temp_thumb)
-            ]
-        else:
-            cmd = [
-                "nice", "-n", "15",
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-i", file_path,
-                "-frames:v", "1",
-                "-update", "1",
-                "-vf", "scale=360:-2:flags=fast_bilinear",
-                "-q:v", "3",
-                str(temp_thumb)
-            ]
+    async with thumbnail_generation_sem:
+        # Re-check inside semaphore in case another worker just finished generating it
+        if thumb_path.exists() and thumb_path.stat().st_size > 0:
+            return thumb_path
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
-        )
+        temp_thumb = thumb_path.with_suffix(f".{uuid.uuid4().hex[:8]}.tmp.jpg")
         try:
-            await asyncio.wait_for(proc.communicate(), timeout=8.0)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-                await proc.communicate()
-            except Exception:
-                pass
+            if is_video:
+                cmd = [
+                    "nice", "-n", "15",
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", "00:00:01",
+                    "-i", file_path,
+                    "-an", "-sn", "-dn",
+                    "-frames:v", "1",
+                    "-update", "1",
+                    "-vf", "scale=360:-2:flags=fast_bilinear",
+                    "-q:v", "3",
+                    str(temp_thumb)
+                ]
+            else:
+                cmd = [
+                    "nice", "-n", "15",
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", file_path,
+                    "-frames:v", "1",
+                    "-update", "1",
+                    "-vf", "scale=360:-2:flags=fast_bilinear",
+                    "-q:v", "3",
+                    str(temp_thumb)
+                ]
 
-        # If video is shorter than 1s or ss 1 failed, retry at 00:00:00
-        if is_video and (proc.returncode != 0 or not temp_thumb.exists() or temp_thumb.stat().st_size == 0):
-            retry_cmd = [
-                "nice", "-n", "15",
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-ss", "00:00:00",
-                "-i", file_path,
-                "-an", "-sn", "-dn",
-                "-frames:v", "1",
-                "-update", "1",
-                "-vf", "scale=360:-2:flags=fast_bilinear",
-                "-q:v", "3",
-                str(temp_thumb)
-            ]
             proc = await asyncio.create_subprocess_exec(
-                *retry_cmd,
+                *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )
@@ -3065,25 +3831,55 @@ async def generate_thumbnail(file_path: str, is_video: bool, update_db: bool = F
                 except Exception:
                     pass
 
-        if temp_thumb.exists() and temp_thumb.stat().st_size > 0:
-            temp_thumb.rename(thumb_path)
-            if update_db:
+            # If video is shorter than 1s or ss 1 failed, retry at 00:00:00
+            if is_video and (proc.returncode != 0 or not temp_thumb.exists() or temp_thumb.stat().st_size == 0):
+                retry_cmd = [
+                    "nice", "-n", "15",
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", "00:00:00",
+                    "-i", file_path,
+                    "-an", "-sn", "-dn",
+                    "-frames:v", "1",
+                    "-update", "1",
+                    "-vf", "scale=360:-2:flags=fast_bilinear",
+                    "-q:v", "3",
+                    str(temp_thumb)
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *retry_cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
                 try:
-                    conn = get_db()
-                    with conn:
-                        conn.execute("UPDATE files SET has_thumb = 1 WHERE path = ?", (file_path,))
-                    conn.close()
-                except Exception:
+                    await asyncio.wait_for(proc.communicate(), timeout=8.0)
+                except asyncio.TimeoutError:
+                    try:
+                        proc.kill()
+                        await proc.communicate()
+                    except Exception:
+                        pass
+
+            if temp_thumb.exists() and temp_thumb.stat().st_size > 0:
+                temp_thumb.rename(thumb_path)
+                if update_db:
+                    def _update_thumb_status():
+                        try:
+                            conn = get_db()
+                            with conn:
+                                conn.execute("UPDATE files SET has_thumb = 1 WHERE path = ?", (file_path,))
+                            conn.close()
+                        except Exception:
+                            pass
+                    await asyncio.to_thread(_update_thumb_status)
+                return thumb_path
+        except Exception as e:
+            print(f"Thumbnail generation error for {file_path}: {e}")
+        finally:
+            if temp_thumb.exists():
+                try:
+                    temp_thumb.unlink()
+                except OSError:
                     pass
-            return thumb_path
-    except Exception as e:
-        print(f"Thumbnail generation error for {file_path}: {e}")
-    finally:
-        if temp_thumb.exists():
-            try:
-                temp_thumb.unlink()
-            except OSError:
-                pass
     return None
 
 
@@ -3207,7 +4003,7 @@ def enqueue_all_transcodes_for_backup() -> List[Dict[str, Any]]:
 
 
 @app.get("/api/backup/browse")
-async def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[bool] = Query(False)):
+def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[bool] = Query(False)):
     base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
     try:
         target_path = validate_backup_path(path)
@@ -3277,7 +4073,7 @@ async def browse_backup_library(path: Optional[str] = Query(None), refresh: Opti
                             })
                 items.sort(key=lambda x: x["name"].lower())
                 return items
-            root_folders = await asyncio.to_thread(_scan_roots)
+            root_folders = _scan_roots()
         except Exception as e:
             print(f"Error reading root folders from {base_dir}: {e}")
 
@@ -3331,7 +4127,7 @@ async def browse_backup_library(path: Optional[str] = Query(None), refresh: Opti
 
         # If not indexed yet or force refresh requested, index it on demand!
         if not is_indexed:
-            await asyncio.to_thread(index_folder, target_path, base_dir)
+            index_folder(target_path, base_dir)
             conn = get_db()
             try:
                 f_cur = conn.execute("SELECT * FROM files WHERE folder_path = ? ORDER BY LOWER(name) ASC", (target_path,))
@@ -3397,7 +4193,23 @@ async def browse_backup_library(path: Optional[str] = Query(None), refresh: Opti
 @app.api_route("/api/backup/thumbnail", methods=["GET", "HEAD"])
 async def get_backup_thumbnail(path: str = Query(...), request: Request = None):
     real_path = validate_backup_path(path)
-    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+
+    # Fast path: Check local thumbnail cache without hitting remote FUSE mount
+    thumb_path = await asyncio.to_thread(get_thumbnail_path_fast, real_path)
+    if thumb_path.exists() and thumb_path.stat().st_size > 0:
+        if request and request.method == "HEAD":
+            return Response(
+                status_code=200,
+                headers={"Content-Length": str(thumb_path.stat().st_size), "Content-Type": "image/jpeg"}
+            )
+        return FileResponse(
+            str(thumb_path),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"}
+        )
+
+    file_exists = await asyncio.to_thread(os.path.exists, real_path)
+    if not file_exists:
         raise HTTPException(status_code=404, detail="File not found")
 
     ext = os.path.splitext(real_path)[1].lower()
@@ -3422,10 +4234,11 @@ async def get_backup_thumbnail(path: str = Query(...), request: Request = None):
     if is_img:
         mime, _ = mimetypes.guess_type(real_path)
         mime_type = mime or "image/jpeg"
+        f_size = await asyncio.to_thread(os.path.getsize, real_path)
         if request and request.method == "HEAD":
             return Response(
                 status_code=200,
-                headers={"Content-Length": str(os.path.getsize(real_path)), "Content-Type": mime_type}
+                headers={"Content-Length": str(f_size), "Content-Type": mime_type}
             )
         return FileResponse(
             real_path,
@@ -3439,12 +4252,13 @@ async def get_backup_thumbnail(path: str = Query(...), request: Request = None):
 @app.api_route("/api/backup/media", methods=["GET", "HEAD"])
 async def stream_backup_media(path: str = Query(...), request: Request = None):
     real_path = validate_backup_path(path)
-    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+    file_exists = await asyncio.to_thread(os.path.exists, real_path)
+    if not file_exists:
         raise HTTPException(status_code=404, detail="File not found")
 
     ext = os.path.splitext(real_path)[1].lower()
     mime_type, _ = mimetypes.guess_type(real_path)
-    file_size = os.path.getsize(real_path)
+    file_size = await asyncio.to_thread(os.path.getsize, real_path)
 
     if ext in IMAGE_EXTENSIONS:
         if not mime_type:
@@ -3474,9 +4288,17 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
     range_header = request.headers.get("Range")
     if not range_header:
         async def full_file_sender():
-            with open(real_path, "rb") as f:
-                while chunk := f.read(1024 * 1024):
+            def _open():
+                return open(real_path, "rb")
+            f = await asyncio.to_thread(_open)
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(f.read, 1024 * 1024)
+                    if not chunk:
+                        break
                     yield chunk
+            finally:
+                await asyncio.to_thread(f.close)
 
         headers = {
             "Content-Length": str(file_size),
@@ -3503,17 +4325,24 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
 
         content_length = end - start + 1
 
-        def chunk_generator(filepath, start_pos, length):
-            with open(filepath, "rb") as f:
+        async def chunk_generator(filepath, start_pos, length):
+            def _open_and_seek():
+                f = open(filepath, "rb")
                 f.seek(start_pos)
+                return f
+
+            f = await asyncio.to_thread(_open_and_seek)
+            try:
                 bytes_left = length
                 while bytes_left > 0:
-                    read_size = min(bytes_left, 64 * 1024)
-                    data = f.read(read_size)
+                    read_size = min(bytes_left, 128 * 1024)
+                    data = await asyncio.to_thread(f.read, read_size)
                     if not data:
                         break
                     bytes_left -= len(data)
                     yield data
+            finally:
+                await asyncio.to_thread(f.close)
 
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
@@ -3528,7 +4357,7 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
         )
     except Exception as e:
         print(f"Error streaming range for {real_path}: {e}")
-        raise HTTPException(status_code=500, detail="Error streaming media")
+        raise HTTPException(status_code=500, detail="Error streaming video range")
 
 
 @app.post("/api/backup/rename")
@@ -3608,7 +4437,7 @@ async def backup_enqueue_transcode(req: BackupTranscodeRequest):
 
 
 @app.get("/api/backup/transcode/summary")
-async def get_backup_transcode_summary():
+def get_backup_transcode_summary():
     conn = get_db()
     try:
         cur = conn.execute(
@@ -3732,11 +4561,21 @@ async def get_backup_index_status():
     finally:
         conn.close()
 
+    is_crawling = (indexer_state.get("status") == "crawling")
+    scanned_f = indexer_state.get("scanned_folders", 0)
+    total_f = indexer_state.get("total_folders", 0) if is_crawling else (total_folders or indexer_state.get("total_folders", 0))
+    if is_crawling and total_f > 0:
+        pct = min(99.0, max(1.0, round(scanned_f / total_f * 100.0, 1)))
+    else:
+        pct = 100.0
+
     return {
         "status": indexer_state["status"],
-        "scanned_folders": indexer_state["scanned_folders"],
-        "total_folders": total_folders or indexer_state["total_folders"],
+        "scanned_folders": scanned_f,
+        "total_folders": total_f,
+        "scanned_files": indexer_state.get("scanned_files", 0),
         "total_files": total_files,
+        "percent": pct,
         "current_folder": indexer_state["current_folder"],
         "last_synced": indexer_state["last_synced"],
     }
@@ -3750,8 +4589,16 @@ async def trigger_backup_sync():
     return {"success": True, "message": "Index crawl started", "status": "crawling"}
 
 
+@app.post("/api/backup/index/prune")
+async def trigger_backup_prune():
+    base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
+    stats = await asyncio.to_thread(prune_stale_index_entries, base_dir, None, True)
+    return {"success": True, "stats": stats}
+
+
+
 @app.get("/api/backup/search")
-async def search_backup(
+def search_backup(
     q: str = Query(..., min_length=1),
     type: Optional[str] = Query(None),
     sort: Optional[str] = Query("name_asc"),
@@ -3969,6 +4816,61 @@ async def start_duplicate_hash():
     return {"success": True, "is_paused": False, "message": "Duplicate hash verification active"}
 
 # ==============================================================================
+# Library Folder Backup Endpoints
+# ==============================================================================
+
+@app.get("/api/backup/library-backup/status")
+async def get_library_backup_status():
+    bck_dir = get_library_backup_dir()
+    meta = get_existing_backup_meta()
+    if meta:
+        library_backup_state["last_backup_time"] = meta.get("timestamp")
+        library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"])) if meta.get("timestamp") else ""
+        library_backup_state["backup_exists"] = True
+        library_backup_state["file_count"] = meta.get("file_count", 0)
+        library_backup_state["folder_count"] = meta.get("folder_count", 0)
+        library_backup_state["thumb_count"] = meta.get("thumb_count", 0)
+        library_backup_state["total_size_bytes"] = meta.get("total_size_bytes", 0)
+        library_backup_state["total_size_formatted"] = meta.get("total_size_formatted", "0 B")
+        library_backup_state["backup_path"] = str(bck_dir)
+
+    return {
+        "status": library_backup_state["status"],
+        "progress_percent": library_backup_state["progress_percent"],
+        "current_step": library_backup_state["current_step"],
+        "last_backup_time": library_backup_state["last_backup_time"],
+        "last_backup_str": library_backup_state["last_backup_str"],
+        "backup_exists": library_backup_state["backup_exists"],
+        "file_count": library_backup_state["file_count"],
+        "folder_count": library_backup_state["folder_count"],
+        "thumb_count": library_backup_state["thumb_count"],
+        "total_size_bytes": library_backup_state["total_size_bytes"],
+        "total_size_formatted": library_backup_state["total_size_formatted"],
+        "backup_path": str(bck_dir),
+        "error_message": library_backup_state["error_message"]
+    }
+
+@app.post("/api/backup/library-backup/save")
+async def trigger_save_library_backup(background_tasks: BackgroundTasks):
+    if library_backup_state["status"] in ("backing_up", "restoring"):
+        return JSONResponse(
+            status_code=409,
+            content={"success": False, "message": f"Operation already in progress: {library_backup_state['status']}"}
+        )
+    background_tasks.add_task(run_library_backup_async)
+    return {"success": True, "message": "Library backup started in background"}
+
+@app.post("/api/backup/library-backup/restore")
+async def trigger_restore_library_backup(background_tasks: BackgroundTasks):
+    if library_backup_state["status"] in ("backing_up", "restoring"):
+        return JSONResponse(
+            status_code=409,
+            content={"success": False, "message": f"Operation already in progress: {library_backup_state['status']}"}
+        )
+    background_tasks.add_task(run_library_restore_async)
+    return {"success": True, "message": "Library restore started in background"}
+
+# ==============================================================================
 # Visual Duplicate Detection & Clustering
 # ==============================================================================
 visual_duplicates_cache = {
@@ -3980,13 +4882,13 @@ visual_duplicates_cache = {
     "ignored_count": 0,
 }
 
-def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int = 4) -> Dict[str, Any]:
+def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int = 2) -> Dict[str, Any]:
     global visual_duplicates_cache
 
     base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
     conn = get_db()
     try:
-        cur_hash_count_row = conn.execute("SELECT COUNT(*) FROM files WHERE thumb_hash IS NOT NULL AND thumb_hash != 'no_thumb'").fetchone()
+        cur_hash_count_row = conn.execute("SELECT COUNT(*) FROM files WHERE type = 'video' AND thumb_hash IS NOT NULL AND thumb_hash NOT IN ('no_thumb', 'blank_thumb')").fetchone()
         cur_hash_count = cur_hash_count_row[0] if cur_hash_count_row else 0
         cur_ignored_count_row = conn.execute("SELECT COUNT(*) FROM ignored_duplicates").fetchone()
         cur_ignored_count = cur_ignored_count_row[0] if cur_ignored_count_row else 0
@@ -4013,10 +4915,13 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
         rows = conn.execute("""
             SELECT path, name, folder_path, type, ext, size, size_formatted, mtime, has_thumb, quick_hash, thumb_hash
             FROM files
-            WHERE thumb_hash IS NOT NULL AND thumb_hash != 'no_thumb' AND length(thumb_hash) = 16
+            WHERE type = 'video'
+              AND thumb_hash IS NOT NULL 
+              AND thumb_hash NOT IN ('no_thumb', 'blank_thumb') 
+              AND length(thumb_hash) = 16
         """).fetchall()
 
-        ignored_rows = conn.execute("SELECT path1, path2 FROM ignored_duplicates").fetchall()
+        ignored_rows = conn.execute("SELECT path1, path2 FROM ignored_duplicates WHERE match_type = 'visual'").fetchall()
         ignored_pairs = {(r["path1"], r["path2"]) for r in ignored_rows}
     finally:
         conn.close()
@@ -4027,6 +4932,11 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
         "f0f0f0f0f0f0f0f0",
         "f0f0f0f0f0f8f0f0",
         "0f0f0f0f0f0f0f0f",
+        "a55aa55aa55aa55a",
+        "0000000000000006",
+        "0000000000000004",
+        "0000000000000002",
+        "0000000000000001",
     }
     items = []
     for r in rows:
@@ -4056,38 +4966,21 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
         }
 
     masks_shifts = [
-        (0x1FFF, 0),
-        (0x1FFF, 13),
-        (0x1FFF, 26),
-        (0x1FFF, 39),
-        (0x0FFF, 52),
+        (0xFFFF, 0),
+        (0xFFFF, 16),
+        (0xFFFF, 32),
+        (0xFFFF, 48),
     ]
-    buckets = [defaultdict(list) for _ in range(5)]
+    buckets = [defaultdict(list) for _ in range(4)]
     for idx, (_, h_val) in enumerate(items):
         for b, (mask, shift) in enumerate(masks_shifts):
             buckets[b][(h_val >> shift) & mask].append(idx)
 
-    parent = list(range(n))
-    def find_p(i):
-        root = i
-        while parent[root] != root:
-            root = parent[root]
-        curr = i
-        while curr != root:
-            nxt = parent[curr]
-            parent[curr] = root
-            curr = nxt
-        return root
-
-    def union_p(i, j):
-        ri, rj = find_p(i), find_p(j)
-        if ri != rj:
-            parent[ri] = rj
-
     checked_pairs = set()
+    adj = defaultdict(set)
     pair_distances = {}
 
-    for b in range(5):
+    for b in range(4):
         for chunk_val, idxs in buckets[b].items():
             if len(idxs) > 1:
                 for i in range(len(idxs)):
@@ -4105,21 +4998,31 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
 
                         diff = (items[u][1] ^ items[v][1]).bit_count()
                         if diff <= max_distance:
-                            union_p(u, v)
+                            adj[u].add(v)
+                            adj[v].add(u)
                             pair_distances[(u, v)] = diff
 
-    components = defaultdict(list)
-    for i in range(n):
-        root = find_p(i)
-        components[root].append(i)
+    # Complete-linkage / maximal clique clustering: every pair in the cluster must have distance <= max_distance
+    remaining = set(adj.keys())
+    cliques = []
+    while remaining:
+        pivot = max(remaining, key=lambda x: (len(adj[x] & remaining), score_duplicate_file(items[x][0]["name"], items[x][0]["folder_path"], items[x][0]["mtime"] or 0, items[x][0]["size"] or 0)))
+        candidates = adj[pivot] & remaining
+        current_clique = [pivot]
+        for c in sorted(candidates, key=lambda x: (len(adj[x] & candidates), score_duplicate_file(items[x][0]["name"], items[x][0]["folder_path"], items[x][0]["mtime"] or 0, items[x][0]["size"] or 0)), reverse=True):
+            if all(c in adj[member] for member in current_clique):
+                current_clique.append(c)
+        if len(current_clique) >= 2:
+            cliques.append(current_clique)
+            for m in current_clique:
+                remaining.remove(m)
+        else:
+            remaining.remove(pivot)
 
     all_groups = []
     total_reclaimable = 0
 
-    for root_idx, member_idxs in components.items():
-        if len(member_idxs) < 2:
-            continue
-
+    for root_idx, member_idxs in enumerate(cliques):
         file_list = []
         for idx in member_idxs:
             fr = items[idx][0]
@@ -4162,13 +5065,14 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
             f["is_recommended"] = (i == best_idx)
 
         group_diffs = [
-            pair_distances[(u, v)]
-            for u in member_idxs
-            for v in member_idxs
-            if (u, v) in pair_distances
+            pair_distances[(min(u, v), max(u, v))]
+            for i, u in enumerate(member_idxs)
+            for v in member_idxs[i + 1:]
+            if (min(u, v), max(u, v)) in pair_distances
         ]
+        max_dist = max(group_diffs) if group_diffs else 0
         min_dist = min(group_diffs) if group_diffs else 0
-        similarity = round((1.0 - (min_dist / 64.0)) * 100.0, 1)
+        similarity = round((1.0 - (max_dist / 64.0)) * 100.0, 1)
 
         reclaim_bytes = sum(f["size"] for i, f in enumerate(file_list) if i != best_idx)
         total_reclaimable += reclaim_bytes
@@ -4180,6 +5084,7 @@ def find_visual_duplicates(limit: int = 50, offset: int = 0, max_distance: int =
             "match_type": "visual",
             "similarity": similarity,
             "min_distance": min_dist,
+            "max_distance": max_dist,
             "files_count": len(file_list),
             "reclaimable_bytes": reclaim_bytes,
             "reclaimable_formatted": format_size(reclaim_bytes),
@@ -4217,7 +5122,7 @@ def get_backup_duplicates(
     limit: int = Query(50),
     offset: int = Query(0)
 ):
-    """Returns grouped duplicate files from SQLite backup index (by size/content, exact name, or visual thumbnail match)."""
+    """Returns grouped duplicate files from SQLite backup index (by size/content or visual thumbnail match)."""
     if mode == "visual":
         return find_visual_duplicates(limit=limit, offset=offset)
 
@@ -4226,249 +5131,114 @@ def get_backup_duplicates(
     groups = []
     ignored_pairs = get_ignored_pairs_set()
 
-    if mode == "content":
-        total_stats = conn.execute("""
-            SELECT COUNT(*), SUM(waste) FROM (
-                SELECT size, (COUNT(*) - 1) * size as waste
-                FROM files
-                WHERE size > 0
-                GROUP BY size
-                HAVING COUNT(*) > 1
-            )
-        """).fetchone()
-        total_groups = total_stats[0] if total_stats and total_stats[0] else 0
-        total_reclaimable = total_stats[1] if total_stats and total_stats[1] else 0
+    all_candidate_groups = []
+    hash_rows = conn.execute("""
+        SELECT size, quick_hash, COUNT(*) as cnt
+        FROM files
+        WHERE size > 0 
+          AND quick_hash IS NOT NULL 
+          AND quick_hash != '' 
+          AND quick_hash != 'unhashable'
+        GROUP BY size, quick_hash
+        HAVING cnt > 1
+        ORDER BY size DESC
+    """).fetchall()
 
-        size_rows = conn.execute("""
-            SELECT size, COUNT(*) as cnt
+    for h_row in hash_rows:
+        target_size = h_row["size"]
+        target_hash = h_row["quick_hash"]
+        file_rows = conn.execute("""
+            SELECT path, name, folder_path, type, ext, size, size_formatted, mtime, has_thumb, quick_hash
             FROM files
-            WHERE size > 0
-            GROUP BY size
-            HAVING cnt > 1
-            ORDER BY size DESC
-            LIMIT ? OFFSET ?
-        """, (limit, offset)).fetchall()
+            WHERE size = ? AND quick_hash = ?
+            ORDER BY mtime DESC
+        """, (target_size, target_hash)).fetchall()
 
-        for s_row in size_rows:
-            target_size = s_row["size"]
-            file_rows = conn.execute("""
-                SELECT path, name, folder_path, type, ext, size, size_formatted, mtime, has_thumb, quick_hash
-                FROM files
-                WHERE size = ?
-                ORDER BY mtime DESC
-            """, (target_size,)).fetchall()
-
-            file_list = []
-            for fr in file_rows:
-                fpath = fr["path"]
-                is_vid = (fr["type"] == "video")
-                ext = fr["ext"]
-                is_native = ext in NATIVE_EXTENSIONS
-                media_url = (
-                    f"/api/backup/media?path={urllib.parse.quote(fpath)}"
-                    if (not is_vid or is_native)
-                    else f"/api/backup/transcode_stream?path={urllib.parse.quote(fpath)}"
-                )
-                try:
-                    rel_folder = os.path.relpath(fr["folder_path"], base_dir)
-                except Exception:
-                    rel_folder = fr["folder_path"]
-                if rel_folder == ".":
-                    rel_folder = "Root"
-
-                file_list.append({
-                    "path": fpath,
-                    "name": fr["name"],
-                    "folder_path": fr["folder_path"],
-                    "folder_display": rel_folder,
-                    "type": fr["type"],
-                    "ext": ext,
-                    "size": fr["size"],
-                    "size_formatted": fr["size_formatted"],
-                    "mtime": fr["mtime"],
-                    "has_thumb": bool(fr["has_thumb"]),
-                    "quick_hash": fr["quick_hash"],
-                    "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
-                    "media_url": media_url,
-                    "score": score_duplicate_file(fr["name"], fr["folder_path"], fr["mtime"] or 0, fr["size"] or 0),
-                })
-
-            if file_list:
-                # If all pairs in this set are ignored, skip this group
-                if len(file_list) >= 2 and ignored_pairs:
-                    all_ignored = True
-                    for i in range(len(file_list)):
-                        for j in range(i + 1, len(file_list)):
-                            pair = normalize_pair(file_list[i]["path"], file_list[j]["path"])
-                            if pair not in ignored_pairs:
-                                all_ignored = False
-                                break
-                        if not all_ignored:
-                            break
-                    if all_ignored:
-                        continue
-
-                best_idx = max(range(len(file_list)), key=lambda i: file_list[i]["score"])
-                for i, f in enumerate(file_list):
-                    f["is_recommended"] = (i == best_idx)
-
-                known_hashes = [f["quick_hash"] for f in file_list if f["quick_hash"] and f["quick_hash"] != "unhashable"]
-                is_verified_match = (len(known_hashes) == len(file_list) and len(set(known_hashes)) == 1)
-
-                groups.append({
-                    "group_id": f"size_{target_size}",
-                    "size": target_size,
-                    "size_formatted": format_size(target_size),
-                    "match_type": "content",
-                    "files_count": len(file_list),
-                    "reclaimable_bytes": (len(file_list) - 1) * target_size,
-                    "reclaimable_formatted": format_size((len(file_list) - 1) * target_size),
-                    "suggested_keep_index": best_idx,
-                    "is_verified_match": is_verified_match,
-                    "files": file_list,
-                })
-
-        # Overall verified duplicate statistics across all candidate files
-        cand_rows = conn.execute("""
-            SELECT size, quick_hash FROM files 
-            WHERE size > 0 AND size IN (SELECT size FROM files WHERE size > 0 GROUP BY size HAVING COUNT(*) > 1)
-        """).fetchall()
-        size_cand_map = defaultdict(list)
-        for c_sz, c_qh in cand_rows:
-            size_cand_map[c_sz].append(c_qh)
-        
-        verified_match_groups = 0
-        verified_reclaimable_bytes = 0
-        for c_sz, qh_list in size_cand_map.items():
-            if len(qh_list) > 1 and len(set(qh_list)) == 1 and qh_list[0] and qh_list[0] != "unhashable":
-                verified_match_groups += 1
-                verified_reclaimable_bytes += c_sz * (len(qh_list) - 1)
-
-        conn.close()
-        return {
-            "success": True,
-            "mode": "content",
-            "total_groups": total_groups,
-            "reclaimable_bytes": total_reclaimable,
-            "reclaimable_formatted": format_size(total_reclaimable),
-            "verified_groups_count": verified_match_groups,
-            "verified_reclaimable_bytes": verified_reclaimable_bytes,
-            "verified_reclaimable_formatted": format_size(verified_reclaimable_bytes),
-            "groups": groups,
-            "limit": limit,
-            "offset": offset,
-        }
-
-    else:
-        # Exact Name Mode
-        total_stats = conn.execute("""
-            SELECT COUNT(*) FROM (
-                SELECT name
-                FROM files
-                GROUP BY name
-                HAVING COUNT(*) > 1
+        file_list = []
+        for fr in file_rows:
+            fpath = fr["path"]
+            is_vid = (fr["type"] == "video")
+            ext = fr["ext"]
+            is_native = ext in NATIVE_EXTENSIONS
+            media_url = (
+                f"/api/backup/media?path={urllib.parse.quote(fpath)}"
+                if (not is_vid or is_native)
+                else f"/api/backup/transcode_stream?path={urllib.parse.quote(fpath)}"
             )
-        """).fetchone()
-        total_groups = total_stats[0] if total_stats and total_stats[0] else 0
+            try:
+                rel_folder = os.path.relpath(fr["folder_path"], base_dir)
+            except Exception:
+                rel_folder = fr["folder_path"]
+            if rel_folder == ".":
+                rel_folder = "Root"
 
-        name_rows = conn.execute("""
-            SELECT name, COUNT(*) as cnt
-            FROM files
-            GROUP BY name
-            HAVING cnt > 1
-            ORDER BY cnt DESC, name ASC
-            LIMIT ? OFFSET ?
-        """, (limit, offset)).fetchall()
+            file_list.append({
+                "path": fpath,
+                "name": fr["name"],
+                "folder_path": fr["folder_path"],
+                "folder_display": rel_folder,
+                "type": fr["type"],
+                "ext": ext,
+                "size": fr["size"],
+                "size_formatted": fr["size_formatted"],
+                "mtime": fr["mtime"],
+                "has_thumb": bool(fr["has_thumb"]),
+                "quick_hash": fr["quick_hash"],
+                "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
+                "media_url": media_url,
+                "score": score_duplicate_file(fr["name"], fr["folder_path"], fr["mtime"] or 0, fr["size"] or 0),
+            })
 
-        total_reclaimable = 0
-        for n_row in name_rows:
-            target_name = n_row["name"]
-            file_rows = conn.execute("""
-                SELECT path, name, folder_path, type, ext, size, size_formatted, mtime, has_thumb, quick_hash
-                FROM files
-                WHERE name = ?
-                ORDER BY size DESC, mtime DESC
-            """, (target_name,)).fetchall()
-
-            file_list = []
-            for fr in file_rows:
-                fpath = fr["path"]
-                is_vid = (fr["type"] == "video")
-                ext = fr["ext"]
-                is_native = ext in NATIVE_EXTENSIONS
-                media_url = (
-                    f"/api/backup/media?path={urllib.parse.quote(fpath)}"
-                    if (not is_vid or is_native)
-                    else f"/api/backup/transcode_stream?path={urllib.parse.quote(fpath)}"
-                )
-                try:
-                    rel_folder = os.path.relpath(fr["folder_path"], base_dir)
-                except Exception:
-                    rel_folder = fr["folder_path"]
-                if rel_folder == ".":
-                    rel_folder = "Root"
-
-                file_list.append({
-                    "path": fpath,
-                    "name": fr["name"],
-                    "folder_path": fr["folder_path"],
-                    "folder_display": rel_folder,
-                    "type": fr["type"],
-                    "ext": ext,
-                    "size": fr["size"],
-                    "size_formatted": fr["size_formatted"],
-                    "mtime": fr["mtime"],
-                    "has_thumb": bool(fr["has_thumb"]),
-                    "quick_hash": fr["quick_hash"],
-                    "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
-                    "media_url": media_url,
-                    "score": score_duplicate_file(fr["name"], fr["folder_path"], fr["mtime"] or 0, fr["size"] or 0),
-                })
-
-            if file_list:
-                # If all pairs in this set are ignored, skip this group
-                if len(file_list) >= 2 and ignored_pairs:
-                    all_ignored = True
-                    for i in range(len(file_list)):
-                        for j in range(i + 1, len(file_list)):
-                            pair = normalize_pair(file_list[i]["path"], file_list[j]["path"])
-                            if pair not in ignored_pairs:
-                                all_ignored = False
-                                break
-                        if not all_ignored:
+        if file_list:
+            # If all pairs in this set are ignored, skip this group
+            if len(file_list) >= 2 and ignored_pairs:
+                all_ignored = True
+                for i in range(len(file_list)):
+                    for j in range(i + 1, len(file_list)):
+                        pair = normalize_pair(file_list[i]["path"], file_list[j]["path"])
+                        if pair not in ignored_pairs:
+                            all_ignored = False
                             break
-                    if all_ignored:
-                        continue
+                    if not all_ignored:
+                        break
+                if all_ignored:
+                    continue
 
-                best_idx = max(range(len(file_list)), key=lambda i: file_list[i]["score"])
-                for i, f in enumerate(file_list):
-                    f["is_recommended"] = (i == best_idx)
+            best_idx = max(range(len(file_list)), key=lambda i: file_list[i]["score"])
+            for i, f in enumerate(file_list):
+                f["is_recommended"] = (i == best_idx)
 
-                reclaim_bytes = sum(f["size"] for f in file_list[1:])
-                total_reclaimable += reclaim_bytes
-                groups.append({
-                    "group_id": f"name_{hashlib.md5(target_name.encode('utf-8')).hexdigest()[:12]}",
-                    "name": target_name,
-                    "size_formatted": file_list[0]["size_formatted"],
-                    "match_type": "name",
-                    "files_count": len(file_list),
-                    "reclaimable_bytes": reclaim_bytes,
-                    "reclaimable_formatted": format_size(reclaim_bytes),
-                    "suggested_keep_index": best_idx,
-                    "files": file_list,
-                })
+            all_candidate_groups.append({
+                "group_id": f"content_{target_size}_{target_hash[:12]}",
+                "size": target_size,
+                "size_formatted": format_size(target_size),
+                "match_type": "content",
+                "files_count": len(file_list),
+                "reclaimable_bytes": (len(file_list) - 1) * target_size,
+                "reclaimable_formatted": format_size((len(file_list) - 1) * target_size),
+                "suggested_keep_index": best_idx,
+                "is_verified_match": True,
+                "files": file_list,
+            })
 
-        conn.close()
-        return {
-            "success": True,
-            "mode": "name",
-            "total_groups": total_groups,
-            "reclaimable_bytes": total_reclaimable,
-            "reclaimable_formatted": format_size(total_reclaimable),
-            "groups": groups,
-            "limit": limit,
-            "offset": offset,
-        }
+    conn.close()
+    total_groups = len(all_candidate_groups)
+    total_reclaimable = sum(g["reclaimable_bytes"] for g in all_candidate_groups)
+    groups = all_candidate_groups[offset : offset + limit]
+
+    return {
+        "success": True,
+        "mode": "content",
+        "total_groups": total_groups,
+        "reclaimable_bytes": total_reclaimable,
+        "reclaimable_formatted": format_size(total_reclaimable),
+        "verified_groups_count": total_groups,
+        "verified_reclaimable_bytes": total_reclaimable,
+        "verified_reclaimable_formatted": format_size(total_reclaimable),
+        "groups": groups,
+        "limit": limit,
+        "offset": offset,
+    }
 
 @app.get("/api/backup/duplicates/thumb-hash-status")
 async def get_thumb_hash_status():
@@ -4499,9 +5269,25 @@ def ignore_duplicate_match(req: DuplicateIgnoreRequest):
         conn.executemany("INSERT OR IGNORE INTO ignored_duplicates (path1, path2, match_type, created_at) VALUES (?, ?, ?, ?)", pairs)
     conn.close()
 
-    # Invalidate visual cache
-    visual_duplicates_cache["timestamp"] = 0
-    return {"success": True, "message": f"Ignored {len(pairs)} pair(s) successfully."}
+    # Update in-memory visual cache directly so cache remains valid and fast
+    ignored_paths_set = set(req.paths)
+    if visual_duplicates_cache.get("groups"):
+        remaining_groups = []
+        reclaimable_sub = 0
+        for g in visual_duplicates_cache["groups"]:
+            g_paths = {f["path"] for f in g.get("files", [])}
+            if g_paths.intersection(ignored_paths_set):
+                reclaimable_sub += g.get("reclaimable_bytes", 0)
+            else:
+                remaining_groups.append(g)
+        visual_duplicates_cache["groups"] = remaining_groups
+        visual_duplicates_cache["total_groups"] = len(remaining_groups)
+        visual_duplicates_cache["total_reclaimable"] = max(0, visual_duplicates_cache.get("total_reclaimable", 0) - reclaimable_sub)
+        visual_duplicates_cache["ignored_count"] = visual_duplicates_cache.get("ignored_count", 0) + len(pairs)
+    else:
+        visual_duplicates_cache["timestamp"] = 0
+
+    return {"success": True, "message": f"Ignored {len(pairs)} pair(s) successfully.", "pairs_count": len(pairs)}
 
 @app.get("/api/backup/duplicates/ignored")
 def get_ignored_duplicates(limit: int = 100, offset: int = 0):
@@ -4509,6 +5295,9 @@ def get_ignored_duplicates(limit: int = 100, offset: int = 0):
     try:
         tot_row = conn.execute("SELECT COUNT(*) FROM ignored_duplicates").fetchone()
         total = tot_row[0] if tot_row else 0
+        if limit <= 0:
+            return {"success": True, "total": total, "items": [], "limit": limit, "offset": offset}
+
         rows = conn.execute("""
             SELECT id, path1, path2, match_type, created_at
             FROM ignored_duplicates
@@ -4657,15 +5446,18 @@ def autodelete_verified_duplicates():
         rows = conn.execute("""
             SELECT path, name, folder_path, size, size_formatted, mtime, quick_hash
             FROM files
-            WHERE size > 0 AND size IN (SELECT size FROM files WHERE size > 0 GROUP BY size HAVING COUNT(*) > 1)
+            WHERE size > 0 
+              AND quick_hash IS NOT NULL 
+              AND quick_hash != '' 
+              AND quick_hash != 'unhashable'
             ORDER BY size DESC
         """).fetchall()
     finally:
         conn.close()
 
-    size_groups = defaultdict(list)
+    hash_groups = defaultdict(list)
     for r in rows:
-        size_groups[r["size"]].append(dict(r))
+        hash_groups[(r["size"], r["quick_hash"])].append(dict(r))
 
     resolved_groups = 0
     deleted_count = 0
@@ -4673,17 +5465,9 @@ def autodelete_verified_duplicates():
     deleted_paths = []
     failed_deletions = []
 
-    for sz, files in size_groups.items():
+    for (sz, qh), files in hash_groups.items():
         if len(files) < 2:
             continue
-
-        # Check if all files in this group have a calculated quick_hash and are 100% identical
-        hashes = [f.get("quick_hash") for f in files]
-        if any(not h or h == "unhashable" for h in hashes):
-            continue  # Skip pending or unhashable candidate sets
-
-        if len(set(hashes)) != 1:
-            continue  # Hash mismatch! Different videos with same size; preserve for manual review!
 
         # Score files to determine which copy to keep
         scored = []

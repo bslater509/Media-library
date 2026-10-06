@@ -170,6 +170,35 @@
                   <span class="text-slate-600 italic">No transfers yet</span>
                 </div>
               </div>
+            <!-- SECTION: Library Indexer -->
+            <div class="flex flex-col gap-2 border-t border-slate-800 pt-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>🗄️</span> Library Indexer
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="indexSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="triggerIndexSyncDropdownBtn" title="Scan destination directory and re-index all folders/files" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
+                    <span id="indexSyncDropdownIcon">↻</span>
+                    <span>Sync</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Index Progress Box -->
+              <div id="indexProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="indexCurrentFolder">All folders indexed</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="indexPercentText">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="indexProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="indexCountsText">0 / 0 folders</span>
+                  <span id="indexFilesText" class="text-slate-500">0 files</span>
+                </div>
+              </div>
             </div>
 
             <!-- SECTION 3: Thumbnail Generator -->

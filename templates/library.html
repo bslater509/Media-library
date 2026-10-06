@@ -205,6 +205,37 @@
               </button>
             </div>
 
+            <!-- SECTION: Library Indexer -->
+            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>🗄️</span> Library Indexer
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="indexSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="triggerIndexSyncDropdownBtn" title="Scan destination directory and re-index all folders/files" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
+                    <span id="indexSyncDropdownIcon">↻</span>
+                    <span>Sync</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Index Progress Box -->
+              <div id="indexProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="indexCurrentFolder">All folders indexed</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="indexPercentText">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="indexProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="indexCountsText">0 / 0 folders</span>
+                  <span id="indexFilesText" class="text-slate-500">0 files</span>
+                </div>
+              </div>
+            </div>
+
             <!-- SECTION 2: Thumbnail Generator -->
             <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
               <div class="flex items-center justify-between gap-2">
@@ -291,6 +322,40 @@
                 <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
                   <span id="webpCountsText">0 / 0 converted</span>
                   <span id="webpSavedText" class="text-emerald-400 font-semibold">Saved: 0 B</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION: Library Backup to Folder -->
+            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                  <span>💾</span> Library Backup to Folder
+                </h4>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span id="libBackupSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  <button id="triggerLibBackupBtn" title="Snapshot database and bundle thumbnails to library folder" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
+                    <span id="libBackupIcon">↻</span>
+                    <span>Backup Now</span>
+                  </button>
+                  <button id="triggerLibRestoreBtn" title="Restore database and thumbnails from library backup" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
+                    <span>Restore</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Backup Progress / Status Box -->
+              <div id="libBackupProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="libBackupStatusText">Checking backup status...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="libBackupPercentText">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="libBackupProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="libBackupCountsText">No backup yet</span>
+                  <span id="libBackupSizeText" class="text-slate-500">0 MB</span>
                 </div>
               </div>
             </div>
@@ -640,16 +705,13 @@
 
         <!-- Mode Switcher Tabs: Row 2 (Full width) on mobile, Center/Right (order-2) on desktop -->
         <div class="col-span-2 row-start-2 md:order-2 w-full md:w-auto">
-          <div class="grid grid-cols-3 w-full md:w-auto bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[11px] font-medium text-center">
-            <button id="dupModeContentBtn" class="px-2 sm:px-2.5 py-1 rounded-lg bg-amber-600 text-white font-semibold shadow-sm transition text-center truncate font-medium">
+          <div class="grid grid-cols-2 w-full md:w-auto bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[11px] font-medium text-center">
+            <button id="dupModeContentBtn" class="px-2.5 sm:px-3 py-1 rounded-lg bg-amber-600 text-white font-semibold shadow-sm transition text-center truncate font-medium">
               <span class="sm:hidden">Size & Hash</span><span class="hidden sm:inline">Content (Size & Hash)</span>
             </button>
-            <button id="dupModeNameBtn" class="px-2 sm:px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition text-center truncate font-medium">
-              <span class="sm:hidden">Filename</span><span class="hidden sm:inline">Exact Filename</span>
-            </button>
-            <button id="dupModeVisualBtn" class="px-2 sm:px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center gap-1 text-center truncate font-medium">
+            <button id="dupModeVisualBtn" class="px-2.5 sm:px-3 py-1 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center gap-1 text-center truncate font-medium">
               <i class="fa-solid fa-eye text-sky-400 shrink-0"></i>
-              <span class="sm:hidden">Visual</span><span class="hidden sm:inline">Visual (Thumbnail)</span>
+              <span class="sm:hidden">Visual</span><span class="hidden sm:inline">Visual (Videos)</span>
             </button>
           </div>
         </div>
@@ -778,6 +840,6 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script src="/static/library.js?v=12"></script>
+  <script src="/static/library.js?v=13"></script>
 </body>
 </html>

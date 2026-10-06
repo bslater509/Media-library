@@ -135,6 +135,16 @@ const webpProgressBar = document.getElementById("webpProgressBar");
 const webpCountsText = document.getElementById("webpCountsText");
 const webpSavedText = document.getElementById("webpSavedText");
 
+// Indexer UI
+const indexSummaryText = document.getElementById("indexSummaryText");
+const triggerIndexSyncDropdownBtn = document.getElementById("triggerIndexSyncDropdownBtn");
+const indexSyncDropdownIcon = document.getElementById("indexSyncDropdownIcon");
+const indexCurrentFolder = document.getElementById("indexCurrentFolder");
+const indexPercentText = document.getElementById("indexPercentText");
+const indexProgressBar = document.getElementById("indexProgressBar");
+const indexCountsText = document.getElementById("indexCountsText");
+const indexFilesText = document.getElementById("indexFilesText");
+
 // Mobile Thumb Bar Buttons
 const mobilePrevBtn = document.getElementById("mobilePrevBtn");
 const mobileSkipBtn = document.getElementById("mobileSkipBtn");
@@ -239,6 +249,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   startThumbnailPolling();
   startDuplicateHashPolling();
   startWebpPolling();
+  startBackgroundIndexPolling();
 });
 
 function showToast(message, type = "info", duration = 3000) {
@@ -1051,13 +1062,17 @@ function renderTranscodeUI() {
   // Update Combined Header Badge Text
   const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
   const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
-  const totalTasks = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0);
+  const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
+  const totalTasks = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0) + (isIndexing ? 1 : 0);
   if (totalTasks > 0) {
     transferBadgeBtn.classList.remove("hidden");
     if (state.totalPendingTranscodes > 0 && state.totalPendingTransfers > 0) {
       transferCountText.textContent = `${state.totalPendingTransfers} moving, ${state.totalPendingTranscodes} converting`;
     } else if (state.totalPendingTransfers > 0) {
       transferCountText.textContent = `${state.totalPendingTransfers} transferring`;
+    } else if (isIndexing) {
+      const pct = typeof state.latestIndexData.percent === "number" ? Math.round(state.latestIndexData.percent) : 0;
+      transferCountText.textContent = `Indexing ${pct}%`;
     } else if (state.totalPendingTranscodes > 0) {
       transferCountText.textContent = `${state.totalPendingTranscodes} converting`;
     } else if (isThumbGenerating) {
@@ -1318,6 +1333,105 @@ async function toggleWebpPause() {
   } catch (err) {
     console.error("Error toggling WebP pause:", err);
   }
+}
+
+function startBackgroundIndexPolling() {
+  if (state.indexPollTimer) clearTimeout(state.indexPollTimer);
+  pollIndexStatus();
+}
+
+async function pollIndexStatus() {
+  let nextDelay = 8000;
+  try {
+    const res = await fetch("/api/backup/index/status");
+    if (res.ok) {
+      const data = await res.json();
+      state.latestIndexData = data;
+      renderIndexUI(data);
+      if (data.status === "crawling") {
+        nextDelay = 1200;
+      }
+    }
+  } catch (err) {
+    // Silent catch
+  } finally {
+    clearTimeout(state.indexPollTimer);
+    state.indexPollTimer = setTimeout(pollIndexStatus, nextDelay);
+  }
+}
+
+function renderIndexUI(data) {
+  if (!data) return;
+  const isCrawling = data.status === "crawling";
+  const scanned = data.scanned_folders || 0;
+  const total = data.total_folders || 0;
+  const filesCount = data.total_files || 0;
+  const pct = typeof data.percent === "number" ? data.percent : (total > 0 ? (scanned / total * 100) : 100);
+
+  if (indexSummaryText) {
+    indexSummaryText.textContent = isCrawling ? "Indexing" : "Indexed";
+    indexSummaryText.className = isCrawling ? "text-[10px] text-amber-400 font-mono font-medium animate-pulse" : "text-[10px] text-emerald-400 font-mono";
+  }
+  if (triggerIndexSyncDropdownBtn) {
+    triggerIndexSyncDropdownBtn.disabled = isCrawling;
+    if (isCrawling) {
+      triggerIndexSyncDropdownBtn.classList.add("opacity-50", "pointer-events-none");
+    } else {
+      triggerIndexSyncDropdownBtn.classList.remove("opacity-50", "pointer-events-none");
+    }
+  }
+  if (indexSyncDropdownIcon) {
+    if (isCrawling) indexSyncDropdownIcon.classList.add("animate-spin");
+    else indexSyncDropdownIcon.classList.remove("animate-spin");
+  }
+  if (indexCurrentFolder) {
+    if (isCrawling && data.current_folder) {
+      indexCurrentFolder.textContent = `Scanning: ${data.current_folder}`;
+      indexCurrentFolder.title = data.current_folder;
+    } else if (isCrawling) {
+      indexCurrentFolder.textContent = "Scanning folders...";
+      indexCurrentFolder.title = "";
+    } else {
+      indexCurrentFolder.textContent = "All folders indexed";
+      indexCurrentFolder.title = "";
+    }
+  }
+  if (indexPercentText) {
+    indexPercentText.textContent = `${Math.min(100, Math.max(0, pct)).toFixed(0)}%`;
+  }
+  if (indexProgressBar) {
+    indexProgressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    if (isCrawling) {
+      indexProgressBar.className = "bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200";
+    } else {
+      indexProgressBar.className = "bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200";
+    }
+  }
+  if (indexCountsText) {
+    indexCountsText.textContent = `${scanned.toLocaleString()} / ${total.toLocaleString()} folders`;
+  }
+  if (indexFilesText) {
+    indexFilesText.textContent = `${filesCount.toLocaleString()} files`;
+  }
+
+  updateBackgroundBadge();
+}
+
+if (triggerIndexSyncDropdownBtn) {
+  triggerIndexSyncDropdownBtn.addEventListener("click", async () => {
+    try {
+      if (indexSyncDropdownIcon) indexSyncDropdownIcon.classList.add("animate-spin");
+      showToast("Starting library index scan...", "info");
+      const res = await fetch("/api/backup/index/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Background crawler started", "success");
+      }
+      pollIndexStatus();
+    } catch (e) {
+      showToast("Failed to trigger index sync: " + e.message, "error");
+    }
+  });
 }
 
 async function toggleTranscodePause() {
