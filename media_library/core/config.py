@@ -46,6 +46,15 @@ LIBRARY_BACKUP_SUBDIR = os.environ.get("LIBRARY_BACKUP_SUBDIR", ".media_library_
 LIBRARY_BACKUP_DIR = os.environ.get("LIBRARY_BACKUP_DIR", "").strip()
 BACKUP_STAGING_DIR = Path(os.environ.get("BACKUP_STAGING_DIR", DATA_DIR / "backup_staging")).resolve()
 BACKUP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+LIBRARY_BACKUP_AUTO_ENABLED = os.environ.get("LIBRARY_BACKUP_AUTO_ENABLED", "true").lower() in ("true", "1", "yes")
+LIBRARY_BACKUP_AUTO_INTERVAL_HOURS = float(os.environ.get("LIBRARY_BACKUP_AUTO_INTERVAL_HOURS", "6.0"))
+
+# ZIP staging and extraction cache configuration
+ZIP_STAGING_DIR = Path(os.environ.get("ZIP_STAGING_DIR", DATA_DIR / "zip_staging")).resolve()
+ZIP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+ZIP_CACHE_DIR = Path(os.environ.get("ZIP_CACHE_DIR", DATA_DIR / "cache" / "zips")).resolve()
+ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+ZIP_CACHE_MAX_SIZE_GB = float(os.environ.get("ZIP_CACHE_MAX_SIZE_GB", "5.0"))
 
 def detect_default_destination() -> str:
     env_dest = os.environ.get("LIBRARY_DIR", "").strip()

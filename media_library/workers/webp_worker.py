@@ -20,6 +20,7 @@ class WebPOptimizerWorker(BaseWorker):
         self.state: Dict[str, Any] = {
             "status": "idle",  # "idle" | "converting" | "paused" | "disabled"
             "total_images": 0,
+            "optimized_count": 0,
             "converted_count": 0,
             "skipped_count": 0,
             "pending_count": 0,
@@ -47,14 +48,21 @@ class WebPOptimizerWorker(BaseWorker):
         enqueued = 0
         try:
             conn = get_db()
+            folder_row = conn.execute("SELECT is_zip FROM folders WHERE path = ?", (folder_path,)).fetchone()
+            is_zip = bool(folder_row and folder_row[0] == 1) or folder_path.lower().endswith(".zip")
             cur = conn.execute(
-                "SELECT path, name FROM files WHERE folder_path = ? AND type = 'image' AND ext != '.webp' AND webp_optimized = 0",
+                "SELECT path, name, folder_path FROM files WHERE folder_path = ? AND type = 'image' AND ext != '.webp' AND webp_optimized = 0",
                 (folder_path,)
             )
             rows = cur.fetchall()
             conn.close()
             for r in rows:
-                self.priority_queue.put_nowait({"path": r["path"], "name": r["name"]})
+                self.priority_queue.put_nowait({
+                    "path": r["path"],
+                    "name": r["name"],
+                    "folder_path": r["folder_path"],
+                    "is_zip": 1 if is_zip else 0,
+                })
                 enqueued += 1
         except Exception as e:
             print(f"Error enqueuing folder for WebP optimization: {e}")
@@ -71,13 +79,25 @@ class WebPOptimizerWorker(BaseWorker):
         await asyncio.sleep(5.0)
         concurrency_sem = asyncio.Semaphore(WEBP_WORKER_CONCURRENCY)
 
-        async def optimize_single_file(fpath: str, fname: str) -> dict:
+        async def optimize_item(item: dict) -> dict:
             async with concurrency_sem:
                 if not self._pause_event.is_set():
                     await self._pause_event.wait()
-                self.state["current_file"] = fname
-                self.state["current_folder"] = os.path.basename(os.path.dirname(fpath))
-                return await asyncio.to_thread(convert_image_file_to_webp, fpath)
+                fpath = item["path"]
+                fname = item["name"]
+                is_zip = (item.get("is_zip") == 1) or (".zip/" in fpath) or (".zip\\" in fpath) or fpath.lower().endswith(".zip")
+
+                if is_zip:
+                    from media_library.services.zip_service import split_zip_path, optimize_zip_images_to_webp
+                    zip_p, _ = split_zip_path(fpath)
+                    target_zip = zip_p or item.get("folder_path") or fpath
+                    self.state["current_file"] = f"{os.path.basename(target_zip)}: {fname}"
+                    self.state["current_folder"] = os.path.basename(os.path.dirname(target_zip))
+                    return await asyncio.to_thread(optimize_zip_images_to_webp, target_zip)
+                else:
+                    self.state["current_file"] = fname
+                    self.state["current_folder"] = os.path.basename(os.path.dirname(fpath))
+                    return await asyncio.to_thread(convert_image_file_to_webp, fpath)
 
         while True:
             try:
@@ -115,12 +135,23 @@ class WebPOptimizerWorker(BaseWorker):
                     if priority_items:
                         pending_rows = priority_items
                     else:
-                        pending_rows = conn.execute(f"""
-                            SELECT path, name FROM files 
-                            WHERE type = 'image' AND ext != '.webp' AND webp_optimized = 0
-                            ORDER BY size DESC
+                        rows = conn.execute(f"""
+                            SELECT f.path, f.name, f.folder_path, COALESCE(fo.is_zip, 0) as is_zip
+                            FROM files f
+                            LEFT JOIN folders fo ON f.folder_path = fo.path
+                            WHERE f.type = 'image' AND f.ext != '.webp' AND f.webp_optimized = 0
+                            ORDER BY f.size DESC
                             LIMIT {batch_limit}
                         """).fetchall()
+                        pending_rows = [
+                            {
+                                "path": r["path"],
+                                "name": r["name"],
+                                "folder_path": r["folder_path"],
+                                "is_zip": r["is_zip"],
+                            }
+                            for r in rows
+                        ]
 
                 except Exception as e:
                     print(f"Error querying webp images: {e}")
@@ -130,19 +161,20 @@ class WebPOptimizerWorker(BaseWorker):
 
                 if total_imgs > 0:
                     self.state["total_images"] = total_imgs
+                    self.state["optimized_count"] = optimized_imgs
                     self.state["pending_count"] = max(0, total_imgs - optimized_imgs)
                     self.state["percent"] = round((optimized_imgs / total_imgs * 100.0), 1)
 
                 if not pending_rows:
-                    if self.state["pending_count"] == 0 and self.state["total_images"] > 0:
-                        self.state["status"] = "idle"
-                        self.state["current_file"] = ""
+                    self.state["status"] = "idle"
+                    self.state["current_file"] = ""
+                    self.state["current_folder"] = ""
                     self.state["last_synced"] = time.time()
                     await asyncio.sleep(5.0)
                     continue
 
                 self.state["status"] = "converting"
-                results = await asyncio.gather(*[optimize_single_file(r["path"], r["name"]) for r in pending_rows], return_exceptions=True)
+                results = await asyncio.gather(*[optimize_item(r) for r in pending_rows], return_exceptions=True)
 
                 has_progress = False
                 for res in results:
@@ -150,9 +182,20 @@ class WebPOptimizerWorker(BaseWorker):
                         has_progress = True
                         self.state["saved_bytes"] += res.get("saved_bytes", 0)
                         self.state["saved_formatted"] = format_size(self.state["saved_bytes"])
-                    elif isinstance(res, dict) and res.get("status") == "skipped":
+                        self.state["converted_count"] += res.get("converted_count", 1)
+                        if self.state["pending_count"] > 0:
+                            self.state["pending_count"] = max(0, self.state["pending_count"] - res.get("converted_count", 1))
+                    elif isinstance(res, dict) and res.get("status") in ("skipped", "already_webp"):
                         has_progress = True
                         self.state["skipped_count"] = self.state.get("skipped_count", 0) + 1
+                        if self.state["pending_count"] > 0:
+                            self.state["pending_count"] = max(0, self.state["pending_count"] - 1)
+                    elif isinstance(res, dict) and res.get("status") in ("error", "unsupported"):
+                        has_progress = True
+                        if self.state["pending_count"] > 0:
+                            self.state["pending_count"] = max(0, self.state["pending_count"] - 1)
+                    elif isinstance(res, Exception):
+                        has_progress = True
 
                 if not has_progress:
                     await asyncio.sleep(2.0)

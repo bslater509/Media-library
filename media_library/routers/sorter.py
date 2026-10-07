@@ -2,6 +2,7 @@
 
 import os
 import re
+import stat as _stat
 import time
 import uuid
 import shutil
@@ -71,10 +72,43 @@ async def get_config():
         "transfers_in_progress": active_count + queued_count,
     }
 
+def _resolve_directory_tolerant(path_str: str) -> str:
+    """Resolve a directory path, tolerating trailing whitespace in the final
+    component (e.g. a folder literally named 'Movies ')."""
+    if not path_str or not path_str.strip():
+        return os.path.abspath(path_str or "/")
+
+    target = os.path.abspath(path_str)
+    try:
+        if os.path.isdir(target):
+            return target
+    except OSError:
+        pass
+
+    parent = os.path.dirname(target)
+    base = os.path.basename(target)
+    if not base or not os.path.isdir(parent):
+        return target  # let the caller surface the real error
+
+    # Exact path isn't a directory: try to match a sibling whose name differs
+    # only by trailing whitespace.
+    try:
+        matches = []
+        with os.scandir(parent) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=True) and entry.name.rstrip() == base.rstrip():
+                    matches.append(entry.path)
+        if len(matches) == 1:
+            return matches[0]
+    except OSError:
+        pass
+    return target
+
+
 @router.post("/api/source/scan")
 async def scan_source(req: ScanSourceRequest):
     global _last_queue_scan_time
-    source_path = os.path.abspath(req.source_dir.strip())
+    source_path = _resolve_directory_tolerant(req.source_dir)
     if not os.path.exists(source_path):
         raise HTTPException(status_code=400, detail=f"Directory does not exist: {source_path}")
     if not os.path.isdir(source_path):
@@ -126,11 +160,26 @@ async def get_queue(refresh: Optional[bool] = Query(False)):
 
 @router.get("/api/browse")
 def browse_directory(path: Optional[str] = Query(None)):
-    target_path = os.path.abspath(path.strip()) if path and path.strip() else (state["source_dir"] or state["destination_dir"] or "/")
-    if not os.path.exists(target_path):
-        target_path = "/"
-    if not os.path.isdir(target_path):
-        target_path = os.path.dirname(target_path) or "/"
+    raw = path if path and path.strip() else None
+    requested = os.path.abspath(raw) if raw else None
+    target_path = (
+        _resolve_directory_tolerant(raw)
+        if raw
+        else (state["source_dir"] or state["destination_dir"] or "/")
+    )
+
+    # Validate that the path exists and is a directory.
+    # os.path.exists() silently returns False on OSError (e.g. FUSE timeouts), so we
+    # call os.stat() explicitly to surface the real error to the caller.
+    try:
+        st = os.stat(target_path)
+        if not _stat.S_ISDIR(st.st_mode):
+            target_path = os.path.dirname(target_path) or "/"
+            os.stat(target_path)  # confirm parent is reachable too
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Directory does not exist: {requested or target_path}")
+    except OSError as e:
+        raise HTTPException(status_code=503, detail=f"Cannot access path: {e}")
 
     folders = []
     video_count = 0
@@ -153,7 +202,7 @@ def browse_directory(path: Optional[str] = Query(None)):
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
     except OSError as e:
-        print(f"Warning: could not scan {target_path}: {e}")
+        raise HTTPException(status_code=503, detail=f"Cannot read directory: {e}")
 
     folders.sort(key=lambda x: x["name"].lower())
     parent_path = str(Path(target_path).parent) if target_path != "/" else None

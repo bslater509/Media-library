@@ -36,7 +36,11 @@ def _scan_root_dirs(path: str) -> List[str]:
     try:
         with os.scandir(path) as entries:
             for entry in entries:
-                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    root_dirs.append(entry.path)
+                elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".zip"):
                     root_dirs.append(entry.path)
         root_dirs.sort(key=lambda x: os.path.basename(x).lower())
     except Exception as e:
@@ -47,6 +51,19 @@ def index_folder(folder_path: str, base_dir: Optional[str] = None) -> Dict[str, 
     if not base_dir:
         base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
     real_folder = os.path.realpath(folder_path)
+
+    # Check if this folder is a ZIP archive
+    if os.path.isfile(real_folder) and real_folder.lower().endswith(".zip"):
+        try:
+            from media_library.services.zip_service import index_zip_archive, get_zip_metadata
+            parent_p = os.path.dirname(real_folder) if real_folder != base_dir else None
+            index_zip_archive(real_folder, parent_path=parent_p)
+            meta = get_zip_metadata(real_folder)
+            return {"file_count": meta["total_files"], "subfolder_count": 0, "subfolders": []}
+        except Exception as ze:
+            print(f"Error indexing zip archive {real_folder}: {ze}")
+            return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
+
     if not os.path.exists(real_folder) or not os.path.isdir(real_folder):
         return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
 
@@ -66,6 +83,16 @@ def index_folder(folder_path: str, base_dir: Optional[str] = None) -> Dict[str, 
                             "path": entry.path,
                             "name": entry.name
                         })
+                    elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".zip"):
+                        try:
+                            from media_library.services.zip_service import index_zip_archive
+                            index_zip_archive(entry.path, parent_path=real_folder)
+                            subfolders.append({
+                                "path": entry.path,
+                                "name": entry.name
+                            })
+                        except Exception as ze:
+                            print(f"Error indexing nested zip {entry.path}: {ze}")
                     elif entry.is_file(follow_symlinks=False):
                         ext = os.path.splitext(entry.name)[1].lower()
                         is_vid = ext in VIDEO_EXTENSIONS
@@ -197,8 +224,17 @@ def update_file_in_index(old_path: str, new_path: str, new_name: str, new_size: 
         folder_path = os.path.dirname(new_path)
         ext = new_ext or os.path.splitext(new_name)[1].lower()
         is_vid = ext in VIDEO_EXTENSIONS
-        st_size = new_size if new_size is not None else (os.path.getsize(new_path) if os.path.exists(new_path) else 0)
-        mtime = os.path.getmtime(new_path) if os.path.exists(new_path) else time.time()
+        disk_path = new_path
+        if not os.path.exists(disk_path):
+            try:
+                from media_library.services.zip_service import resolve_zip_file_path
+                res = resolve_zip_file_path(new_path)
+                if res and os.path.exists(res):
+                    disk_path = res
+            except Exception:
+                pass
+        st_size = new_size if new_size is not None else (os.path.getsize(disk_path) if os.path.exists(disk_path) else 0)
+        mtime = os.path.getmtime(disk_path) if os.path.exists(disk_path) else time.time()
 
         conn = get_db()
         with conn:

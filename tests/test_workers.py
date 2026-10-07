@@ -7,6 +7,7 @@ from media_library.workers.transfer_worker import TransferWorker
 from media_library.workers.transcode_worker import TranscodeWorker
 from media_library.workers.thumbnail_worker import ThumbnailWorker
 from media_library.workers.webp_worker import WebPOptimizerWorker
+from media_library.workers.backup_watcher import BackupWatcherWorker
 
 def test_base_worker_lifecycle():
     class DummyWorker(BaseWorker):
@@ -70,3 +71,11 @@ def test_webp_optimizer_worker_status():
     status = worker.get_status()
     assert "status" in status
     assert "total_images" in status
+
+def test_backup_watcher_worker_status():
+    worker = BackupWatcherWorker()
+    status = worker.get_status()
+    assert "status" in status
+    assert "progress_percent" in status
+    assert "current_step" in status
+

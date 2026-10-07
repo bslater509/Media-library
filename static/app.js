@@ -80,6 +80,8 @@ const movingStatusText = document.getElementById("movingStatusText");
 
 // Background Tasks UI (Transfers & Pre-Transcoding)
 const transferBadgeBtn = document.getElementById("transferBadgeBtn");
+const transferIcon = document.getElementById("transferIcon");
+const transferSpinner = document.getElementById("transferSpinner");
 const transferDropdown = document.getElementById("transferDropdown");
 const transferCountText = document.getElementById("transferCountText");
 const transferDropdownSummary = document.getElementById("transferDropdownSummary");
@@ -858,17 +860,35 @@ function prevVideo() {
   updateUI();
 }
 
-// Background Transfers Polling & UI Rendering
+let isPollingSystemStatus = false;
+
+// Background Transfers & Unified System Status Polling
 function startTransfersPolling() {
   if (state.pollTimer) clearInterval(state.pollTimer);
-  pollTransfers();
-  state.pollTimer = setInterval(pollTransfers, 2000);
+  pollTransfers(true);
+  state.pollTimer = setInterval(() => {
+    if (!document.hidden) {
+      pollTransfers();
+    }
+  }, 4000);
 }
 
-async function pollTransfers() {
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    pollTransfers(true);
+  }
+});
+
+async function pollTransfers(immediate = false) {
+  if (isPollingSystemStatus && !immediate) return;
+  if (document.hidden && !immediate) return;
+
+  isPollingSystemStatus = true;
   try {
-    const res = await fetch("/api/transfers");
-    const data = await res.json();
+    const res = await fetch("/api/system/status");
+    if (!res.ok) return;
+    const sysData = await res.json();
+    const data = sysData.transfers || {};
 
     state.activeTransfer = data.active;
     state.queuedTransfers = data.queued || [];
@@ -904,8 +924,31 @@ async function pollTransfers() {
     renderTranscodeUI();
     updateCurrentVideoTranscodeBadge();
     checkIfCurrentVideoConverted();
+
+    if (sysData.thumbnails) {
+      state.latestThumbData = sysData.thumbnails;
+      renderThumbnailUI(sysData.thumbnails);
+    }
+    if (sysData.duplicate_hash) {
+      state.latestDupHashData = sysData.duplicate_hash;
+      renderDuplicateHashUI(sysData.duplicate_hash);
+    }
+    if (sysData.webp) {
+      state.latestWebpData = sysData.webp;
+      renderWebpUI(sysData.webp);
+    }
+    if (sysData.index) {
+      state.latestIndexData = sysData.index;
+      renderIndexUI(sysData.index);
+    }
+    if (sysData.library_backup) {
+      state.latestLibBackupData = sysData.library_backup;
+    }
+    updateHeaderTaskBadge();
   } catch (err) {
     // Silent catch on poll errors
+  } finally {
+    isPollingSystemStatus = false;
   }
 }
 
@@ -1060,62 +1103,71 @@ function renderTranscodeUI() {
   }
 
   // Update Combined Header Badge Text
+  updateHeaderTaskBadge();
+}
+
+function updateHeaderTaskBadge() {
+  if (!transferBadgeBtn) return;
+  // Always keep button visible so the background tasks modal can be opened anytime
+  transferBadgeBtn.classList.remove("hidden");
+
   const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
   const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
   const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
-  const totalTasks = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0) + (isIndexing ? 1 : 0);
-  if (totalTasks > 0) {
-    transferBadgeBtn.classList.remove("hidden");
-    if (state.totalPendingTranscodes > 0 && state.totalPendingTransfers > 0) {
+  const isBackingUp = state.latestLibBackupData && (state.latestLibBackupData.status === "backing_up" || state.latestLibBackupData.status === "restoring");
+  const isMoving = (state.totalPendingTransfers || 0) > 0 || !!state.activeTransfer;
+  const isConverting = (state.totalPendingTranscodes || 0) > 0 || !!state.activeTranscode;
+
+  const totalTasks = (state.totalPendingTransfers || 0) + (state.totalPendingTranscodes || 0) + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0) + (isIndexing ? 1 : 0) + (isBackingUp ? 1 : 0);
+
+  if (totalTasks > 0 || isMoving || isConverting) {
+    if (transferSpinner) transferSpinner.classList.remove("hidden");
+    if (transferIcon) transferIcon.classList.add("hidden");
+    transferBadgeBtn.classList.add("text-emerald-300", "border-emerald-500/40");
+    transferBadgeBtn.classList.remove("text-slate-300");
+    transferBadgeBtn.title = "View background activity (Active)";
+
+    if (isConverting && isMoving) {
       transferCountText.textContent = `${state.totalPendingTransfers} moving, ${state.totalPendingTranscodes} converting`;
-    } else if (state.totalPendingTransfers > 0) {
-      transferCountText.textContent = `${state.totalPendingTransfers} transferring`;
+    } else if (isMoving) {
+      if (state.activeTransfer) {
+        transferCountText.textContent = `Moving ${Math.round(state.activeTransfer.percent || 0)}%`;
+      } else {
+        transferCountText.textContent = `${state.totalPendingTransfers} transferring`;
+      }
     } else if (isIndexing) {
       const pct = typeof state.latestIndexData.percent === "number" ? Math.round(state.latestIndexData.percent) : 0;
       transferCountText.textContent = `Indexing ${pct}%`;
-    } else if (state.totalPendingTranscodes > 0) {
-      transferCountText.textContent = `${state.totalPendingTranscodes} converting`;
+    } else if (isBackingUp) {
+      const pct = Math.round(state.latestLibBackupData.progress_percent || 0);
+      transferCountText.textContent = `Backup ${pct}%`;
+    } else if (isConverting) {
+      if (state.activeTranscode) {
+        transferCountText.textContent = `${Math.round(state.activeTranscode.percent || 0)}% (${(state.queuedTranscodes || []).length + 1})`;
+      } else {
+        transferCountText.textContent = `${state.totalPendingTranscodes} converting`;
+      }
     } else if (isThumbGenerating) {
       transferCountText.textContent = `Thumbs ${Math.round(state.latestThumbData.percent || 0)}%`;
     } else if (isWebpConverting) {
       transferCountText.textContent = `WebP ${Math.round(state.latestWebpData.percent || 0)}%`;
     }
   } else {
-    if (transferDropdown.classList.contains("hidden")) {
-      transferBadgeBtn.classList.add("hidden");
-    } else {
-      transferCountText.textContent = "Idle";
-    }
+    if (transferSpinner) transferSpinner.classList.add("hidden");
+    if (transferIcon) transferIcon.classList.remove("hidden");
+    transferBadgeBtn.classList.remove("text-emerald-300", "border-emerald-500/40");
+    transferBadgeBtn.classList.add("text-slate-300");
+    transferBadgeBtn.title = "View background activity (Idle)";
+    transferCountText.textContent = "Tasks";
   }
 }
 
 function startThumbnailPolling() {
-  if (state.thumbPollTimer) clearTimeout(state.thumbPollTimer);
-  pollThumbnailStatus();
+  // Handled by unified pollTransfers
 }
 
-async function pollThumbnailStatus() {
-  let nextDelay = 3500;
-  try {
-    const res = await fetch("/api/backup/thumbnails/status");
-    if (res.ok) {
-      const data = await res.json();
-      state.latestThumbData = data;
-      renderThumbnailUI(data);
-      if (data.status === "generating") {
-        nextDelay = 1200;
-      } else if (data.status === "paused") {
-        nextDelay = 5000;
-      } else {
-        nextDelay = 8000;
-      }
-    }
-  } catch (err) {
-    // Silent catch
-  } finally {
-    clearTimeout(state.thumbPollTimer);
-    state.thumbPollTimer = setTimeout(pollThumbnailStatus, nextDelay);
-  }
+function pollThumbnailStatus() {
+  pollTransfers(true);
 }
 
 function renderThumbnailUI(data) {
@@ -1152,13 +1204,7 @@ function renderThumbnailUI(data) {
   if (thumbProgressBar) thumbProgressBar.style.width = `${data.percent || 0}%`;
   if (thumbCountsText) thumbCountsText.textContent = `${data.cached_count || 0} / ${data.total_files || 0}`;
 
-  if (typeof renderTranscodeUI === "function") {
-    const isThumbGen = data.status === "generating" && data.pending_count > 0;
-    const total = state.totalPendingTransfers + state.totalPendingTranscodes + (isThumbGen ? 1 : 0);
-    if (total > 0) {
-      transferBadgeBtn.classList.remove("hidden");
-    }
-  }
+  updateHeaderTaskBadge();
 }
 
 async function toggleThumbnailPause() {
@@ -1173,32 +1219,11 @@ async function toggleThumbnailPause() {
 }
 
 function startDuplicateHashPolling() {
-  if (state.dupHashPollTimer) clearTimeout(state.dupHashPollTimer);
-  pollDuplicateHashStatus();
+  // Handled by unified pollTransfers
 }
 
-async function pollDuplicateHashStatus() {
-  let nextDelay = 3500;
-  try {
-    const res = await fetch("/api/backup/duplicates/hash-status");
-    if (res.ok) {
-      const data = await res.json();
-      state.latestDupHashData = data;
-      renderDuplicateHashUI(data);
-      if (data.status === "hashing") {
-        nextDelay = 1500;
-      } else if (data.status === "paused") {
-        nextDelay = 5000;
-      } else {
-        nextDelay = 8000;
-      }
-    }
-  } catch (err) {
-    // Silent catch
-  } finally {
-    clearTimeout(state.dupHashPollTimer);
-    state.dupHashPollTimer = setTimeout(pollDuplicateHashStatus, nextDelay);
-  }
+function pollDuplicateHashStatus() {
+  pollTransfers(true);
 }
 
 function renderDuplicateHashUI(data) {
@@ -1248,33 +1273,11 @@ async function toggleDuplicateHashPause() {
 }
 
 function startWebpPolling() {
-  if (state.webpPollTimer) clearTimeout(state.webpPollTimer);
-  pollWebpStatus();
+  // Handled by unified pollTransfers
 }
 
-async function pollWebpStatus() {
-  let nextDelay = 3500;
-  try {
-    const res = await fetch("/api/backup/webp/status");
-    if (res.ok) {
-      const data = await res.json();
-      state.latestWebpData = data;
-      renderWebpUI(data);
-      updateTransferBadge(state.latestTransferData, state.latestTranscodeData);
-      if (data.status === "converting") {
-        nextDelay = 1500;
-      } else if (data.status === "paused") {
-        nextDelay = 5000;
-      } else {
-        nextDelay = 8000;
-      }
-    }
-  } catch (err) {
-    // Silent catch
-  } finally {
-    clearTimeout(state.webpPollTimer);
-    state.webpPollTimer = setTimeout(pollWebpStatus, nextDelay);
-  }
+function pollWebpStatus() {
+  pollTransfers(true);
 }
 
 function renderWebpUI(data) {
@@ -1310,17 +1313,31 @@ function renderWebpUI(data) {
   if (webpPercentText) webpPercentText.textContent = `${Math.round(data.percent || 0)}%`;
   if (webpProgressBar) webpProgressBar.style.width = `${data.percent || 0}%`;
   if (webpCountsText) {
+    const tot = data.total_images || 0;
+    const pend = data.pending_count || 0;
+    const opt = data.optimized_count || Math.max(0, tot - pend);
     const conv = data.converted_count || 0;
-    const skipped = data.skipped_count || 0;
-    if (skipped > 0) {
-      webpCountsText.textContent = `${conv} converted (${skipped} kept original) / ${data.total_images || 0}`;
+    if (pend === 0 && tot > 0) {
+      if (conv > 0) {
+        webpCountsText.textContent = `${tot} / ${tot} WebP (${conv} converted)`;
+      } else {
+        webpCountsText.textContent = `${tot} / ${tot} WebP`;
+      }
     } else {
-      webpCountsText.textContent = `${conv} / ${data.total_images || 0} converted`;
+      if (conv > 0) {
+        webpCountsText.textContent = `${opt} / ${tot} WebP (${conv} converted)`;
+      } else {
+        webpCountsText.textContent = `${opt} / ${tot} WebP`;
+      }
     }
   }
   if (webpSavedText) {
-    const isNeg = (data.saved_bytes || 0) < 0;
-    webpSavedText.textContent = `${isNeg ? 'Net' : 'Saved'}: ${data.saved_formatted || "0 B"}`;
+    const sBytes = data.saved_bytes || 0;
+    if (sBytes <= 0) {
+      webpSavedText.textContent = "Saved: 0 B";
+    } else {
+      webpSavedText.textContent = `Saved: ${data.saved_formatted || "0 B"}`;
+    }
   }
 }
 
@@ -1336,28 +1353,11 @@ async function toggleWebpPause() {
 }
 
 function startBackgroundIndexPolling() {
-  if (state.indexPollTimer) clearTimeout(state.indexPollTimer);
-  pollIndexStatus();
+  // Handled by unified pollTransfers
 }
 
-async function pollIndexStatus() {
-  let nextDelay = 8000;
-  try {
-    const res = await fetch("/api/backup/index/status");
-    if (res.ok) {
-      const data = await res.json();
-      state.latestIndexData = data;
-      renderIndexUI(data);
-      if (data.status === "crawling") {
-        nextDelay = 1200;
-      }
-    }
-  } catch (err) {
-    // Silent catch
-  } finally {
-    clearTimeout(state.indexPollTimer);
-    state.indexPollTimer = setTimeout(pollIndexStatus, nextDelay);
-  }
+function pollIndexStatus() {
+  pollTransfers(true);
 }
 
 function renderIndexUI(data) {
@@ -1681,10 +1681,14 @@ async function browseDirectory(path) {
       data.folders.forEach((f) => {
         const row = document.createElement("div");
         row.className = "flex items-center justify-between p-2.5 hover:bg-slate-800 active:bg-slate-700 rounded-xl cursor-pointer text-xs text-slate-300 transition min-h-[44px]";
+        const hasEdgeSpace = f.name !== f.name.trim();
+        const marker = hasEdgeSpace
+          ? `<span class="ml-1 px-1 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono" title="Folder name contains leading/trailing spaces">␠</span>`
+          : "";
         row.innerHTML = `
-          <div class="flex items-center gap-2 truncate">
+          <div class="flex items-center gap-2 truncate min-w-0">
             <span class="text-emerald-400 text-sm">📁</span>
-            <span class="truncate font-medium text-xs sm:text-sm">${escapeHtml(f.name)}</span>
+            <span class="truncate font-medium text-xs sm:text-sm">${escapeHtml(f.name)}</span>${marker}
           </div>
           <span class="text-[10px] text-slate-500 font-mono">Open ➔</span>
         `;
@@ -1901,14 +1905,24 @@ function setupEventListeners() {
       if (transferBackdrop) {
         if (!isHidden) {
           transferBackdrop.classList.remove("hidden");
+          pollTransfers(true);
         } else {
           transferBackdrop.classList.add("hidden");
         }
+      } else if (!isHidden) {
+        pollTransfers(true);
       }
     });
 
     document.addEventListener("click", (e) => {
       if (!transferDropdown.contains(e.target) && !transferBadgeBtn.contains(e.target)) {
+        transferDropdown.classList.add("hidden");
+        if (transferBackdrop) transferBackdrop.classList.add("hidden");
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !transferDropdown.classList.contains("hidden")) {
         transferDropdown.classList.add("hidden");
         if (transferBackdrop) transferBackdrop.classList.add("hidden");
       }

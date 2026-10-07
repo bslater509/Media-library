@@ -7,6 +7,8 @@
 (function () {
   'use strict';
 
+  const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
   const state = {
     basePath: '',
     currentPath: '',
@@ -34,6 +36,11 @@
     latestDupHashData: null,
     libBackupPollTimer: null,
     latestLibBackupData: null,
+    batchZipCandidates: [],
+    batchZipSelectedPaths: new Set(),
+    batchZipFilterQuery: '',
+    batchZipPollTimer: null,
+    latestBatchZipData: null,
     duplicates: {
       isOpen: false,
       mode: 'content',
@@ -104,6 +111,54 @@
     thumbBtnText: document.getElementById('thumbBtnText'),
     optimizeFolderWebpBtn: document.getElementById('optimizeFolderWebpBtn'),
     webpBtnText: document.getElementById('webpBtnText'),
+    compressFolderZipBtn: document.getElementById('compressFolderZipBtn'),
+    zipBtnText: document.getElementById('zipBtnText'),
+    unpackFolderZipBtn: document.getElementById('unpackFolderZipBtn'),
+    unpackBtnText: document.getElementById('unpackBtnText'),
+    zipExtractBanner: document.getElementById('zipExtractBanner'),
+    zipExtractMsg: document.getElementById('zipExtractMsg'),
+    zipExtractPercent: document.getElementById('zipExtractPercent'),
+    zipExtractProgressBar: document.getElementById('zipExtractProgressBar'),
+    zipTasksSection: document.getElementById('zipTasksSection'),
+    zipTasksSummary: document.getElementById('zipTasksSummary'),
+    zipTasksList: document.getElementById('zipTasksList'),
+    compressZipModal: document.getElementById('compressZipModal'),
+    compressFolderName: document.getElementById('compressFolderName'),
+    compressImageCount: document.getElementById('compressImageCount'),
+    compressTotalSize: document.getElementById('compressTotalSize'),
+    compressTargetZip: document.getElementById('compressTargetZip'),
+    confirmCompressZipBtn: document.getElementById('confirmCompressZipBtn'),
+    cancelCompressZipBtn: document.getElementById('cancelCompressZipBtn'),
+    closeCompressZipXBtn: document.getElementById('closeCompressZipXBtn'),
+    unpackZipModal: document.getElementById('unpackZipModal'),
+    unpackZipFileName: document.getElementById('unpackZipFileName'),
+    unpackZipSource: document.getElementById('unpackZipSource'),
+    unpackZipTarget: document.getElementById('unpackZipTarget'),
+    confirmUnpackZipBtn: document.getElementById('confirmUnpackZipBtn'),
+    cancelUnpackZipBtn: document.getElementById('cancelUnpackZipBtn'),
+    closeUnpackZipXBtn: document.getElementById('closeUnpackZipXBtn'),
+    // Batch ZIP Modal & Controls
+    openBatchZipBtn: document.getElementById('openBatchZipBtn'),
+    toggleBatchZipPauseBtn: document.getElementById('toggleBatchZipPauseBtn'),
+    cancelBatchZipBtn: document.getElementById('cancelBatchZipBtn'),
+    batchZipProgressBox: document.getElementById('batchZipProgressBox'),
+    batchZipCurrentFolder: document.getElementById('batchZipCurrentFolder'),
+    batchZipPercentText: document.getElementById('batchZipPercentText'),
+    batchZipProgressBar: document.getElementById('batchZipProgressBar'),
+    batchZipCountsText: document.getElementById('batchZipCountsText'),
+    batchZipStatusText: document.getElementById('batchZipStatusText'),
+    batchZipModal: document.getElementById('batchZipModal'),
+    closeBatchZipModalBtn: document.getElementById('closeBatchZipModalBtn'),
+    cancelBatchZipModalBtn: document.getElementById('cancelBatchZipModalBtn'),
+    confirmBatchZipBtn: document.getElementById('confirmBatchZipBtn'),
+    confirmBatchZipBtnText: document.getElementById('confirmBatchZipBtnText'),
+    batchZipCandidateCount: document.getElementById('batchZipCandidateCount'),
+    batchZipImageCount: document.getElementById('batchZipImageCount'),
+    batchZipTotalSize: document.getElementById('batchZipTotalSize'),
+    batchZipSelectAllToggle: document.getElementById('batchZipSelectAllToggle'),
+    batchZipSelectedBadge: document.getElementById('batchZipSelectedBadge'),
+    batchZipFilterInput: document.getElementById('batchZipFilterInput'),
+    batchZipCandidatesList: document.getElementById('batchZipCandidatesList'),
     countAllBadge: document.getElementById('countAllBadge'),
     countVideosBadge: document.getElementById('countVideosBadge'),
     countImagesBadge: document.getElementById('countImagesBadge'),
@@ -135,6 +190,7 @@
     indexFilesText: document.getElementById('indexFilesText'),
     // Background Transcode Monitor
     transferBadgeBtn: document.getElementById('transferBadgeBtn'),
+    transferIcon: document.getElementById('transferIcon'),
     transferSpinner: document.getElementById('transferSpinner'),
     transferCountText: document.getElementById('transferCountText'),
     transferDropdown: document.getElementById('transferDropdown'),
@@ -304,6 +360,8 @@
       const data = await res.json();
       state.basePath = data.base_path;
       state.currentPath = data.current_path;
+      state.isZip = data.is_zip || false;
+      state.zipExtracting = data.zip_extracting || false;
       state.rootFolders = data.root_folders || [];
       state.subfolders = data.subfolders || [];
       state.breadcrumbs = data.breadcrumbs || [];
@@ -317,6 +375,20 @@
       if (pushHistory) {
         const newUrl = data.is_root ? '/library' : `/library?folder=${encodeURIComponent(data.current_path)}`;
         history.pushState({ path: data.current_path }, '', newUrl);
+      }
+
+      // Handle zip extraction progress banner
+      if (data.is_zip && data.zip_extracting) {
+        if (els.zipExtractBanner) {
+          els.zipExtractBanner.classList.remove('hidden');
+          const pct = Math.round(data.zip_extract_percent || 0);
+          els.zipExtractPercent.textContent = `${pct}%`;
+          els.zipExtractProgressBar.style.width = `${pct}%`;
+        }
+      } else {
+        if (els.zipExtractBanner) {
+          els.zipExtractBanner.classList.add('hidden');
+        }
       }
 
       // Render components
@@ -361,6 +433,8 @@
         ? 'bg-emerald-600/20 text-emerald-300 font-semibold border-emerald-500/40 shadow-sm'
         : 'text-slate-300 hover:bg-slate-800/80 hover:text-white border-transparent';
 
+      const isZip = folder.is_zip || folder.path.toLowerCase().endsWith('.zip');
+      const icon = isZip ? '📦' : '📁';
       const count = folder.file_count || 0;
       const countBadge = count > 0 
         ? `<span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 group-hover:text-slate-300 border border-slate-700/60 shrink-0">${count}</span>` 
@@ -372,21 +446,13 @@
           class="w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between gap-2 transition group ${activeClass}"
         >
           <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span class="text-sm shrink-0">📁</span>
+            <span class="text-sm shrink-0">${icon}</span>
             <span class="truncate">${folder.name}</span>
           </div>
           ${countBadge}
         </button>
       `;
     }).join('');
-
-    // Attach click events
-    els.rootFolderList.querySelectorAll('button[data-path]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const folderPath = decodeURIComponent(btn.dataset.path);
-        loadFolder(folderPath);
-      });
-    });
   }
 
   // Render Breadcrumb Navigation
@@ -399,7 +465,8 @@
     els.breadcrumbNav.innerHTML = state.breadcrumbs.map((crumb, idx) => {
       const isLast = idx === state.breadcrumbs.length - 1;
       const isRoot = idx === 0;
-      const icon = isRoot ? '📁' : '';
+      const isZip = crumb.is_zip || (crumb.path && crumb.path.toLowerCase().endsWith('.zip'));
+      const icon = isZip ? '📦' : (isRoot ? '📁' : '');
 
       if (isLast) {
         return `
@@ -439,12 +506,14 @@
     els.subfolderCountBadge.textContent = state.subfolders.length;
 
     els.subfolderChips.innerHTML = state.subfolders.map(sub => {
+      const isZip = sub.is_zip || (sub.path && sub.path.toLowerCase().endsWith('.zip'));
+      const icon = isZip ? '📦' : '📁';
       return `
         <button 
           data-sub-path="${encodeURIComponent(sub.path)}"
           class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs flex items-center gap-1.5 transition active:scale-95 group shadow-sm"
         >
-          <span class="text-xs group-hover:scale-110 transition">📁</span>
+          <span class="text-xs group-hover:scale-110 transition">${icon}</span>
           <span class="truncate max-w-[180px]">${sub.name}</span>
         </button>
       `;
@@ -615,28 +684,8 @@
   }
 
   // Poll SQLite index crawler status
-  async function pollIndexStatus() {
-    let nextDelay = 8000;
-    try {
-      const res = await fetch('/api/backup/index/status');
-      if (res.ok) {
-        const data = await res.json();
-        state.indexStatus = data.status;
-        state.latestIndexData = data;
-        renderIndexStatus(data);
-
-        if (data.status === 'crawling') {
-          nextDelay = 1200;
-        } else {
-          nextDelay = 8000;
-        }
-      }
-    } catch (err) {
-      console.error('Error polling index status:', err);
-    } finally {
-      clearTimeout(state.indexPollTimer);
-      state.indexPollTimer = setTimeout(pollIndexStatus, nextDelay);
-    }
+  function pollIndexStatus() {
+    pollSystemStatus(true);
   }
 
   // Trigger manual background index sync
@@ -702,6 +751,27 @@
       }
     }
 
+    // Check for Compress to ZIP and Unpack ZIP Buttons
+    if (els.compressFolderZipBtn && els.unpackFolderZipBtn) {
+      if (state.isZip) {
+        els.compressFolderZipBtn.classList.add('hidden');
+        els.unpackFolderZipBtn.classList.remove('hidden');
+      } else {
+        els.unpackFolderZipBtn.classList.add('hidden');
+        const hasVideos = state.allFiles.some(f => f.type === 'video');
+        const hasImages = state.allFiles.some(f => f.type === 'image');
+        if (state.currentPath && !state.isRoot && hasImages && !hasVideos) {
+          els.compressFolderZipBtn.classList.remove('hidden');
+          if (els.zipBtnText) {
+            const imgCount = state.allFiles.filter(f => f.type === 'image').length;
+            els.zipBtnText.textContent = `Compress ${imgCount} to ZIP`;
+          }
+        } else {
+          els.compressFolderZipBtn.classList.add('hidden');
+        }
+      }
+    }
+
     // Filter by type
     let files = state.allFiles;
     if (state.activeFilter === 'video') {
@@ -720,7 +790,7 @@
     files = files.slice().sort((a, b) => {
       switch (state.activeSort) {
         case 'name_desc':
-          return b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: 'base' });
+          return nameCollator.compare(b.name, a.name);
         case 'date_desc':
           return (b.mtime || 0) - (a.mtime || 0);
         case 'date_asc':
@@ -731,7 +801,7 @@
           return (a.size || 0) - (b.size || 0);
         case 'name_asc':
         default:
-          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+          return nameCollator.compare(a.name, b.name);
       }
     });
 
@@ -2060,38 +2130,103 @@
     }
   }
 
-  // Poll Transcode Status & Update UI
-  async function pollTranscodeStatus() {
-    let nextDelay = 3500;
+  let systemPollTimer = null;
+  let isPollingSystem = false;
+
+  // Unified System Status Polling
+  async function pollSystemStatus(immediate = false) {
+    if (isPollingSystem && !immediate) return;
+    if (document.hidden && !immediate) {
+      clearTimeout(systemPollTimer);
+      systemPollTimer = setTimeout(pollSystemStatus, 30000);
+      return;
+    }
+
+    isPollingSystem = true;
+    let nextDelay = 6000;
     try {
-      const res = await fetch('/api/transcode/status');
+      const res = await fetch('/api/system/status');
       if (res.ok) {
         const data = await res.json();
-        state.latestTranscodeData = data;
-        renderTranscodeStatus(data);
-        updateCardsTranscodeStatus(data);
+        if (data.transfers) {
+          state.latestTransferData = data.transfers;
+          renderTransferStatus(data.transfers);
+        }
+        if (data.transcode) {
+          state.latestTranscodeData = data.transcode;
+          renderTranscodeStatus(data.transcode);
+          updateCardsTranscodeStatus(data.transcode);
+        }
+        if (data.index) {
+          state.indexStatus = data.index.status;
+          state.latestIndexData = data.index;
+          renderIndexStatus(data.index);
+        }
+        if (data.thumbnails) {
+          state.latestThumbData = data.thumbnails;
+          renderThumbnailStatus(data.thumbnails);
+        }
+        if (data.duplicate_hash) {
+          state.latestDupHashData = data.duplicate_hash;
+          renderDuplicateHashStatus(data.duplicate_hash);
+        }
+        if (data.webp) {
+          state.latestWebpData = data.webp;
+          renderWebpStatus(data.webp);
+        }
+        if (data.library_backup) {
+          state.latestLibBackupData = data.library_backup;
+          renderLibBackupStatus(data.library_backup);
+        }
+        if (data.zip) {
+          state.latestZipData = data.zip;
+          renderZipStatus(data.zip);
+          handleZipStatusUpdate(data.zip);
+        }
+        if (data.batch_zip) {
+          state.latestBatchZipData = data.batch_zip;
+          renderBatchZipStatus(data.batch_zip);
+        }
 
-        const hasPending = data.active || (data.queued && data.queued.length > 0);
-        if (hasPending) {
-          nextDelay = 1000;
+        updateHeaderTaskBadge();
+
+        if (data.is_active) {
+          nextDelay = 2000;
         }
       }
     } catch (err) {
-      console.error('Error checking transcode status:', err);
+      nextDelay = 8000;
     } finally {
-      clearTimeout(state.transcodePollTimer);
-      state.transcodePollTimer = setTimeout(pollTranscodeStatus, nextDelay);
+      isPollingSystem = false;
+      clearTimeout(systemPollTimer);
+      systemPollTimer = setTimeout(pollSystemStatus, nextDelay);
     }
+  }
+
+  // Page visibility awareness: wake up immediately when user returns to tab
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      clearTimeout(systemPollTimer);
+      pollSystemStatus(true);
+    }
+  });
+
+  function pollTranscodeStatus() {
+    pollSystemStatus(true);
   }
 
   // Shared Header Task Badge Updater
   function updateHeaderTaskBadge() {
+    if (!els.transferBadgeBtn) return;
+
     const trData = state.latestTransferData;
     const tData = state.latestTranscodeData;
     const thData = state.latestThumbData;
     const wData = state.latestWebpData;
     const idxData = state.latestIndexData;
     const bkData = state.latestLibBackupData;
+    const zipData = state.latestZipData;
+    const batchZipData = state.latestBatchZipData;
 
     const trActive = trData && (trData.active || (trData.queued && trData.queued.length > 0));
     const idxActive = idxData && idxData.status === 'crawling';
@@ -2099,68 +2234,67 @@
     const thActive = thData && thData.status === 'generating' && (thData.pending_count > 0);
     const wActive = wData && wData.status === 'converting' && (wData.pending_count > 0);
     const bkActive = bkData && (bkData.status === 'backing_up' || bkData.status === 'restoring');
+    const zipActive = zipData && zipData.is_active;
+    const batchZipActive = batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'processing');
 
-    if (trActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      const active = trData.active;
-      const queued = trData.queued || [];
-      els.transferCountText.textContent = active 
-        ? `Moving ${Math.round(active.percent || 0)}%`
-        : `${queued.length} transfer${queued.length > 1 ? 's' : ''}`;
+    const isAnyActive = trActive || idxActive || bkActive || tActive || thActive || wActive || zipActive || batchZipActive;
+
+    // Always keep button visible so the background tasks modal can be opened anytime
+    els.transferBadgeBtn.classList.remove('hidden');
+
+    if (isAnyActive) {
+      if (els.transferIcon) els.transferIcon.classList.add('hidden');
       if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
-    } else if (idxActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      const pct = typeof idxData.percent === 'number' ? Math.round(idxData.percent) : 0;
-      els.transferCountText.textContent = `Indexing ${pct}%`;
-      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
-    } else if (bkActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      const actionName = bkData.status === 'backing_up' ? 'Backup' : 'Restore';
-      const pct = Math.round(bkData.progress_percent || 0);
-      els.transferCountText.textContent = `${actionName} ${pct}%`;
-      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
-    } else if (tActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      const active = tData.active;
-      const queued = tData.queued || [];
-      els.transferCountText.textContent = active 
-        ? `${Math.round(active.percent || 0)}% (${queued.length + 1})`
-        : `${queued.length} queued`;
-      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
-    } else if (thActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      els.transferCountText.textContent = `Thumbs ${Math.round(thData.percent || 0)}%`;
-      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
-    } else if (wActive) {
-      els.transferBadgeBtn.classList.remove('hidden');
-      els.transferCountText.textContent = `WebP ${Math.round(wData.percent || 0)}%`;
-      if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
+      els.transferBadgeBtn.classList.add('text-emerald-300', 'border-emerald-500/40');
+      els.transferBadgeBtn.classList.remove('text-slate-300');
+      els.transferBadgeBtn.title = 'View background activity (Active)';
+
+      if (trActive) {
+        const active = trData.active;
+        const queued = trData.queued || [];
+        els.transferCountText.textContent = active 
+          ? `Moving ${Math.round(active.percent || 0)}%`
+          : `${queued.length} transfer${queued.length > 1 ? 's' : ''}`;
+      } else if (idxActive) {
+        const pct = typeof idxData.percent === 'number' ? Math.round(idxData.percent) : 0;
+        els.transferCountText.textContent = `Indexing ${pct}%`;
+      } else if (bkActive) {
+        const actionName = bkData.status === 'backing_up' ? 'Backup' : 'Restore';
+        const pct = Math.round(bkData.progress_percent || 0);
+        els.transferCountText.textContent = `${actionName} ${pct}%`;
+      } else if (tActive) {
+        const active = tData.active;
+        const queued = tData.queued || [];
+        els.transferCountText.textContent = active 
+          ? `${Math.round(active.percent || 0)}% (${queued.length + 1})`
+          : `${queued.length} queued`;
+      } else if (thActive) {
+        els.transferCountText.textContent = `Thumbs ${Math.round(thData.percent || 0)}%`;
+      } else if (wActive) {
+        els.transferCountText.textContent = `WebP ${Math.round(wData.percent || 0)}%`;
+      } else if (batchZipActive) {
+        const pct = Math.round(batchZipData.percent || 0);
+        els.transferCountText.textContent = `Batch Zip ${pct}%`;
+      } else if (zipActive) {
+        const runningTask = (zipData.tasks || []).find(t => t.status === 'running');
+        const actionName = runningTask ? (runningTask.type === 'compress' ? 'Zipping' : (runningTask.type === 'unpack' ? 'Unpack' : 'Archive')) : 'ZIP';
+        const pct = runningTask ? Math.round(runningTask.percent || 0) : 0;
+        els.transferCountText.textContent = `${actionName} ${pct}%`;
+      }
     } else {
-      els.transferBadgeBtn.classList.add('hidden');
-      els.transferDropdown.classList.add('hidden');
+      if (els.transferIcon) els.transferIcon.classList.remove('hidden');
+      if (els.transferSpinner) els.transferSpinner.classList.add('hidden');
+      els.transferBadgeBtn.classList.remove('text-emerald-300', 'border-emerald-500/40');
+      els.transferBadgeBtn.classList.add('text-slate-300');
+      els.transferBadgeBtn.title = 'View background activity (Idle)';
+      els.transferCountText.textContent = 'Tasks';
+      // Keep transferDropdown open if the user opened it; do not auto-close
     }
   }
 
   // Poll Cloud Transfers Status & Update UI
-  async function pollTransfersStatus() {
-    let nextDelay = 3500;
-    try {
-      const res = await fetch('/api/transfers');
-      if (res.ok) {
-        const data = await res.json();
-        state.latestTransferData = data;
-        renderTransferStatus(data);
-        const hasPending = data.active || (data.queued && data.queued.length > 0);
-        if (hasPending) {
-          nextDelay = 1500;
-        }
-      }
-    } catch (err) {
-      // Silent error
-    } finally {
-      clearTimeout(state.transferPollTimer);
-      state.transferPollTimer = setTimeout(pollTransfersStatus, nextDelay);
-    }
+  function pollTransfersStatus() {
+    pollSystemStatus(true);
   }
 
   // Render Cloud Transfers Section
@@ -2273,29 +2407,8 @@
   }
 
   // Poll Thumbnail Status & Update UI
-  async function pollThumbnailStatus() {
-    let nextDelay = 3500;
-    try {
-      const res = await fetch('/api/backup/thumbnails/status');
-      if (res.ok) {
-        const data = await res.json();
-        state.latestThumbData = data;
-        renderThumbnailStatus(data);
-
-        if (data.status === 'generating') {
-          nextDelay = 1200;
-        } else if (data.status === 'paused') {
-          nextDelay = 5000;
-        } else {
-          nextDelay = 8000;
-        }
-      }
-    } catch (err) {
-      console.error('Error checking thumbnail status:', err);
-    } finally {
-      clearTimeout(state.thumbPollTimer);
-      state.thumbPollTimer = setTimeout(pollThumbnailStatus, nextDelay);
-    }
+  function pollThumbnailStatus() {
+    pollSystemStatus(true);
   }
 
   // Render Thumbnail Generator Status
@@ -2401,29 +2514,8 @@
   }
 
   // Poll Duplicate Hash Pre-Verification Status
-  async function pollDuplicateHashStatus() {
-    let nextDelay = 3500;
-    try {
-      const res = await fetch('/api/backup/duplicates/hash-status');
-      if (res.ok) {
-        const data = await res.json();
-        state.latestDupHashData = data;
-        renderDuplicateHashStatus(data);
-
-        if (data.status === 'hashing') {
-          nextDelay = 1500;
-        } else if (data.status === 'paused') {
-          nextDelay = 5000;
-        } else {
-          nextDelay = 8000;
-        }
-      }
-    } catch (err) {
-      console.error('Error checking duplicate hash status:', err);
-    } finally {
-      clearTimeout(state.dupHashPollTimer);
-      state.dupHashPollTimer = setTimeout(pollDuplicateHashStatus, nextDelay);
-    }
+  function pollDuplicateHashStatus() {
+    pollSystemStatus(true);
   }
 
   // Render Duplicate Hash Pre-Verification Status
@@ -2496,30 +2588,8 @@
   }
 
   // Poll WebP Optimizer Status
-  async function pollWebpStatus() {
-    let nextDelay = 3500;
-    try {
-      const res = await fetch('/api/backup/webp/status');
-      if (res.ok) {
-        const data = await res.json();
-        state.latestWebpData = data;
-        renderWebpStatus(data);
-        updateHeaderTaskBadge();
-
-        if (data.status === 'converting') {
-          nextDelay = 1500;
-        } else if (data.status === 'paused') {
-          nextDelay = 5000;
-        } else {
-          nextDelay = 8000;
-        }
-      }
-    } catch (err) {
-      console.error('Error checking WebP status:', err);
-    } finally {
-      clearTimeout(state.webpPollTimer);
-      state.webpPollTimer = setTimeout(pollWebpStatus, nextDelay);
-    }
+  function pollWebpStatus() {
+    pollSystemStatus(true);
   }
 
   // Render WebP Optimizer Status
@@ -2570,43 +2640,37 @@
     if (els.webpPercentText) els.webpPercentText.textContent = `${pct}%`;
     if (els.webpProgressBar) els.webpProgressBar.style.width = `${pct}%`;
     if (els.webpCountsText) {
+      const tot = data.total_images || 0;
+      const pend = data.pending_count || 0;
+      const opt = data.optimized_count || Math.max(0, tot - pend);
       const conv = data.converted_count || 0;
-      const skipped = data.skipped_count || 0;
-      if (skipped > 0) {
-        els.webpCountsText.textContent = `${conv} converted (${skipped} kept original) / ${data.total_images || 0}`;
+      if (pend === 0 && tot > 0) {
+        if (conv > 0) {
+          els.webpCountsText.textContent = `${tot} / ${tot} WebP (${conv} converted)`;
+        } else {
+          els.webpCountsText.textContent = `${tot} / ${tot} WebP`;
+        }
       } else {
-        els.webpCountsText.textContent = `${conv} / ${data.total_images || 0} converted`;
+        if (conv > 0) {
+          els.webpCountsText.textContent = `${opt} / ${tot} WebP (${conv} converted)`;
+        } else {
+          els.webpCountsText.textContent = `${opt} / ${tot} WebP`;
+        }
       }
     }
     if (els.webpSavedText) {
-      const isNeg = (data.saved_bytes || 0) < 0;
-      els.webpSavedText.textContent = `${isNeg ? 'Net' : 'Saved'}: ${data.saved_formatted || '0 B'}`;
+      const sBytes = data.saved_bytes || 0;
+      if (sBytes <= 0) {
+        els.webpSavedText.textContent = 'Saved: 0 B';
+      } else {
+        els.webpSavedText.textContent = `Saved: ${data.saved_formatted || '0 B'}`;
+      }
     }
   }
 
   // Poll Library Folder Snapshot Backup Status
-  async function pollLibBackupStatus() {
-    let nextDelay = 8000;
-    try {
-      const res = await fetch('/api/backup/library-backup/status');
-      if (res.ok) {
-        const data = await res.json();
-        state.latestLibBackupData = data;
-        renderLibBackupStatus(data);
-        updateHeaderTaskBadge();
-
-        if (data.status === 'backing_up' || data.status === 'restoring') {
-          nextDelay = 1200;
-        } else {
-          nextDelay = 8000;
-        }
-      }
-    } catch (err) {
-      console.error('Error checking library backup status:', err);
-    } finally {
-      clearTimeout(state.libBackupPollTimer);
-      state.libBackupPollTimer = setTimeout(pollLibBackupStatus, nextDelay);
-    }
+  function pollLibBackupStatus() {
+    pollSystemStatus(true);
   }
 
   // Render Library Folder Backup Status
@@ -2790,6 +2854,515 @@
     }
   }
 
+  // Handle ZIP task completion and progression
+  function handleZipStatusUpdate(data) {
+    if (!data) return;
+
+    // Check if extraction of current folder completed
+    if (state.isZip && state.zipExtracting) {
+      const currentTask = (data.tasks || []).find(t => t.path === state.currentPath && t.type === 'extract');
+      if (currentTask) {
+        if (els.zipExtractBanner) {
+          els.zipExtractBanner.classList.remove('hidden');
+          const pct = Math.round(currentTask.percent || 0);
+          els.zipExtractPercent.textContent = `${pct}%`;
+          els.zipExtractProgressBar.style.width = `${pct}%`;
+          if (currentTask.message) els.zipExtractMsg.textContent = currentTask.message;
+        }
+        if (currentTask.status === 'completed') {
+          state.zipExtracting = false;
+          if (els.zipExtractBanner) els.zipExtractBanner.classList.add('hidden');
+          loadFolder(state.currentPath, false);
+        }
+      } else {
+        // Task completed or no longer running
+        state.zipExtracting = false;
+        if (els.zipExtractBanner) els.zipExtractBanner.classList.add('hidden');
+      }
+    }
+
+    // Check compression progress for actively compressing folder
+    if (state.compressingFolder) {
+      const compTask = (data.tasks || []).find(t => t.path === state.compressingFolder && t.type === 'compress');
+      if (compTask) {
+        if (els.zipExtractBanner) {
+          els.zipExtractBanner.classList.remove('hidden');
+          const pct = Math.round(compTask.percent || 0);
+          els.zipExtractPercent.textContent = `${pct}%`;
+          els.zipExtractProgressBar.style.width = `${pct}%`;
+          if (compTask.message) els.zipExtractMsg.textContent = compTask.message;
+        }
+        if (compTask.status === 'completed') {
+          const targetZip = state.compressingTargetZip;
+          state.compressingFolder = null;
+          state.compressingTargetZip = null;
+          if (els.zipExtractBanner) els.zipExtractBanner.classList.add('hidden');
+          showToast('Folder replaced with ZIP archive! Opening...', 'success');
+          loadFolder(targetZip, true, true);
+        } else if (compTask.status === 'failed') {
+          showToast(`Compression failed: ${compTask.error || compTask.message}`, 'error');
+          state.compressingFolder = null;
+          state.compressingTargetZip = null;
+          if (els.zipExtractBanner) els.zipExtractBanner.classList.add('hidden');
+        }
+      } else {
+        // Task completed before first poll or no longer in active list
+        const targetZip = state.compressingTargetZip;
+        state.compressingFolder = null;
+        state.compressingTargetZip = null;
+        if (els.zipExtractBanner) els.zipExtractBanner.classList.add('hidden');
+        showToast('Compression finished! Opening ZIP archive...', 'success');
+        loadFolder(targetZip, true, true);
+      }
+    }
+  }
+
+  function pollZipTasksStatus() {
+    pollSystemStatus(true);
+  }
+
+  // Render ZIP Tasks in dropdown panel
+  function renderZipStatus(data) {
+    if (!els.zipTasksList) return;
+    const tasks = data.tasks || [];
+    const activeTasks = tasks.filter(t => t.status === 'running');
+    if (els.zipTasksSummary) {
+      els.zipTasksSummary.textContent = activeTasks.length > 0 ? `${activeTasks.length} active` : 'Idle';
+    }
+
+    if (tasks.length === 0) {
+      els.zipTasksList.innerHTML = `<div class="text-[10px] text-slate-500 italic">No active zip operations</div>`;
+      return;
+    }
+
+    els.zipTasksList.innerHTML = tasks.slice(0, 5).map(t => {
+      const typeLabel = t.type === 'compress' ? 'Compress' : (t.type === 'unpack' ? 'Unpack' : (t.type === 'extract' ? 'Cache Extract' : 'Sync Back'));
+      const statusColor = t.status === 'running' ? 'text-sky-300' : (t.status === 'completed' ? 'text-emerald-400' : 'text-red-400');
+      return `
+        <div class="bg-slate-950 p-2 rounded-lg border border-slate-800 text-[11px] flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="font-medium text-slate-200 truncate max-w-[180px]">${t.filename}</span>
+            <span class="${statusColor} font-mono text-[10px]">${t.status === 'running' ? Math.round(t.percent) + '%' : t.status}</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-1 overflow-hidden">
+            <div class="bg-sky-500 h-1 rounded-full transition-all" style="width: ${t.percent || 0}%"></div>
+          </div>
+          <span class="text-[10px] text-slate-400 truncate">${typeLabel}: ${t.message || t.status}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Open Compress ZIP Modal
+  async function openCompressZipModal() {
+    if (!state.currentPath || state.isRoot || state.isZip) return;
+    try {
+      if (els.compressFolderZipBtn) {
+        els.compressFolderZipBtn.disabled = true;
+        if (els.zipBtnText) els.zipBtnText.textContent = 'Checking...';
+      }
+      const res = await fetch(`/api/backup/zip/check?folder_path=${encodeURIComponent(state.currentPath)}`);
+      const check = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(check.detail || 'Server error checking folder eligibility', 'error');
+        return;
+      }
+      if (!check.eligible) {
+        showToast(check.reason || 'This folder cannot be compressed to ZIP', 'warning');
+        return;
+      }
+
+      const folderName = state.currentPath.split('/').filter(Boolean).pop() || 'folder';
+      if (els.compressFolderName) els.compressFolderName.textContent = folderName;
+      if (els.compressImageCount) els.compressImageCount.textContent = `${check.image_count} image${check.image_count === 1 ? '' : 's'}`;
+      if (els.compressTotalSize) els.compressTotalSize.textContent = check.total_size_formatted || '0 MB';
+      if (els.compressTargetZip) els.compressTargetZip.textContent = `${folderName}.zip`;
+
+      if (els.compressZipModal) {
+        els.compressZipModal.classList.remove('hidden');
+      }
+    } catch (err) {
+      console.error('Error checking compressibility:', err);
+      showToast('Failed to check folder eligibility', 'error');
+    } finally {
+      if (els.compressFolderZipBtn) {
+        els.compressFolderZipBtn.disabled = false;
+        applyFiltersAndSort();
+      }
+    }
+  }
+
+  function closeCompressZipModal() {
+    if (els.compressZipModal) els.compressZipModal.classList.add('hidden');
+  }
+
+  async function submitCompressZip() {
+    if (!state.currentPath) return;
+    const folderToCompress = state.currentPath;
+    const folderName = folderToCompress.split('/').filter(Boolean).pop() || 'folder';
+    try {
+      if (els.confirmCompressZipBtn) els.confirmCompressZipBtn.disabled = true;
+      const res = await fetch('/api/backup/zip/compress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_path: folderToCompress }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Compression failed');
+      }
+      state.compressingFolder = folderToCompress;
+      state.compressingTargetZip = data.target_zip || (folderToCompress + '.zip');
+      closeCompressZipModal();
+      showToast(data.message || 'Compressing folder to ZIP...', 'info');
+
+      // Show compression progress banner
+      if (els.zipExtractBanner) {
+        els.zipExtractBanner.classList.remove('hidden');
+        if (els.zipExtractMsg) els.zipExtractMsg.textContent = `Compressing ${folderName} to ZIP and replacing folder...`;
+        if (els.zipExtractPercent) els.zipExtractPercent.textContent = '0%';
+        if (els.zipExtractProgressBar) els.zipExtractProgressBar.style.width = '0%';
+      }
+
+      pollZipTasksStatus();
+    } catch (err) {
+      console.error('Error starting compression:', err);
+      showToast(err.message || 'Failed to start compression', 'error');
+    } finally {
+      if (els.confirmCompressZipBtn) els.confirmCompressZipBtn.disabled = false;
+    }
+  }
+
+  // Open Unpack ZIP Modal
+  function openUnpackZipModal() {
+    if (!state.currentPath || !state.isZip) return;
+    const fileName = state.currentPath.split('/').filter(Boolean).pop() || 'archive.zip';
+    const folderName = fileName.replace(/\.zip$/i, '');
+    if (els.unpackZipFileName) els.unpackZipFileName.textContent = fileName;
+    if (els.unpackZipSource) els.unpackZipSource.textContent = fileName;
+    if (els.unpackZipTarget) els.unpackZipTarget.textContent = folderName;
+
+    if (els.unpackZipModal) els.unpackZipModal.classList.remove('hidden');
+  }
+
+  function closeUnpackZipModal() {
+    if (els.unpackZipModal) els.unpackZipModal.classList.add('hidden');
+  }
+
+  async function submitUnpackZip() {
+    if (!state.currentPath || !state.isZip) return;
+    try {
+      if (els.confirmUnpackZipBtn) els.confirmUnpackZipBtn.disabled = true;
+      const res = await fetch('/api/backup/zip/unpack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zip_path: state.currentPath }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Unpack failed');
+      }
+      showToast(data.message || 'Unpacking started in background', 'info');
+      closeUnpackZipModal();
+      pollZipTasksStatus();
+      if (data.target_folder) {
+        setTimeout(() => loadFolder(data.target_folder, true), 1500);
+      }
+    } catch (err) {
+      console.error('Error starting unpack:', err);
+      showToast(err.message || 'Failed to start unpack', 'error');
+    } finally {
+      if (els.confirmUnpackZipBtn) els.confirmUnpackZipBtn.disabled = false;
+    }
+  }
+
+  // Open Batch ZIP Modal
+  async function openBatchZipModal() {
+    if (!els.batchZipModal) return;
+    els.batchZipModal.classList.remove('hidden');
+    if (els.batchZipCandidatesList) {
+      els.batchZipCandidatesList.innerHTML = `
+        <div class="col-span-full py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <span class="w-6 h-6 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></span>
+          <span class="text-xs">Scanning library for candidate image folders...</span>
+        </div>
+      `;
+    }
+    if (els.confirmBatchZipBtn) els.confirmBatchZipBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/backup/zip/batch/candidates');
+      if (!res.ok) throw new Error('Failed to fetch candidate folders');
+      const data = await res.json();
+
+      state.batchZipCandidates = data.candidates || [];
+      state.batchZipSelectedPaths = new Set(state.batchZipCandidates.map(c => c.path));
+      state.batchZipFilterQuery = '';
+      if (els.batchZipFilterInput) els.batchZipFilterInput.value = '';
+
+      if (els.batchZipCandidateCount) els.batchZipCandidateCount.textContent = data.total_candidates;
+      if (els.batchZipImageCount) els.batchZipImageCount.textContent = data.total_images;
+      if (els.batchZipTotalSize) els.batchZipTotalSize.textContent = data.total_size_formatted;
+
+      renderBatchZipCandidates();
+    } catch (err) {
+      console.error('Error opening batch zip modal:', err);
+      showToast('Could not load candidate folders', 'error');
+      if (els.batchZipCandidatesList) {
+        els.batchZipCandidatesList.innerHTML = `<div class="text-center py-8 text-xs text-rose-400">Error loading candidates: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+  }
+
+  function closeBatchZipModal() {
+    if (els.batchZipModal) els.batchZipModal.classList.add('hidden');
+  }
+
+  function renderBatchZipCandidates() {
+    if (!els.batchZipCandidatesList) return;
+    const q = (state.batchZipFilterQuery || '').toLowerCase().trim();
+    const filtered = state.batchZipCandidates.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      (c.parent_name && c.parent_name.toLowerCase().includes(q)) ||
+      c.path.toLowerCase().includes(q)
+    );
+
+    if (filtered.length === 0) {
+      els.batchZipCandidatesList.innerHTML = `
+        <div class="text-center py-8 text-xs text-slate-500">
+          ${state.batchZipCandidates.length === 0 ? 'No qualifying image-only folders found in library.' : 'No candidates match your search filter.'}
+        </div>
+      `;
+      if (els.batchZipSelectedBadge) els.batchZipSelectedBadge.textContent = `0 of ${state.batchZipCandidates.length} selected`;
+      if (els.confirmBatchZipBtn) els.confirmBatchZipBtn.disabled = true;
+      if (els.confirmBatchZipBtnText) els.confirmBatchZipBtnText.textContent = 'Compress Selected (0)';
+      return;
+    }
+
+    const selectedCount = state.batchZipSelectedPaths.size;
+    const totalCount = state.batchZipCandidates.length;
+
+    if (els.batchZipSelectedBadge) {
+      els.batchZipSelectedBadge.textContent = `${selectedCount} of ${totalCount} selected`;
+    }
+    if (els.confirmBatchZipBtn) {
+      els.confirmBatchZipBtn.disabled = selectedCount === 0;
+    }
+    if (els.confirmBatchZipBtnText) {
+      els.confirmBatchZipBtnText.textContent = `Compress Selected (${selectedCount})`;
+    }
+    if (els.batchZipSelectAllToggle) {
+      els.batchZipSelectAllToggle.checked = selectedCount === totalCount && totalCount > 0;
+      els.batchZipSelectAllToggle.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+    }
+
+    els.batchZipCandidatesList.innerHTML = filtered.map(c => {
+      const isChecked = state.batchZipSelectedPaths.has(c.path);
+      return `
+        <div class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition cursor-pointer group" data-path="${escapeHtml(c.path)}">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <input 
+              type="checkbox" 
+              class="batch-zip-item-checkbox rounded bg-slate-800 border-slate-700 text-sky-600 focus:ring-sky-500 cursor-pointer"
+              data-path="${escapeHtml(c.path)}"
+              ${isChecked ? 'checked' : ''}
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5 text-xs font-semibold text-white truncate">
+                <span>📁</span>
+                <span class="truncate">${escapeHtml(c.name)}</span>
+              </div>
+              <div class="text-[10px] text-slate-400 font-mono truncate">
+                ${c.parent_name ? `${escapeHtml(c.parent_name)} / ` : ''}${escapeHtml(c.target_zip)}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 text-right">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 font-mono text-[10px]">
+              ${c.image_count} img${c.image_count === 1 ? '' : 's'}
+            </span>
+            <span class="text-[11px] text-slate-400 font-mono w-16">
+              ${c.total_size_formatted}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach checkbox toggle events
+    els.batchZipCandidatesList.querySelectorAll('.batch-zip-item-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const p = cb.getAttribute('data-path');
+        if (cb.checked) {
+          state.batchZipSelectedPaths.add(p);
+        } else {
+          state.batchZipSelectedPaths.delete(p);
+        }
+        renderBatchZipCandidates();
+      });
+    });
+
+    // Clicking row toggles checkbox
+    els.batchZipCandidatesList.querySelectorAll('div[data-path]').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        const p = row.getAttribute('data-path');
+        const cb = row.querySelector('.batch-zip-item-checkbox');
+        if (cb) {
+          cb.checked = !cb.checked;
+          if (cb.checked) {
+            state.batchZipSelectedPaths.add(p);
+          } else {
+            state.batchZipSelectedPaths.delete(p);
+          }
+          renderBatchZipCandidates();
+        }
+      });
+    });
+  }
+
+  // Submit Batch ZIP
+  async function submitBatchZip() {
+    const selected = Array.from(state.batchZipSelectedPaths);
+    if (selected.length === 0) return;
+
+    try {
+      if (els.confirmBatchZipBtn) els.confirmBatchZipBtn.disabled = true;
+      const res = await fetch('/api/backup/zip/batch/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_paths: selected }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to start batch compression');
+      }
+
+      showToast(data.message || `Started batch compression for ${selected.length} folders`, 'info');
+      closeBatchZipModal();
+      pollBatchZipStatus();
+    } catch (err) {
+      console.error('Error starting batch zip:', err);
+      showToast(err.message || 'Error starting batch compression', 'error');
+    } finally {
+      if (els.confirmBatchZipBtn) els.confirmBatchZipBtn.disabled = false;
+    }
+  }
+
+  // Toggle Batch ZIP Pause / Resume
+  async function toggleBatchZipPause() {
+    try {
+      const res = await fetch('/api/backup/zip/batch/pause', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || (data.status === 'paused' ? 'Batch compression paused' : 'Batch compression resumed'), 'info');
+        pollBatchZipStatus();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error toggling batch compression pause', 'error');
+    }
+  }
+
+  // Cancel Batch ZIP
+  async function cancelBatchZip() {
+    if (!confirm('Are you sure you want to cancel the remaining batch compression? Currently running folder will complete.')) return;
+    try {
+      const res = await fetch('/api/backup/zip/batch/cancel', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || 'Batch compression canceled', 'warning');
+        pollBatchZipStatus();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error canceling batch compression', 'error');
+    }
+  }
+
+  // Render and handle Batch ZIP status updates
+  function renderBatchZipStatus(data) {
+    if (!data) return;
+    const prevData = state.latestBatchZipData;
+    state.latestBatchZipData = data;
+
+    const isRunning = (data.status === 'running' || data.status === 'paused');
+
+    if (els.batchZipProgressBox) {
+      if (isRunning) {
+        els.batchZipProgressBox.classList.remove('hidden');
+      } else if (data.status === 'completed' || data.status === 'canceled') {
+        if (prevData && (prevData.status === 'running' || prevData.status === 'paused')) {
+          els.batchZipProgressBox.classList.remove('hidden');
+          setTimeout(() => {
+            if (state.latestBatchZipData && state.latestBatchZipData.status !== 'running' && state.latestBatchZipData.status !== 'paused') {
+              if (els.batchZipProgressBox) els.batchZipProgressBox.classList.add('hidden');
+            }
+          }, 4000);
+        } else {
+          els.batchZipProgressBox.classList.add('hidden');
+        }
+      } else {
+        els.batchZipProgressBox.classList.add('hidden');
+      }
+    }
+
+    // Toggle buttons
+    if (els.toggleBatchZipPauseBtn) {
+      if (isRunning) {
+        els.toggleBatchZipPauseBtn.classList.remove('hidden');
+        els.toggleBatchZipPauseBtn.textContent = data.is_paused ? 'Resume' : 'Pause';
+      } else {
+        els.toggleBatchZipPauseBtn.classList.add('hidden');
+      }
+    }
+    if (els.cancelBatchZipBtn) {
+      if (isRunning) {
+        els.cancelBatchZipBtn.classList.remove('hidden');
+      } else {
+        els.cancelBatchZipBtn.classList.add('hidden');
+      }
+    }
+
+    // Update progress UI
+    if (isRunning || data.status === 'completed') {
+      if (els.batchZipCurrentFolder) {
+        els.batchZipCurrentFolder.textContent = data.current_folder_name 
+          ? `[${data.current_index}/${data.total_folders}] ${data.current_folder_name}`
+          : (data.status === 'completed' ? 'All folders completed' : 'Batch compression in progress...');
+      }
+      if (els.batchZipPercentText) {
+        els.batchZipPercentText.textContent = `${Math.round(data.overall_percent || 0)}%`;
+      }
+      if (els.batchZipProgressBar) {
+        els.batchZipProgressBar.style.width = `${Math.round(data.overall_percent || 0)}%`;
+      }
+      if (els.batchZipCountsText) {
+        els.batchZipCountsText.textContent = `${data.succeeded} done, ${data.failed} failed of ${data.total_folders}`;
+      }
+      if (els.batchZipStatusText) {
+        els.batchZipStatusText.textContent = data.is_paused ? 'Paused' : (data.status === 'completed' ? 'Done' : 'Compressing...');
+      }
+      if (els.zipTasksSummary) {
+        els.zipTasksSummary.textContent = isRunning 
+          ? `Batch: ${data.current_index}/${data.total_folders}`
+          : 'Idle';
+      }
+    }
+
+    // Detect batch completion transition
+    if (prevData && (prevData.status === 'running' || prevData.status === 'paused') && data.status === 'completed') {
+      showToast(`Batch compression finished! ${data.succeeded} converted to ZIP${data.failed ? `, ${data.failed} failed` : ''}.`, data.failed ? 'warning' : 'success');
+      if (state.currentPath) {
+        loadFolder(state.currentPath, false, true);
+      }
+    }
+  }
+
+  function pollBatchZipStatus() {
+    pollSystemStatus(true);
+  }
+
   // Toggle Duplicate Hash Pause / Resume
   async function toggleDuplicateHashPause() {
     try {
@@ -2914,6 +3487,17 @@
 
   // Event Listeners Initialization
   function initEvents() {
+    // Delegated root folder click handler
+    if (els.rootFolderList) {
+      els.rootFolderList.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-path]');
+        if (btn) {
+          const folderPath = decodeURIComponent(btn.dataset.path);
+          loadFolder(folderPath);
+        }
+      });
+    }
+
     // Mobile Drawer Toggle
     els.toggleSidebarBtn.addEventListener('click', () => setSidebarOpen(true));
     els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
@@ -2933,6 +3517,9 @@
       e.stopPropagation();
       const isClosed = els.transferDropdown.classList.contains('hidden');
       setTransferDropdownOpen(isClosed);
+      if (isClosed) {
+        pollSystemStatus(true);
+      }
     });
 
     if (els.closeTransferDropdownBtn) {
@@ -2950,6 +3537,12 @@
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#transferDropdown') && !e.target.closest('#transferBadgeBtn')) {
+        setTransferDropdownOpen(false);
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && els.transferDropdown && !els.transferDropdown.classList.contains('hidden')) {
         setTransferDropdownOpen(false);
       }
     });
@@ -2984,6 +3577,85 @@
     // Optimize Current Folder WebP Button
     if (els.optimizeFolderWebpBtn) {
       els.optimizeFolderWebpBtn.addEventListener('click', triggerFolderWebp);
+    }
+
+    // Compress Image Folder to ZIP
+    if (els.compressFolderZipBtn) {
+      els.compressFolderZipBtn.addEventListener('click', openCompressZipModal);
+    }
+    if (els.cancelCompressZipBtn) {
+      els.cancelCompressZipBtn.addEventListener('click', closeCompressZipModal);
+    }
+    if (els.closeCompressZipXBtn) {
+      els.closeCompressZipXBtn.addEventListener('click', closeCompressZipModal);
+    }
+    if (els.compressZipModal) {
+      els.compressZipModal.addEventListener('click', (e) => {
+        if (e.target === els.compressZipModal) closeCompressZipModal();
+      });
+    }
+    if (els.confirmCompressZipBtn) {
+      els.confirmCompressZipBtn.addEventListener('click', submitCompressZip);
+    }
+
+    // Unpack ZIP to Folder
+    if (els.unpackFolderZipBtn) {
+      els.unpackFolderZipBtn.addEventListener('click', openUnpackZipModal);
+    }
+    if (els.cancelUnpackZipBtn) {
+      els.cancelUnpackZipBtn.addEventListener('click', closeUnpackZipModal);
+    }
+    if (els.closeUnpackZipXBtn) {
+      els.closeUnpackZipXBtn.addEventListener('click', closeUnpackZipModal);
+    }
+    if (els.unpackZipModal) {
+      els.unpackZipModal.addEventListener('click', (e) => {
+        if (e.target === els.unpackZipModal) closeUnpackZipModal();
+      });
+    }
+    if (els.confirmUnpackZipBtn) {
+      els.confirmUnpackZipBtn.addEventListener('click', submitUnpackZip);
+    }
+
+    // Batch ZIP Modal & Controls
+    if (els.openBatchZipBtn) {
+      els.openBatchZipBtn.addEventListener('click', openBatchZipModal);
+    }
+    if (els.closeBatchZipModalBtn) {
+      els.closeBatchZipModalBtn.addEventListener('click', closeBatchZipModal);
+    }
+    if (els.cancelBatchZipModalBtn) {
+      els.cancelBatchZipModalBtn.addEventListener('click', closeBatchZipModal);
+    }
+    if (els.batchZipModal) {
+      els.batchZipModal.addEventListener('click', (e) => {
+        if (e.target === els.batchZipModal) closeBatchZipModal();
+      });
+    }
+    if (els.confirmBatchZipBtn) {
+      els.confirmBatchZipBtn.addEventListener('click', submitBatchZip);
+    }
+    if (els.toggleBatchZipPauseBtn) {
+      els.toggleBatchZipPauseBtn.addEventListener('click', toggleBatchZipPause);
+    }
+    if (els.cancelBatchZipBtn) {
+      els.cancelBatchZipBtn.addEventListener('click', cancelBatchZip);
+    }
+    if (els.batchZipFilterInput) {
+      els.batchZipFilterInput.addEventListener('input', (e) => {
+        state.batchZipFilterQuery = e.target.value;
+        renderBatchZipCandidates();
+      });
+    }
+    if (els.batchZipSelectAllToggle) {
+      els.batchZipSelectAllToggle.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          state.batchZipSelectedPaths = new Set(state.batchZipCandidates.map(c => c.path));
+        } else {
+          state.batchZipSelectedPaths.clear();
+        }
+        renderBatchZipCandidates();
+      });
     }
 
     // Search Scope Toggle
@@ -3176,13 +3848,7 @@
     const initialFolder = urlParams.get('folder');
 
     await loadFolder(initialFolder || '', false);
-    pollTransfersStatus();
-    pollTranscodeStatus();
-    pollIndexStatus();
-    pollThumbnailStatus();
-    pollDuplicateHashStatus();
-    pollWebpStatus();
-    pollLibBackupStatus();
+    pollSystemStatus();
     fetchDuplicateSummary();
     updateIgnoredCountBadge();
   }
@@ -3202,6 +3868,14 @@
     openIgnoredDuplicatesModal,
     closeIgnoredDuplicatesModal,
     unignoreDuplicatePair,
+    openCompressZipModal,
+    closeCompressZipModal,
+    openUnpackZipModal,
+    closeUnpackZipModal,
+    openBatchZipModal,
+    closeBatchZipModal,
+    toggleBatchZipPause,
+    cancelBatchZip,
   };
 
   // Start app when DOM is ready

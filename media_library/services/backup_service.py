@@ -76,14 +76,27 @@ def get_library_backup_dir() -> Path:
     base = state.get("destination_dir") or DEFAULT_DESTINATION_DIR
     return Path(base).resolve() / LIBRARY_BACKUP_SUBDIR
 
-def get_existing_backup_meta() -> Optional[Dict[str, Any]]:
+_backup_meta_cache: Optional[Dict[str, Any]] = None
+_backup_meta_cache_time: float = 0.0
+_backup_meta_cache_ttl: float = 60.0
+
+def get_existing_backup_meta(force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    global _backup_meta_cache, _backup_meta_cache_time
+    now = time.time()
+    if not force_refresh and _backup_meta_cache is not None and (now - _backup_meta_cache_time < _backup_meta_cache_ttl):
+        return _backup_meta_cache
     try:
         meta_file = get_library_backup_dir() / "backup_meta.json"
         if meta_file.exists() and meta_file.stat().st_size > 0:
             with open(meta_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                _backup_meta_cache = data
+                _backup_meta_cache_time = now
+                return data
     except Exception as e:
         print(f"[Library Backup] Error reading backup metadata: {e}")
+    _backup_meta_cache = None
+    _backup_meta_cache_time = now
     return None
 
 def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> Dict[str, Any]:
@@ -130,9 +143,11 @@ def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> 
         try:
             db_file_count = chk_conn.execute("SELECT count(*) FROM files").fetchone()[0]
             db_folder_count = chk_conn.execute("SELECT count(*) FROM folders").fetchone()[0]
+            db_thumb_count = chk_conn.execute("SELECT count(*) FROM files WHERE has_thumb = 1").fetchone()[0]
         except Exception:
             db_file_count = 0
             db_folder_count = 0
+            db_thumb_count = 0
         finally:
             chk_conn.close()
 
@@ -144,15 +159,21 @@ def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> 
         if stage_tar.exists():
             stage_tar.unlink()
 
-        thumb_files = list(THUMBNAIL_CACHE_DIR.glob("thumb_*.jpg")) if THUMBNAIL_CACHE_DIR.exists() else []
-        thumb_count = len(thumb_files)
+        thumb_dir = Path(os.environ.get("THUMBNAIL_DIR", THUMBNAIL_CACHE_DIR)).resolve()
+        thumb_files = [tf for tf in thumb_dir.glob("thumb_*.jpg") if not tf.name.endswith(".tmp.jpg") and tf.is_file()] if thumb_dir.exists() else []
+        disk_thumb_count = len(thumb_files)
 
         with tarfile.open(str(stage_tar), "w") as tar:
             for idx, tf in enumerate(thumb_files):
-                tar.add(tf, arcname=tf.name)
-                if progress_cb and idx % 2500 == 0 and thumb_count > 0:
-                    pct = 25.0 + (idx / thumb_count) * 45.0
-                    progress_cb(f"Archiving thumbnail {idx:,}/{thumb_count:,}...", pct)
+                if not tf.exists():
+                    continue
+                try:
+                    tar.add(tf, arcname=tf.name)
+                except (FileNotFoundError, OSError):
+                    continue
+                if progress_cb and idx % 2500 == 0 and disk_thumb_count > 0:
+                    pct = 25.0 + (idx / disk_thumb_count) * 45.0
+                    progress_cb(f"Archiving thumbnail {idx:,}/{disk_thumb_count:,}...", pct)
 
         tar_size = stage_tar.stat().st_size
 
@@ -187,7 +208,8 @@ def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> 
             "datetime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "file_count": db_file_count,
             "folder_count": db_folder_count,
-            "thumb_count": thumb_count,
+            "thumb_count": db_thumb_count,
+            "disk_thumb_count": disk_thumb_count,
             "db_size_bytes": db_size,
             "thumbnails_tar_size_bytes": tar_size,
             "total_size_bytes": total_size,
@@ -199,16 +221,21 @@ def _create_library_backup_sync(progress_cb=None, is_shutdown: bool = False) -> 
             json.dump(meta, f, indent=2)
         os.replace(str(meta_tmp), str(bck_dir / "backup_meta.json"))
 
+        global _backup_meta_cache, _backup_meta_cache_time
+        _backup_meta_cache = meta
+        _backup_meta_cache_time = time.time()
+
         library_backup_state["last_backup_time"] = meta["timestamp"]
         library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"]))
         library_backup_state["backup_exists"] = True
         library_backup_state["file_count"] = db_file_count
         library_backup_state["folder_count"] = db_folder_count
-        library_backup_state["thumb_count"] = thumb_count
+        library_backup_state["thumb_count"] = db_thumb_count
         library_backup_state["total_size_bytes"] = total_size
         library_backup_state["total_size_formatted"] = meta["total_size_formatted"]
         library_backup_state["backup_path"] = str(bck_dir)
         library_backup_state["error_message"] = None
+
 
         if progress_cb:
             progress_cb("Backup complete", 100.0)
@@ -262,12 +289,13 @@ def _restore_library_backup_sync(progress_cb=None) -> Dict[str, Any]:
         if source_tar.exists() and source_tar.stat().st_size > 0:
             if progress_cb:
                 progress_cb("Extracting thumbnails archive...", 40.0)
-            THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            thumb_dir = Path(os.environ.get("THUMBNAIL_DIR", THUMBNAIL_CACHE_DIR)).resolve()
+            thumb_dir.mkdir(parents=True, exist_ok=True)
             with tarfile.open(str(source_tar), "r") as tar:
                 if hasattr(tarfile, 'data_filter'):
-                    tar.extractall(str(THUMBNAIL_CACHE_DIR), filter='data')
+                    tar.extractall(str(thumb_dir), filter='data')
                 else:
-                    tar.extractall(str(THUMBNAIL_CACHE_DIR))
+                    tar.extractall(str(thumb_dir))
 
         if source_cfg.exists() and source_cfg.stat().st_size > 0:
             if progress_cb:
@@ -294,7 +322,7 @@ def _restore_library_backup_sync(progress_cb=None) -> Dict[str, Any]:
         finally:
             conn.close()
 
-        meta = get_existing_backup_meta() or {}
+        meta = get_existing_backup_meta(force_refresh=True) or {}
         library_backup_state["last_backup_time"] = meta.get("timestamp")
         library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"])) if meta.get("timestamp") else ""
         library_backup_state["backup_exists"] = True
@@ -359,7 +387,7 @@ def check_and_auto_restore_library_backup() -> bool:
             print(f"[Auto-Restore] Failed to auto-restore: {res.get('error')}")
             return False
 
-    meta = get_existing_backup_meta()
+    meta = get_existing_backup_meta(force_refresh=True)
     if meta:
         library_backup_state["last_backup_time"] = meta.get("timestamp")
         library_backup_state["last_backup_str"] = time.strftime("%b %d, %H:%M:%S", time.localtime(meta["timestamp"])) if meta.get("timestamp") else ""

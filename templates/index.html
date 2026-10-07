@@ -74,10 +74,11 @@
         </button>
 
         <!-- Background Tasks Status Badge & Dropdown -->
-        <div class="relative">
-          <button id="transferBadgeBtn" title="View background activity" class="hidden px-2 sm:px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition">
-            <span id="transferSpinner" class="w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
-            <span id="transferCountText">0 tasks</span>
+        <div class="relative shrink-0">
+          <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+            <span id="transferIcon" class="text-xs leading-none">⚙️</span>
+            <span id="transferSpinner" class="hidden w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
+            <span id="transferCountText" class="whitespace-nowrap">Tasks</span>
           </button>
 
           <!-- Mobile Backdrop Overlay -->
@@ -86,13 +87,13 @@
           <!-- Background Activity Dropdown Panel (Fixed on mobile to prevent clipping) -->
           <div id="transferDropdown" class="hidden fixed inset-x-3 top-[48px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-sm bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-3 sm:p-3.5 flex flex-col gap-3 backdrop-blur-xl max-h-[80vh] overflow-y-auto">
             
-            <!-- Panel Header (Title + Mobile Close Button) -->
+            <!-- Panel Header (Title + Close Button) -->
             <div class="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
               <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span class="text-xs font-bold text-white uppercase tracking-wider">Background Tasks</span>
               </div>
-              <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-md text-xs sm:hidden flex items-center justify-center w-6 h-6 bg-slate-800 border border-slate-700 active:scale-95 transition" title="Close Panel">
+              <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-md text-xs flex items-center justify-center w-6 h-6 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition cursor-pointer" title="Close Panel">
                 ✕
               </button>
             </div>

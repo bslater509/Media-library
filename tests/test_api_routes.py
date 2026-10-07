@@ -140,3 +140,25 @@ def test_transcode_status(api_client):
     data = res.json()
     assert "paused" in data
     assert "queue_length" in data
+
+
+def test_background_tasks_modal_button_always_visible(api_client):
+    res_root = api_client.get("/")
+    assert res_root.status_code == 200
+    root_html = res_root.text
+    # In Library view (/), button must be present, visible (not hidden by default), and contain task icon
+    assert 'id="transferBadgeBtn"' in root_html
+    assert '<button id="transferBadgeBtn" title="View background activity" class="px-2' in root_html
+    assert 'id="transferIcon"' in root_html
+    assert 'id="transferDropdown"' in root_html
+    assert 'id="closeTransferDropdownBtn"' in root_html
+
+    res_sorter = api_client.get("/sorter")
+    assert res_sorter.status_code == 200
+    sorter_html = res_sorter.text
+    # In Sorter view (/sorter), button must be present, visible (not hidden by default), and contain task icon
+    assert 'id="transferBadgeBtn"' in sorter_html
+    assert '<button id="transferBadgeBtn" title="View background activity" class="px-2' in sorter_html
+    assert 'id="transferIcon"' in sorter_html
+    assert 'id="transferDropdown"' in sorter_html
+    assert 'id="closeTransferDropdownBtn"' in sorter_html

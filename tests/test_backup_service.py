@@ -30,6 +30,13 @@ def test_backup_and_restore_cycle(sandbox_env, sample_media):
     meta = get_existing_backup_meta()
     assert meta is not None
     assert meta["file_count"] >= 3
+    assert "thumb_count" in meta
+    assert "disk_thumb_count" in meta
+    assert meta["thumb_count"] >= 0
+
+    # Test cache refresh
+    refreshed_meta = get_existing_backup_meta(force_refresh=True)
+    assert refreshed_meta["timestamp"] == meta["timestamp"]
 
     # 3. Simulate database wipe
     db_file = sandbox_env["db_path"]
@@ -45,3 +52,4 @@ def test_backup_and_restore_cycle(sandbox_env, sample_media):
     cnt = conn.execute("SELECT count(*) FROM files").fetchone()[0]
     assert cnt >= 3
     conn.close()
+

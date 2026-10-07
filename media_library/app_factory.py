@@ -9,6 +9,7 @@ import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from media_library.core.config import STATIC_DIR
 from media_library.core.state import state
@@ -110,6 +111,13 @@ def create_app(
         except Exception as e:
             print(f"[Shutdown] Warning: Exception creating clean library backup on shutdown: {e}")
 
+    class CachedStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            resp = await super().get_response(path, scope)
+            if resp.status_code == 200:
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+            return resp
+
     app = FastAPI(title="Video Sorter", version="2.0.0", lifespan=lifespan)
 
     app.add_middleware(
@@ -120,8 +128,10 @@ def create_app(
         allow_headers=["*"],
     )
 
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", CachedStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     for router in all_routers:
         app.include_router(router)

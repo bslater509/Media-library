@@ -18,6 +18,7 @@ async def get_webp_status():
     return {
         "status": webp_worker_instance.state["status"],
         "total_images": webp_worker_instance.state["total_images"],
+        "optimized_count": webp_worker_instance.state.get("optimized_count", 0),
         "converted_count": webp_worker_instance.state["converted_count"],
         "skipped_count": webp_worker_instance.state["skipped_count"],
         "pending_count": webp_worker_instance.state["pending_count"],

@@ -5,6 +5,10 @@ import asyncio
 from typing import Optional, Dict, Any
 
 from media_library.workers.base import BaseWorker
+from media_library.core.config import (
+    LIBRARY_BACKUP_AUTO_ENABLED,
+    LIBRARY_BACKUP_AUTO_INTERVAL_HOURS,
+)
 from media_library.db.connection import get_db
 from media_library.db.indexer import indexer_state
 from media_library.services.backup_service import (
@@ -82,22 +86,35 @@ class BackupWatcherWorker(BaseWorker):
     async def _run_loop(self):
         await asyncio.sleep(20.0)
         idle_since: Optional[float] = None
-        DEBOUNCE_COOLDOWN = 60.0
+        DEBOUNCE_COOLDOWN = 120.0
 
         from media_library.workers.thumbnail_worker import thumbnail_worker_instance
         from media_library.workers.duplicate_hash_worker import duplicate_hash_worker_instance
         from media_library.workers.webp_worker import webp_worker_instance
+        from media_library.workers.transfer_worker import transfer_worker_instance
+        from media_library.services.zip_service import zip_tasks_state
 
         while True:
             try:
                 await asyncio.sleep(10.0)
 
+                if not self._pause_event.is_set():
+                    idle_since = None
+                    await self._pause_event.wait()
+
+                if not LIBRARY_BACKUP_AUTO_ENABLED:
+                    idle_since = None
+                    continue
+
                 is_crawler_busy = (indexer_state.get("status") == "crawling")
                 is_thumb_busy = (thumbnail_worker_instance.state.get("status") == "generating")
                 is_hash_busy = (duplicate_hash_worker_instance.state.get("status") == "hashing")
                 is_webp_busy = (webp_worker_instance.state.get("status") == "converting")
+                is_transfer_busy = (transfer_worker_instance.active_transfer is not None) or (transfer_worker_instance.transfer_queue.qsize() > 0)
+                is_zip_busy = any(t.get("status") == "running" for t in zip_tasks_state.get("active_tasks", {}).values())
+                is_backup_busy = (library_backup_state.get("status") in ("backing_up", "restoring")) or library_backup_lock.locked()
 
-                all_idle = not (is_crawler_busy or is_thumb_busy or is_hash_busy or is_webp_busy)
+                all_idle = not (is_crawler_busy or is_thumb_busy or is_hash_busy or is_webp_busy or is_transfer_busy or is_zip_busy or is_backup_busy)
 
                 if not all_idle:
                     idle_since = None
@@ -115,7 +132,7 @@ class BackupWatcherWorker(BaseWorker):
                     finally:
                         conn.close()
 
-                    last_meta = get_existing_backup_meta()
+                    last_meta = await asyncio.to_thread(get_existing_backup_meta)
                     needs_backup = False
 
                     if last_meta is None and cur_files > 0:
@@ -123,17 +140,25 @@ class BackupWatcherWorker(BaseWorker):
                     elif last_meta is not None:
                         meta_files = last_meta.get("file_count", 0)
                         meta_thumbs = last_meta.get("thumb_count", 0)
-                        if abs(cur_files - meta_files) > 0 or abs(cur_thumbs - meta_thumbs) > 0:
-                            needs_backup = True
+
+                        min_interval_sec = max(0.0, LIBRARY_BACKUP_AUTO_INTERVAL_HOURS * 3600.0)
+                        last_ts = float(last_meta.get("timestamp", 0) or 0)
+                        elapsed = time.time() - last_ts
+
+                        if (abs(cur_files - meta_files) > 0 or abs(cur_thumbs - meta_thumbs) > 0):
+                            if min_interval_sec <= 0 or elapsed >= min_interval_sec:
+                                needs_backup = True
 
                     if needs_backup and library_backup_state["status"] == "idle":
                         print(f"[Backup Watcher] Settled idle for {DEBOUNCE_COOLDOWN}s with changes detected (files: {cur_files}, thumbs: {cur_thumbs}). Creating library backup...")
-                        idle_since = time.time()
+                        idle_since = None
                         asyncio.create_task(run_library_backup_async())
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"[Backup Watcher] Error in loop: {e}")
+                idle_since = None
                 await asyncio.sleep(15.0)
 
 backup_watcher_instance = BackupWatcherWorker()
+

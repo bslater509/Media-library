@@ -17,8 +17,13 @@ def init_backup_db(custom_path: Optional[Union[str, Path]] = None):
             parent_path TEXT,
             file_count INTEGER DEFAULT 0,
             subfolder_count INTEGER DEFAULT 0,
-            last_scanned REAL DEFAULT 0
+            last_scanned REAL DEFAULT 0,
+            is_zip INTEGER DEFAULT 0
         )""")
+        try:
+            conn.execute("ALTER TABLE folders ADD COLUMN is_zip INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("""
         CREATE TABLE IF NOT EXISTS files (
             path TEXT PRIMARY KEY,
@@ -50,6 +55,7 @@ def init_backup_db(custom_path: Optional[Union[str, Path]] = None):
             pass
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_files_folder_lower_name ON files(folder_path, LOWER(name))")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_name ON files(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_type ON files(type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_has_thumb ON files(has_thumb)")
@@ -58,6 +64,7 @@ def init_backup_db(custom_path: Optional[Union[str, Path]] = None):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_thumb_hash ON files(thumb_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_webp_optimized ON files(webp_optimized)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_folders_parent_lower_name ON folders(parent_path, LOWER(name))")
 
         conn.execute("""
         CREATE TABLE IF NOT EXISTS webp_stats (

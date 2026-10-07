@@ -1,6 +1,9 @@
 """FastAPI router for Media Library browsing, search, index sync/prune, and thumbnail serving."""
 
 import os
+import time
+import shutil
+import threading
 import mimetypes
 import asyncio
 import urllib.parse
@@ -24,6 +27,18 @@ from media_library.db.indexer import (
 )
 from media_library.services.media_service import validate_backup_path, search_backup_index
 from media_library.services.ffmpeg_service import get_thumbnail_path_fast, generate_thumbnail
+from media_library.services.zip_service import (
+    is_zip_file,
+    is_zip_extracted,
+    extract_zip_to_cache,
+    zip_tasks_state,
+    zip_lock,
+    split_zip_path,
+    resolve_zip_file_path,
+    trigger_debounced_sync_back,
+    get_zip_cache_dir,
+    index_zip_archive,
+)
 from media_library.workers.thumbnail_worker import thumbnail_worker_instance
 from media_library.workers.transcode_worker import transcode_worker_instance
 
@@ -54,7 +69,8 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
     except (ValueError, OSError):
         target_path = base_dir
 
-    if target_path != base_dir:
+    is_target_zip = is_zip_file(target_path)
+    if target_path != base_dir and not is_target_zip:
         try:
             if not os.path.isdir(target_path):
                 parent = os.path.dirname(target_path)
@@ -64,29 +80,45 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
                     target_path = base_dir
         except (OSError, ValueError):
             pass
+    is_target_zip = is_zip_file(target_path)
 
     rel_path = os.path.relpath(target_path, base_dir)
     is_root = (rel_path in (".", ""))
 
-    breadcrumbs = [{"name": os.path.basename(base_dir) or "Library", "path": base_dir}]
+    breadcrumbs = [{"name": os.path.basename(base_dir) or "Library", "path": base_dir, "is_zip": False}]
     if not is_root:
         parts = Path(rel_path).parts
         accum = base_dir
         for p in parts:
             accum = os.path.join(accum, p)
-            breadcrumbs.append({"name": p, "path": accum})
+            is_zip_part = is_zip_file(accum)
+            display_name = Path(p).stem if is_zip_part else p
+            breadcrumbs.append({"name": display_name, "raw_name": p, "path": accum, "is_zip": is_zip_part})
 
     root_folders = []
     conn = get_db()
     try:
-        cur = conn.execute("SELECT name, path, file_count, subfolder_count FROM folders WHERE parent_path = ? ORDER BY LOWER(name)", (base_dir,))
+        cur = conn.execute("SELECT name, path, file_count, subfolder_count, is_zip FROM folders WHERE parent_path = ? ORDER BY LOWER(name)", (base_dir,))
+        missing_paths = []
         for r in cur.fetchall():
+            if not os.path.exists(r["path"]):
+                missing_paths.append(r["path"])
+                continue
+            is_z = bool(r["is_zip"]) if "is_zip" in r.keys() else r["path"].lower().endswith(".zip")
+            clean_n = Path(r["name"]).stem if is_z else r["name"]
             root_folders.append({
-                "name": r["name"],
+                "name": clean_n,
+                "raw_name": r["name"],
                 "path": r["path"],
                 "file_count": r["file_count"],
-                "subfolder_count": r["subfolder_count"]
+                "subfolder_count": r["subfolder_count"],
+                "is_zip": is_z,
             })
+        if missing_paths:
+            for mp in missing_paths:
+                conn.execute("DELETE FROM folders WHERE path = ?", (mp,))
+                conn.execute("DELETE FROM files WHERE folder_path = ?", (mp,))
+            conn.commit()
     except Exception as e:
         print(f"Error reading root folders from DB: {e}")
     finally:
@@ -97,12 +129,25 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
             items = []
             with os.scandir(base_dir) as entries:
                 for entry in entries:
-                    if entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
+                    if entry.name.startswith("."):
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
                         items.append({
                             "name": entry.name,
+                            "raw_name": entry.name,
                             "path": entry.path,
                             "file_count": 0,
-                            "subfolder_count": 0
+                            "subfolder_count": 0,
+                            "is_zip": False,
+                        })
+                    elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".zip"):
+                        items.append({
+                            "name": Path(entry.name).stem,
+                            "raw_name": entry.name,
+                            "path": entry.path,
+                            "file_count": 0,
+                            "subfolder_count": 0,
+                            "is_zip": True,
                         })
             items.sort(key=lambda x: x["name"].lower())
             root_folders = items
@@ -111,8 +156,29 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
 
     subfolders = []
     files = []
+    zip_extracting = False
+    zip_extract_percent = 100.0
 
     if not is_root:
+        if is_target_zip:
+            with zip_lock:
+                task = zip_tasks_state["active_tasks"].get(target_path)
+                is_running = bool(task and task.get("status") == "running")
+            if not is_zip_extracted(target_path):
+                zip_extracting = True
+                zip_extract_percent = task.get("percent", 0.0) if task else 0.0
+                if not is_running:
+                    def _safe_extract(zp):
+                        try:
+                            extract_zip_to_cache(zp)
+                        except Exception as ze:
+                            print(f"Background extraction failed for {zp}: {ze}")
+                    threading.Thread(target=_safe_extract, args=(target_path,), daemon=True).start()
+            else:
+                if is_running:
+                    zip_extracting = True
+                    zip_extract_percent = task.get("percent", 0.0)
+
         is_indexed = False
         if not refresh:
             conn = get_db()
@@ -131,26 +197,44 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
                             if (not is_vid or is_native)
                             else f"/api/backup/transcode_stream?path={urllib.parse.quote(fpath)}"
                         )
+                        fmtime = r["mtime"]
+                        fsize = r["size"]
+                        thumb_query = f"?path={urllib.parse.quote(fpath)}"
+                        if fmtime is not None and fsize is not None:
+                            thumb_query += f"&mtime={fmtime}&size={fsize}"
                         files.append({
                             "name": r["name"],
                             "path": fpath,
                             "type": r["type"],
                             "ext": ext,
-                            "size": r["size"],
+                            "size": fsize,
                             "size_formatted": r["size_formatted"],
-                            "mtime": r["mtime"],
+                            "mtime": fmtime,
                             "needs_transcode": bool(r["needs_transcode"]),
                             "has_thumb": bool(r["has_thumb"]) if "has_thumb" in r.keys() else False,
-                            "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
+                            "thumb_url": f"/api/backup/thumbnail{thumb_query}",
                             "media_url": media_url,
                         })
 
-                    sf_cur = conn.execute("SELECT path, name FROM folders WHERE parent_path = ? ORDER BY LOWER(name) ASC", (target_path,))
+                    sf_cur = conn.execute("SELECT path, name, is_zip FROM folders WHERE parent_path = ? ORDER BY LOWER(name) ASC", (target_path,))
+                    sf_missing = []
                     for sr in sf_cur.fetchall():
+                        if not os.path.exists(sr["path"]):
+                            sf_missing.append(sr["path"])
+                            continue
+                        is_z = bool(sr["is_zip"]) if "is_zip" in sr.keys() else sr["path"].lower().endswith(".zip")
+                        clean_n = Path(sr["name"]).stem if is_z else sr["name"]
                         subfolders.append({
-                            "name": sr["name"],
+                            "name": clean_n,
+                            "raw_name": sr["name"],
                             "path": sr["path"],
+                            "is_zip": is_z,
                         })
+                    if sf_missing:
+                        for mp in sf_missing:
+                            conn.execute("DELETE FROM folders WHERE path = ?", (mp,))
+                            conn.execute("DELETE FROM files WHERE folder_path = ?", (mp,))
+                        conn.commit()
                     is_indexed = True
             except Exception as e:
                 print(f"DB read error for {target_path}: {e}")
@@ -158,7 +242,11 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
                 conn.close()
 
         if not is_indexed:
-            index_folder(target_path, base_dir)
+            if is_target_zip:
+                from media_library.services.zip_service import index_zip_archive
+                index_zip_archive(target_path, parent_path=os.path.dirname(target_path))
+            else:
+                index_folder(target_path, base_dir)
             conn = get_db()
             try:
                 f_cur = conn.execute("SELECT * FROM files WHERE folder_path = ? ORDER BY LOWER(name) ASC", (target_path,))
@@ -172,26 +260,44 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
                         if (not is_vid or is_native)
                         else f"/api/backup/transcode_stream?path={urllib.parse.quote(fpath)}"
                     )
+                    fmtime = r["mtime"]
+                    fsize = r["size"]
+                    thumb_query = f"?path={urllib.parse.quote(fpath)}"
+                    if fmtime is not None and fsize is not None:
+                        thumb_query += f"&mtime={fmtime}&size={fsize}"
                     files.append({
                         "name": r["name"],
                         "path": fpath,
                         "type": r["type"],
                         "ext": ext,
-                        "size": r["size"],
+                        "size": fsize,
                         "size_formatted": r["size_formatted"],
-                        "mtime": r["mtime"],
+                        "mtime": fmtime,
                         "needs_transcode": bool(r["needs_transcode"]),
                         "has_thumb": bool(r["has_thumb"]) if "has_thumb" in r.keys() else False,
-                        "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
+                        "thumb_url": f"/api/backup/thumbnail{thumb_query}",
                         "media_url": media_url,
                     })
 
-                sf_cur = conn.execute("SELECT path, name FROM folders WHERE parent_path = ? ORDER BY LOWER(name) ASC", (target_path,))
+                sf_cur = conn.execute("SELECT path, name, is_zip FROM folders WHERE parent_path = ? ORDER BY LOWER(name) ASC", (target_path,))
+                sf_missing = []
                 for sr in sf_cur.fetchall():
+                    if not os.path.exists(sr["path"]):
+                        sf_missing.append(sr["path"])
+                        continue
+                    is_z = bool(sr["is_zip"]) if "is_zip" in sr.keys() else sr["path"].lower().endswith(".zip")
+                    clean_n = Path(sr["name"]).stem if is_z else sr["name"]
                     subfolders.append({
-                        "name": sr["name"],
+                        "name": clean_n,
+                        "raw_name": sr["name"],
                         "path": sr["path"],
+                        "is_zip": is_z,
                     })
+                if sf_missing:
+                    for mp in sf_missing:
+                        conn.execute("DELETE FROM folders WHERE path = ?", (mp,))
+                        conn.execute("DELETE FROM files WHERE folder_path = ?", (mp,))
+                    conn.commit()
             except Exception as e:
                 print(f"DB read error after indexing {target_path}: {e}")
             finally:
@@ -203,13 +309,16 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
         except Exception as e:
             print(f"Warning: could not enqueue background tasks for {target_path}: {e}")
     else:
-        subfolders = [{"name": rf["name"], "path": rf["path"]} for rf in root_folders]
+        subfolders = [{"name": rf["name"], "raw_name": rf.get("raw_name", rf["name"]), "path": rf["path"], "is_zip": rf.get("is_zip", False)} for rf in root_folders]
 
     return {
         "base_path": base_dir,
         "current_path": target_path,
         "relative_path": "" if is_root else rel_path,
         "is_root": is_root,
+        "is_zip": is_target_zip,
+        "zip_extracting": zip_extracting,
+        "zip_extract_percent": zip_extract_percent,
         "breadcrumbs": breadcrumbs,
         "root_folders": root_folders,
         "subfolders": subfolders,
@@ -219,20 +328,44 @@ def browse_backup_library(path: Optional[str] = Query(None), refresh: Optional[b
     }
 
 @router.api_route("/api/backup/thumbnail", methods=["GET", "HEAD"])
-async def get_backup_thumbnail(path: str = Query(...), request: Request = None):
+async def get_backup_thumbnail(
+    path: str = Query(...),
+    mtime: Optional[float] = Query(None),
+    size: Optional[int] = Query(None),
+    request: Request = None,
+):
     real_path = validate_backup_path(path)
 
-    thumb_path = await asyncio.to_thread(get_thumbnail_path_fast, real_path)
+    # Check if path references an item inside a zip archive
+    zip_p, inner_p = split_zip_path(real_path)
+    if zip_p and inner_p:
+        resolved = resolve_zip_file_path(real_path)
+        if not resolved:
+            try:
+                cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
+                resolved = resolve_zip_file_path(real_path)
+                if not resolved:
+                    resolved = str(cache_dir / inner_p)
+            except Exception as ex:
+                print(f"Extraction error for thumbnail {real_path}: {ex}")
+        if resolved and os.path.exists(resolved):
+            real_path = resolved
+
+    thumb_path = await asyncio.to_thread(get_thumbnail_path_fast, real_path, mtime, size)
     if thumb_path.exists() and thumb_path.stat().st_size > 0:
+        etag = f'"{thumb_path.name}"'
+        cache_hdr = "public, max-age=2592000, immutable" if (mtime is not None and size is not None) else "public, max-age=86400"
+        if request and request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": cache_hdr})
         if request and request.method == "HEAD":
             return Response(
                 status_code=200,
-                headers={"Content-Length": str(thumb_path.stat().st_size), "Content-Type": "image/jpeg"}
+                headers={"Content-Length": str(thumb_path.stat().st_size), "Content-Type": "image/jpeg", "ETag": etag, "Cache-Control": cache_hdr}
             )
         return FileResponse(
             str(thumb_path),
             media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=86400"}
+            headers={"Cache-Control": cache_hdr, "ETag": etag}
         )
 
     file_exists = await asyncio.to_thread(os.path.exists, real_path)
@@ -278,6 +411,22 @@ async def get_backup_thumbnail(path: str = Query(...), request: Request = None):
 @router.api_route("/api/backup/media", methods=["GET", "HEAD"])
 async def stream_backup_media(path: str = Query(...), request: Request = None):
     real_path = validate_backup_path(path)
+
+    # Check if path references an item inside a zip archive
+    zip_p, inner_p = split_zip_path(real_path)
+    if zip_p and inner_p:
+        resolved = resolve_zip_file_path(real_path)
+        if not resolved:
+            try:
+                cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
+                resolved = resolve_zip_file_path(real_path)
+                if not resolved:
+                    resolved = str(cache_dir / inner_p)
+            except Exception as ex:
+                print(f"Extraction error for media stream {real_path}: {ex}")
+        if resolved and os.path.exists(resolved):
+            real_path = resolved
+
     file_exists = await asyncio.to_thread(os.path.exists, real_path)
     if not file_exists:
         raise HTTPException(status_code=404, detail="File not found")
@@ -388,12 +537,36 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
 @router.post("/api/backup/rename")
 def backup_rename(req: BackupRenameRequest):
     real_path = validate_backup_path(req.path)
-    if not os.path.exists(real_path) or not os.path.isfile(real_path):
-        raise HTTPException(status_code=404, detail="File not found")
 
     new_name = req.new_name.strip()
     if not new_name or "/" in new_name or "\\" in new_name or new_name.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Check if target is inside a zip file
+    zip_p, inner_p = split_zip_path(real_path)
+    if zip_p and inner_p:
+        resolved = resolve_zip_file_path(real_path)
+        if not resolved or not os.path.exists(resolved):
+            raise HTTPException(status_code=404, detail="File not found in archive")
+        old_local = Path(resolved)
+        new_local = old_local.parent / new_name
+        if new_local.exists() and new_local != old_local:
+            raise HTTPException(status_code=400, detail="A file with this name already exists in archive")
+        os.rename(old_local, new_local)
+        new_vpath = os.path.join(zip_p, new_name)
+        update_file_in_index(real_path, new_vpath, new_name)
+        trigger_debounced_sync_back(zip_p)
+        return {
+            "success": True,
+            "old_path": real_path,
+            "new_path": new_vpath,
+            "new_name": new_name,
+            "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(new_vpath)}",
+            "media_url": f"/api/backup/media?path={urllib.parse.quote(new_vpath)}"
+        }
+
+    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail="File not found")
 
     dir_path = os.path.dirname(real_path)
     target_path = os.path.join(dir_path, new_name)
@@ -428,8 +601,37 @@ def backup_rename(req: BackupRenameRequest):
 @router.post("/api/backup/delete")
 def backup_delete(req: BackupDeleteRequest):
     real_path = validate_backup_path(req.path)
+
+    # Check if target is inside a zip file
+    zip_p, inner_p = split_zip_path(real_path)
+    if zip_p and inner_p:
+        local_file = resolve_zip_file_path(real_path)
+        if local_file and os.path.exists(local_file):
+            try:
+                os.remove(local_file)
+            except OSError:
+                pass
+        remove_file_from_index(real_path)
+        trigger_debounced_sync_back(zip_p)
+        return {"success": True, "deleted_path": real_path}
+
     if not os.path.exists(real_path):
         raise HTTPException(status_code=404, detail="File not found")
+
+    # If deleting the entire zip archive
+    if is_zip_file(real_path):
+        cache_dir = get_zip_cache_dir(real_path)
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        os.remove(real_path)
+        conn = get_db()
+        try:
+            with conn:
+                conn.execute("DELETE FROM folders WHERE path = ?", (real_path,))
+                conn.execute("DELETE FROM files WHERE folder_path = ?", (real_path,))
+        finally:
+            conn.close()
+        return {"success": True, "deleted_path": real_path}
 
     if not os.path.isfile(real_path):
         raise HTTPException(status_code=400, detail="Only files can be deleted")
@@ -463,22 +665,31 @@ def search_backup(
         "results": results,
     }
 
-@router.get("/api/backup/index/status")
-async def get_backup_index_status():
+_index_counts_cache = {"total_files": 0, "total_folders": 0, "expires_at": 0.0}
+
+def get_cached_index_counts() -> tuple[int, int]:
+    now = time.time()
+    if now < _index_counts_cache["expires_at"] and _index_counts_cache["total_files"] > 0:
+        return _index_counts_cache["total_files"], _index_counts_cache["total_folders"]
     conn = get_db()
-    total_files = 0
-    total_folders = 0
     try:
         cur_files = conn.execute("SELECT COUNT(*) FROM files")
         total_files = cur_files.fetchone()[0]
         cur_folders = conn.execute("SELECT COUNT(*) FROM folders")
         total_folders = cur_folders.fetchone()[0]
+        _index_counts_cache["total_files"] = total_files
+        _index_counts_cache["total_folders"] = total_folders
+        _index_counts_cache["expires_at"] = now + 30.0
+        return total_files, total_folders
     except Exception as e:
         print(f"Error reading index counts: {e}")
-        total_files = indexer_state.get("total_files", 0)
-        total_folders = indexer_state.get("total_folders", 0)
+        return indexer_state.get("total_files", 0), indexer_state.get("total_folders", 0)
     finally:
         conn.close()
+
+@router.get("/api/backup/index/status")
+async def get_backup_index_status():
+    total_files, total_folders = get_cached_index_counts()
 
     is_crawling = (indexer_state.get("status") == "crawling")
     scanned_f = indexer_state.get("scanned_folders", 0)
