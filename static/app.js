@@ -1414,7 +1414,7 @@ function renderIndexUI(data) {
     indexFilesText.textContent = `${filesCount.toLocaleString()} files`;
   }
 
-  updateBackgroundBadge();
+  updateHeaderTaskBadge();
 }
 
 if (triggerIndexSyncDropdownBtn) {

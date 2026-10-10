@@ -9,6 +9,41 @@
 
   const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
+  // Thumbnail size presets. Each level scales the justified row height, so
+  // larger presets yield fewer, bigger tiles and smaller presets more, smaller
+  // ones. Persisted per browser.
+  const TILE_SCALES = [0.6, 0.8, 1.0, 1.25, 1.5];
+  const TILE_SCALE_LABELS = ['XS', 'S', 'M', 'L', 'XL'];
+  const TILE_SCALE_KEY = 'lib_tile_scale';
+  function loadTileScale() {
+    try {
+      const v = parseFloat(localStorage.getItem(TILE_SCALE_KEY));
+      const idx = TILE_SCALES.indexOf(v);
+      return idx >= 0 ? TILE_SCALES[idx] : 1.0;
+    } catch (e) {
+      return 1.0;
+    }
+  }
+
+  const SIDEBAR_TREE_KEY = 'lib_sidebar_tree_expanded';
+
+  function loadExpandedFolders() {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_TREE_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  function persistExpandedFolders(set) {
+    try {
+      localStorage.setItem(SIDEBAR_TREE_KEY, JSON.stringify([...set]));
+    } catch (e) { /* ignore quota/security errors */ }
+  }
+
   const state = {
     basePath: '',
     currentPath: '',
@@ -18,18 +53,34 @@
     allFiles: [],
     filteredFiles: [],
     displayedCount: 50,
+    _gridPendingRowEl: null,
+    _gridPendingStart: 0,
+    tileScale: loadTileScale(),
     activeFilter: 'all', // 'all' | 'video' | 'image'
     activeSort: 'name_asc',
     searchScope: 'current', // 'current' | 'global'
     searchQuery: '',
     folderSearchQuery: '',
+    folderChildren: {}, // path -> { children: [], loaded: bool, loading: bool, retries: int }
+    expandedFolders: loadExpandedFolders(),
     itemToRename: null,
     itemToDelete: null,
+    moveItems: [],
+    movePickerPath: '',
+    movePickerFolders: [],
+    contextMenuTarget: null,
+    pendingMove: null,
+    suppressClickUntil: 0,
+    selectedPaths: new Set(),
+    lastSelectedIndex: null,
+    bulkRenamePreview: [],
     observer: null,
     fancyboxInstance: null,
     transcodePollTimer: null,
     latestTranscodeData: null,
     indexPollTimer: null,
+    indexRetryCount: 0,
+    indexRetryTimer: null,
     thumbPollTimer: null,
     latestThumbData: null,
     dupHashPollTimer: null,
@@ -41,6 +92,10 @@
     batchZipFilterQuery: '',
     batchZipPollTimer: null,
     latestBatchZipData: null,
+    batchUnpackCandidates: [],
+    batchUnpackSelectedPaths: new Set(),
+    batchUnpackFilterQuery: '',
+    latestBatchUnpackData: null,
     duplicates: {
       isOpen: false,
       mode: 'content',
@@ -159,6 +214,28 @@
     batchZipSelectedBadge: document.getElementById('batchZipSelectedBadge'),
     batchZipFilterInput: document.getElementById('batchZipFilterInput'),
     batchZipCandidatesList: document.getElementById('batchZipCandidatesList'),
+    // Batch Unpack Modal & Controls
+    openBatchUnpackBtn: document.getElementById('openBatchUnpackBtn'),
+    toggleBatchUnpackPauseBtn: document.getElementById('toggleBatchUnpackPauseBtn'),
+    cancelBatchUnpackBtn: document.getElementById('cancelBatchUnpackBtn'),
+    batchUnpackProgressBox: document.getElementById('batchUnpackProgressBox'),
+    batchUnpackCurrentZip: document.getElementById('batchUnpackCurrentZip'),
+    batchUnpackPercentText: document.getElementById('batchUnpackPercentText'),
+    batchUnpackProgressBar: document.getElementById('batchUnpackProgressBar'),
+    batchUnpackCountsText: document.getElementById('batchUnpackCountsText'),
+    batchUnpackStatusText: document.getElementById('batchUnpackStatusText'),
+    batchUnpackModal: document.getElementById('batchUnpackModal'),
+    closeBatchUnpackModalBtn: document.getElementById('closeBatchUnpackModalBtn'),
+    cancelBatchUnpackModalBtn: document.getElementById('cancelBatchUnpackModalBtn'),
+    confirmBatchUnpackBtn: document.getElementById('confirmBatchUnpackBtn'),
+    confirmBatchUnpackBtnText: document.getElementById('confirmBatchUnpackBtnText'),
+    batchUnpackCandidateCount: document.getElementById('batchUnpackCandidateCount'),
+    batchUnpackFileCount: document.getElementById('batchUnpackFileCount'),
+    batchUnpackTotalSize: document.getElementById('batchUnpackTotalSize'),
+    batchUnpackSelectAllToggle: document.getElementById('batchUnpackSelectAllToggle'),
+    batchUnpackSelectedBadge: document.getElementById('batchUnpackSelectedBadge'),
+    batchUnpackFilterInput: document.getElementById('batchUnpackFilterInput'),
+    batchUnpackCandidatesList: document.getElementById('batchUnpackCandidatesList'),
     countAllBadge: document.getElementById('countAllBadge'),
     countVideosBadge: document.getElementById('countVideosBadge'),
     countImagesBadge: document.getElementById('countImagesBadge'),
@@ -168,6 +245,9 @@
     fileSearchInput: document.getElementById('fileSearchInput'),
     clearFileSearchBtn: document.getElementById('clearFileSearchBtn'),
     sortSelect: document.getElementById('sortSelect'),
+    tileSizeDownBtn: document.getElementById('tileSizeDownBtn'),
+    tileSizeUpBtn: document.getElementById('tileSizeUpBtn'),
+    tileSizeLabel: document.getElementById('tileSizeLabel'),
     mediaGrid: document.getElementById('mediaGrid'),
     infiniteScrollSentinel: document.getElementById('infiniteScrollSentinel'),
     loadingMoreSpinner: document.getElementById('loadingMoreSpinner'),
@@ -220,6 +300,17 @@
     queuedTransfersContainer: document.getElementById('queuedTransfersContainer'),
     queuedTransfersCount: document.getElementById('queuedTransfersCount'),
     queuedTransfersList: document.getElementById('queuedTransfersList'),
+    // Library Operations (move / delete / rename) Elements
+    libraryOpsSection: document.getElementById('libraryOpsSection'),
+    libraryOpsSummary: document.getElementById('libraryOpsSummary'),
+    activeLibraryOpBox: document.getElementById('activeLibraryOpBox'),
+    activeLibraryOpKind: document.getElementById('activeLibraryOpKind'),
+    activeLibraryOpName: document.getElementById('activeLibraryOpName'),
+    activeLibraryOpTarget: document.getElementById('activeLibraryOpTarget'),
+    libraryOpsProgress: document.getElementById('libraryOpsProgress'),
+    queuedLibraryOpsContainer: document.getElementById('queuedLibraryOpsContainer'),
+    queuedLibraryOpsCount: document.getElementById('queuedLibraryOpsCount'),
+    queuedLibraryOpsList: document.getElementById('queuedLibraryOpsList'),
     // Thumbnail Generator Controls
     thumbSummaryText: document.getElementById('thumbSummaryText'),
     toggleThumbPauseBtn: document.getElementById('toggleThumbPauseBtn'),
@@ -284,6 +375,49 @@
     closeConvertAllModalBtn: document.getElementById('closeConvertAllModalBtn'),
     cancelConvertAllModalBtn: document.getElementById('cancelConvertAllModalBtn'),
     confirmConvertAllModalBtn: document.getElementById('confirmConvertAllModalBtn'),
+
+    // Library file management
+    newFolderBtn: document.getElementById('newFolderBtn'),
+    newFolderModal: document.getElementById('newFolderModal'),
+    newFolderNameInput: document.getElementById('newFolderNameInput'),
+    closeNewFolderModalBtn: document.getElementById('closeNewFolderModalBtn'),
+    cancelNewFolderBtn: document.getElementById('cancelNewFolderBtn'),
+    confirmNewFolderBtn: document.getElementById('confirmNewFolderBtn'),
+    moveModal: document.getElementById('moveModal'),
+    moveItemName: document.getElementById('moveItemName'),
+    moveUpBtn: document.getElementById('moveUpBtn'),
+    moveCurrentPath: document.getElementById('moveCurrentPath'),
+    moveFolderList: document.getElementById('moveFolderList'),
+    closeMoveModalBtn: document.getElementById('closeMoveModalBtn'),
+    cancelMoveBtn: document.getElementById('cancelMoveBtn'),
+    confirmMoveBtn: document.getElementById('confirmMoveBtn'),
+    moveConflictModal: document.getElementById('moveConflictModal'),
+    moveConflictCount: document.getElementById('moveConflictCount'),
+    moveConflictCancelBtn: document.getElementById('moveConflictCancelBtn'),
+    moveConflictSkipBtn: document.getElementById('moveConflictSkipBtn'),
+    moveConflictRenameBtn: document.getElementById('moveConflictRenameBtn'),
+    contextMenu: document.getElementById('contextMenu'),
+    deleteModalTitle: document.getElementById('deleteModalTitle'),
+    deleteModalSubtitle: document.getElementById('deleteModalSubtitle'),
+    deleteConfirmAck: document.getElementById('deleteConfirmAck'),
+    deleteConfirmAckInput: document.getElementById('deleteConfirmAckInput'),
+
+    // Selection toolbar & bulk actions
+    selectionToolbar: document.getElementById('selectionToolbar'),
+    selectionCount: document.getElementById('selectionCount'),
+    selectAllBtn: document.getElementById('selectAllBtn'),
+    selectionMoveBtn: document.getElementById('selectionMoveBtn'),
+    selectionRenameBtn: document.getElementById('selectionRenameBtn'),
+    selectionWebpBtn: document.getElementById('selectionWebpBtn'),
+    selectionDeleteBtn: document.getElementById('selectionDeleteBtn'),
+    selectionClearBtn: document.getElementById('selectionClearBtn'),
+    bulkRenameModal: document.getElementById('bulkRenameModal'),
+    bulkRenameCount: document.getElementById('bulkRenameCount'),
+    bulkRenameMode: document.getElementById('bulkRenameMode'),
+    closeBulkRenameModalBtn: document.getElementById('closeBulkRenameModalBtn'),
+    bulkRenamePreviewList: document.getElementById('bulkRenamePreviewList'),
+    cancelBulkRenameBtn: document.getElementById('cancelBulkRenameBtn'),
+    applyBulkRenameBtn: document.getElementById('applyBulkRenameBtn'),
   };
 
   // Toast Notifications
@@ -323,6 +457,146 @@
     return encodeURIComponent(str).replace(/'/g, '%27');
   }
 
+  // Natural-ratio tiles are clamped to keep the grid scannable: portrait media
+  // no taller than 2:3 and landscape no wider than 3:2. Unknown dimensions fall
+  // back to 1:1 and simply fill their justified box with object-cover.
+  const MIN_TILE_RATIO = 2 / 3;
+  const MAX_TILE_RATIO = 3 / 2;
+  function tileRatio(width, height) {
+    const w = Number(width);
+    const h = Number(height);
+    if (!w || !h || w <= 0 || h <= 0) return 1;
+    let ratio = w / h;
+    if (ratio < MIN_TILE_RATIO) ratio = MIN_TILE_RATIO;
+    if (ratio > MAX_TILE_RATIO) ratio = MAX_TILE_RATIO;
+    return ratio;
+  }
+
+  // Responsive density used only to derive the justified target row height.
+  function mediaColumnCount() {
+    const w = window.innerWidth;
+    if (w < 640) return 2;
+    if (w < 768) return 3;
+    if (w < 1024) return 4;
+    if (w < 1280) return 5;
+    return 6;
+  }
+
+  function subfolderColumnCount() {
+    const w = window.innerWidth;
+    if (w < 640) return 2;
+    if (w < 768) return 3;
+    if (w < 1024) return 4;
+    return 5;
+  }
+
+  function gridGapPx() {
+    return window.innerWidth >= 640 ? 16 : 10;
+  }
+
+  function gridWidth() {
+    const w = els.mediaGrid ? els.mediaGrid.clientWidth : 0;
+    return w > 0 ? w : Math.max(320, window.innerWidth - 32);
+  }
+
+  const MIN_ROW_HEIGHT = 96;
+  const MAX_ROW_HEIGHT = 520;
+  function targetRowHeight(width, gap, columns, scale) {
+    const base = (width - gap * (columns - 1)) / columns;
+    const h = base * (scale || 1);
+    return Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, h));
+  }
+
+  // Row-ordered "justified rows": tiles keep their natural (clamped) aspect
+  // ratio, but every tile in a row shares one row height so the row fills the
+  // container width exactly. Reading order therefore runs strictly left to
+  // right, then down to the next row. A trailing partial row keeps the target
+  // height and is left-aligned until more items arrive.
+  // `measurer(item)` returns the tile's aspect ratio.
+  function layoutJustifiedRows(items, width, gap, targetHeight, measurer) {
+    const rows = [];
+    if (!items.length) return rows;
+    let current = [];
+    let ratios = [];
+    let sumRatio = 0;
+    const flush = (height, partial) => {
+      rows.push({ items: current, ratios, height, partial });
+      current = [];
+      ratios = [];
+      sumRatio = 0;
+    };
+    for (const item of items) {
+      const ratio = measurer(item) || 1;
+      current.push(item);
+      ratios.push(ratio);
+      sumRatio += ratio;
+      if (width > 0) {
+        const rowHeight = (width - gap * (current.length - 1)) / sumRatio;
+        if (rowHeight <= targetHeight) flush(rowHeight, false);
+      }
+    }
+    if (current.length) flush(targetHeight, true);
+    return rows;
+  }
+
+  // Re-flow tiles when the responsive density or container width changes.
+  let _lastMediaColumnCount = mediaColumnCount();
+  let _lastMediaGridWidth = gridWidth();
+  function relayoutMediaGrid() {
+    const n = mediaColumnCount();
+    const width = gridWidth();
+    if (n === _lastMediaColumnCount && width === _lastMediaGridWidth) return;
+    _lastMediaColumnCount = n;
+    _lastMediaGridWidth = width;
+    if (!state.filteredFiles || state.filteredFiles.length === 0) return;
+    const count = Math.max(state.displayedCount, Math.min(state.filteredFiles.length, 50));
+    state._gridPendingRowEl = null;
+    state._gridPendingStart = 0;
+    renderCards(0, count);
+    if (state.latestTranscodeData) updateCardsTranscodeStatus(state.latestTranscodeData);
+  }
+
+  function relayoutSubfolders() {
+    if (state.subfolders && state.subfolders.length > 0) renderSubfolders();
+  }
+
+  // Reflect the current thumbnail-size preset on the +/- control.
+  function syncTileScaleUI() {
+    const idx = Math.max(0, TILE_SCALES.indexOf(state.tileScale));
+    if (els.tileSizeLabel) els.tileSizeLabel.textContent = TILE_SCALE_LABELS[idx] || 'M';
+    if (els.tileSizeDownBtn) {
+      els.tileSizeDownBtn.disabled = idx === 0;
+      els.tileSizeDownBtn.classList.toggle('opacity-30', idx === 0);
+      els.tileSizeDownBtn.classList.toggle('pointer-events-none', idx === 0);
+    }
+    if (els.tileSizeUpBtn) {
+      els.tileSizeUpBtn.disabled = idx === TILE_SCALES.length - 1;
+      els.tileSizeUpBtn.classList.toggle('opacity-30', idx === TILE_SCALES.length - 1);
+      els.tileSizeUpBtn.classList.toggle('pointer-events-none', idx === TILE_SCALES.length - 1);
+    }
+  }
+
+  // Apply a new thumbnail-size preset: persist it and re-flow the current view.
+  function applyTileScale() {
+    try { localStorage.setItem(TILE_SCALE_KEY, String(state.tileScale)); } catch (e) { /* ignore */ }
+    syncTileScaleUI();
+    if (state.filteredFiles && state.filteredFiles.length > 0) {
+      state._gridPendingRowEl = null;
+      state._gridPendingStart = 0;
+      renderCards(0, state.displayedCount);
+      if (state.latestTranscodeData) updateCardsTranscodeStatus(state.latestTranscodeData);
+    }
+    relayoutSubfolders();
+  }
+
+  function stepTileScale(dir) {
+    const idx = TILE_SCALES.indexOf(state.tileScale);
+    const next = Math.min(TILE_SCALES.length - 1, Math.max(0, (idx < 0 ? 2 : idx) + dir));
+    if (TILE_SCALES[next] === state.tileScale) return;
+    state.tileScale = TILE_SCALES[next];
+    applyTileScale();
+  }
+
   // Mobile Sidebar Drawer
   function setSidebarOpen(open) {
     if (open) {
@@ -335,15 +609,21 @@
   }
 
   // Load Folder Contents
-  async function loadFolder(targetPath, pushHistory = true, forceRefresh = false) {
+  async function loadFolder(targetPath, pushHistory = true, forceRefresh = false, silent = false) {
     try {
-      els.emptyState.classList.add('hidden');
-      els.mediaGrid.innerHTML = `
-        <div class="col-span-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
-          <span class="w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
-          <span class="text-xs">Loading media files...</span>
-        </div>
-      `;
+      if (pushHistory) {
+        state.indexRetryCount = 0;
+        clearTimeout(state.indexRetryTimer);
+      }
+      if (!silent) {
+        els.emptyState.classList.add('hidden');
+        els.mediaGrid.innerHTML = `
+          <div class="w-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <span class="w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
+            <span class="text-xs">Loading media files...</span>
+          </div>
+        `;
+      }
 
       let url = targetPath 
         ? `/api/backup/browse?path=${encodeURIComponent(targetPath)}` 
@@ -366,6 +646,22 @@
       state.subfolders = data.subfolders || [];
       state.breadcrumbs = data.breadcrumbs || [];
       state.allFiles = data.files || [];
+      clearSelection();
+
+      // Folder was not yet indexed: the server kicked off background indexing and
+      // returned the cached view immediately. Re-poll (silently) until it's ready.
+      if (data.indexing) {
+        state.indexRetryCount += 1;
+        clearTimeout(state.indexRetryTimer);
+        if (state.indexRetryCount <= 20) {
+          state.indexRetryTimer = setTimeout(() => {
+            loadFolder(data.current_path, false, false, true);
+          }, 700);
+        }
+      } else {
+        state.indexRetryCount = 0;
+        clearTimeout(state.indexRetryTimer);
+      }
 
       // Update subtitle & badges
       els.headerPathSubtitle.textContent = data.current_path;
@@ -392,7 +688,8 @@
       }
 
       // Render components
-      renderRootFolderList();
+      syncTreeToCurrentPath();
+      renderSidebarTree();
       renderBreadcrumbs();
       renderSubfolders();
       applyFiltersAndSort();
@@ -413,46 +710,180 @@
     }
   }
 
-  // Render Root Folders List in Sidebar
-  function renderRootFolderList() {
-    els.folderCountBadge.textContent = `${state.rootFolders.length} folders`;
+  // ---------------------------------------------------------------------------
+  // Sidebar Folder Tree (lazy-loading, expandable, persisted)
+  // ---------------------------------------------------------------------------
 
+  async function fetchFolderChildren(path) {
+    const res = await fetch(`/api/backup/folders?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error(`Failed to load subfolders (${res.status})`);
+    return await res.json();
+  }
+
+  // Ensure a folder's children are loaded into state.folderChildren[path].
+  function ensureFolderChildren(path) {
+    const entry = state.folderChildren[path] || { children: [], loaded: false, loading: false, retries: 0 };
+    state.folderChildren[path] = entry;
+    if (entry.loaded || entry.loading) return;
+
+    entry.loading = true;
+    (async () => {
+      try {
+        const data = await fetchFolderChildren(path);
+        entry.children = data.subfolders || [];
+        if (data.indexing && entry.retries < 20) {
+          entry.retries += 1;
+          entry.loading = false;
+          setTimeout(() => ensureFolderChildren(path), 700);
+        } else {
+          entry.loaded = true;
+          entry.loading = false;
+        }
+      } catch (err) {
+        entry.loading = false;
+        console.error('Error loading folder children for tree:', err);
+      }
+      renderSidebarTree();
+    })();
+  }
+
+  function toggleFolderExpand(path) {
+    if (state.expandedFolders.has(path)) {
+      state.expandedFolders.delete(path);
+    } else {
+      state.expandedFolders.add(path);
+      ensureFolderChildren(path);
+    }
+    persistExpandedFolders(state.expandedFolders);
+    renderSidebarTree();
+  }
+
+  // Expand and lazy-load the ancestor chain of the folder currently shown.
+  function syncTreeToCurrentPath() {
+    if (!state.basePath) return;
+
+    // Roots live under the base path.
+    const baseEntry = state.folderChildren[state.basePath] || { children: [], loaded: false, loading: false, retries: 0 };
+    baseEntry.children = state.rootFolders || [];
+    baseEntry.loaded = true;
+    baseEntry.loading = false;
+    state.folderChildren[state.basePath] = baseEntry;
+
+    // The currently shown folder's children are already known from browse.
+    if (state.currentPath && state.currentPath !== state.basePath) {
+      state.folderChildren[state.currentPath] = {
+        children: state.subfolders || [],
+        loaded: true,
+        loading: false,
+        retries: 0,
+      };
+    }
+
+    // Expand ancestors (skip index 0 = base; the last crumb is current, whose
+    // children were set just above, so only intermediates need lazy loading).
+    (state.breadcrumbs || []).forEach((crumb, idx) => {
+      if (idx === 0) return;
+      state.expandedFolders.add(crumb.path);
+      if (idx < state.breadcrumbs.length - 1) {
+        ensureFolderChildren(crumb.path);
+      }
+    });
+    persistExpandedFolders(state.expandedFolders);
+  }
+
+  function hasMatchingDescendant(folder, q) {
+    const entry = state.folderChildren[folder.path];
+    if (!entry || !entry.loaded) return false;
+    return entry.children.some(c =>
+      c.name.toLowerCase().includes(q) || hasMatchingDescendant(c, q)
+    );
+  }
+
+  function renderSidebarTree() {
+    const container = els.rootFolderList;
+    const base = state.basePath;
     const q = state.folderSearchQuery.toLowerCase().trim();
-    const visibleFolders = state.rootFolders.filter(f => f.name.toLowerCase().includes(q));
 
-    if (visibleFolders.length === 0) {
-      els.rootFolderList.innerHTML = `<div class="text-center py-6 text-xs text-slate-500">No matching folders</div>`;
+    const roots = (base && state.folderChildren[base] && state.folderChildren[base].loaded)
+      ? state.folderChildren[base].children
+      : (state.rootFolders || []);
+
+    els.folderCountBadge.textContent = `${roots.length} folders`;
+
+    if (roots.length === 0) {
+      container.innerHTML = `<div class="text-center py-6 text-xs text-slate-500">No matching folders</div>`;
       return;
     }
 
     const currentNorm = state.currentPath.toLowerCase();
+    const rows = [];
 
-    els.rootFolderList.innerHTML = visibleFolders.map(folder => {
-      const isSelected = currentNorm === folder.path.toLowerCase() || currentNorm.startsWith(folder.path.toLowerCase() + '/');
-      const activeClass = isSelected
-        ? 'bg-emerald-600/20 text-emerald-300 font-semibold border-emerald-500/40 shadow-sm'
-        : 'text-slate-300 hover:bg-slate-800/80 hover:text-white border-transparent';
+    const renderChildren = (list, depth) => {
+      for (const folder of list) {
+        const pathKey = folder.path;
+        const entry = state.folderChildren[pathKey];
+        const children = entry && entry.loaded ? entry.children : [];
+        const childCount = folder.subfolder_count || 0;
+        const hasChildren = childCount > 0 || (entry && entry.loaded && children.length > 0);
 
-      const isZip = folder.is_zip || folder.path.toLowerCase().endsWith('.zip');
-      const icon = isZip ? '📦' : '📁';
-      const count = folder.file_count || 0;
-      const countBadge = count > 0 
-        ? `<span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 group-hover:text-slate-300 border border-slate-700/60 shrink-0">${count}</span>` 
-        : '';
+        const nameMatches = !q || folder.name.toLowerCase().includes(q);
+        const descMatches = q ? hasMatchingDescendant(folder, q) : false;
+        if (q && !nameMatches && !descMatches) continue;
 
-      return `
-        <button 
-          data-path="${encodeURIComponent(folder.path)}"
-          class="w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between gap-2 transition group ${activeClass}"
-        >
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span class="text-sm shrink-0">${icon}</span>
-            <span class="truncate">${folder.name}</span>
+        const isZip = folder.is_zip || (folder.path && folder.path.toLowerCase().endsWith('.zip'));
+        const icon = isZip ? '📦' : '📁';
+        const count = folder.file_count || 0;
+
+        const isActive = currentNorm === folder.path.toLowerCase() || currentNorm.startsWith(folder.path.toLowerCase() + '/');
+        const activeClass = isActive
+          ? 'bg-emerald-600/20 text-emerald-300 font-semibold border-emerald-500/40 shadow-sm'
+          : 'text-slate-300 hover:bg-slate-800/80 hover:text-white border-transparent';
+
+        const isExpanded = q
+          ? (descMatches ? true : state.expandedFolders.has(pathKey))
+          : state.expandedFolders.has(pathKey);
+
+        const chevron = hasChildren
+          ? `<button
+              data-toggle-path="${encodeURIComponent(pathKey)}"
+              class="shrink-0 w-6 h-8 grid place-items-center rounded-md text-slate-500 hover:text-emerald-300 transition"
+              title="${isExpanded ? 'Collapse' : 'Expand'}"
+            >
+              <svg class="w-3.5 h-3.5 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+            </button>`
+          : `<span class="shrink-0 w-6"></span>`;
+
+        const countBadge = count > 0
+          ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 group-hover:text-slate-300 border border-slate-700/60 shrink-0">${count}</span>`
+          : '';
+
+        rows.push(`
+          <div class="flex items-center gap-0.5" style="padding-left:${depth * 14}px">
+            ${chevron}
+            <button
+              data-path="${encodeURIComponent(pathKey)}"
+              class="flex-1 min-w-0 text-left px-2 py-1.5 rounded-lg border text-sm flex items-center justify-between gap-2 transition group ${activeClass}"
+            >
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="text-base shrink-0">${icon}</span>
+                <span class="truncate">${escapeHtml(folder.name)}</span>
+              </div>
+              ${countBadge}
+            </button>
           </div>
-          ${countBadge}
-        </button>
-      `;
-    }).join('');
+        `);
+
+        if (hasChildren && isExpanded) {
+          if (!entry || (!entry.loaded && !entry.loading)) {
+            ensureFolderChildren(pathKey);
+          }
+          renderChildren(children, depth + 1);
+        }
+      }
+    };
+
+    renderChildren(roots, 0);
+    container.innerHTML = rows.join('');
   }
 
   // Render Breadcrumb Navigation
@@ -495,7 +926,46 @@
     });
   }
 
-  // Render Subfolders Chips
+  // One folder/ZIP cover tile. The justified layout fixes its cover height and
+  // width (via flexStyle) so covers in a row share one height and read in order.
+  function subfolderCardHtml(sub, coverHeight, flexStyle) {
+    const isZip = sub.is_zip || (sub.path && sub.path.toLowerCase().endsWith('.zip'));
+    const icon = isZip ? '📦' : '📁';
+    const count = sub.file_count || 0;
+    const countLabel = isZip
+      ? `${count} ${count === 1 ? 'item' : 'items'}`
+      : `${count} ${count === 1 ? 'file' : 'files'}`;
+    const coverUrl = sub.thumb_url || '';
+    const coverImg = coverUrl
+      ? `<img src="${coverUrl}" loading="lazy" alt=""
+           class="absolute inset-0 w-full h-full object-cover transition duration-200 group-hover:scale-105"
+           onerror="this.style.display='none'">`
+      : '';
+    const zipBadge = isZip
+      ? `<span class="absolute top-1.5 left-1.5 z-10 text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-amber-300 border border-amber-500/30">ZIP</span>`
+      : '';
+    return `
+      <button
+        data-sub-path="${encodeURIComponent(sub.path)}"
+        data-sub-name="${escapeHtml(sub.name)}"
+        data-sub-iszip="${sub.is_zip ? '1' : '0'}"
+        class="group flex flex-col rounded-xl overflow-hidden bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/70 hover:border-emerald-500/40 text-slate-200 transition active:scale-[0.98] shadow-sm text-left min-w-0"
+        style="${flexStyle}"
+      >
+        <div class="subfolder-cover relative w-full bg-slate-900/60 overflow-hidden flex items-center justify-center" style="height: ${Math.round(coverHeight)}px">
+          <span class="text-3xl opacity-80 group-hover:scale-110 transition">${icon}</span>
+          ${coverImg}
+          ${zipBadge}
+        </div>
+        <div class="flex flex-col gap-0.5 p-2.5 w-full min-w-0">
+          <span class="truncate text-sm font-medium text-slate-100">${escapeHtml(sub.name)}</span>
+          <span class="truncate whitespace-nowrap min-w-0 text-[11px] font-mono text-slate-400">${countLabel}</span>
+        </div>
+      </button>
+    `;
+  }
+
+  // Render Subfolders as a responsive card grid
   function renderSubfolders() {
     if (!state.subfolders || state.subfolders.length === 0) {
       els.subfoldersContainer.classList.add('hidden');
@@ -505,18 +975,21 @@
     els.subfoldersContainer.classList.remove('hidden');
     els.subfolderCountBadge.textContent = state.subfolders.length;
 
-    els.subfolderChips.innerHTML = state.subfolders.map(sub => {
-      const isZip = sub.is_zip || (sub.path && sub.path.toLowerCase().endsWith('.zip'));
-      const icon = isZip ? '📦' : '📁';
-      return `
-        <button 
-          data-sub-path="${encodeURIComponent(sub.path)}"
-          class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs flex items-center gap-1.5 transition active:scale-95 group shadow-sm"
-        >
-          <span class="text-xs group-hover:scale-110 transition">${icon}</span>
-          <span class="truncate max-w-[180px]">${sub.name}</span>
-        </button>
-      `;
+    const gap = gridGapPx();
+    const width = els.subfolderChips.clientWidth || gridWidth();
+    const targetHeight = targetRowHeight(width, gap, subfolderColumnCount(), state.tileScale);
+    const rows = layoutJustifiedRows(state.subfolders, width, gap, targetHeight, s => tileRatio(s.width, s.height));
+
+    els.subfolderChips.innerHTML = rows.map(row => {
+      const cards = row.items.map((sub, i) => {
+        const ratio = row.ratios[i] || 1;
+        const cardWidth = Math.max(1, Math.round(ratio * row.height));
+        const flexStyle = row.partial
+          ? `flex: 0 0 ${cardWidth}px; width: ${cardWidth}px;`
+          : `flex: ${ratio} 1 0; min-width: 0;`;
+        return subfolderCardHtml(sub, row.height, flexStyle);
+      }).join('');
+      return `<div class="subfolder-row flex items-start w-full" style="gap: ${gap}px">${cards}</div>`;
     }).join('');
 
     els.subfolderChips.querySelectorAll('button[data-sub-path]').forEach(btn => {
@@ -524,6 +997,19 @@
         const subPath = decodeURIComponent(btn.dataset.subPath);
         loadFolder(subPath);
       });
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openContextMenu(e.clientX, e.clientY, {
+          path: decodeURIComponent(btn.dataset.subPath),
+          name: btn.dataset.subName,
+          kind: btn.dataset.subIszip === '1' ? 'zip' : 'folder',
+        });
+      });
+      attachLongPress(btn, () => ({
+        path: decodeURIComponent(btn.dataset.subPath),
+        name: btn.dataset.subName,
+        kind: btn.dataset.subIszip === '1' ? 'zip' : 'folder',
+      }));
     });
   }
 
@@ -539,7 +1025,7 @@
 
     els.emptyState.classList.add('hidden');
     els.mediaGrid.innerHTML = `
-      <div class="col-span-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+      <div class="w-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
         <span class="w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
         <span class="text-xs">Searching all backup folders for "${q}"...</span>
       </div>
@@ -571,6 +1057,7 @@
         els.infiniteScrollSentinel.classList.remove('hidden');
         renderCards(0, state.displayedCount);
       }
+      updateSelectAllBtn();
     } catch (err) {
       console.error('Global search error:', err);
       showToast('Search failed: ' + err.message, 'error');
@@ -825,28 +1312,69 @@
         updateCardsTranscodeStatus(state.latestTranscodeData);
       }
     }
+    updateSelectAllBtn();
   }
 
   // Render a Batch of Media Cards
   function renderCards(start, count) {
-    const slice = state.filteredFiles.slice(start, start + count);
+    let sliceStart = start;
+    if (start > 0) {
+      // Re-flow the previously provisional trailing row together with the batch.
+      if (state._gridPendingRowEl && state._gridPendingRowEl.parentNode) {
+        state._gridPendingRowEl.remove();
+        sliceStart = Math.min(state._gridPendingStart, start);
+      }
+      state._gridPendingRowEl = null;
+    } else {
+      els.mediaGrid.innerHTML = '';
+      state._gridPendingRowEl = null;
+      state._gridPendingStart = 0;
+    }
+
+    const end = start + count;
+    const slice = state.filteredFiles.slice(sliceStart, end);
     if (slice.length === 0) return;
 
-    const fragment = document.createDocumentFragment();
+    const gap = gridGapPx();
+    const width = gridWidth();
+    const targetHeight = targetRowHeight(width, gap, mediaColumnCount(), state.tileScale);
+    const rows = layoutJustifiedRows(slice, width, gap, targetHeight, f => tileRatio(f.width, f.height));
 
-    slice.forEach((file, relativeIdx) => {
-      const globalIdx = start + relativeIdx;
+    let consumed = 0;
+    rows.forEach((row) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'media-row flex items-start w-full';
+      rowEl.style.gap = `${gap}px`;
+
+      row.items.forEach((file, itemIdx) => {
+      const globalIdx = sliceStart + consumed + itemIdx;
+      const ratio = row.ratios[itemIdx] || 1;
       const card = document.createElement('div');
-      card.className = 'group relative flex flex-col bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 transition shadow hover:shadow-lg';
+      card.className = 'media-card group relative flex flex-col bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 transition shadow hover:shadow-lg';
+      if (row.partial) {
+        const w = Math.max(1, Math.round(ratio * row.height));
+        card.style.flex = `0 0 ${w}px`;
+        card.style.width = `${w}px`;
+      } else {
+        card.style.flex = `${ratio} 1 0`;
+        card.style.minWidth = '0';
+      }
       card.dataset.index = globalIdx;
       card.dataset.path = file.path;
+      card.dataset.name = file.name;
+
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openContextMenu(e.clientX, e.clientY, { path: file.path, name: file.name, kind: 'file' });
+      });
+      attachLongPress(card, () => ({ path: file.path, name: file.name, kind: 'file' }));
 
       const isVid = file.type === 'video';
       const extLabel = file.ext.toUpperCase().replace('.', '');
 
       card.innerHTML = `
         <!-- Thumbnail / Player Trigger Area -->
-        <div class="relative w-full aspect-square bg-slate-950 overflow-hidden cursor-pointer select-none">
+        <div class="card-thumb-wrap relative w-full bg-slate-950 overflow-hidden cursor-pointer select-none" style="height: ${Math.round(row.height)}px">
           <img 
             src="${file.thumb_url}" 
             alt="${file.name}" 
@@ -925,23 +1453,56 @@
               <span class="truncate">${file.rel_folder || file.folder_name}</span>
             </button>
           ` : ''}
-          <span class="card-filename text-xs text-white font-medium truncate" title="${file.name}">
-            ${file.name}
-          </span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <input
+              type="checkbox"
+              data-select-idx="${globalIdx}"
+              ${state.selectedPaths.has(file.path) ? 'checked' : ''}
+              class="card-select shrink-0 w-3.5 h-3.5 rounded border-slate-600 bg-slate-950/70 text-emerald-500 cursor-pointer"
+              title="Select item"
+            />
+            <span class="card-filename text-xs text-white font-medium truncate" title="${file.name}">
+              ${file.name}
+            </span>
+          </div>
           <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span class="card-filesize">${file.size_formatted}</span>
-            <span class="text-[9px] uppercase px-1 rounded ${isVid ? 'text-emerald-400 bg-emerald-950/60' : 'text-slate-400 bg-slate-800'}">
+            <span class="card-filesize truncate whitespace-nowrap min-w-0">${file.size_formatted}</span>
+            <span class="shrink-0 text-[9px] uppercase px-1 rounded ${isVid ? 'text-emerald-400 bg-emerald-950/60' : 'text-slate-400 bg-slate-800'}">
               ${file.type}
             </span>
           </div>
         </div>
       `;
 
-      // Click card to open Fancybox
-      card.querySelector('.aspect-square').addEventListener('click', (e) => {
+      // Click card to open Fancybox (ctrl/shift toggles/extends selection)
+      card.querySelector('.card-thumb-wrap').addEventListener('click', (e) => {
         if (e.target.closest('button[data-action]')) return;
+        if (e.ctrlKey || e.metaKey) {
+          toggleSelect(file.path, globalIdx);
+          return;
+        }
+        if (e.shiftKey) {
+          if (state.lastSelectedIndex != null) {
+            rangeSelect(state.lastSelectedIndex, globalIdx);
+          } else {
+            state.selectedPaths.add(file.path);
+            state.lastSelectedIndex = globalIdx;
+            updateSelectionToolbar();
+            updateCardSelectStates();
+          }
+          return;
+        }
         openFancybox(globalIdx);
       });
+
+      // Selection checkbox
+      const selectBox = card.querySelector('.card-select');
+      if (selectBox) {
+        selectBox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleSelect(file.path, globalIdx);
+        });
+      }
 
       // Jump to folder button (from global search results)
       const jumpBtn = card.querySelector('button[data-jump-folder]');
@@ -971,10 +1532,16 @@
         });
       });
 
-      fragment.appendChild(card);
-    });
+        rowEl.appendChild(card);
+      });
 
-    els.mediaGrid.appendChild(fragment);
+      els.mediaGrid.appendChild(rowEl);
+      if (row.partial) {
+        state._gridPendingRowEl = rowEl;
+        state._gridPendingStart = sliceStart + consumed;
+      }
+      consumed += row.items.length;
+    });
   }
 
   // Open Fancybox 5 Gallery
@@ -1042,6 +1609,15 @@
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
 
+    // Ctrl/Cmd+A selects (or deselects) every item in the current filtered view.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')
+        && !state.duplicates.isOpen && !state.fancyboxInstance
+        && state.filteredFiles.length > 0) {
+      e.preventDefault();
+      toggleSelectAll();
+      return;
+    }
+
     if (state.duplicates.isOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1083,17 +1659,18 @@
   });
 
   // Rename Flow
-  function openRenameModal(path, name) {
+  function openRenameModal(path, name, kind = 'file') {
     state.itemToRename = {
       path: decodeURIComponent(path),
       name: decodeURIComponent(name),
+      kind,
     };
     els.newFileNameInput.value = state.itemToRename.name;
     els.renameModal.classList.remove('hidden');
     setTimeout(() => {
       els.newFileNameInput.focus();
       const lastDot = state.itemToRename.name.lastIndexOf('.');
-      if (lastDot > 0) {
+      if (lastDot > 0 && kind === 'file') {
         els.newFileNameInput.setSelectionRange(0, lastDot);
       } else {
         els.newFileNameInput.select();
@@ -1118,44 +1695,52 @@
       return;
     }
 
+    const isFile = state.itemToRename.kind === 'file';
+    const endpoint = isFile ? '/api/backup/rename' : '/api/backup/folders/rename';
+    const itemPath = state.itemToRename.path;
+    const itemKind = state.itemToRename.kind;
+
     try {
       els.confirmRenameBtn.disabled = true;
       els.confirmRenameBtn.textContent = 'Saving...';
 
-      const res = await fetch('/api/backup/rename', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          path: state.itemToRename.path,
+          path: itemPath,
           new_name: newName,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || 'Failed to rename file');
+        throw new Error(data.detail || 'Failed to rename item');
       }
 
       showToast(`Renamed to "${newName}"`, 'success');
       closeRenameModal();
 
-      // Update in local arrays
-      const file = state.allFiles.find(f => f.path === state.itemToRename.path);
-      if (file) {
-        file.name = newName;
-        file.path = data.new_path;
-        file.thumb_url = data.thumb_url;
-        file.media_url = data.media_url;
+      if (isFile) {
+        // Update in local arrays
+        const file = state.allFiles.find(f => f.path === itemPath);
+        if (file) {
+          file.name = newName;
+          file.path = data.new_path;
+          file.thumb_url = data.thumb_url;
+          file.media_url = data.media_url;
+        }
+        if (state.fancyboxInstance) {
+          Fancybox.close();
+        }
+        applyFiltersAndSort();
+      } else {
+        // Folder / ZIP rename: re-browse to reflect the changed subtree.
+        loadFolder(state.currentPath, false);
       }
-
-      if (state.fancyboxInstance) {
-        Fancybox.close();
-      }
-
-      applyFiltersAndSort();
     } catch (err) {
       console.error(err);
-      showToast(err.message || 'Error renaming file', 'error');
+      showToast(err.message || 'Error renaming item', 'error');
     } finally {
       els.confirmRenameBtn.disabled = false;
       els.confirmRenameBtn.textContent = 'Save Name';
@@ -1163,14 +1748,40 @@
   }
 
   // Delete Flow
-  function openDeleteModal(path, name, sizeFormatted) {
+  function resetDeleteConfirmation() {
+    if (els.deleteConfirmAckInput) els.deleteConfirmAckInput.checked = false;
+    if (els.deleteConfirmAck) {
+      els.deleteConfirmAck.classList.remove('hidden');
+      els.deleteConfirmAck.classList.add('flex');
+    }
+    els.confirmDeleteBtn.disabled = true;
+  }
+
+  function openDeleteModal(path, name, sizeFormatted, kind = 'file') {
     state.itemToDelete = {
       path: decodeURIComponent(path),
       name: decodeURIComponent(name),
       size: sizeFormatted,
+      kind,
     };
     els.deleteFileName.textContent = state.itemToDelete.name;
     els.deleteFileSize.textContent = state.itemToDelete.size || '';
+
+    if (kind === 'folder') {
+      els.deleteModalTitle.textContent = 'Permanently Delete Folder?';
+      els.deleteModalSubtitle.textContent = 'This folder and everything inside it will be permanently deleted.';
+      els.confirmDeleteBtn.textContent = 'Delete Folder';
+    } else if (kind === 'zip') {
+      els.deleteModalTitle.textContent = 'Delete ZIP Archive?';
+      els.deleteModalSubtitle.textContent = 'This archive and its cached contents will be deleted.';
+      els.confirmDeleteBtn.textContent = 'Delete Archive';
+    } else {
+      els.deleteModalTitle.textContent = 'Permanently Delete File?';
+      els.deleteModalSubtitle.textContent = 'This action cannot be undone.';
+      els.confirmDeleteBtn.textContent = 'Delete File';
+    }
+
+    resetDeleteConfirmation();
     els.deleteModal.classList.remove('hidden');
   }
 
@@ -1182,41 +1793,537 @@
   async function submitDelete() {
     if (!state.itemToDelete) return;
 
+    if (els.deleteConfirmAckInput && !els.deleteConfirmAckInput.checked) {
+      showToast('Tick the confirmation box to proceed', 'error');
+      return;
+    }
+
+    if (state.itemToDelete.bulk) {
+      try {
+        els.confirmDeleteBtn.disabled = true;
+        els.confirmDeleteBtn.textContent = 'Deleting...';
+        const res = await fetch('/api/backup/bulk/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths: state.itemToDelete.paths }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to delete');
+        showToast(`Queued ${data.queued} deletion(s)`, 'success');
+        closeDeleteModal();
+        clearSelection();
+        awaitLibraryOpsAndRefresh((data.tasks || []).map(t => t.task_id), state.currentPath);
+      } catch (err) {
+        showToast(err.message || 'Error deleting', 'error');
+      } finally {
+        els.confirmDeleteBtn.disabled = !(els.deleteConfirmAckInput && els.deleteConfirmAckInput.checked);
+        els.confirmDeleteBtn.textContent = 'Delete';
+      }
+      return;
+    }
+
+    const kind = state.itemToDelete.kind;
+    const endpoint = kind === 'file' ? '/api/backup/delete' : '/api/backup/folders/delete';
+    const deletedPath = state.itemToDelete.path;
+
     try {
       els.confirmDeleteBtn.disabled = true;
       els.confirmDeleteBtn.textContent = 'Deleting...';
 
-      const res = await fetch('/api/backup/delete', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: state.itemToDelete.path,
-        }),
+        body: JSON.stringify({ path: deletedPath }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || 'Failed to delete file');
+        throw new Error(data.detail || 'Failed to delete');
       }
 
-      showToast(`Deleted "${state.itemToDelete.name}"`, 'success');
-      const deletedPath = state.itemToDelete.path;
-      closeDeleteModal();
-
-      // Remove from arrays
-      state.allFiles = state.allFiles.filter(f => f.path !== deletedPath);
-
-      if (state.fancyboxInstance) {
-        Fancybox.close();
+      if (kind === 'file') {
+        showToast(`Deleted "${state.itemToDelete.name}"`, 'success');
+        closeDeleteModal();
+        state.allFiles = state.allFiles.filter(f => f.path !== deletedPath);
+        if (state.fancyboxInstance) {
+          Fancybox.close();
+        }
+        applyFiltersAndSort();
+      } else {
+        showToast(`Queued deletion of "${state.itemToDelete.name}"`, 'success');
+        const delTaskId = data.task_id;
+        closeDeleteModal();
+        awaitLibraryOpsAndRefresh([delTaskId], state.currentPath);
       }
-
-      applyFiltersAndSort();
     } catch (err) {
       console.error(err);
-      showToast(err.message || 'Error deleting file', 'error');
+      showToast(err.message || 'Error deleting', 'error');
     } finally {
-      els.confirmDeleteBtn.disabled = false;
-      els.confirmDeleteBtn.textContent = 'Delete File';
+      els.confirmDeleteBtn.disabled = !(els.deleteConfirmAckInput && els.deleteConfirmAckInput.checked);
+      els.confirmDeleteBtn.textContent = 'Delete';
+    }
+  }
+
+  // ==========================================
+  // Library File/Folder Management (P1)
+  // ==========================================
+
+  // --- New Folder ---
+  function openNewFolderModal() {
+    els.newFolderNameInput.value = '';
+    els.newFolderModal.classList.remove('hidden');
+    setTimeout(() => els.newFolderNameInput.focus(), 50);
+  }
+
+  function closeNewFolderModal() {
+    els.newFolderModal.classList.add('hidden');
+  }
+
+  async function submitNewFolder() {
+    const name = els.newFolderNameInput.value.trim();
+    if (!name) {
+      showToast('Folder name cannot be empty', 'error');
+      return;
+    }
+    try {
+      els.confirmNewFolderBtn.disabled = true;
+      const res = await fetch('/api/backup/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_path: state.currentPath, name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to create folder');
+      showToast(`Created folder "${name}"`, 'success');
+      closeNewFolderModal();
+      loadFolder(state.currentPath, false);
+    } catch (err) {
+      showToast(err.message || 'Error creating folder', 'error');
+    } finally {
+      els.confirmNewFolderBtn.disabled = false;
+    }
+  }
+
+  // --- Context Menu ---
+  function openContextMenu(x, y, target) {
+    state.contextMenuTarget = target;
+    els.contextMenu.style.left = `${x}px`;
+    els.contextMenu.style.top = `${y}px`;
+    els.contextMenu.classList.remove('hidden');
+    // Keep within viewport
+    const rect = els.contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) els.contextMenu.style.left = `${window.innerWidth - rect.width - 8}px`;
+    if (rect.bottom > window.innerHeight) els.contextMenu.style.top = `${window.innerHeight - rect.height - 8}px`;
+  }
+
+  function closeContextMenu() {
+    els.contextMenu.classList.add('hidden');
+    state.contextMenuTarget = null;
+  }
+
+  function runContextAction(action) {
+    const target = state.contextMenuTarget;
+    closeContextMenu();
+    if (!target) return;
+    if (action === 'move') openMoveModal(target);
+    else if (action === 'rename') openRenameModal(target.path, target.name, target.kind);
+    else if (action === 'delete') openDeleteModal(target.path, target.name, target.size_formatted || '', target.kind);
+  }
+
+  // Tap-and-hold (touch) support: opens the same context menu as right-click.
+  function attachLongPress(el, targetFn) {
+    let timer = null;
+    let startX = 0;
+    let startY = 0;
+
+    const cancel = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      cancel();
+      timer = setTimeout(() => {
+        timer = null;
+        // Suppress the synthetic click that follows the touch so the menu
+        // isn't closed instantly and the lightbox doesn't open.
+        state.suppressClickUntil = Date.now() + 800;
+        openContextMenu(t.clientX, t.clientY, targetFn());
+        if (navigator.vibrate) {
+          try { navigator.vibrate(10); } catch (err) { /* ignore */ }
+        }
+      }, 500);
+    }, { passive: true });
+
+    el.addEventListener('touchmove', (e) => {
+      if (!timer) return;
+      const t = e.touches[0];
+      if (!t || Math.abs(t.clientX - startX) > 12 || Math.abs(t.clientY - startY) > 12) {
+        cancel();
+      }
+    }, { passive: true });
+
+    el.addEventListener('touchend', cancel);
+    el.addEventListener('touchcancel', cancel);
+  }
+
+  // --- Move To... ---
+  function openMoveModal(target) {
+    state.moveItems = [target];
+    els.moveItemName.textContent = target.name;
+    state.movePickerPath = state.basePath || state.currentPath;
+    els.moveModal.classList.remove('hidden');
+    loadMoveFolders(state.movePickerPath);
+  }
+
+  function openBulkMove(items) {
+    state.moveItems = items;
+    els.moveItemName.textContent = `${items.length} items`;
+    state.movePickerPath = state.basePath || state.currentPath;
+    els.moveModal.classList.remove('hidden');
+    loadMoveFolders(state.movePickerPath);
+  }
+
+  function closeMoveModal() {
+    els.moveModal.classList.add('hidden');
+    state.moveItems = [];
+  }
+
+  async function loadMoveFolders(path) {
+    try {
+      const res = await fetch(`/api/backup/folders?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      state.movePickerPath = data.current_path || path;
+      state.movePickerFolders = data.subfolders || [];
+      renderMoveFolders();
+    } catch (err) {
+      showToast('Error loading folders', 'error');
+    }
+  }
+
+  function renderMoveFolders() {
+    els.moveCurrentPath.textContent = state.movePickerPath;
+    els.moveCurrentPath.title = state.movePickerPath;
+    els.moveFolderList.innerHTML = '';
+
+    const dirs = (state.movePickerFolders || []).filter(s =>
+      !(s.is_zip || (s.path && s.path.toLowerCase().endsWith('.zip')))
+    );
+
+    if (dirs.length === 0) {
+      els.moveFolderList.innerHTML = `<div class="text-xs text-slate-500 px-2 py-3 text-center">No subfolders — choose this location</div>`;
+      return;
+    }
+
+    dirs.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition';
+      btn.innerHTML = `<span>📁</span><span class="truncate flex-1">${escapeHtml(s.name)}</span><span class="text-slate-500 shrink-0">›</span>`;
+      btn.addEventListener('click', () => loadMoveFolders(s.path));
+      els.moveFolderList.appendChild(btn);
+    });
+  }
+
+  function movePickerUp() {
+    const base = state.basePath;
+    const cur = state.movePickerPath;
+    if (!cur || cur === base) return;
+    const parent = cur.substring(0, cur.lastIndexOf('/')) || base;
+    loadMoveFolders(parent || base);
+  }
+
+  async function submitMove() {
+    if (!state.moveItems.length) return;
+    const paths = state.moveItems.map(t => t.path);
+    const dest = state.movePickerPath;
+    try {
+      const res = await fetch('/api/backup/move/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, destination_folder: dest }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Move failed');
+      if (data.collision_count > 0) {
+        state.pendingMove = { paths, destination_folder: dest };
+        els.moveConflictCount.textContent = `${data.collision_count} item(s) already exist at the destination.`;
+        els.moveConflictModal.classList.remove('hidden');
+        return;
+      }
+      await doMove(paths, dest, 'auto_rename');
+    } catch (err) {
+      showToast(err.message || 'Error moving', 'error');
+    }
+  }
+
+  async function doMove(paths, dest, policy) {
+    try {
+      const res = await fetch('/api/backup/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, destination_folder: dest, conflict_policy: policy }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = (data.detail && data.detail.message) ? data.detail.message : (data.detail || 'Move failed');
+        throw new Error(msg);
+      }
+      showToast(`Queued ${data.queued} move(s)`, 'success');
+      els.moveConflictModal.classList.add('hidden');
+      closeMoveModal();
+      awaitLibraryOpsAndRefresh((data.tasks || []).map(t => t.task_id), state.currentPath);
+    } catch (err) {
+      showToast(err.message || 'Error moving', 'error');
+    }
+  }
+
+  // Wait for queued library operations to finish, then reload the current
+  // folder so the UI reflects the move/delete/rename without a manual refresh.
+  async function awaitLibraryOpsAndRefresh(taskIds, expectedPath) {
+    const pending = new Set((taskIds || []).filter(Boolean));
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (pending.size && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 800));
+      try {
+        const res = await fetch('/api/backup/library-ops/status');
+        if (!res.ok) break;
+        const data = await res.json();
+        const activeId = data.active ? data.active.id : null;
+        const queuedIds = new Set((data.queued || []).map(q => q.id));
+        Array.from(pending).forEach(id => {
+          if (id !== activeId && !queuedIds.has(id)) pending.delete(id);
+        });
+      } catch (e) {
+        break;
+      }
+    }
+    if (!expectedPath || state.currentPath === expectedPath) {
+      loadFolder(state.currentPath, false);
+    }
+  }
+
+  // --- Multi-select ---
+  function selectedItems() {
+    return state.filteredFiles.filter(f => state.selectedPaths.has(f.path));
+  }
+
+  function updateSelectionToolbar() {
+    const n = state.selectedPaths.size;
+    els.selectionCount.textContent = n;
+    if (n > 0) els.selectionToolbar.classList.remove('hidden');
+    else els.selectionToolbar.classList.add('hidden');
+    updateSelectAllBtn();
+  }
+
+  function allFilteredSelected() {
+    return state.filteredFiles.length > 0
+      && state.filteredFiles.every(f => state.selectedPaths.has(f.path));
+  }
+
+  function updateSelectAllBtn() {
+    if (!els.selectAllBtn) return;
+    const hasFiles = state.filteredFiles.length > 0;
+    els.selectAllBtn.classList.toggle('hidden', !hasFiles);
+    els.selectAllBtn.textContent = allFilteredSelected() ? '☐ Deselect All' : '☑️ Select All';
+    els.selectAllBtn.title = allFilteredSelected()
+      ? 'Deselect every item in the current view'
+      : 'Select every item in the current view';
+  }
+
+  // Select every item in the current filtered view, or clear when all are
+  // already selected.
+  function toggleSelectAll() {
+    if (state.filteredFiles.length === 0) return;
+    if (allFilteredSelected()) {
+      state.selectedPaths.clear();
+      state.lastSelectedIndex = null;
+    } else {
+      state.filteredFiles.forEach(f => state.selectedPaths.add(f.path));
+      state.lastSelectedIndex = state.filteredFiles.length - 1;
+    }
+    updateSelectionToolbar();
+    updateCardSelectStates();
+  }
+
+  function updateCardSelectStates() {
+    document.querySelectorAll('.card-select').forEach(cb => {
+      const idx = parseInt(cb.dataset.selectIdx, 10);
+      const f = state.filteredFiles[idx];
+      cb.checked = f ? state.selectedPaths.has(f.path) : false;
+    });
+  }
+
+  function toggleSelect(path, index) {
+    if (state.selectedPaths.has(path)) state.selectedPaths.delete(path);
+    else state.selectedPaths.add(path);
+    state.lastSelectedIndex = index;
+    updateSelectionToolbar();
+    updateCardSelectStates();
+  }
+
+  function rangeSelect(startIdx, endIdx) {
+    const a = Math.min(startIdx, endIdx);
+    const b = Math.max(startIdx, endIdx);
+    for (let i = a; i <= b; i++) {
+      const f = state.filteredFiles[i];
+      if (f) state.selectedPaths.add(f.path);
+    }
+    updateSelectionToolbar();
+    updateCardSelectStates();
+  }
+
+  function clearSelection() {
+    state.selectedPaths.clear();
+    state.lastSelectedIndex = null;
+    updateSelectionToolbar();
+    updateCardSelectStates();
+  }
+
+  // --- Bulk delete ---
+  function openBulkDeleteModal() {
+    const paths = Array.from(state.selectedPaths);
+    state.itemToDelete = {
+      path: null,
+      name: `${paths.length} items`,
+      size: '',
+      kind: 'file',
+      bulk: true,
+      paths,
+    };
+    els.deleteFileName.textContent = `${paths.length} item${paths.length === 1 ? '' : 's'} selected`;
+    els.deleteFileSize.textContent = '';
+    els.deleteModalTitle.textContent = `Delete ${paths.length} item${paths.length === 1 ? '' : 's'}?`;
+    els.deleteModalSubtitle.textContent = 'This will permanently delete the selected files and folders.';
+    els.confirmDeleteBtn.textContent = `Delete ${paths.length} item${paths.length === 1 ? '' : 's'}`;
+    resetDeleteConfirmation();
+    els.deleteModal.classList.remove('hidden');
+  }
+
+  // --- Bulk rename ---
+  function openBulkRenameModal() {
+    state.bulkRenamePreview = [];
+    els.bulkRenameCount.textContent = `${state.selectedPaths.size} file${state.selectedPaths.size === 1 ? '' : 's'}`;
+    els.bulkRenamePreviewList.innerHTML = `<div class="text-xs text-slate-500 px-2 py-3 text-center">Configure a mode, then preview</div>`;
+    els.bulkRenameModal.classList.remove('hidden');
+    renderBulkRenameParams();
+  }
+
+  function closeBulkRenameModal() {
+    els.bulkRenameModal.classList.add('hidden');
+  }
+
+  function renderBulkRenameParams() {
+    const mode = els.bulkRenameMode.value;
+    document.querySelectorAll('.bulk-param').forEach(el => el.classList.add('hidden'));
+    const map = {
+      prefix: 'bulkPrefixParams',
+      numbering: 'bulkNumberingParams',
+      base_counter: 'bulkBaseCounterParams',
+      find_replace: 'bulkFindReplaceParams',
+      case: 'bulkCaseParams',
+    };
+    const el = document.getElementById(map[mode]);
+    if (el) {
+      el.classList.remove('hidden');
+      if (mode === 'numbering' || mode === 'base_counter') el.classList.add('flex');
+    }
+  }
+
+  function collectBulkRenameParams() {
+    const mode = els.bulkRenameMode.value;
+    if (mode === 'prefix') return { prefix: document.getElementById('bulkPrefixInput').value.trim(), suffix: document.getElementById('bulkSuffixInput').value.trim() };
+    if (mode === 'numbering') return {
+      start: parseInt(document.getElementById('bulkNumStart').value, 10) || 1,
+      step: parseInt(document.getElementById('bulkNumStep').value, 10) || 1,
+      padding: parseInt(document.getElementById('bulkNumPadding').value, 10) || 0,
+      position: document.getElementById('bulkNumPosition').value,
+    };
+    if (mode === 'base_counter') return {
+      base: document.getElementById('bulkBaseName').value.trim(),
+      start: parseInt(document.getElementById('bulkBaseStart').value, 10) || 1,
+      padding: parseInt(document.getElementById('bulkBasePadding').value, 10) || 0,
+    };
+    if (mode === 'find_replace') return { find: document.getElementById('bulkFindInput').value, replace: document.getElementById('bulkReplaceInput').value };
+    if (mode === 'case') return { case: document.getElementById('bulkCaseSelect').value };
+    return {};
+  }
+
+  async function previewBulkRename() {
+    const paths = Array.from(state.selectedPaths);
+    if (!paths.length) return;
+    try {
+      const res = await fetch('/api/backup/bulk/rename/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, mode: els.bulkRenameMode.value, params: collectBulkRenameParams() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to preview');
+      state.bulkRenamePreview = data.items || [];
+      if (!state.bulkRenamePreview.length) {
+        els.bulkRenamePreviewList.innerHTML = `<div class="text-xs text-slate-500 px-2 py-3 text-center">Nothing to rename</div>`;
+        return;
+      }
+      els.bulkRenamePreviewList.innerHTML = state.bulkRenamePreview.map(item => {
+        const changed = item.new_name !== item.name;
+        const conflictCls = item.conflict ? 'text-red-300' : (changed ? 'text-emerald-300' : 'text-slate-500');
+        return `
+          <div class="flex items-center gap-2 text-xs">
+            <span class="truncate text-slate-400">${escapeHtml(item.name)}</span>
+            <span class="shrink-0 text-slate-500">→</span>
+            <span class="truncate ${conflictCls}">${escapeHtml(item.new_name)}</span>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      showToast(err.message || 'Error previewing rename', 'error');
+    }
+  }
+
+  async function applyBulkRename() {
+    const paths = Array.from(state.selectedPaths);
+    if (!paths.length) return;
+    try {
+      const res = await fetch('/api/backup/bulk/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, mode: els.bulkRenameMode.value, params: collectBulkRenameParams() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to rename');
+      showToast(`Queued ${data.queued} rename(s)`, 'success');
+      closeBulkRenameModal();
+      clearSelection();
+      awaitLibraryOpsAndRefresh((data.tasks || []).map(t => t.task_id), state.currentPath);
+    } catch (err) {
+      showToast(err.message || 'Error renaming', 'error');
+    }
+  }
+
+  async function bulkWebpOptimize() {
+    const paths = Array.from(state.selectedPaths);
+    if (!paths.length) return;
+    try {
+      const res = await fetch('/api/backup/bulk/webp-optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to queue WebP optimization');
+      let msg = `Queued ${data.images_queued} image(s) for WebP`;
+      if (data.folders_queued) msg += `, ${data.folders_queued} folder(s)`;
+      if (data.skipped) msg += ` (${data.skipped} skipped)`;
+      showToast(msg, 'success');
+      clearSelection();
+    } catch (err) {
+      showToast(err.message || 'Error queueing WebP optimization', 'error');
     }
   }
 
@@ -2152,6 +3259,10 @@
           state.latestTransferData = data.transfers;
           renderTransferStatus(data.transfers);
         }
+        if (data.library_ops) {
+          state.latestLibraryOpsData = data.library_ops;
+          renderLibraryOpsStatus(data.library_ops);
+        }
         if (data.transcode) {
           state.latestTranscodeData = data.transcode;
           renderTranscodeStatus(data.transcode);
@@ -2186,6 +3297,10 @@
         if (data.batch_zip) {
           state.latestBatchZipData = data.batch_zip;
           renderBatchZipStatus(data.batch_zip);
+        }
+        if (data.batch_unzip) {
+          state.latestBatchUnpackData = data.batch_unzip;
+          renderBatchUnpackStatus(data.batch_unzip);
         }
 
         updateHeaderTaskBadge();
@@ -2227,8 +3342,11 @@
     const bkData = state.latestLibBackupData;
     const zipData = state.latestZipData;
     const batchZipData = state.latestBatchZipData;
+    const batchUnpackData = state.latestBatchUnpackData;
+    const libOpsData = state.latestLibraryOpsData;
 
     const trActive = trData && (trData.active || (trData.queued && trData.queued.length > 0));
+    const libOpsActive = libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0));
     const idxActive = idxData && idxData.status === 'crawling';
     const tActive = tData && (tData.active || (tData.queued && tData.queued.length > 0));
     const thActive = thData && thData.status === 'generating' && (thData.pending_count > 0);
@@ -2236,8 +3354,9 @@
     const bkActive = bkData && (bkData.status === 'backing_up' || bkData.status === 'restoring');
     const zipActive = zipData && zipData.is_active;
     const batchZipActive = batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'processing');
+    const batchUnpackActive = batchUnpackData && (batchUnpackData.status === 'running' || batchUnpackData.status === 'processing');
 
-    const isAnyActive = trActive || idxActive || bkActive || tActive || thActive || wActive || zipActive || batchZipActive;
+    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || wActive || zipActive || batchZipActive || batchUnpackActive;
 
     // Always keep button visible so the background tasks modal can be opened anytime
     els.transferBadgeBtn.classList.remove('hidden');
@@ -2255,6 +3374,11 @@
         els.transferCountText.textContent = active 
           ? `Moving ${Math.round(active.percent || 0)}%`
           : `${queued.length} transfer${queued.length > 1 ? 's' : ''}`;
+      } else if (libOpsActive) {
+        const a = libOpsData.active;
+        const q = (libOpsData.queued || []).length;
+        const verb = a ? (LIBOP_LABELS[a.op] || 'Working') : 'Queued';
+        els.transferCountText.textContent = a ? `${verb}${q ? ` +${q}` : ''}` : `${q} op${q > 1 ? 's' : ''}`;
       } else if (idxActive) {
         const pct = typeof idxData.percent === 'number' ? Math.round(idxData.percent) : 0;
         els.transferCountText.textContent = `Indexing ${pct}%`;
@@ -2275,6 +3399,9 @@
       } else if (batchZipActive) {
         const pct = Math.round(batchZipData.percent || 0);
         els.transferCountText.textContent = `Batch Zip ${pct}%`;
+      } else if (batchUnpackActive) {
+        const pct = Math.round(batchUnpackData.overall_percent || 0);
+        els.transferCountText.textContent = `Extract ${pct}%`;
       } else if (zipActive) {
         const runningTask = (zipData.tasks || []).find(t => t.status === 'running');
         const actionName = runningTask ? (runningTask.type === 'compress' ? 'Zipping' : (runningTask.type === 'unpack' ? 'Unpack' : 'Archive')) : 'ZIP';
@@ -2339,6 +3466,59 @@
       els.queuedTransfersContainer.classList.add('hidden');
       els.queuedTransfersList.innerHTML = '';
       if (els.queuedTransfersCount) els.queuedTransfersCount.textContent = '0';
+    }
+  }
+
+  // Render Library Operations (queued move / delete / rename) in the tasks panel.
+  const LIBOP_LABELS = { move: 'Moving', delete: 'Deleting', rename: 'Renaming' };
+  const LIBOP_BADGES = { move: 'Move', delete: 'Delete', rename: 'Rename' };
+  function renderLibraryOpsStatus(data) {
+    if (!els.libraryOpsSection) return;
+    const active = data.active;
+    const queued = data.queued || [];
+    const history = data.history || [];
+    const undoCount = data.undo_count || 0;
+    const isActive = !!active || queued.length > 0;
+
+    els.libraryOpsSection.classList.toggle('hidden', !isActive);
+    if (!isActive) return;
+
+    const bn = (p) => (p ? String(p).split('/').filter(Boolean).pop() || p : '');
+    if (els.libraryOpsSummary) {
+      els.libraryOpsSummary.textContent = active
+        ? `${LIBOP_LABELS[active.op] || 'Working'}${queued.length ? ` +${queued.length}` : ''}`
+        : `${queued.length} queued`;
+    }
+
+    if (active) {
+      els.activeLibraryOpBox.classList.remove('hidden');
+      if (els.activeLibraryOpKind) els.activeLibraryOpKind.textContent = LIBOP_BADGES[active.op] || 'Op';
+      if (els.activeLibraryOpName) els.activeLibraryOpName.textContent = bn(active.source_path) || 'item';
+      if (els.activeLibraryOpTarget) {
+        els.activeLibraryOpTarget.textContent = active.target_path ? `→ ${bn(active.target_path)}` : '';
+      }
+      const done = history.filter(h => h.status === 'completed').length;
+      if (els.libraryOpsProgress) {
+        els.libraryOpsProgress.textContent = `${done} done${undoCount ? ` · undo ${undoCount}` : ''}`;
+      }
+    } else {
+      els.activeLibraryOpBox.classList.add('hidden');
+    }
+
+    if (queued.length) {
+      els.queuedLibraryOpsContainer.classList.remove('hidden');
+      if (els.queuedLibraryOpsCount) els.queuedLibraryOpsCount.textContent = queued.length;
+      if (els.queuedLibraryOpsList) {
+        els.queuedLibraryOpsList.innerHTML = queued.slice(0, 10).map(q => `
+          <div class="flex items-center gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+            <span class="text-[9px] uppercase px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-mono shrink-0">${LIBOP_BADGES[q.op] || 'Op'}</span>
+            <span class="truncate text-slate-400 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(String(q.id || '').slice(0, 8))}</span>
+          </div>
+        `).join('') + (queued.length > 10 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${queued.length - 10} more in queue...</div>` : '');
+      }
+    } else {
+      els.queuedLibraryOpsContainer.classList.add('hidden');
+      if (els.queuedLibraryOpsList) els.queuedLibraryOpsList.innerHTML = '';
     }
   }
 
@@ -3363,6 +4543,290 @@
     pollSystemStatus(true);
   }
 
+  // ===== Batch Unpack (Extract All ZIPs) =====
+  async function openBatchUnpackModal() {
+    if (!els.batchUnpackModal) return;
+    els.batchUnpackModal.classList.remove('hidden');
+    if (els.batchUnpackCandidatesList) {
+      els.batchUnpackCandidatesList.innerHTML = `
+        <div class="col-span-full py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <span class="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
+          <span class="text-xs">Scanning library for ZIP archives...</span>
+        </div>
+      `;
+    }
+    if (els.confirmBatchUnpackBtn) els.confirmBatchUnpackBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/backup/zip/batch-unpack/candidates');
+      if (!res.ok) throw new Error('Failed to fetch candidate archives');
+      const data = await res.json();
+
+      state.batchUnpackCandidates = data.candidates || [];
+      state.batchUnpackSelectedPaths = new Set(state.batchUnpackCandidates.map(c => c.path));
+      state.batchUnpackFilterQuery = '';
+      if (els.batchUnpackFilterInput) els.batchUnpackFilterInput.value = '';
+
+      if (els.batchUnpackCandidateCount) els.batchUnpackCandidateCount.textContent = data.total_candidates;
+      if (els.batchUnpackFileCount) els.batchUnpackFileCount.textContent = data.total_files;
+      if (els.batchUnpackTotalSize) els.batchUnpackTotalSize.textContent = data.total_size_formatted;
+
+      renderBatchUnpackCandidates();
+    } catch (err) {
+      console.error('Error opening batch unpack modal:', err);
+      showToast('Could not load candidate archives', 'error');
+      if (els.batchUnpackCandidatesList) {
+        els.batchUnpackCandidatesList.innerHTML = `<div class="text-center py-8 text-xs text-rose-400">Error loading candidates: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+  }
+
+  function closeBatchUnpackModal() {
+    if (els.batchUnpackModal) els.batchUnpackModal.classList.add('hidden');
+  }
+
+  function renderBatchUnpackCandidates() {
+    if (!els.batchUnpackCandidatesList) return;
+    const q = (state.batchUnpackFilterQuery || '').toLowerCase().trim();
+    const filtered = state.batchUnpackCandidates.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.parent_name && c.parent_name.toLowerCase().includes(q)) ||
+      c.path.toLowerCase().includes(q)
+    );
+
+    if (filtered.length === 0) {
+      els.batchUnpackCandidatesList.innerHTML = `
+        <div class="text-center py-8 text-xs text-slate-500">
+          ${state.batchUnpackCandidates.length === 0 ? 'No ZIP archives found in library.' : 'No candidates match your search filter.'}
+        </div>
+      `;
+      if (els.batchUnpackSelectedBadge) els.batchUnpackSelectedBadge.textContent = `0 of ${state.batchUnpackCandidates.length} selected`;
+      if (els.confirmBatchUnpackBtn) els.confirmBatchUnpackBtn.disabled = true;
+      if (els.confirmBatchUnpackBtnText) els.confirmBatchUnpackBtnText.textContent = 'Extract Selected (0)';
+      return;
+    }
+
+    const selectedCount = state.batchUnpackSelectedPaths.size;
+    const totalCount = state.batchUnpackCandidates.length;
+
+    if (els.batchUnpackSelectedBadge) {
+      els.batchUnpackSelectedBadge.textContent = `${selectedCount} of ${totalCount} selected`;
+    }
+    if (els.confirmBatchUnpackBtn) {
+      els.confirmBatchUnpackBtn.disabled = selectedCount === 0;
+    }
+    if (els.confirmBatchUnpackBtnText) {
+      els.confirmBatchUnpackBtnText.textContent = `Extract Selected (${selectedCount})`;
+    }
+    if (els.batchUnpackSelectAllToggle) {
+      els.batchUnpackSelectAllToggle.checked = selectedCount === totalCount && totalCount > 0;
+      els.batchUnpackSelectAllToggle.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+    }
+
+    els.batchUnpackCandidatesList.innerHTML = filtered.map(c => {
+      const isChecked = state.batchUnpackSelectedPaths.has(c.path);
+      return `
+        <div class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition cursor-pointer group" data-path="${escapeHtml(c.path)}">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <input
+              type="checkbox"
+              class="batch-unpack-item-checkbox rounded bg-slate-800 border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+              data-path="${escapeHtml(c.path)}"
+              ${isChecked ? 'checked' : ''}
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5 text-xs font-semibold text-white truncate">
+                <span>🗜️</span>
+                <span class="truncate">${escapeHtml(c.name)}</span>
+              </div>
+              <div class="text-[10px] text-slate-400 font-mono truncate">
+                ${c.parent_name ? `${escapeHtml(c.parent_name)} / ` : ''}${escapeHtml(c.path)}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 text-right">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-emerald-300 font-mono text-[10px]">
+              ${c.total_files} files
+            </span>
+            <span class="text-[11px] text-slate-400 font-mono w-16">
+              ${c.total_size_formatted}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach checkbox toggle events
+    els.batchUnpackCandidatesList.querySelectorAll('.batch-unpack-item-checkbox').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const p = cb.dataset.path;
+        if (cb.checked) {
+          state.batchUnpackSelectedPaths.add(p);
+        } else {
+          state.batchUnpackSelectedPaths.delete(p);
+        }
+        renderBatchUnpackCandidates();
+      });
+    });
+
+    // Clicking a row toggles its checkbox
+    els.batchUnpackCandidatesList.querySelectorAll('div[data-path]').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('input')) return;
+        const p = row.dataset.path;
+        const cb = row.querySelector('.batch-unpack-item-checkbox');
+        if (!cb) return;
+        cb.checked = !cb.checked;
+        if (cb.checked) {
+          state.batchUnpackSelectedPaths.add(p);
+        } else {
+          state.batchUnpackSelectedPaths.delete(p);
+        }
+        renderBatchUnpackCandidates();
+      });
+    });
+  }
+
+  // Submit Batch Unpack
+  async function submitBatchUnpack() {
+    const selected = Array.from(state.batchUnpackSelectedPaths);
+    if (selected.length === 0) return;
+    try {
+      if (els.confirmBatchUnpackBtn) els.confirmBatchUnpackBtn.disabled = true;
+      const res = await fetch('/api/backup/zip/batch-unpack/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zip_paths: selected }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to start batch extraction');
+      }
+      const data = await res.json();
+      closeBatchUnpackModal();
+      showToast(data.message || `Extracting ${selected.length} archives...`, 'info');
+      pollBatchUnpackStatus();
+    } catch (err) {
+      console.error('Error starting batch unpack:', err);
+      showToast(err.message || 'Error starting batch extraction', 'error');
+      if (els.confirmBatchUnpackBtn) els.confirmBatchUnpackBtn.disabled = false;
+    }
+  }
+
+  // Toggle Batch Unpack Pause / Resume
+  async function toggleBatchUnpackPause() {
+    try {
+      const res = await fetch('/api/backup/zip/batch-unpack/pause', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || (data.status === 'paused' ? 'Batch extraction paused' : 'Batch extraction resumed'), 'info');
+        pollBatchUnpackStatus();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error toggling batch extraction pause', 'error');
+    }
+  }
+
+  // Cancel Batch Unpack
+  async function cancelBatchUnpack() {
+    if (!confirm('Are you sure you want to cancel the remaining batch extraction? The currently running archive will complete.')) return;
+    try {
+      const res = await fetch('/api/backup/zip/batch-unpack/cancel', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || 'Batch extraction canceled', 'warning');
+        pollBatchUnpackStatus();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error canceling batch extraction', 'error');
+    }
+  }
+
+  // Render and handle Batch Unpack status updates
+  function renderBatchUnpackStatus(data) {
+    if (!data) return;
+    const prevData = state.latestBatchUnpackData;
+    state.latestBatchUnpackData = data;
+
+    const isRunning = (data.status === 'running' || data.status === 'paused');
+
+    if (els.batchUnpackProgressBox) {
+      if (isRunning) {
+        els.batchUnpackProgressBox.classList.remove('hidden');
+      } else if (data.status === 'completed' || data.status === 'canceled') {
+        if (prevData && (prevData.status === 'running' || prevData.status === 'paused')) {
+          els.batchUnpackProgressBox.classList.remove('hidden');
+          setTimeout(() => {
+            if (state.latestBatchUnpackData && state.latestBatchUnpackData.status !== 'running' && state.latestBatchUnpackData.status !== 'paused') {
+              if (els.batchUnpackProgressBox) els.batchUnpackProgressBox.classList.add('hidden');
+            }
+          }, 4000);
+        } else {
+          els.batchUnpackProgressBox.classList.add('hidden');
+        }
+      } else {
+        els.batchUnpackProgressBox.classList.add('hidden');
+      }
+    }
+
+    // Toggle buttons
+    if (els.toggleBatchUnpackPauseBtn) {
+      if (isRunning) {
+        els.toggleBatchUnpackPauseBtn.classList.remove('hidden');
+        els.toggleBatchUnpackPauseBtn.textContent = data.is_paused ? 'Resume' : 'Pause';
+      } else {
+        els.toggleBatchUnpackPauseBtn.classList.add('hidden');
+      }
+    }
+    if (els.cancelBatchUnpackBtn) {
+      if (isRunning) {
+        els.cancelBatchUnpackBtn.classList.remove('hidden');
+      } else {
+        els.cancelBatchUnpackBtn.classList.add('hidden');
+      }
+    }
+
+    // Update progress UI
+    if (isRunning || data.status === 'completed') {
+      if (els.batchUnpackCurrentZip) {
+        els.batchUnpackCurrentZip.textContent = data.current_zip_name
+          ? `[${data.current_index}/${data.total_zips}] ${data.current_zip_name}`
+          : (data.status === 'completed' ? 'All archives extracted' : 'Batch extraction in progress...');
+      }
+      if (els.batchUnpackPercentText) {
+        els.batchUnpackPercentText.textContent = `${Math.round(data.overall_percent || 0)}%`;
+      }
+      if (els.batchUnpackProgressBar) {
+        els.batchUnpackProgressBar.style.width = `${Math.round(data.overall_percent || 0)}%`;
+      }
+      if (els.batchUnpackCountsText) {
+        els.batchUnpackCountsText.textContent = `${data.succeeded} done, ${data.failed} failed of ${data.total_zips}`;
+      }
+      if (els.batchUnpackStatusText) {
+        els.batchUnpackStatusText.textContent = data.is_paused ? 'Paused' : (data.status === 'completed' ? 'Done' : 'Extracting...');
+      }
+      if (els.zipTasksSummary) {
+        els.zipTasksSummary.textContent = isRunning
+          ? `Extract: ${data.current_index}/${data.total_zips}`
+          : 'Idle';
+      }
+    }
+
+    // Detect batch completion transition
+    if (prevData && (prevData.status === 'running' || prevData.status === 'paused') && data.status === 'completed') {
+      showToast(`Batch extraction finished! ${data.succeeded} archives extracted${data.failed ? `, ${data.failed} failed` : ''}.`, data.failed ? 'warning' : 'success');
+      if (state.currentPath) {
+        loadFolder(state.currentPath, false, true);
+      }
+    }
+  }
+
+  function pollBatchUnpackStatus() {
+    pollSystemStatus(true);
+  }
+
   // Toggle Duplicate Hash Pause / Resume
   async function toggleDuplicateHashPause() {
     try {
@@ -3401,7 +4865,7 @@
           file.media_url = `/api/backup/media?path=${encodeURIComponent(item.target_path)}`;
 
           // Update card in DOM
-          const card = Array.from(els.mediaGrid.children).find(c => c.dataset.path === item.source_path);
+          const card = Array.from(els.mediaGrid.querySelectorAll('.media-card')).find(c => c.dataset.path === item.source_path);
           if (card) {
             card.dataset.path = item.target_path;
             const overlay = card.querySelector('.transcode-overlay');
@@ -3433,7 +4897,7 @@
     });
 
     // Update active vs queued indicators on cards
-    Array.from(els.mediaGrid.children).forEach(card => {
+    Array.from(els.mediaGrid.querySelectorAll('.media-card')).forEach(card => {
       const cpath = card.dataset.path;
       if (!cpath) return;
 
@@ -3487,9 +4951,14 @@
 
   // Event Listeners Initialization
   function initEvents() {
-    // Delegated root folder click handler
+    // Delegated sidebar tree click handler (expand toggle + node navigation)
     if (els.rootFolderList) {
       els.rootFolderList.addEventListener('click', (e) => {
+        const toggle = e.target.closest('button[data-toggle-path]');
+        if (toggle) {
+          toggleFolderExpand(decodeURIComponent(toggle.dataset.togglePath));
+          return;
+        }
         const btn = e.target.closest('button[data-path]');
         if (btn) {
           const folderPath = decodeURIComponent(btn.dataset.path);
@@ -3658,6 +5127,47 @@
       });
     }
 
+    // Batch Unpack Modal & Controls
+    if (els.openBatchUnpackBtn) {
+      els.openBatchUnpackBtn.addEventListener('click', openBatchUnpackModal);
+    }
+    if (els.closeBatchUnpackModalBtn) {
+      els.closeBatchUnpackModalBtn.addEventListener('click', closeBatchUnpackModal);
+    }
+    if (els.cancelBatchUnpackModalBtn) {
+      els.cancelBatchUnpackModalBtn.addEventListener('click', closeBatchUnpackModal);
+    }
+    if (els.batchUnpackModal) {
+      els.batchUnpackModal.addEventListener('click', (e) => {
+        if (e.target === els.batchUnpackModal) closeBatchUnpackModal();
+      });
+    }
+    if (els.confirmBatchUnpackBtn) {
+      els.confirmBatchUnpackBtn.addEventListener('click', submitBatchUnpack);
+    }
+    if (els.toggleBatchUnpackPauseBtn) {
+      els.toggleBatchUnpackPauseBtn.addEventListener('click', toggleBatchUnpackPause);
+    }
+    if (els.cancelBatchUnpackBtn) {
+      els.cancelBatchUnpackBtn.addEventListener('click', cancelBatchUnpack);
+    }
+    if (els.batchUnpackFilterInput) {
+      els.batchUnpackFilterInput.addEventListener('input', (e) => {
+        state.batchUnpackFilterQuery = e.target.value;
+        renderBatchUnpackCandidates();
+      });
+    }
+    if (els.batchUnpackSelectAllToggle) {
+      els.batchUnpackSelectAllToggle.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          state.batchUnpackSelectedPaths = new Set(state.batchUnpackCandidates.map(c => c.path));
+        } else {
+          state.batchUnpackSelectedPaths.clear();
+        }
+        renderBatchUnpackCandidates();
+      });
+    }
+
     // Search Scope Toggle
     if (els.scopeCurrentBtn) {
       els.scopeCurrentBtn.addEventListener('click', () => setSearchScope('current'));
@@ -3709,10 +5219,10 @@
       }
     });
 
-    // Folder Search Filter
+    // Folder Search Filter (filters currently loaded tree nodes)
     els.folderSearchInput.addEventListener('input', (e) => {
       state.folderSearchQuery = e.target.value;
-      renderRootFolderList();
+      renderSidebarTree();
     });
 
     // File Search Filter
@@ -3750,6 +5260,11 @@
       applyFiltersAndSort();
     });
 
+    // Thumbnail size +/-
+    if (els.tileSizeDownBtn) els.tileSizeDownBtn.addEventListener('click', () => stepTileScale(-1));
+    if (els.tileSizeUpBtn) els.tileSizeUpBtn.addEventListener('click', () => stepTileScale(1));
+    syncTileScaleUI();
+
     // Filter Buttons (All, Videos, Images)
     const setFilter = (type) => {
       state.activeFilter = type;
@@ -3784,6 +5299,88 @@
     // Delete Modal Actions
     els.confirmDeleteBtn.addEventListener('click', submitDelete);
     els.cancelDeleteBtn.addEventListener('click', closeDeleteModal);
+
+    // New Folder Actions
+    if (els.newFolderBtn) els.newFolderBtn.addEventListener('click', openNewFolderModal);
+    if (els.confirmNewFolderBtn) els.confirmNewFolderBtn.addEventListener('click', submitNewFolder);
+    if (els.cancelNewFolderBtn) els.cancelNewFolderBtn.addEventListener('click', closeNewFolderModal);
+    if (els.closeNewFolderModalBtn) els.closeNewFolderModalBtn.addEventListener('click', closeNewFolderModal);
+    if (els.newFolderNameInput) {
+      els.newFolderNameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitNewFolder();
+        if (e.key === 'Escape') closeNewFolderModal();
+      });
+    }
+
+    // Move Actions
+    if (els.confirmMoveBtn) els.confirmMoveBtn.addEventListener('click', submitMove);
+    if (els.cancelMoveBtn) els.cancelMoveBtn.addEventListener('click', closeMoveModal);
+    if (els.closeMoveModalBtn) els.closeMoveModalBtn.addEventListener('click', closeMoveModal);
+    if (els.moveUpBtn) els.moveUpBtn.addEventListener('click', movePickerUp);
+    if (els.moveConflictCancelBtn) els.moveConflictCancelBtn.addEventListener('click', () => els.moveConflictModal.classList.add('hidden'));
+    if (els.moveConflictSkipBtn) els.moveConflictSkipBtn.addEventListener('click', () => {
+      const p = state.pendingMove;
+      if (p) doMove(p.paths, p.destination_folder, 'skip');
+    });
+    if (els.moveConflictRenameBtn) els.moveConflictRenameBtn.addEventListener('click', () => {
+      const p = state.pendingMove;
+      if (p) doMove(p.paths, p.destination_folder, 'auto_rename');
+    });
+
+    // Context Menu
+    if (els.contextMenu) {
+      els.contextMenu.querySelectorAll('button[data-cm]').forEach(btn => {
+        btn.addEventListener('click', () => runContextAction(btn.dataset.cm));
+      });
+    }
+    // Swallow the synthetic click that follows a long-press so it neither opens
+    // the lightbox nor immediately dismisses the context menu.
+    document.addEventListener('click', (e) => {
+      if (state.suppressClickUntil && Date.now() < state.suppressClickUntil) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#contextMenu')) closeContextMenu();
+    });
+    document.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest('#mediaGrid') && !e.target.closest('#subfolderChips')) closeContextMenu();
+    });
+
+    // Delete acknowledgement checkbox gates the confirm button
+    if (els.deleteConfirmAckInput) {
+      els.deleteConfirmAckInput.addEventListener('change', () => {
+        els.confirmDeleteBtn.disabled = !els.deleteConfirmAckInput.checked;
+      });
+    }
+
+    // Selection toolbar & bulk actions
+    if (els.selectionClearBtn) els.selectionClearBtn.addEventListener('click', clearSelection);
+    if (els.selectAllBtn) els.selectAllBtn.addEventListener('click', toggleSelectAll);
+    if (els.selectionMoveBtn) els.selectionMoveBtn.addEventListener('click', () => {
+      const items = selectedItems().map(f => ({ path: f.path, name: f.name, kind: 'file' }));
+      if (items.length) openBulkMove(items);
+    });
+    if (els.selectionRenameBtn) els.selectionRenameBtn.addEventListener('click', openBulkRenameModal);
+    if (els.selectionWebpBtn) els.selectionWebpBtn.addEventListener('click', bulkWebpOptimize);
+    if (els.selectionDeleteBtn) els.selectionDeleteBtn.addEventListener('click', openBulkDeleteModal);
+
+    if (els.applyBulkRenameBtn) els.applyBulkRenameBtn.addEventListener('click', applyBulkRename);
+    if (els.cancelBulkRenameBtn) els.cancelBulkRenameBtn.addEventListener('click', closeBulkRenameModal);
+    if (els.closeBulkRenameModalBtn) els.closeBulkRenameModalBtn.addEventListener('click', closeBulkRenameModal);
+    if (els.bulkRenameMode) {
+      els.bulkRenameMode.addEventListener('change', () => { renderBulkRenameParams(); previewBulkRename(); });
+    }
+    if (els.bulkRenameModal) {
+      els.bulkRenameModal.addEventListener('input', (e) => {
+        if (e.target.closest('.bulk-param')) previewBulkRename();
+      });
+      els.bulkRenameModal.addEventListener('change', (e) => {
+        if (e.target.closest('.bulk-param')) previewBulkRename();
+      });
+    }
 
     // Convert All Library Modal & Queue Actions
     if (els.convertAllLibraryBtn) els.convertAllLibraryBtn.addEventListener('click', openConvertAllModal);
@@ -3835,6 +5432,16 @@
     window.addEventListener('popstate', (e) => {
       const folderParam = new URLSearchParams(window.location.search).get('folder');
       loadFolder(folderParam || '', false);
+    });
+
+    // Re-distribute the row-ordered masonry when the responsive column count changes
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        relayoutMediaGrid();
+        relayoutSubfolders();
+      }, 150);
     });
   }
 

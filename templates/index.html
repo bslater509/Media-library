@@ -4,23 +4,66 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Video Sorter - Media Library</title>
+  <!-- Typography: Inter (UI) + JetBrains Mono (data/paths) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
+    /* ---- Media Library design tokens (shared by Library + Sorter) ----
+       The palette is remapped at the token level so every existing utility
+       class (in HTML *and* in JS-generated markup) re-themes automatically:
+         slate  -> warm neutral (stone)     (surfaces, text, borders)
+         emerald-> amber   (primary accent)  (buttons, active tabs, progress)
+         teal   -> amber   (accent gradient endpoint)
+         amber  -> orange  (warnings / duplicates, kept distinct)
+       Cool accents (sky / indigo) and danger (red / rose) are preserved. */
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
+          screens: { xs: '480px' },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+          borderRadius: {
+            md: '0.3rem',
+            lg: '0.375rem',
+            xl: '0.5rem',
+            '2xl': '0.625rem',
+            '3xl': '0.875rem',
+          },
           colors: {
             brand: {
-              50: '#ecfdf5',
-              100: '#d1fae5',
-              500: '#10b981',
-              600: '#059669',
-              700: '#047857',
-            }
-          }
-        }
-      }
+              50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d',
+              400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 700: '#b45309',
+              800: '#92400e', 900: '#78350f', 950: '#451a03',
+            },
+            slate: {
+              50: '#fafaf9', 100: '#f5f5f4', 200: '#e7e5e4', 300: '#d6d3d1',
+              400: '#a8a29e', 500: '#78716c', 600: '#57534e', 700: '#44403c',
+              750: '#33302c', 800: '#292524', 850: '#211e1b', 900: '#1c1917',
+              950: '#0c0a09',
+            },
+            emerald: {
+              50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d',
+              400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 700: '#b45309',
+              800: '#92400e', 900: '#78350f', 950: '#451a03',
+            },
+            teal: {
+              50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d',
+              400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 700: '#b45309',
+              800: '#92400e', 900: '#78350f', 950: '#451a03',
+            },
+            amber: {
+              50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74',
+              400: '#fb923c', 500: '#f97316', 600: '#ea580c', 700: '#c2410c',
+              800: '#9a3412', 900: '#7c2d12', 950: '#431407',
+            },
+          },
+        },
+      },
     }
   </script>
   <link rel="stylesheet" href="/static/styles.css">
@@ -28,7 +71,7 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white pb-20 md:pb-6">
 
   <!-- Top Navigation Bar -->
-  <header class="bg-slate-900/95 border-b border-slate-800 backdrop-blur sticky top-0 z-30 px-2.5 sm:px-4 h-12 sm:h-[52px] flex items-center">
+  <header class="bg-slate-950/70 border-b border-slate-800/80 backdrop-blur-xl sticky top-0 z-30 px-2.5 sm:px-4 h-12 sm:h-[52px] flex items-center">
     <div class="max-w-7xl w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
       
       <!-- Brand & Title -->
@@ -85,7 +128,7 @@
           <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-40 sm:hidden"></div>
 
           <!-- Background Activity Dropdown Panel (Fixed on mobile to prevent clipping) -->
-          <div id="transferDropdown" class="hidden fixed inset-x-3 top-[48px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-sm bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-3 sm:p-3.5 flex flex-col gap-3 backdrop-blur-xl max-h-[80vh] overflow-y-auto">
+          <div id="transferDropdown" class="hidden fixed inset-x-3 top-[48px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-sm bg-slate-900/85 border border-slate-700/60 rounded-2xl shadow-2xl z-50 p-3 sm:p-3.5 flex flex-col gap-3 backdrop-blur-2xl max-h-[80vh] overflow-y-auto">
             
             <!-- Panel Header (Title + Close Button) -->
             <div class="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
@@ -323,7 +366,7 @@
     <div class="lg:col-span-7 flex flex-col gap-2.5 md:gap-4 video-col sticky top-12 sm:top-[52px] md:relative md:top-auto z-20 bg-slate-950/95 md:bg-transparent pb-2 md:pb-0 backdrop-blur md:backdrop-blur-none">
       
       <!-- Video Metadata Header -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 sm:p-3.5 flex flex-col gap-1.5 shadow-md">
+      <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/70 rounded-xl p-2.5 sm:p-3.5 flex flex-col gap-1.5 shadow-md">
         <div class="flex items-center justify-between gap-2">
           <div class="flex-1 min-w-0">
             <h2 id="currentVideoTitle" class="text-sm sm:text-base md:text-lg font-semibold text-white truncate hover:text-emerald-300 transition cursor-pointer" title="Click to rename">
@@ -454,7 +497,7 @@
       </div>
 
       <!-- Action Buttons Toolbar (Visible on Desktop / Tablets) -->
-      <div class="hidden md:grid grid-cols-4 gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-800 shadow">
+      <div class="hidden md:grid grid-cols-4 gap-2 bg-slate-900/60 backdrop-blur-md p-2.5 rounded-xl border border-slate-800/70 shadow">
         
         <button id="prevBtn" title="Previous video (P)" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -484,7 +527,7 @@
     <div class="lg:col-span-5 flex flex-col gap-3 md:gap-4">
       
       <!-- Destination Container -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 sm:p-5 shadow-lg flex flex-col gap-3 md:gap-4">
+      <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/70 rounded-xl p-3.5 sm:p-5 shadow-lg flex flex-col gap-3 md:gap-4">
         
         <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
           <div class="min-w-0">
@@ -558,7 +601,7 @@
   </main>
 
   <!-- ==================== MOBILE FIXED BOTTOM THUMB BAR ==================== -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 border-t border-slate-800 backdrop-blur px-2 py-1.5 flex items-center justify-around gap-1 mobile-bottom-bar shadow-2xl">
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/75 border-t border-slate-800/80 backdrop-blur-xl px-2 py-1.5 flex items-center justify-around gap-1 mobile-bottom-bar shadow-2xl">
     <button id="mobilePrevBtn" class="flex-1 min-h-[44px] py-1.5 flex flex-col items-center justify-center gap-0.5 text-slate-300 hover:text-white active:scale-95 transition">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
       <span class="text-[10px] font-medium">Prev</span>
