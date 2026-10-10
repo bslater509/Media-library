@@ -1,43 +1,6 @@
 """Integration tests for all major API routes and endpoints."""
 
-import os
-import pytest
-from starlette.testclient import TestClient
-
 from media_library.core.state import state
-from media_library.db.schema import init_backup_db
-from media_library.app_factory import create_app
-
-
-@pytest.fixture
-def api_client(tmp_path, monkeypatch):
-    db_file = tmp_path / "test_api.db"
-    dest_dir = tmp_path / "media_dest"
-    source_dir = tmp_path / "media_src"
-    dest_dir.mkdir()
-    source_dir.mkdir()
-
-    # Create dummy video file in source
-    test_file = source_dir / "test_clip.mp4"
-    test_file.write_bytes(b"\x00" * 1024)
-
-    monkeypatch.setenv("DB_PATH", str(db_file))
-    monkeypatch.setenv("LIBRARY_DIR", str(dest_dir))
-    monkeypatch.setenv("INCOMING_DIR", str(source_dir))
-
-    state["source_dir"] = str(source_dir)
-    state["destination_dir"] = str(dest_dir)
-
-    init_backup_db()
-
-    app = create_app(
-        source_dir=str(source_dir),
-        destination_dir=str(dest_dir),
-        run_startup_workers=False,
-    )
-
-    with TestClient(app) as client:
-        yield client
 
 
 def test_html_views(api_client):
@@ -75,7 +38,9 @@ def test_config_and_destinations(api_client, tmp_path):
 
 
 def test_scan_and_queue(api_client):
-    res_scan = api_client.post("/api/source/scan", json={"source_dir": state["source_dir"]})
+    res_scan = api_client.post(
+        "/api/source/scan", json={"source_dir": state["source_dir"]}
+    )
     assert res_scan.status_code == 200
     scan_data = res_scan.json()
     assert scan_data["success"] is True
@@ -99,6 +64,201 @@ def test_backup_index_and_search(api_client):
     assert res_search.status_code == 200
     search_data = res_search.json()
     assert "results" in search_data
+
+
+def test_browse_root_returns_indexing_flag(api_client):
+    """Browsing the root library must return a valid payload (the `indexing`
+    flag is defined even when `is_root` is true — regression guard)."""
+    res = api_client.get("/api/backup/browse")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["is_root"] is True
+    assert data["indexing"] is False
+    assert "subfolders" in data
+    assert "files" in data
+
+
+def test_browse_unindexed_folder_is_non_blocking(api_client):
+    """Browsing a folder that is not in the index must not scan the filesystem
+    synchronously in the request; the server schedules background indexing."""
+    import time
+    from pathlib import Path
+
+    dest = Path(state["destination_dir"])
+    sub = dest / "UnindexedFolder"
+    sub.mkdir()
+    (sub / "video.mp4").write_bytes(b"\x00" * 128)
+
+    res = api_client.get("/api/backup/browse", params={"path": str(sub)})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["indexing"] is True
+    assert data["files"] == []
+
+    # Background indexing should populate the folder shortly.
+    last_total = 0
+    for _ in range(60):
+        time.sleep(0.05)
+        res2 = api_client.get("/api/backup/browse", params={"path": str(sub)})
+        last_total = res2.json()["total_files"]
+        if last_total == 1:
+            break
+    assert last_total == 1
+
+
+def test_folder_children_endpoint(api_client):
+    """The sidebar tree's children endpoint lists a folder's immediate child
+    folders (index-only) with file/subfolder counts and the zip flag."""
+    from pathlib import Path
+
+    from media_library.db.indexer import index_folder
+
+    dest = Path(state["destination_dir"])
+    cat_a = dest / "catA"
+    sub_b = cat_a / "subB"
+    sub_b.mkdir(parents=True)
+    (cat_a / "video.mp4").write_bytes(b"\x00" * 64)
+
+    index_folder(str(dest), str(dest))
+    index_folder(str(cat_a), str(dest))
+    index_folder(str(sub_b), str(dest))
+
+    res = api_client.get("/api/backup/folders", params={"path": str(cat_a)})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["indexing"] is False
+    assert len(data["subfolders"]) == 1
+    child = data["subfolders"][0]
+    assert child["name"] == "subB"
+    assert child["file_count"] == 0
+    assert "subfolder_count" in child
+    assert "is_zip" in child
+
+    # Parent folder should expose catA's counts to the tree roots.
+    res_root = api_client.get("/api/backup/folders", params={"path": str(dest)})
+    assert res_root.status_code == 200
+    root_children = res_root.json()["subfolders"]
+    names = [f["name"] for f in root_children]
+    assert "catA" in names
+    cat_a_entry = next(f for f in root_children if f["name"] == "catA")
+    assert cat_a_entry["file_count"] == 1
+    assert cat_a_entry["subfolder_count"] == 1
+
+
+def test_browse_zip_auto_enqueues_webp(api_client):
+    """Browsing a ZIP auto-enqueues that archive for WebP optimization (on demand)."""
+    import io
+    import zipfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from media_library.services.zip_service import index_zip_archive
+    from media_library.workers.webp_worker import webp_worker_instance
+
+    dest = Path(state["destination_dir"])
+    zip_path = dest / "browse_album.zip"
+
+    img = io.BytesIO()
+    Image.new("RGB", (8, 8), color="red").save(img, format="JPEG")
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("one.jpg", img.getvalue())
+    index_zip_archive(str(zip_path), parent_path=str(dest))
+
+    # Clear stale queue entries / throttle state for this path from other tests.
+    worker = webp_worker_instance
+    while not worker.priority_queue.empty():
+        try:
+            worker.priority_queue.get_nowait()
+        except Exception:
+            break
+    worker._zip_enqueue_recent.pop(str(zip_path), None)
+
+    res = api_client.get("/api/backup/browse", params={"path": str(zip_path)})
+    assert res.status_code == 200
+    assert res.json()["is_zip"] is True
+
+    items = []
+    while not worker.priority_queue.empty():
+        items.append(worker.priority_queue.get_nowait())
+    zip_items = [
+        i for i in items if i.get("is_zip") == 1 and i["path"] == str(zip_path)
+    ]
+    assert len(zip_items) == 1
+
+
+def test_browse_exposes_folder_cover_thumbnails(api_client):
+    """Subfolder cards expose a cover thumbnail: the alphabetically-first
+    direct-child image. Folders with no image fall back to the first video's
+    poster; folders with no media get ``thumb_url = None``."""
+    from pathlib import Path
+
+    from media_library.db.indexer import index_folder
+
+    dest = Path(state["destination_dir"])
+
+    cover = dest / "coverA"
+    cover.mkdir()
+    (cover / "b.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"B" * 64)
+    (cover / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"A" * 64)
+
+    video_only = dest / "coverVideo"
+    video_only.mkdir()
+    (video_only / "clip.mp4").write_bytes(b"\x00" * 64)
+
+    empty = dest / "coverEmpty"
+    empty.mkdir()
+    (empty / "readme.txt").write_bytes(b"not media")
+
+    index_folder(str(dest), str(dest))
+    index_folder(str(cover), str(dest))
+    index_folder(str(video_only), str(dest))
+    index_folder(str(empty), str(dest))
+
+    res = api_client.get("/api/backup/browse", params={"path": str(dest)})
+    assert res.status_code == 200
+    subs = {s["name"]: s for s in res.json()["subfolders"]}
+
+    assert "a.jpg" in subs["coverA"]["thumb_url"]
+    assert subs["coverA"]["thumb_url"].startswith("/api/backup/thumbnail?path=")
+    assert subs["coverA"]["has_thumb"] is False
+
+    # No image in the folder -> the video's poster is used as the cover.
+    assert "clip.mp4" in subs["coverVideo"]["thumb_url"]
+    assert subs["coverVideo"]["has_thumb"] is False
+
+    assert subs["coverEmpty"]["thumb_url"] is None
+    assert subs["coverEmpty"]["has_thumb"] is False
+
+
+def test_browse_zip_folder_cover_is_first_image(api_client):
+    """A ZIP virtual folder's cover is its alphabetically-first image member."""
+    import io
+    import zipfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from media_library.services.zip_service import index_zip_archive
+
+    dest = Path(state["destination_dir"])
+    zip_path = dest / "cover_album.zip"
+
+    img = io.BytesIO()
+    Image.new("RGB", (8, 8), color="blue").save(img, format="JPEG")
+    data = img.getvalue()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("zebra.jpg", data)
+        zf.writestr("apple.jpg", data)
+    index_zip_archive(str(zip_path), parent_path=str(dest))
+
+    res = api_client.get("/api/backup/browse", params={"path": str(dest)})
+    assert res.status_code == 200
+    subs = {s["name"]: s for s in res.json()["subfolders"]}
+    entry = subs["cover_album"]
+    assert entry["is_zip"] is True
+    assert "apple.jpg" in entry["thumb_url"]
+    assert "zebra.jpg" not in entry["thumb_url"]
 
 
 def test_thumbnail_and_webp_status(api_client):
@@ -148,7 +308,10 @@ def test_background_tasks_modal_button_always_visible(api_client):
     root_html = res_root.text
     # In Library view (/), button must be present, visible (not hidden by default), and contain task icon
     assert 'id="transferBadgeBtn"' in root_html
-    assert '<button id="transferBadgeBtn" title="View background activity" class="px-2' in root_html
+    assert (
+        '<button id="transferBadgeBtn" title="View background activity" class="px-2'
+        in root_html
+    )
     assert 'id="transferIcon"' in root_html
     assert 'id="transferDropdown"' in root_html
     assert 'id="closeTransferDropdownBtn"' in root_html
@@ -158,7 +321,86 @@ def test_background_tasks_modal_button_always_visible(api_client):
     sorter_html = res_sorter.text
     # In Sorter view (/sorter), button must be present, visible (not hidden by default), and contain task icon
     assert 'id="transferBadgeBtn"' in sorter_html
-    assert '<button id="transferBadgeBtn" title="View background activity" class="px-2' in sorter_html
+    assert (
+        '<button id="transferBadgeBtn" title="View background activity" class="px-2'
+        in sorter_html
+    )
     assert 'id="transferIcon"' in sorter_html
     assert 'id="transferDropdown"' in sorter_html
     assert 'id="closeTransferDropdownBtn"' in sorter_html
+
+
+def test_range_byte_streaming_media_and_sorter(api_client):
+    """Shared 206 range-streaming helper: full, HEAD, ranged, 416, and clamp."""
+    import os
+
+    from media_library.core.state import state
+
+    video = os.path.join(state["destination_dir"], "clipy.mp4")
+    payload = b"\x00\x00\x00 ftypmp42" + b"A" * 5000
+    with open(video, "wb") as f:
+        f.write(payload)
+
+    # Library media: full stream + Accept-Ranges
+    r = api_client.get("/api/backup/media", params={"path": video})
+    assert r.status_code == 200
+    assert r.headers["Accept-Ranges"] == "bytes"
+    assert int(r.headers["Content-Length"]) == len(payload)
+    assert r.content == payload
+
+    # HEAD
+    r = api_client.head("/api/backup/media", params={"path": video})
+    assert r.status_code == 200
+    assert int(r.headers["Content-Length"]) == len(payload)
+
+    # Ranged
+    r = api_client.get(
+        "/api/backup/media", params={"path": video}, headers={"Range": "bytes=100-199"}
+    )
+    assert r.status_code == 206
+    assert r.headers["Content-Range"] == f"bytes 100-199/{len(payload)}"
+    assert r.content == payload[100:200]
+
+    # Open-ended range clamps to EOF
+    r = api_client.get(
+        "/api/backup/media", params={"path": video}, headers={"Range": "bytes=0-"}
+    )
+    assert r.status_code == 206
+    assert r.headers["Content-Range"] == f"bytes 0-{len(payload) - 1}/{len(payload)}"
+    assert r.content == payload
+
+    # Out-of-range start -> 416
+    r = api_client.get(
+        "/api/backup/media",
+        params={"path": video},
+        headers={"Range": f"bytes={len(payload) + 10}-"},
+    )
+    assert r.status_code == 416
+    assert r.headers["Content-Range"] == f"bytes */{len(payload)}"
+
+    # Oversized contiguous range clamped to the 2 MB limit
+    big = os.path.join(state["destination_dir"], "big.mp4")
+    big_payload = b"\x00" * (3 * 1024 * 1024)
+    with open(big, "wb") as f:
+        f.write(big_payload)
+    r = api_client.get(
+        "/api/backup/media", params={"path": big}, headers={"Range": "bytes=0-"}
+    )
+    assert r.status_code == 206
+    assert int(r.headers["Content-Length"]) == 2 * 1024 * 1024
+    assert (
+        r.headers["Content-Range"]
+        == f"bytes 0-{2 * 1024 * 1024 - 1}/{len(big_payload)}"
+    )
+
+    # Sorter incoming-stream endpoint uses the same helper
+    r = api_client.get("/api/stream/test_clip.mp4")
+    assert r.status_code == 200
+    assert r.content == b"\x00" * 1024
+    r = api_client.head("/api/stream/test_clip.mp4")
+    assert r.status_code == 200
+    assert r.headers["Accept-Ranges"] == "bytes"
+    r = api_client.get("/api/stream/test_clip.mp4", headers={"Range": "bytes=0-100"})
+    assert r.status_code == 206
+    assert r.headers["Content-Range"] == "bytes 0-100/1024"
+    assert r.content == b"\x00" * 101

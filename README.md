@@ -8,8 +8,10 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 
 ### 📁 Media Library & Gallery
 - **Instant SQLite Indexing**: Sub-millisecond search and filtering across tens of thousands of media files and nested category folders.
+- **Natural Aspect Ratio Layout**: Row-ordered justified tile layout respecting probed aspect ratios, with 5 scale presets (XS–XL).
 - **Proactive Thumbnail & Poster Caching**: Automatically extracts video poster frames in the background using FFmpeg and caches them locally for lag-free scrolling.
 - **Fullscreen Lightbox Player**: Native browser playback with byte-range streaming, scrubbing, loop toggle, and inline rename/delete.
+- **Batch Management**: Context menus and multi-select toolbar for batch moves, deletes, renames, and WebP optimization.
 - **Multi-Word Search**: Filter by multi-word queries with category and folder badge navigation.
 
 ### 🎬 Incoming Video Sorter
@@ -21,6 +23,27 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 - **Non-Blocking Background Transfers**: Moves and conversions are queued sequentially without blocking UI responsiveness.
 - **Instant Undo**: Cancel or revert moves with `U` or `Ctrl+Z`.
 - **Automatic MP4 Transcoding**: Converts incompatible formats (`.mkv`, `.avi`, `.wmv`, `.flv`, `.mov`) into web-native MP4 using stream copying or H.264 fallback.
+
+### 📦 ZIP Virtual Folders & Archive Management
+- **Zero-Extraction Browsing**: Browse ZIP archives as folders directly from their central directory index without disk extraction.
+- **On-Demand Local Caching**: Extracted images and videos are cached locally with automatic LRU eviction (`ZIP_CACHE_MAX_SIZE_GB`).
+- **Folder Compression & Batch Tools**: Compress entire image folders to ZIP, unpack archives back to disk, and batch compress/extract with background workers.
+
+### 🖼️ Automatic WebP Optimization
+- **Background Conversion**: Automatically converts loose images (JPEG, PNG) to optimized WebP.
+- **Safety & Accounting**: Atomic file replacement with integrity checks and cumulative space-savings tracking.
+
+### 🔍 Deduplication Engine
+- **Content Hashing**: Fast 128 KB head-chunk + byte size matching with full verification prior to any deletion.
+- **Visual Duplicate Detection**: 64-bit perceptual hashing (`pHash`) to identify resized, re-encoded, or visually similar images.
+- **Interactive Resolution**: Group review interface with side-by-side comparison and false-positive ignore rules.
+
+### 💾 Zero-Work Live Backups & Recovery
+- **Hot SQLite Backups**: Non-destructive `sqlite3_backup` snapshotting of the index directly to `<LIBRARY_DIR>/.media_library_backup/`.
+- **Automatic Startup Recovery**: Auto-detects and restores missing databases or thumbnail caches on startup.
+
+### 🔒 Access Control
+- **Shared Password Authentication**: Optional single password gate (`APP_PASSWORD`) with HMAC-signed session cookies and login UI.
 
 ---
 
@@ -90,6 +113,14 @@ All settings can be configured via environment variables in `.env` or passed as 
 | `QUICK_NAV_DIRS` | N/A | Auto-detected | Comma-separated shortcuts for folder browser (e.g. `/media,/mnt,~`) |
 | `HOST` | `--host` | `0.0.0.0` | Host interface to bind |
 | `PORT` | `--port` | `8888` | Port to listen on |
+| `APP_PASSWORD` | N/A | *(empty)* | Optional shared password protecting UI and API endpoints |
+| `WEBP_AUTO_OPTIMIZE` | N/A | `true` | Automatically convert loose images to WebP in background |
+| `WEBP_WORKER_CONCURRENCY` | N/A | `1` | Number of concurrent workers for image conversion |
+| `WEBP_QUALITY` | N/A | `85` | Quality factor (1–100) for WebP encoding |
+| `WEBP_SKIP_LARGER` | N/A | `false` | Discard WebP conversion if output size exceeds original |
+| `ZIP_CACHE_MAX_SIZE_GB` | N/A | `5.0` | Max disk size in GB for extracted ZIP cache before LRU eviction |
+| `LIBRARY_BACKUP_AUTO_ENABLED` | N/A | `true` | Enable background automatic snapshot backups when system is idle |
+| `LIBRARY_BACKUP_AUTO_INTERVAL_HOURS` | N/A | `6.0` | Minimum interval (in hours) between automatic background snapshots |
 
 ---
 

@@ -1,10 +1,12 @@
 """Tests for sorter folder browsing, including trailing-whitespace folder names."""
 
-import os
 import pytest
 from fastapi import HTTPException
 
-from media_library.routers.sorter import _resolve_directory_tolerant, browse_directory
+from media_library.routers.sorter_queue import (
+    _resolve_directory_tolerant,
+    browse_directory,
+)
 
 
 def test_resolve_directory_tolerant_exact(tmp_path):

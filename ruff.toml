@@ -1,0 +1,19 @@
+# Ruff configuration for the Media Library & Video Sorter.
+#
+# The default rule set is kept, with two rules intentionally excluded:
+#
+# - BLE001 (blind-except) and S110 (try-except-pass): this codebase
+#   deliberately catches broad exceptions in long-running background workers,
+#   FUSE/FFmpeg fallbacks, and best-effort cleanup so a single transient
+#   failure can never kill a worker or a request. Narrowing those catches
+#   would change runtime behaviour, so they are excluded here and reviewed
+#   ad hoc.
+#
+# - SIM118 (`key in dict` instead of `key in dict.keys()`): the application
+#   reads rows from `sqlite3.Row`, which implements `keys()` but not
+#   `__contains__`; `"col" in row` would iterate over the row's *values* and
+#   always be false. The flagged `key in row.keys()` guards are correct and
+#   must not be rewritten.
+
+[lint]
+ignore = ["BLE001", "S110", "SIM118"]

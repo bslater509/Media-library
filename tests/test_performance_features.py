@@ -1,14 +1,15 @@
 """Tests verifying performance optimizations: consolidated status endpoint, GZip, caching, and indexes."""
 
 import os
-import time
+
 import pytest
 from starlette.testclient import TestClient
 
-from media_library.core.state import state, get_thumbnail_cache_path, _file_stat_cache
+from media_library.app_factory import create_app
+from media_library.core.state import _file_stat_cache, get_thumbnail_cache_path, state
 from media_library.db.connection import get_db
 from media_library.db.schema import init_backup_db
-from media_library.app_factory import create_app
+from tests.conftest import patch_runtime_directories
 
 
 @pytest.fixture
@@ -25,6 +26,8 @@ def perf_api_client(tmp_path, monkeypatch):
     monkeypatch.setenv("LIBRARY_DIR", str(dest_dir))
     monkeypatch.setenv("INCOMING_DIR", str(source_dir))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumb_dir))
+
+    patch_runtime_directories(monkeypatch, tmp_path, thumb_dir)
 
     state["source_dir"] = str(source_dir)
     state["destination_dir"] = str(dest_dir)
@@ -91,7 +94,7 @@ def test_composite_indexes_and_no_temp_btree(perf_api_client):
 
 
 def test_thumbnail_cache_headers_and_304(perf_api_client):
-    client, dest_dir, thumb_dir, _ = perf_api_client
+    client, dest_dir, _thumb_dir, _ = perf_api_client
 
     # Create dummy media file
     media_file = dest_dir / "sample_video.mp4"
@@ -134,13 +137,14 @@ def test_thumbnail_stat_cache():
 
 
 def test_browse_thumb_urls_include_mtime_and_size(perf_api_client):
-    client, dest_dir, _, db_file = perf_api_client
+    client, dest_dir, _, _db_file = perf_api_client
     sub = dest_dir / "Subfolder"
     sub.mkdir()
     f = sub / "video.mp4"
     f.write_bytes(b"\x00" * 1024)
 
     from media_library.db.indexer import index_folder
+
     index_folder(str(sub))
 
     resp = client.get("/api/backup/browse", params={"path": str(sub)})
@@ -150,4 +154,3 @@ def test_browse_thumb_urls_include_mtime_and_size(perf_api_client):
     thumb_url = data["files"][0]["thumb_url"]
     assert "mtime=" in thumb_url
     assert "size=" in thumb_url
-

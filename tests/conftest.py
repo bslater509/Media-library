@@ -1,14 +1,79 @@
 """Pytest fixtures for isolated media library tests."""
 
-import os
-import shutil
-import tempfile
-import pytest
 from pathlib import Path
 
-from media_library.core.constants import VIDEO_EXTENSIONS, IMAGE_EXTENSIONS
-from media_library.db.connection import get_db
+import pytest
+
 from media_library.db.schema import init_backup_db
+
+
+def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
+    """Point import-time-resolved directory constants at sandbox dirs.
+
+    Many config constants (ZIP_CACHE_DIR, ZIP_STAGING_DIR, THUMBNAIL_CACHE_DIR,
+    WEBP_STAGING_DIR, BACKUP_STAGING_DIR, TRANSCODE_TEMP_DIR) are resolved when
+    ``media_library.core.config`` is first imported. Setting env vars alone is
+    therefore not enough to isolate tests from the real ``data/`` directory, so
+    we also patch the module-level constants in every module that imported them.
+    """
+    import importlib
+
+    config_mod = importlib.import_module("media_library.core.config")
+    state_mod = importlib.import_module("media_library.core.state")
+    indexer_mod = importlib.import_module("media_library.db.indexer")
+    zip_mod = importlib.import_module("media_library.services.zip_service")
+    ffmpeg_mod = importlib.import_module("media_library.services.ffmpeg_service")
+    backup_mod = importlib.import_module("media_library.services.backup_service")
+    transcode_mod = importlib.import_module("media_library.workers.transcode_worker")
+
+    transcode_dir = data_dir / "transcodes"
+    webp_staging = data_dir / "webp_staging"
+    backup_staging = data_dir / "backup_staging"
+    zip_staging = data_dir / "zip_staging"
+    zip_cache = data_dir / "cache" / "zips"
+    for d in (transcode_dir, webp_staging, backup_staging, zip_staging, zip_cache):
+        d.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("TRANSCODE_DIR", str(transcode_dir))
+    monkeypatch.setenv("WEBP_STAGING_DIR", str(webp_staging))
+    monkeypatch.setenv("BACKUP_STAGING_DIR", str(backup_staging))
+    monkeypatch.setenv("ZIP_STAGING_DIR", str(zip_staging))
+    monkeypatch.setenv("ZIP_CACHE_DIR", str(zip_cache))
+
+    monkeypatch.setattr(config_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
+    monkeypatch.setattr(config_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    monkeypatch.setattr(config_mod, "WEBP_STAGING_DIR", webp_staging)
+    monkeypatch.setattr(config_mod, "BACKUP_STAGING_DIR", backup_staging)
+    monkeypatch.setattr(config_mod, "ZIP_STAGING_DIR", zip_staging)
+    monkeypatch.setattr(config_mod, "ZIP_CACHE_DIR", zip_cache)
+
+    monkeypatch.setattr(state_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    monkeypatch.setattr(indexer_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    monkeypatch.setattr(zip_mod, "ZIP_CACHE_DIR", zip_cache)
+    monkeypatch.setattr(zip_mod, "ZIP_STAGING_DIR", zip_staging)
+    monkeypatch.setattr(zip_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    monkeypatch.setattr(ffmpeg_mod, "WEBP_STAGING_DIR", webp_staging)
+    monkeypatch.setattr(backup_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    monkeypatch.setattr(backup_mod, "BACKUP_STAGING_DIR", backup_staging)
+    monkeypatch.setattr(transcode_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
+
+
+@pytest.fixture(autouse=True)
+def disable_auth_by_default(monkeypatch):
+    """Keep auth off for every test regardless of the developer's real .env.
+
+    ``get_app_password`` reads the live environment first, and ``core.config``
+    loads the repo ``.env`` at import, so without this an ``APP_PASSWORD`` in
+    ``.env`` would gate every TestClient in the suite. Tests that exercise auth
+    set the env var themselves, overriding this.
+    """
+    import importlib
+
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
+    monkeypatch.setattr(
+        importlib.import_module("media_library.core.config"), "APP_PASSWORD", ""
+    )
+
 
 @pytest.fixture
 def sandbox_env(tmp_path, monkeypatch):
@@ -37,6 +102,9 @@ def sandbox_env(tmp_path, monkeypatch):
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumb_dir))
     monkeypatch.setenv("DB_PATH", str(db_path))
 
+    # Isolate import-time-resolved cache/staging directories from the real data/
+    patch_runtime_directories(monkeypatch, data_dir, thumb_dir)
+
     # Initialize schema
     init_backup_db(db_path)
 
@@ -48,6 +116,7 @@ def sandbox_env(tmp_path, monkeypatch):
         "thumb_dir": thumb_dir,
         "db_path": db_path,
     }
+
 
 @pytest.fixture
 def sample_media(sandbox_env):
@@ -80,3 +149,44 @@ def sample_media(sandbox_env):
         "img1": img1,
         "vid3": vid3,
     }
+
+
+@pytest.fixture
+def api_client(tmp_path, monkeypatch):
+    """Spin up the FastAPI app against an isolated library (no startup workers)."""
+    from starlette.testclient import TestClient
+
+    from media_library.app_factory import create_app
+    from media_library.core.state import state
+
+    db_file = tmp_path / "test_api.db"
+    dest_dir = tmp_path / "media_dest"
+    source_dir = tmp_path / "media_src"
+    thumb_dir = tmp_path / "thumbnails"
+    dest_dir.mkdir()
+    source_dir.mkdir()
+    thumb_dir.mkdir()
+
+    (source_dir / "test_clip.mp4").write_bytes(b"\x00" * 1024)
+
+    monkeypatch.setenv("DB_PATH", str(db_file))
+    monkeypatch.setenv("LIBRARY_DIR", str(dest_dir))
+    monkeypatch.setenv("INCOMING_DIR", str(source_dir))
+    monkeypatch.setenv("THUMBNAIL_DIR", str(thumb_dir))
+
+    patch_runtime_directories(monkeypatch, tmp_path, thumb_dir)
+
+    state.reset_runtime()
+    state["source_dir"] = str(source_dir)
+    state["destination_dir"] = str(dest_dir)
+
+    init_backup_db()
+
+    app = create_app(
+        source_dir=str(source_dir),
+        destination_dir=str(dest_dir),
+        run_startup_workers=False,
+    )
+
+    with TestClient(app) as client:
+        yield client

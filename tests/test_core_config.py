@@ -1,9 +1,16 @@
 """Tests for core configuration, constants, and formatting."""
 
-import pytest
-from pathlib import Path
-from media_library.core.constants import VIDEO_EXTENSIONS, IMAGE_EXTENSIONS, NATIVE_EXTENSIONS
-from media_library.core.state import format_size, make_video_meta, get_thumbnail_cache_path
+from media_library.core.constants import (
+    IMAGE_EXTENSIONS,
+    NATIVE_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+)
+from media_library.core.state import (
+    format_size,
+    get_thumbnail_cache_path,
+    make_video_meta,
+)
+
 
 def test_extensions():
     assert ".mp4" in VIDEO_EXTENSIONS
@@ -13,12 +20,14 @@ def test_extensions():
     assert ".mp4" in NATIVE_EXTENSIONS
     assert ".mkv" not in NATIVE_EXTENSIONS
 
+
 def test_format_size():
     assert format_size(0) == "0.0 B"
     assert format_size(1024) == "1.0 KB"
     assert format_size(1048576) == "1.0 MB"
     assert format_size(1073741824) == "1.0 GB"
     assert format_size("invalid") == "0 B"
+
 
 def test_make_video_meta(tmp_path):
     sample = tmp_path / "test_clip.mkv"
@@ -30,6 +39,7 @@ def test_make_video_meta(tmp_path):
     assert meta["ext"] == ".mkv"
     assert meta["size"] == 2048
     assert meta["needs_transcode"] is True
+
 
 def test_thumbnail_cache_path():
     path_str = "/some/path/movie.mp4"

@@ -1,15 +1,15 @@
 """Tests for library backup snapshotting and restore."""
 
-import os
 from media_library.core.state import state
+from media_library.db.connection import get_db
+from media_library.db.indexer import index_folder
 from media_library.services.backup_service import (
     _create_library_backup_sync,
     _restore_library_backup_sync,
-    get_library_backup_dir,
     get_existing_backup_meta,
+    get_library_backup_dir,
 )
-from media_library.db.indexer import index_folder
-from media_library.db.connection import get_db
+
 
 def test_backup_and_restore_cycle(sandbox_env, sample_media):
     media_dir = sandbox_env["media_dir"]
@@ -52,4 +52,3 @@ def test_backup_and_restore_cycle(sandbox_env, sample_media):
     cnt = conn.execute("SELECT count(*) FROM files").fetchone()[0]
     assert cnt >= 3
     conn.close()
-

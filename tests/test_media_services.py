@@ -2,22 +2,23 @@
 
 import os
 import threading
+
 import pytest
 from fastapi import HTTPException
 
 from media_library.core.state import state
-from media_library.services.media_service import (
-    validate_backup_path,
-    scan_videos,
-    do_transfer,
-)
 from media_library.services.deduplication_service import (
     compute_quick_hash,
     normalize_pair,
-    score_duplicate_file,
     resolve_duplicate_group,
+    score_duplicate_file,
 )
-from media_library.db.connection import get_db
+from media_library.services.media_service import (
+    do_transfer,
+    scan_videos,
+    validate_backup_path,
+)
+
 
 def test_validate_backup_path(sandbox_env):
     media_dir = str(sandbox_env["media_dir"])
@@ -37,6 +38,7 @@ def test_validate_backup_path(sandbox_env):
         validate_backup_path("/etc/passwd")
     assert exc_info.value.status_code == 403
 
+
 def test_scan_videos(sandbox_env, sample_media):
     action_cat = str(sample_media["action_cat"])
     videos = scan_videos(action_cat)
@@ -45,6 +47,7 @@ def test_scan_videos(sandbox_env, sample_media):
     assert "clip1.mp4" in filenames
     assert "clip2.mkv" in filenames
     assert "poster1.jpg" not in filenames
+
 
 def test_compute_quick_hash_and_normalize_pair(tmp_path):
     f1 = tmp_path / "file1.bin"
@@ -59,11 +62,17 @@ def test_compute_quick_hash_and_normalize_pair(tmp_path):
     assert p1 == "/a/a.mp4"
     assert p2 == "/z/b.mp4"
 
+
 def test_score_duplicate_file():
     # File with copy indicators should score lower than clean title
-    clean_score = score_duplicate_file("Movie Title.mp4", "/media/action", 1000.0, 5000000)
-    copy_score = score_duplicate_file("Movie Title (1).mp4", "/media/action", 1000.0, 5000000)
+    clean_score = score_duplicate_file(
+        "Movie Title.mp4", "/media/action", 1000.0, 5000000
+    )
+    copy_score = score_duplicate_file(
+        "Movie Title (1).mp4", "/media/action", 1000.0, 5000000
+    )
     assert clean_score > copy_score
+
 
 def test_do_transfer(sandbox_env):
     incoming = sandbox_env["incoming_dir"]
@@ -91,6 +100,7 @@ def test_do_transfer(sandbox_env):
     assert item["status"] == "completed"
     assert dest.exists()
     assert not src.exists()
+
 
 def test_resolve_duplicate_group(sandbox_env):
     media = sandbox_env["media_dir"]
