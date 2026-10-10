@@ -1,12 +1,16 @@
 """Configuration, environment loading, and path resolutions."""
 
-import os
 import json
+import logging
+import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
+
 from dotenv import load_dotenv
 
 from media_library.core.constants import CANDIDATE_DESTINATIONS
+
+logger = logging.getLogger(__name__)
 
 # Base repository root directory
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -28,33 +32,65 @@ TEMPLATES_DIR.mkdir(exist_ok=True)
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-TRANSCODE_TEMP_DIR = Path(os.environ.get("TRANSCODE_DIR", DATA_DIR / "transcodes")).resolve()
+TRANSCODE_TEMP_DIR = Path(
+    os.environ.get("TRANSCODE_DIR", DATA_DIR / "transcodes")
+).resolve()
 TRANSCODE_TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-THUMBNAIL_CACHE_DIR = Path(os.environ.get("THUMBNAIL_DIR", DATA_DIR / "thumbnails")).resolve()
+THUMBNAIL_CACHE_DIR = Path(
+    os.environ.get("THUMBNAIL_DIR", DATA_DIR / "thumbnails")
+).resolve()
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-WEBP_STAGING_DIR = Path(os.environ.get("WEBP_STAGING_DIR", DATA_DIR / "webp_staging")).resolve()
+WEBP_STAGING_DIR = Path(
+    os.environ.get("WEBP_STAGING_DIR", DATA_DIR / "webp_staging")
+).resolve()
 WEBP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 WEBP_WORKER_CONCURRENCY = max(1, int(os.environ.get("WEBP_WORKER_CONCURRENCY", "1")))
 WEBP_QUALITY = max(1, min(100, int(os.environ.get("WEBP_QUALITY", "85"))))
-WEBP_SKIP_LARGER = os.environ.get("WEBP_SKIP_LARGER", "false").lower() in ("true", "1", "yes")
-WEBP_AUTO_OPTIMIZE = os.environ.get("WEBP_AUTO_OPTIMIZE", "true").lower() in ("true", "1", "yes")
+WEBP_SKIP_LARGER = os.environ.get("WEBP_SKIP_LARGER", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+WEBP_AUTO_OPTIMIZE = os.environ.get("WEBP_AUTO_OPTIMIZE", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # Library folder backup configuration
-LIBRARY_BACKUP_SUBDIR = os.environ.get("LIBRARY_BACKUP_SUBDIR", ".media_library_backup").strip() or ".media_library_backup"
+LIBRARY_BACKUP_SUBDIR = (
+    os.environ.get("LIBRARY_BACKUP_SUBDIR", ".media_library_backup").strip()
+    or ".media_library_backup"
+)
 LIBRARY_BACKUP_DIR = os.environ.get("LIBRARY_BACKUP_DIR", "").strip()
-BACKUP_STAGING_DIR = Path(os.environ.get("BACKUP_STAGING_DIR", DATA_DIR / "backup_staging")).resolve()
+BACKUP_STAGING_DIR = Path(
+    os.environ.get("BACKUP_STAGING_DIR", DATA_DIR / "backup_staging")
+).resolve()
 BACKUP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
-LIBRARY_BACKUP_AUTO_ENABLED = os.environ.get("LIBRARY_BACKUP_AUTO_ENABLED", "true").lower() in ("true", "1", "yes")
-LIBRARY_BACKUP_AUTO_INTERVAL_HOURS = float(os.environ.get("LIBRARY_BACKUP_AUTO_INTERVAL_HOURS", "6.0"))
+LIBRARY_BACKUP_AUTO_ENABLED = os.environ.get(
+    "LIBRARY_BACKUP_AUTO_ENABLED", "true"
+).lower() in ("true", "1", "yes")
+LIBRARY_BACKUP_AUTO_INTERVAL_HOURS = float(
+    os.environ.get("LIBRARY_BACKUP_AUTO_INTERVAL_HOURS", "6.0")
+)
+
+# Optional single shared password gating the whole web UI and API.
+# Empty or unset disables authentication entirely.
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 
 # ZIP staging and extraction cache configuration
-ZIP_STAGING_DIR = Path(os.environ.get("ZIP_STAGING_DIR", DATA_DIR / "zip_staging")).resolve()
+ZIP_STAGING_DIR = Path(
+    os.environ.get("ZIP_STAGING_DIR", DATA_DIR / "zip_staging")
+).resolve()
 ZIP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
-ZIP_CACHE_DIR = Path(os.environ.get("ZIP_CACHE_DIR", DATA_DIR / "cache" / "zips")).resolve()
+ZIP_CACHE_DIR = Path(
+    os.environ.get("ZIP_CACHE_DIR", DATA_DIR / "cache" / "zips")
+).resolve()
 ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_CACHE_MAX_SIZE_GB = float(os.environ.get("ZIP_CACHE_MAX_SIZE_GB", "5.0"))
+
 
 def detect_default_destination() -> str:
     env_dest = os.environ.get("LIBRARY_DIR", "").strip()
@@ -63,7 +99,9 @@ def detect_default_destination() -> str:
         try:
             dest_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            print(f"Warning: could not create or stat destination directory {dest_path}: {e}")
+            logger.warning(
+                f"Warning: could not create or stat destination directory {dest_path}: {e}"
+            )
         return str(dest_path)
     for path in CANDIDATE_DESTINATIONS:
         if os.path.exists(path) and os.path.isdir(path):
@@ -71,6 +109,7 @@ def detect_default_destination() -> str:
     fallback = DATA_DIR / "media"
     fallback.mkdir(parents=True, exist_ok=True)
     return str(fallback)
+
 
 DEFAULT_DESTINATION_DIR = detect_default_destination()
 
@@ -84,7 +123,8 @@ else:
     DB_PATH = DATA_DIR / "library.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-def load_config_data() -> Dict[str, Any]:
+
+def load_config_data() -> dict[str, Any]:
     env_source = os.environ.get("INCOMING_DIR", "").strip()
     config = {
         "recent_destinations": [],
@@ -98,10 +138,11 @@ def load_config_data() -> Dict[str, Any]:
                 if not env_source and data.get("source_dir"):
                     config["source_dir"] = data.get("source_dir", "")
         except Exception as e:
-            print(f"Error loading config.json: {e}")
+            logger.error(f"Error loading config.json: {e}")
     return config
 
-def save_config_data(current_state: Dict[str, Any]):
+
+def save_config_data(current_state: dict[str, Any]):
     try:
         data = {
             "recent_destinations": current_state.get("recent_destinations", [])[:15],
@@ -110,4 +151,4 @@ def save_config_data(current_state: Dict[str, Any]):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
-        print(f"Error saving config.json: {e}")
+        logger.error(f"Error saving config.json: {e}")

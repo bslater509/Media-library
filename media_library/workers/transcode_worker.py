@@ -1,18 +1,27 @@
 """Background video transcoding worker with automatic MP4 conversion and progress tracking."""
 
-import os
-import time
-import shutil
 import asyncio
+import logging
+import os
+import shutil
 import threading
-from typing import Optional, List, Dict, Any
+import time
+import uuid
+from typing import Any
 
-from media_library.workers.base import BaseWorker
-from media_library.core.constants import VIDEO_EXTENSIONS, NATIVE_EXTENSIONS
 from media_library.core.config import TRANSCODE_TEMP_DIR
-from media_library.core.state import state, format_size, make_video_meta, get_thumbnail_cache_path
+from media_library.core.constants import NATIVE_EXTENSIONS, VIDEO_EXTENSIONS
+from media_library.core.state import (
+    get_thumbnail_cache_path,
+    make_video_meta,
+    state,
+)
 from media_library.db.indexer import update_file_in_index
-from media_library.services.ffmpeg_service import probe_video_meta, format_eta_str
+from media_library.services.ffmpeg_service import format_eta_str, probe_video_meta
+from media_library.workers.base import BaseWorker
+
+logger = logging.getLogger(__name__)
+
 
 class TranscodeWorker(BaseWorker):
     """Worker managing video conversion queue, smart remuxing, and H.264 fallback."""
@@ -20,16 +29,16 @@ class TranscodeWorker(BaseWorker):
     def __init__(self):
         super().__init__("transcode_worker")
         self.transcode_queue: asyncio.Queue = asyncio.Queue()
-        self.active_transcode: Optional[Dict[str, Any]] = None
-        self.transcode_history: List[Dict[str, Any]] = []
-        self.transcode_items_map: Dict[str, Dict[str, Any]] = {}
+        self.active_transcode: dict[str, Any] | None = None
+        self.transcode_history: list[dict[str, Any]] = []
+        self.transcode_items_map: dict[str, dict[str, Any]] = {}
         self.transcode_paused: bool = False
         self.transcode_pause_event: asyncio.Event = asyncio.Event()
         self.transcode_pause_event.set()
 
-    def enqueue(self, item: Dict[str, Any]):
+    def enqueue(self, item: dict[str, Any]):
         self.transcode_items_map[item["id"]] = item
-        self.transcode_queue.put_nowait(item)
+        self.enqueue_nowait(self.transcode_queue, item)
 
     def pause(self):
         self.transcode_paused = True
@@ -57,8 +66,11 @@ class TranscodeWorker(BaseWorker):
                 if item.get("abort_event"):
                     item["abort_event"].set()
 
-    def enqueue_for_backup(self, folder_path: Optional[str] = None, file_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    def enqueue_for_backup(
+        self, folder_path: str | None = None, file_path: str | None = None
+    ) -> list[dict[str, Any]]:
         from media_library.services.media_service import validate_backup_path
+
         enqueued = []
         files_to_check = []
         if file_path:
@@ -71,16 +83,22 @@ class TranscodeWorker(BaseWorker):
                 try:
                     with os.scandir(real_folder) as entries:
                         for entry in entries:
-                            if entry.is_file(follow_symlinks=False) and not entry.name.startswith("."):
+                            if entry.is_file(
+                                follow_symlinks=False
+                            ) and not entry.name.startswith("."):
                                 files_to_check.append(entry.path)
                 except Exception as e:
-                    print(f"Error scanning backup folder for transcode: {e}")
+                    logger.error(f"Error scanning backup folder for transcode: {e}")
 
         for fpath in files_to_check:
             ext = os.path.splitext(fpath)[1].lower()
             if ext in VIDEO_EXTENSIONS and ext != ".mp4":
                 fname = os.path.basename(fpath)
-                existing = any(t.get("source_path") == fpath and t.get("status") in ("queued", "transcoding", "completed") for t in self.transcode_items_map.values())
+                existing = any(
+                    t.get("source_path") == fpath
+                    and t.get("status") in ("queued", "transcoding", "completed")
+                    for t in self.transcode_items_map.values()
+                )
                 if not existing:
                     task_id = uuid.uuid4().hex[:10]
                     item = {
@@ -102,26 +120,92 @@ class TranscodeWorker(BaseWorker):
                         "abort_event": threading.Event(),
                     }
                     self.enqueue(item)
-                    enqueued.append({
-                        "id": task_id,
-                        "filename": fname,
-                        "source_path": fpath,
-                    })
+                    enqueued.append(
+                        {
+                            "id": task_id,
+                            "filename": fname,
+                            "source_path": fpath,
+                        }
+                    )
         return enqueued
 
-    def enqueue_all_for_backup(self) -> List[Dict[str, Any]]:
-        from media_library.db.connection import get_db
-        conn = get_db()
+    def enqueue_indexed_folder(self, folder_path: str) -> list[dict[str, Any]]:
+        """Enqueues non-native videos in an indexed folder using SQLite only.
+
+        Unlike :meth:`enqueue_for_backup`, this performs no ``os.scandir`` or
+        ``os.path`` calls, so it is safe to call from request handlers on remote
+        FUSE mounts. Missing files are handled by the worker loop, which marks a
+        queued item failed if its source no longer exists.
+        """
+        from media_library.db.connection import db_conn
+
+        rows = []
         try:
-            cur = conn.execute(
-                "SELECT path, name, size FROM files WHERE type = 'video' AND LOWER(path) NOT LIKE '%.mp4' ORDER BY size ASC"
-            )
-            rows = cur.fetchall()
+            with db_conn() as conn:
+                rows = conn.execute(
+                    "SELECT path, name FROM files "
+                    "WHERE folder_path = ? AND type = 'video' AND LOWER(ext) != '.mp4'",
+                    (folder_path,),
+                ).fetchall()
         except Exception as e:
-            print(f"Error querying non-mp4 files for bulk transcode: {e}")
+            logger.error(f"Error querying indexed videos for transcode: {e}")
             rows = []
-        finally:
-            conn.close()
+
+        enqueued = []
+        for r in rows:
+            fpath = r["path"]
+            ext = os.path.splitext(fpath)[1].lower()
+            if ext not in VIDEO_EXTENSIONS or ext == ".mp4":
+                continue
+            existing = any(
+                t.get("source_path") == fpath
+                and t.get("status") in ("queued", "transcoding", "completed")
+                for t in self.transcode_items_map.values()
+            )
+            if existing:
+                continue
+            fname = r["name"]
+            task_id = uuid.uuid4().hex[:10]
+            item = {
+                "id": task_id,
+                "file_id": fname,
+                "filename": fname,
+                "source_path": fpath,
+                "target_path": None,
+                "status": "queued",
+                "percent": 0.0,
+                "fps": 0.0,
+                "speed": "",
+                "eta": "",
+                "method": "pending",
+                "created_at": time.time(),
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "abort_event": threading.Event(),
+            }
+            self.enqueue(item)
+            enqueued.append(
+                {
+                    "id": task_id,
+                    "filename": fname,
+                    "source_path": fpath,
+                }
+            )
+        return enqueued
+
+    def enqueue_all_for_backup(self) -> list[dict[str, Any]]:
+        from media_library.db.connection import db_conn
+
+        try:
+            with db_conn() as conn:
+                cur = conn.execute(
+                    "SELECT path, name, size FROM files WHERE type = 'video' AND LOWER(path) NOT LIKE '%.mp4' ORDER BY size ASC"
+                )
+                rows = cur.fetchall()
+        except Exception as e:
+            logger.error(f"Error querying non-mp4 files for bulk transcode: {e}")
+            rows = []
 
         enqueued = []
         for r in rows:
@@ -129,7 +213,11 @@ class TranscodeWorker(BaseWorker):
             if not os.path.exists(fpath):
                 continue
 
-            existing = any(t.get("source_path") == fpath and t.get("status") in ("queued", "transcoding", "completed") for t in self.transcode_items_map.values())
+            existing = any(
+                t.get("source_path") == fpath
+                and t.get("status") in ("queued", "transcoding", "completed")
+                for t in self.transcode_items_map.values()
+            )
             if not existing:
                 fname = r["name"]
                 task_id = uuid.uuid4().hex[:10]
@@ -152,14 +240,16 @@ class TranscodeWorker(BaseWorker):
                     "abort_event": threading.Event(),
                 }
                 self.enqueue(item)
-                enqueued.append({
-                    "id": task_id,
-                    "filename": fname,
-                    "source_path": fpath,
-                })
+                enqueued.append(
+                    {
+                        "id": task_id,
+                        "filename": fname,
+                        "source_path": fpath,
+                    }
+                )
         return enqueued
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "active": self.active_transcode,
             "paused": self.transcode_paused,
@@ -192,7 +282,7 @@ class TranscodeWorker(BaseWorker):
                 except Exception as e:
                     item["status"] = "failed"
                     item["error"] = str(e)
-                    print(f"Error in transcode task: {e}")
+                    logger.error(f"Error in transcode task: {e}")
                 finally:
                     self.active_transcode = None
                     self._status = "idle"
@@ -203,10 +293,10 @@ class TranscodeWorker(BaseWorker):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Fatal error in transcode worker outer loop: {e}")
+                logger.error(f"Fatal error in transcode worker outer loop: {e}")
                 await asyncio.sleep(1.0)
 
-    async def _run_transcode_task(self, item: Dict[str, Any]):
+    async def _run_transcode_task(self, item: dict[str, Any]):
         source_path = item["source_path"]
         if not os.path.exists(source_path):
             item["status"] = "failed"
@@ -220,7 +310,9 @@ class TranscodeWorker(BaseWorker):
         target_path = os.path.join(source_dir, target_name)
         if os.path.exists(target_path) and target_path != source_path:
             cnt = 1
-            while os.path.exists(os.path.join(source_dir, f"{base_name}_converted_{cnt}.mp4")):
+            while os.path.exists(
+                os.path.join(source_dir, f"{base_name}_converted_{cnt}.mp4")
+            ):
                 cnt += 1
             target_path = os.path.join(source_dir, f"{base_name}_converted_{cnt}.mp4")
 
@@ -232,29 +324,43 @@ class TranscodeWorker(BaseWorker):
         video_codec = probe.get("video_codec", "")
         audio_codec = probe.get("audio_codec", "")
 
-        can_remux = (video_codec == "h264" and audio_codec in ("aac", "mp3", ""))
+        can_remux = video_codec == "h264" and audio_codec in ("aac", "mp3", "")
         success = False
         abort_event: threading.Event = item["abort_event"]
 
         if can_remux:
             item["method"] = "remux"
             remux_cmd = [
-                "nice", "-n", "10",
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", source_path,
-                "-c", "copy",
-                "-movflags", "+faststart",
-                "-f", "mp4",
-                temp_path
+                "nice",
+                "-n",
+                "10",
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                source_path,
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                "-f",
+                "mp4",
+                temp_path,
             ]
             proc = await asyncio.create_subprocess_exec(*remux_cmd)
             while proc.returncode is None:
                 if abort_event.is_set():
-                    try: proc.terminate()
-                    except Exception: pass
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
                     if os.path.exists(temp_path):
-                        try: os.remove(temp_path)
-                        except Exception: pass
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
                     item["status"] = "cancelled"
                     return
                 try:
@@ -262,34 +368,56 @@ class TranscodeWorker(BaseWorker):
                 except asyncio.TimeoutError:
                     pass
 
-            if proc.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 1024:
+            if (
+                proc.returncode == 0
+                and os.path.exists(temp_path)
+                and os.path.getsize(temp_path) > 1024
+            ):
                 success = True
 
         if not success and not abort_event.is_set():
             item["method"] = "reencode"
             if os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except Exception: pass
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
             encode_cmd = [
-                "nice", "-n", "10",
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", source_path,
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "22",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
-                "-progress", "pipe:1",
-                "-f", "mp4",
-                temp_path
+                "nice",
+                "-n",
+                "10",
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                source_path,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "22",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                "-progress",
+                "pipe:1",
+                "-f",
+                "mp4",
+                temp_path,
             ]
             proc = await asyncio.create_subprocess_exec(
                 *encode_cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
+                stderr=asyncio.subprocess.DEVNULL,
             )
 
             async def read_progress():
@@ -305,7 +433,9 @@ class TranscodeWorker(BaseWorker):
                                 out_us = int(val)
                                 out_sec = out_us / 1_000_000.0
                                 if duration > 0:
-                                    pct = min(99.0, max(0.0, (out_sec / duration) * 100.0))
+                                    pct = min(
+                                        99.0, max(0.0, (out_sec / duration) * 100.0)
+                                    )
                                     item["percent"] = round(pct, 1)
                             except ValueError:
                                 pass
@@ -319,7 +449,14 @@ class TranscodeWorker(BaseWorker):
                             try:
                                 spd = float(val.replace("x", "").strip())
                                 if spd > 0 and duration > 0:
-                                    rem_sec = max(0.0, duration - (item["percent"] / 100.0 * duration)) / spd
+                                    rem_sec = (
+                                        max(
+                                            0.0,
+                                            duration
+                                            - (item["percent"] / 100.0 * duration),
+                                        )
+                                        / spd
+                                    )
                                     item["eta"] = format_eta_str(rem_sec)
                             except ValueError:
                                 pass
@@ -327,12 +464,20 @@ class TranscodeWorker(BaseWorker):
             progress_task = asyncio.create_task(read_progress())
             while proc.returncode is None:
                 if abort_event.is_set():
-                    try: proc.terminate()
-                    except Exception: pass
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
                     progress_task.cancel()
+                    try:
+                        await progress_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
                     if os.path.exists(temp_path):
-                        try: os.remove(temp_path)
-                        except Exception: pass
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
                     item["status"] = "cancelled"
                     return
                 try:
@@ -341,37 +486,62 @@ class TranscodeWorker(BaseWorker):
                     pass
 
             await progress_task
-            if proc.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 1024:
+            if (
+                proc.returncode == 0
+                and os.path.exists(temp_path)
+                and os.path.getsize(temp_path) > 1024
+            ):
                 success = True
 
         if not success and not abort_event.is_set():
             item["method"] = "fallback_reencode"
             if os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except Exception: pass
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
             fallback_cmd = [
-                "nice", "-n", "10",
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", source_path,
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-ac", "2",
-                "-movflags", "+faststart",
-                "-f", "mp4",
-                temp_path
+                "nice",
+                "-n",
+                "10",
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                source_path,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ac",
+                "2",
+                "-movflags",
+                "+faststart",
+                "-f",
+                "mp4",
+                temp_path,
             ]
             proc = await asyncio.create_subprocess_exec(*fallback_cmd)
             while proc.returncode is None:
                 if abort_event.is_set():
-                    try: proc.terminate()
-                    except Exception: pass
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
                     if os.path.exists(temp_path):
-                        try: os.remove(temp_path)
-                        except Exception: pass
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
                     item["status"] = "cancelled"
                     return
                 try:
@@ -379,30 +549,40 @@ class TranscodeWorker(BaseWorker):
                 except asyncio.TimeoutError:
                     pass
 
-            if proc.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 1024:
+            if (
+                proc.returncode == 0
+                and os.path.exists(temp_path)
+                and os.path.getsize(temp_path) > 1024
+            ):
                 success = True
 
         if success:
             try:
-                shutil.move(temp_path, target_path)
+                await asyncio.to_thread(shutil.move, temp_path, target_path)
             except Exception:
                 try:
-                    os.replace(temp_path, target_path)
+                    await asyncio.to_thread(os.replace, temp_path, target_path)
                 except Exception as e2:
-                    print(f"Error moving transcoded file to {target_path}: {e2}")
+                    logger.error(f"Error moving transcoded file to {target_path}: {e2}")
                     item["status"] = "failed"
                     item["error"] = f"Failed to commit transcoded file: {e2}"
                     if os.path.exists(temp_path):
-                        try: os.remove(temp_path)
-                        except Exception: pass
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
                     self.transcode_history.append(item)
                     return
 
-            if os.path.exists(source_path) and os.path.abspath(source_path) != os.path.abspath(target_path):
+            if os.path.exists(source_path) and os.path.abspath(
+                source_path
+            ) != os.path.abspath(target_path):
                 try:
-                    os.remove(source_path)
+                    await asyncio.to_thread(os.remove, source_path)
                 except Exception as e:
-                    print(f"Warning: Failed to remove original file {source_path}: {e}")
+                    logger.warning(
+                        f"Warning: Failed to remove original file {source_path}: {e}"
+                    )
 
             try:
                 old_thumb = get_thumbnail_cache_path(source_path)
@@ -411,31 +591,48 @@ class TranscodeWorker(BaseWorker):
             except Exception:
                 pass
 
-            target_size = os.path.getsize(target_path) if os.path.exists(target_path) else 0
+            target_size = (
+                os.path.getsize(target_path) if os.path.exists(target_path) else 0
+            )
             item["target_size"] = target_size
             item["percent"] = 100.0
             item["status"] = "completed"
             item["completed_at"] = time.time()
             self.transcode_history.append(item)
 
-            update_file_in_index(source_path, target_path, os.path.basename(target_path), target_size, ".mp4")
+            update_file_in_index(
+                source_path,
+                target_path,
+                os.path.basename(target_path),
+                target_size,
+                ".mp4",
+                preserve_hashes=False,
+            )
 
             new_meta = make_video_meta(target_path)
             if new_meta:
                 old_name = os.path.basename(source_path)
-                state["video_queue"] = [
-                    new_meta if (v["id"] == old_name or v.get("filename") == old_name) else v
-                    for v in state["video_queue"]
-                ]
+                state.update_queue(
+                    lambda q: [
+                        new_meta
+                        if (v["id"] == old_name or v.get("filename") == old_name)
+                        else v
+                        for v in q
+                    ]
+                )
         else:
             if os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except Exception: pass
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
             item["status"] = "failed"
             item["error"] = "Conversion failed (safe fallback preserved original file)"
             self.transcode_history.append(item)
 
+
 transcode_worker_instance = TranscodeWorker()
+
 
 def enqueue_pretranscode_for_source(source_dir: str):
     """Scans source_dir for non-native videos and auto-enqueues them for background transcoding."""
@@ -447,8 +644,12 @@ def enqueue_pretranscode_for_source(source_dir: str):
                 if entry.is_file() and not entry.name.startswith("."):
                     ext = os.path.splitext(entry.name)[1].lower()
                     if ext in VIDEO_EXTENSIONS and ext not in NATIVE_EXTENSIONS:
-                        task_id = f"tc_{int(time.time()*1000)}_{entry.name}"
-                        if any(t.get("filename") == entry.name and t.get("status") in ("queued", "transcoding") for t in transcode_worker_instance.transcode_items_map.values()):
+                        task_id = f"tc_{int(time.time() * 1000)}_{entry.name}"
+                        if any(
+                            t.get("filename") == entry.name
+                            and t.get("status") in ("queued", "transcoding")
+                            for t in transcode_worker_instance.transcode_items_map.values()
+                        ):
                             continue
                         t_item = {
                             "id": task_id,
@@ -466,4 +667,4 @@ def enqueue_pretranscode_for_source(source_dir: str):
                         }
                         transcode_worker_instance.enqueue(t_item)
     except Exception as e:
-        print(f"Error scanning source directory for pre-transcoding: {e}")
+        logger.error(f"Error scanning source directory for pre-transcoding: {e}")

@@ -1,12 +1,18 @@
 """Database connection factory."""
 
+import logging
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Union
+
 from media_library.core.config import DB_PATH
 
-def get_current_db_path(custom_path: Optional[Union[str, Path]] = None) -> Path:
+logger = logging.getLogger(__name__)
+
+
+def get_current_db_path(custom_path: str | Path | None = None) -> Path:
     """Returns the resolved DB Path respecting os.environ['DB_PATH']."""
     if custom_path:
         return Path(custom_path)
@@ -14,7 +20,8 @@ def get_current_db_path(custom_path: Optional[Union[str, Path]] = None) -> Path:
         return Path(os.environ["DB_PATH"]).resolve()
     return DB_PATH
 
-def get_db(custom_path: Optional[Union[str, Path]] = None) -> sqlite3.Connection:
+
+def get_db(custom_path: str | Path | None = None) -> sqlite3.Connection:
     """Returns a SQLite connection configured with WAL mode, optimized pragmas, and row factory."""
     path = get_current_db_path(custom_path)
     conn = sqlite3.connect(path, timeout=30.0)
@@ -24,6 +31,23 @@ def get_db(custom_path: Optional[Union[str, Path]] = None) -> sqlite3.Connection
         conn.execute("PRAGMA cache_size = -64000;")
         conn.execute("PRAGMA mmap_size = 268435456;")
         conn.execute("PRAGMA temp_store = MEMORY;")
-    except Exception:
-        pass
+    except sqlite3.DatabaseError as e:
+        # A broken WAL/cache config must not silently pass: surface it, but keep
+        # the connection usable so a transient failure doesn't kill the request.
+        logger.warning("Failed to apply SQLite pragmas on %s: %s", path, e)
     return conn
+
+
+@contextmanager
+def db_conn(custom_path: str | Path | None = None) -> Iterator[sqlite3.Connection]:
+    """Context manager yielding a connection that is always closed on exit.
+
+    Use this for request/scoped work so an exception can never leak the
+    connection (AGENTS.md Rule 3). Callers that need manual lifetime control
+    (e.g. ``sqlite3_backup``) should keep using :func:`get_db`.
+    """
+    conn = get_db(custom_path)
+    try:
+        yield conn
+    finally:
+        conn.close()

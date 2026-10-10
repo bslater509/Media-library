@@ -1,11 +1,15 @@
 """Background file transfer worker managing sequential moves and copies."""
 
-import time
 import asyncio
-from typing import Optional, List, Dict, Any
+import logging
+import time
+from typing import Any
 
-from media_library.workers.base import BaseWorker
 from media_library.services.media_service import do_transfer
+from media_library.workers.base import BaseWorker
+
+logger = logging.getLogger(__name__)
+
 
 class TransferWorker(BaseWorker):
     """Worker managing queued file transfers with chunking and cancellation support."""
@@ -13,13 +17,13 @@ class TransferWorker(BaseWorker):
     def __init__(self):
         super().__init__("transfer_worker")
         self.transfer_queue: asyncio.Queue = asyncio.Queue()
-        self.active_transfer: Optional[Dict[str, Any]] = None
-        self.transfers_history: List[Dict[str, Any]] = []
-        self.transfer_items_map: Dict[str, Dict[str, Any]] = {}
+        self.active_transfer: dict[str, Any] | None = None
+        self.transfers_history: list[dict[str, Any]] = []
+        self.transfer_items_map: dict[str, dict[str, Any]] = {}
 
-    def enqueue(self, item: Dict[str, Any]):
+    def enqueue(self, item: dict[str, Any]):
         self.transfer_items_map[item["id"]] = item
-        self.transfer_queue.put_nowait(item)
+        self.enqueue_nowait(self.transfer_queue, item)
 
     def cancel(self, task_id: str) -> bool:
         if task_id in self.transfer_items_map:
@@ -30,7 +34,7 @@ class TransferWorker(BaseWorker):
             return True
         return False
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "active": self.active_transfer,
             "queue_length": self.transfer_queue.qsize(),
@@ -51,15 +55,22 @@ class TransferWorker(BaseWorker):
                 self._status = "transferring"
 
                 # Import transcode items map if available
-                from media_library.workers.transcode_worker import transcode_worker_instance
-                transcode_map = transcode_worker_instance.transcode_items_map if transcode_worker_instance else None
+                from media_library.workers.transcode_worker import (
+                    transcode_worker_instance,
+                )
+
+                transcode_map = (
+                    transcode_worker_instance.transcode_items_map
+                    if transcode_worker_instance
+                    else None
+                )
 
                 await asyncio.to_thread(do_transfer, item, transcode_map)
                 self.transfers_history.append(item)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error in transfer worker: {e}")
+                logger.error(f"Error in transfer worker: {e}")
                 item["status"] = "failed"
                 item["error"] = str(e)
                 self.transfers_history.append(item)
@@ -67,5 +78,6 @@ class TransferWorker(BaseWorker):
                 self.active_transfer = None
                 self._status = "idle"
                 self.transfer_queue.task_done()
+
 
 transfer_worker_instance = TransferWorker()
