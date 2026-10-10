@@ -10,6 +10,14 @@ ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# Bound glibc per-thread arenas so repeated image decode/encode across the
+# worker threadpool cannot retain large amounts of freed heap.
+Environment=MALLOC_ARENA_MAX=2
+# Cap memory so a runaway app can only be killed by the cgroup (and auto-restarted),
+# never allowed to OOM the whole box. Give a cold full-library re-crawl enough
+# headroom that it cannot wedge in kernel memory reclaim under the cap.
+MemoryHigh=3G
+MemoryMax=5G
 
 [Install]
 WantedBy=multi-user.target

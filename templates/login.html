@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Media Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --accent: #f59e0b; --accent-strong: #d97706; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0c0a09;
+    color: #f5f5f4;
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(900px 520px at 85% -10%, rgba(245, 158, 11, 0.12), transparent 60%),
+      radial-gradient(760px 480px at -5% 110%, rgba(217, 119, 6, 0.08), transparent 58%);
+  }
+  .login-card {
+    position: relative;
+    width: min(92vw, 23rem);
+    background: rgba(28, 25, 23, 0.72);
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    border: 1px solid rgba(168, 162, 158, 0.16);
+    border-radius: 14px;
+    padding: 2.1rem 2rem;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  }
+  .login-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.35rem;
+  }
+  .login-brand .logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: #1c1917;
+    font-size: 1.05rem;
+    box-shadow: 0 8px 22px -8px rgba(245, 158, 11, 0.8);
+  }
+  .login-card h1 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+  .login-brand p { margin: 0.1rem 0 0; font-size: 0.72rem; color: #a8a29e; }
+  .login-card label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #a8a29e; margin-bottom: 0.4rem; }
+  .login-card input[type="password"] {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    border-radius: 10px;
+    border: 1px solid rgba(87, 83, 78, 0.9);
+    background: rgba(12, 10, 9, 0.8);
+    color: inherit;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .login-card input[type="password"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+  }
+  .login-card button {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.72rem 1rem;
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: #1c1917;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.1s ease;
+    box-shadow: 0 12px 30px -12px rgba(245, 158, 11, 0.85);
+  }
+  .login-card button:hover { filter: brightness(1.07); }
+  .login-card button:active { transform: scale(0.985); }
+  .login-error {
+    margin: 0 0 1rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 8px;
+    background: rgba(220, 80, 80, 0.15);
+    border: 1px solid rgba(220, 80, 80, 0.3);
+    color: #ff9a9a;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+  <form class="login-card" method="post" action="/login">
+    {{ERROR_BLOCK}}
+    <div class="login-brand">
+      <span class="logo">📁</span>
+      <div>
+        <h1>Media Library</h1>
+        <p>Sign in to continue</p>
+      </div>
+    </div>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" placeholder="Enter password" autofocus autocomplete="current-password">
+    <input type="hidden" name="next" value="{{NEXT}}">
+    <button type="submit">Unlock</button>
+  </form>
+</body>
+</html>
