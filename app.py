@@ -5,30 +5,30 @@ This module acts as the application entrypoint and CLI runner, delegating
 to the modularized `media_library` package architecture.
 """
 
-import os
 import argparse
+import os
+
 import uvicorn
 
 from media_library.app_factory import create_app
 from media_library.core.config import (
-    BASE_DIR,
     DATA_DIR,
-    DEFAULT_DESTINATION_DIR,
     DB_PATH,
-    PORT,
+    DEFAULT_DESTINATION_DIR,
     HOST,
+    PORT,
 )
-from media_library.core.state import state, format_size
+from media_library.core.state import state
 from media_library.services.media_service import get_lan_ip
-from media_library.db.connection import get_db
-from media_library.db.schema import init_backup_db
 
 # Create default FastAPI application instance for ASGI servers (uvicorn, gunicorn)
 app = create_app()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Web-based Media Library & Video Sorter")
+    parser = argparse.ArgumentParser(
+        description="Web-based Media Library & Video Sorter"
+    )
     parser.add_argument(
         "--port",
         type=int,

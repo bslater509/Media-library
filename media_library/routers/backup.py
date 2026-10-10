@@ -1,12 +1,14 @@
 """Library backup snapshot and restore API routes."""
 
+import asyncio
 import time
-from fastapi import APIRouter, BackgroundTasks
+
+from fastapi import APIRouter
 from starlette.responses import JSONResponse
 
 from media_library.services.backup_service import (
-    get_library_backup_dir,
     get_existing_backup_meta,
+    get_library_backup_dir,
     library_backup_state,
 )
 from media_library.workers.backup_watcher import (
@@ -33,7 +35,9 @@ async def get_library_backup_status():
         library_backup_state["folder_count"] = meta.get("folder_count", 0)
         library_backup_state["thumb_count"] = meta.get("thumb_count", 0)
         library_backup_state["total_size_bytes"] = meta.get("total_size_bytes", 0)
-        library_backup_state["total_size_formatted"] = meta.get("total_size_formatted", "0 B")
+        library_backup_state["total_size_formatted"] = meta.get(
+            "total_size_formatted", "0 B"
+        )
         library_backup_state["backup_path"] = str(bck_dir)
 
     return {
@@ -54,7 +58,7 @@ async def get_library_backup_status():
 
 
 @router.post("/api/backup/library-backup/save")
-async def trigger_save_library_backup(background_tasks: BackgroundTasks):
+async def trigger_save_library_backup():
     if library_backup_state["status"] in ("backing_up", "restoring"):
         return JSONResponse(
             status_code=409,
@@ -63,12 +67,15 @@ async def trigger_save_library_backup(background_tasks: BackgroundTasks):
                 "message": f"Operation already in progress: {library_backup_state['status']}",
             },
         )
-    background_tasks.add_task(run_library_backup_async)
+    # Launch on the event loop exactly like the BackupWatcherWorker does for
+    # scheduled backups, so manual and scheduled runs share one path and the
+    # library_backup_state status/progress/error surface stays consistent.
+    asyncio.create_task(run_library_backup_async())
     return {"success": True, "message": "Library backup started in background"}
 
 
 @router.post("/api/backup/library-backup/restore")
-async def trigger_restore_library_backup(background_tasks: BackgroundTasks):
+async def trigger_restore_library_backup():
     if library_backup_state["status"] in ("backing_up", "restoring"):
         return JSONResponse(
             status_code=409,
@@ -77,5 +84,5 @@ async def trigger_restore_library_backup(background_tasks: BackgroundTasks):
                 "message": f"Operation already in progress: {library_backup_state['status']}",
             },
         )
-    background_tasks.add_task(run_library_restore_async)
+    asyncio.create_task(run_library_restore_async())
     return {"success": True, "message": "Library restore started in background"}

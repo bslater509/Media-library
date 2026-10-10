@@ -40,7 +40,11 @@ async def toggle_webp_pause():
         return {"success": True, "is_paused": True, "message": "WebP optimizer paused"}
     else:
         webp_worker_instance.resume()
-        return {"success": True, "is_paused": False, "message": "WebP optimizer resumed"}
+        return {
+            "success": True,
+            "is_paused": False,
+            "message": "WebP optimizer resumed",
+        }
 
 
 @router.post("/api/backup/webp/resume")
@@ -54,4 +58,8 @@ async def optimize_folder_webp(req: WebPOptimizeFolderRequest):
     real_path = validate_backup_path(req.folder_path)
     count = webp_worker_instance.enqueue_folder(real_path)
     webp_worker_instance.resume()
-    return {"success": True, "enqueued": count, "message": f"Enqueued {count} images for WebP optimization"}
+    return {
+        "success": True,
+        "enqueued": count,
+        "message": f"Enqueued {count} images for WebP optimization",
+    }
