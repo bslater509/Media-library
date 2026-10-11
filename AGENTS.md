@@ -235,6 +235,16 @@ media-library/
 │   ├── test_backup_and_admin_operations.py # Backup snapshot/restore, rename/delete, poster capture
 │   ├── test_backup_service.py       # Backup snapshot & restore tests
 │   ├── test_core_config.py          # Configuration loading & path resolution
+│   ├── test_coverage_duplicate_hash_worker.py # Candidate quick hashing, pHash migration, worker loops, pause/resume, DB error resilience
+│   ├── test_coverage_ffmpeg_and_media_service.py # FFmpeg/probe helpers, rotation, candidate frame caching, WebP rollback, scanner errors
+│   ├── test_coverage_indexer_and_sorter_queue.py # Move/delete index updates (zip/folder/file), prune safety thresholds, tolerant matching, destination creation
+│   ├── test_coverage_library_browse_and_manage.py # Debounced indexing, inflight pruning, folder clamp/cover fallback, bulk rename modes, move hierarchy guards
+│   ├── test_coverage_library_manage_and_backup.py # Library move/delete/rename paths, empty folder inspection, backup snapshot create, restore, auto-restore
+│   ├── test_coverage_sorter_move_and_media.py # Sorter destination collisions, transcode links, transfer abort, rename/delete cancellations, duplicates
+│   ├── test_coverage_transcode_worker.py # Video remux, progress parser, re-encode fallback, abort cancellation, cross-device commits, pretranscode scanner
+│   ├── test_coverage_webp_worker_and_ffmpeg.py # WebP byte conversions, CMYK/palette transparency, file status outcomes, base64 poster extraction, optimizer loop
+│   ├── test_coverage_workers_and_more.py # Memory guard host headroom, duplicate hash worker controls, media thumbnail fallback, candidate frame errors
+│   ├── test_coverage_zip_services.py # ZIP path resolution, central directory indexing, LRU cache eviction, ZipSlip protection, folder unpack
 │   ├── test_db_indexer.py           # SQLite indexer & pruning tests
 │   ├── test_deep_coverage_workers_services.py # Worker loops, upload service, deep clean, WebP/FFmpeg
 │   ├── test_duplicates_comprehensive.py # Quick & visual deduplication, cliques, auto-delete, worker loops
