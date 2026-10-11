@@ -56,8 +56,13 @@ def init_backup_db(custom_path: str | Path | None = None):
             audio_codec TEXT,
             fps REAL,
             capture_time REAL,
-            thumb_mtime REAL
+            thumb_mtime REAL,
+            has_animated INTEGER DEFAULT 0
         )""")
+        try:
+            conn.execute("ALTER TABLE files ADD COLUMN has_animated INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         try:
             conn.execute("ALTER TABLE files ADD COLUMN has_thumb INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
@@ -119,6 +124,9 @@ def init_backup_db(custom_path: str | Path | None = None):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_type ON files(type)")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_files_has_thumb ON files(has_thumb)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_files_has_animated ON files(has_animated)"
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_size ON files(size)")
         conn.execute(

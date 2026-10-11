@@ -182,6 +182,75 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
+  // Batch enqueue for on-demand animated thumbnails
+  const pendingAnimEnqueue = new Set();
+  let animEnqueueTimer = null;
+
+  function enqueueAnimatedThumbnail(path) {
+    if (!path) return;
+    pendingAnimEnqueue.add(path);
+    if (!animEnqueueTimer) {
+      animEnqueueTimer = setTimeout(flushAnimEnqueue, 250);
+    }
+  }
+
+  async function flushAnimEnqueue() {
+    animEnqueueTimer = null;
+    if (pendingAnimEnqueue.size === 0) return;
+    const paths = Array.from(pendingAnimEnqueue);
+    pendingAnimEnqueue.clear();
+    try {
+      await fetch('/api/backup/thumbnails/batch-animated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, priority: true }),
+      });
+      pollSystemStatus(true);
+    } catch (err) {
+      console.warn('Failed to enqueue animated thumbnails:', err);
+    }
+  }
+
+  // Reactive tile updater when background worker finishes animated previews
+  function updateCardsAnimatedStatus(data) {
+    if (!data || !data.recent_completed || data.recent_completed.length === 0) return;
+    const completedSet = new Set(data.recent_completed);
+
+    // Update in-memory file objects
+    if (state.allFiles) {
+      state.allFiles.forEach(f => {
+        if (completedSet.has(f.path)) {
+          f.has_animated = true;
+        }
+      });
+    }
+
+    // Update visible media cards that are pending animated preview
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-anim-pending="true"]') : [];
+    cards.forEach(card => {
+      const path = card.dataset.path;
+      if (!path || !completedSet.has(path)) return;
+
+      card.removeAttribute('data-anim-pending');
+      const badge = card.querySelector('.card-anim-badge');
+      const spinner = card.querySelector('.card-anim-spinner');
+      const img = card.querySelector('.card-thumb');
+
+      if (spinner) {
+        spinner.classList.add('hidden');
+        spinner.classList.remove('animate-spin');
+      }
+      if (badge) {
+        badge.title = 'Looping animated preview';
+        if (state.animatedThumbs) badge.classList.remove('hidden');
+      }
+      if (img && state.animatedThumbs) {
+        const vTag = Date.now();
+        img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${vTag}`;
+      }
+    });
+  }
+
   // Update existing video tiles on screen when toggling animated previews
   function updateCardsAnimatedThumbnails() {
     const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card') : [];
@@ -189,18 +258,45 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (card.dataset.fileType !== 'video') return;
       const img = card.querySelector('.card-thumb');
       const badge = card.querySelector('.card-anim-badge');
+      const spinner = card.querySelector('.card-anim-spinner');
       const path = card.dataset.path;
       if (!img || !path) return;
 
+      const file = state.allFiles ? state.allFiles.find(f => f.path === path) : null;
+      const hasAnimated = file ? Boolean(file.has_animated) : false;
+
       if (state.animatedThumbs) {
-        img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`;
-        if (badge) badge.classList.remove('hidden');
+        if (hasAnimated) {
+          img.src = file && file.animated_url ? file.animated_url : `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`;
+          if (badge) {
+            badge.classList.remove('hidden');
+            badge.title = 'Looping animated preview';
+          }
+          if (spinner) spinner.classList.add('hidden');
+          card.removeAttribute('data-anim-pending');
+        } else {
+          // Keep static thumbnail so user never sees a missing/blank box!
+          const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
+          if (fallback) img.src = fallback;
+          if (badge) {
+            badge.classList.remove('hidden');
+            badge.title = 'Generating animated preview...';
+          }
+          if (spinner) {
+            spinner.classList.remove('hidden');
+            spinner.classList.add('animate-spin');
+          }
+          card.dataset.animPending = 'true';
+          enqueueAnimatedThumbnail(path);
+        }
       } else {
-        const fallback = img.dataset.fallbackThumb;
+        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
         if (fallback) {
           img.src = fallback;
         }
         if (badge) badge.classList.add('hidden');
+        if (spinner) spinner.classList.add('hidden');
+        card.removeAttribute('data-anim-pending');
       }
     });
   }
@@ -1032,10 +1128,22 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       attachLongPress(card, () => ({ path: file.path, name: file.name, kind: 'file' }));
 
       const isVid = file.type === 'video';
-      const useAnim = isVid && state.animatedThumbs;
-      const thumbSrc = useAnim
-        ? `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`
+      const isAnimActive = isVid && state.animatedThumbs;
+      const hasAnimated = Boolean(file.has_animated);
+
+      // If animated previews are turned on:
+      // - If already compiled: load animated preview
+      // - If generating or queued: load static thumbnail immediately (NO empty black box!) with generating spinner!
+      const thumbSrc = (isAnimActive && hasAnimated)
+        ? (file.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`)
         : file.thumb_url;
+
+      const isAnimGenerating = isAnimActive && !hasAnimated;
+      if (isAnimGenerating) {
+        card.dataset.animPending = 'true';
+        enqueueAnimatedThumbnail(file.path);
+      }
+
       const extLabel = file.ext.toUpperCase().replace('.', '');
       const resLabel = getResolutionLabel(file.width, file.height);
       const durLabel = isVid && file.duration ? formatDuration(file.duration) : '';
@@ -1068,8 +1176,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
               ${extLabel}
             </span>
             ${isVid ? `
-              <span class="card-anim-badge ${useAnim ? '' : 'hidden'} px-1 py-0.5 rounded bg-violet-950/80 backdrop-blur-md text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30 shadow">
-                ANIM
+              <span class="card-anim-badge ${isAnimActive ? '' : 'hidden'} px-1 py-0.5 rounded bg-violet-950/80 backdrop-blur-md text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30 shadow flex items-center gap-1"
+                    title="${isAnimGenerating ? 'Generating animated preview...' : 'Looping animated preview'}">
+                <span>ANIM</span>
+                <span class="card-anim-spinner inline-block ${isAnimGenerating ? 'animate-spin' : 'hidden'} text-[8px]">⚙️</span>
               </span>
             ` : ''}
             ${resLabel ? `
@@ -2609,6 +2719,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (res.ok) {
         const data = await res.json();
         showToast(data.message || `Queued ${data.queued} video(s) for animated preview generation`, 'success');
+        pollSystemStatus(true);
       } else {
         const err = await res.json().catch(() => ({}));
         showToast(err.detail || 'Failed to queue animated preview generation', 'error');
@@ -4006,6 +4117,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
           state.latestThumbData = data.thumbnails;
           renderThumbnailStatus(data.thumbnails);
         }
+        if (data.animated_thumbnails) {
+          state.latestAnimThumbData = data.animated_thumbnails;
+          renderAnimatedThumbStatus(data.animated_thumbnails);
+          updateCardsAnimatedStatus(data.animated_thumbnails);
+        }
         if (data.duplicate_hash) {
           state.latestDupHashData = data.duplicate_hash;
           renderDuplicateHashStatus(data.duplicate_hash);
@@ -4066,6 +4182,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const trData = state.latestTransferData;
     const tData = state.latestTranscodeData;
     const thData = state.latestThumbData;
+    const animData = state.latestAnimThumbData;
     const wData = state.latestWebpData;
     const idxData = state.latestIndexData;
     const bkData = state.latestLibBackupData;
@@ -4079,13 +4196,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const idxActive = idxData && idxData.status === 'crawling';
     const tActive = tData && (tData.active || (tData.queued && tData.queued.length > 0));
     const thActive = thData && thData.status === 'generating' && (thData.pending_count > 0);
+    const animActive = animData && ((animData.status === 'generating') || (animData.total_queued > 0) || Boolean(animData.active));
     const wActive = wData && wData.status === 'converting' && (wData.pending_count > 0);
     const bkActive = bkData && (bkData.status === 'backing_up' || bkData.status === 'restoring');
     const zipActive = zipData && zipData.is_active;
     const batchZipActive = batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'processing');
     const batchUnpackActive = batchUnpackData && (batchUnpackData.status === 'running' || batchUnpackData.status === 'processing');
 
-    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || wActive || zipActive || batchZipActive || batchUnpackActive;
+    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || animActive || wActive || zipActive || batchZipActive || batchUnpackActive;
 
     // Always keep button visible so the background tasks modal can be opened anytime
     els.transferBadgeBtn.classList.remove('hidden');
@@ -4121,6 +4239,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         els.transferCountText.textContent = active 
           ? `${Math.round(active.percent || 0)}% (${queued.length + 1})`
           : `${queued.length} queued`;
+      } else if (animActive) {
+        const pct = Math.round(animData.percent || 0);
+        els.transferCountText.textContent = animData.active
+          ? `Anim ${pct}%`
+          : `${animData.queue_length || 0} anim`;
       } else if (thActive) {
         els.transferCountText.textContent = `Thumbs ${Math.round(thData.percent || 0)}%`;
       } else if (wActive) {
@@ -4165,7 +4288,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       (libOpsData && libOpsData.active ? 1 : 0) +
       (libOpsData && libOpsData.queued ? libOpsData.queued.length : 0) +
       (tData && tData.active ? 1 : 0) +
-      (tData && tData.queued ? tData.queued.length : 0);
+      (tData && tData.queued ? tData.queued.length : 0) +
+      (animData && animData.active ? 1 : 0) +
+      (animData && animData.queued ? animData.queued.length : 0);
 
     const tabBadgeActive = document.getElementById('tabBadgeActive');
     const activeQueuesEmptyState = document.getElementById('activeQueuesEmptyState');
@@ -4184,7 +4309,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const tabBadgeWorkers = document.getElementById('tabBadgeWorkers');
     if (tabBadgeWorkers) {
       const hData = state.latestHashData;
-      const isAnyWorkerActive = idxActive || thActive || wActive || (hData && (hData.status === 'checking' || (hData.pending_count > 0)));
+      const isAnyWorkerActive = idxActive || thActive || animActive || wActive || (hData && (hData.status === 'checking' || (hData.pending_count > 0)));
       if (isAnyWorkerActive) {
         tabBadgeWorkers.textContent = 'Active';
         tabBadgeWorkers.className = 'px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono';
@@ -4440,6 +4565,128 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       showToast('Failed to toggle thumbnail pause', 'error');
     } finally {
       if (els.toggleThumbPauseBtn) els.toggleThumbPauseBtn.disabled = false;
+    }
+  }
+
+  // Render Animated Previews Queue & Background Worker Status
+  function renderAnimatedThumbStatus(data) {
+    if (!data) return;
+    const isPaused = data.is_paused;
+    const isGenerating = data.status === 'generating';
+    const active = data.active;
+    const queued = data.queued || [];
+
+    // 1. Pane 1: Queue Controls & Active Item
+    if (els.animSummaryText) {
+      els.animSummaryText.textContent = isPaused ? 'Paused' : (isGenerating ? 'Generating' : 'Idle');
+    }
+    if (els.toggleAnimPauseBtn) {
+      els.toggleAnimPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+      els.toggleAnimPauseBtn.className = isPaused 
+        ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer'
+        : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer';
+    }
+
+    if (active) {
+      if (els.activeAnimBox) els.activeAnimBox.classList.remove('hidden');
+      if (els.activeAnimFilename) els.activeAnimFilename.textContent = active.name;
+      const pct = typeof data.percent === 'number' ? data.percent : 0;
+      if (els.activeAnimPercent) els.activeAnimPercent.textContent = `${pct.toFixed(0)}%`;
+      if (els.activeAnimProgressBar) els.activeAnimProgressBar.style.width = `${pct}%`;
+      if (els.activeAnimCount) els.activeAnimCount.textContent = `${data.queue_length || 0} queued`;
+    } else {
+      if (els.activeAnimBox) els.activeAnimBox.classList.add('hidden');
+    }
+
+    if (queued.length > 0) {
+      if (els.queuedAnimContainer) els.queuedAnimContainer.classList.remove('hidden');
+      if (els.queuedAnimCount) els.queuedAnimCount.textContent = data.queue_length || queued.length;
+      if (els.queuedAnimList) {
+        const displayQueue = queued.slice(0, 15);
+        const remaining = (data.queue_length || queued.length) - displayQueue.length;
+        els.queuedAnimList.innerHTML = displayQueue.map(q => `
+          <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+            <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(q.name)}</span>
+            <span class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-500/30 font-mono shrink-0">Queued</span>
+          </div>
+        `).join('') + (remaining > 0 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${remaining} more in queue...</div>` : '');
+      }
+    } else {
+      if (els.queuedAnimContainer) els.queuedAnimContainer.classList.add('hidden');
+      if (els.queuedAnimList) els.queuedAnimList.innerHTML = '';
+      if (els.queuedAnimCount) els.queuedAnimCount.textContent = '0';
+    }
+
+    // 2. Pane 2: Worker Card Controls & Progress
+    if (els.animWorkerSummaryText) {
+      els.animWorkerSummaryText.textContent = isPaused ? 'Paused' : (isGenerating ? 'Generating' : 'Idle');
+    }
+    if (els.toggleAnimWorkerPauseBtn) {
+      els.toggleAnimWorkerPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+      els.toggleAnimWorkerPauseBtn.className = isPaused 
+        ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0'
+        : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0';
+    }
+    if (els.animWorkerCurrentFile) {
+      if (isGenerating && data.current_file) {
+        els.animWorkerCurrentFile.textContent = data.current_file;
+        els.animWorkerCurrentFile.title = data.current_file;
+      } else if (isPaused) {
+        els.animWorkerCurrentFile.textContent = 'Generation paused';
+        els.animWorkerCurrentFile.title = '';
+      } else {
+        els.animWorkerCurrentFile.textContent = 'Idle';
+        els.animWorkerCurrentFile.title = '';
+      }
+    }
+    const pct = typeof data.percent === 'number' ? data.percent : 0;
+    if (els.animWorkerPercentText) els.animWorkerPercentText.textContent = `${pct.toFixed(0)}%`;
+    if (els.animWorkerProgressBar) els.animWorkerProgressBar.style.width = `${pct}%`;
+    if (els.animWorkerCountsText) {
+      const processed = (data.processed_count || 0).toLocaleString();
+      const queuedCount = (data.total_queued || 0).toLocaleString();
+      els.animWorkerCountsText.textContent = `${processed} done • ${queuedCount} in queue`;
+    }
+    if (els.animWorkerStatusLabel) {
+      els.animWorkerStatusLabel.textContent = isPaused ? 'Paused' : (isGenerating ? 'Active' : 'Idle');
+    }
+  }
+
+  // Toggle Animated Preview Worker Pause / Resume
+  async function toggleAnimPause() {
+    try {
+      if (els.toggleAnimPauseBtn) els.toggleAnimPauseBtn.disabled = true;
+      if (els.toggleAnimWorkerPauseBtn) els.toggleAnimWorkerPauseBtn.disabled = true;
+      const res = await fetch('/api/backup/thumbnails/animated-pause', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || (data.is_paused ? 'Animated preview worker paused' : 'Animated preview worker resumed'), 'info');
+        pollSystemStatus(true);
+      }
+    } catch (err) {
+      console.error('Error toggling animated pause:', err);
+      showToast('Failed to toggle animated preview pause', 'error');
+    } finally {
+      if (els.toggleAnimPauseBtn) els.toggleAnimPauseBtn.disabled = false;
+      if (els.toggleAnimWorkerPauseBtn) els.toggleAnimWorkerPauseBtn.disabled = false;
+    }
+  }
+
+  // Cancel All Queued Animated Previews
+  async function cancelAllAnimPreviews() {
+    try {
+      if (els.cancelAllAnimBtn) els.cancelAllAnimBtn.disabled = true;
+      const res = await fetch('/api/backup/thumbnails/animated-cancel', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || `Cancelled ${data.cancelled} animated preview(s)`, 'info');
+        pollSystemStatus(true);
+      }
+    } catch (err) {
+      console.error('Error cancelling animated previews:', err);
+      showToast('Failed to cancel animated previews', 'error');
+    } finally {
+      if (els.cancelAllAnimBtn) els.cancelAllAnimBtn.disabled = false;
     }
   }
 
@@ -6610,6 +6857,19 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.generateFolderAnimatedBtn.addEventListener('click', triggerFolderAnimatedPreviews);
     }
 
+    // Pause / Resume Animated Preview Generator
+    if (els.toggleAnimPauseBtn) {
+      els.toggleAnimPauseBtn.addEventListener('click', toggleAnimPause);
+    }
+    if (els.toggleAnimWorkerPauseBtn) {
+      els.toggleAnimWorkerPauseBtn.addEventListener('click', toggleAnimPause);
+    }
+
+    // Cancel All Animated Previews Button
+    if (els.cancelAllAnimBtn) {
+      els.cancelAllAnimBtn.addEventListener('click', cancelAllAnimPreviews);
+    }
+
     // Pause / Resume WebP Optimizer
     if (els.toggleWebpPauseBtn) {
       els.toggleWebpPauseBtn.addEventListener('click', toggleWebpPause);
@@ -7743,6 +8003,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     openMoveModalFromLightbox,
     openThemeModal,
     closeThemeModal,
+    toggleAnimPause,
+    cancelAllAnimPreviews,
   };
 
   // Start app when DOM is ready

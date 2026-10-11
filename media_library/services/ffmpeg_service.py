@@ -1056,6 +1056,15 @@ async def generate_animated_preview(
 
             if temp_anim.exists() and temp_anim.stat().st_size > 0:
                 os.replace(temp_anim, anim_path)
+                try:
+                    from media_library.db.connection import db_conn
+                    with db_conn() as conn, conn:
+                        conn.execute(
+                            "UPDATE files SET has_animated = 1 WHERE path = ?",
+                            (file_path,),
+                        )
+                except Exception:
+                    pass
                 return anim_path
         except Exception as e:
             logger.error(f"Error generating animated preview for {file_path}: {e}")

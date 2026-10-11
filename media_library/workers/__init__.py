@@ -1,5 +1,9 @@
 """Workers module exports."""
 
+from media_library.workers.animated_thumb_worker import (
+    AnimatedThumbWorker,
+    animated_thumb_worker_instance,
+)
 from media_library.workers.backup_watcher import (
     BackupWatcherWorker,
     backup_watcher_instance,
@@ -37,6 +41,7 @@ from media_library.workers.transfer_worker import (
 from media_library.workers.webp_worker import WebPOptimizerWorker, webp_worker_instance
 
 __all__ = [
+    "AnimatedThumbWorker",
     "BackupWatcherWorker",
     "BaseWorker",
     "DuplicateHashWorker",
@@ -47,6 +52,7 @@ __all__ = [
     "TranscodeWorker",
     "TransferWorker",
     "WebPOptimizerWorker",
+    "animated_thumb_worker_instance",
     "backup_watcher_instance",
     "duplicate_hash_worker_instance",
     "enqueue_pretranscode_for_source",

@@ -29,6 +29,7 @@ from media_library.services.zip import (
     split_zip_path,
     trigger_debounced_sync_back,
 )
+from media_library.workers.animated_thumb_worker import animated_thumb_worker_instance
 from media_library.workers.thumbnail_worker import thumbnail_worker_instance
 
 router = APIRouter()
@@ -296,7 +297,9 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         anim_path = await asyncio.to_thread(get_animated_preview_path, real_path)
         if anim_path.exists():
             anim_path.unlink()
-        asyncio.create_task(generate_animated_preview(real_path))
+        with db_conn() as conn, conn:
+            conn.execute("UPDATE files SET has_animated = 0 WHERE path = ?", (real_path,))
+        animated_thumb_worker_instance.enqueue(real_path, priority=True)
     except Exception as e:
         logger.warning(f"Failed to invalidate/recompile animated preview for {real_path}: {e}")
 
@@ -316,6 +319,8 @@ class AnimatedPreviewRequest(BaseModel):
 class BatchAnimatedPreviewRequest(BaseModel):
     folder_path: str | None = None
     folder: str | None = None
+    paths: list[str] | None = None
+    priority: bool = False
 
 
 @router.post("/api/backup/thumbnails/generate-animated")
@@ -349,33 +354,68 @@ async def trigger_animated_thumbnail_generate(req: AnimatedPreviewRequest):
 @router.post("/api/backup/thumbnails/batch-animated")
 async def trigger_batch_animated_preview_generate(req: BatchAnimatedPreviewRequest):
     videos_to_process: list[str] = []
-    target_folder = req.folder_path or req.folder
-    with db_conn() as conn:
-        if target_folder:
-            real_folder = validate_backup_path(target_folder)
-            rows = conn.execute(
-                "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
-                (real_folder,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT path FROM files WHERE type = 'video' LIMIT 500"
-            ).fetchall()
-        videos_to_process = [r["path"] for r in rows]
-
-    async def _process_batch(paths: list[str]):
-        for p in paths:
+    if req.paths:
+        for p in req.paths:
             try:
-                await generate_animated_preview(p)
-            except Exception as e:
-                logger.warning(f"Error in batch animated preview for {p}: {e}")
+                rp = validate_backup_path(p)
+                videos_to_process.append(rp)
+            except Exception:
+                pass
+    else:
+        target_folder = req.folder_path or req.folder
+        with db_conn() as conn:
+            if target_folder:
+                real_folder = validate_backup_path(target_folder)
+                rows = conn.execute(
+                    "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
+                    (real_folder,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT path FROM files WHERE type = 'video' LIMIT 500"
+                ).fetchall()
+            videos_to_process = [r["path"] for r in rows]
 
-    asyncio.create_task(_process_batch(videos_to_process))
+    if req.priority:
+        queued_count = 0
+        for p in videos_to_process:
+            if animated_thumb_worker_instance.enqueue(p, priority=True):
+                queued_count += 1
+    else:
+        queued_count = animated_thumb_worker_instance.enqueue_batch(videos_to_process)
 
     return {
         "success": True,
         "count": len(videos_to_process),
-        "queued": len(videos_to_process),
-        "message": f"Started generating animated previews for {len(videos_to_process)} video(s)",
+        "queued": queued_count,
+        "message": f"Queued {queued_count} video(s) for animated preview generation",
+    }
+
+
+@router.post("/api/backup/thumbnails/animated-pause")
+async def toggle_animated_thumbnail_pause() -> dict:
+    if not animated_thumb_worker_instance.is_paused():
+        animated_thumb_worker_instance.pause()
+        return {
+            "success": True,
+            "is_paused": True,
+            "message": "Animated preview generator paused",
+        }
+    else:
+        animated_thumb_worker_instance.resume()
+        return {
+            "success": True,
+            "is_paused": False,
+            "message": "Animated preview generator resumed",
+        }
+
+
+@router.post("/api/backup/thumbnails/animated-cancel")
+async def cancel_all_animated_thumbnails() -> dict:
+    count = animated_thumb_worker_instance.cancel_all()
+    return {
+        "success": True,
+        "cancelled": count,
+        "message": f"Cancelled {count} queued animated preview(s)",
     }
 

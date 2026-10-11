@@ -32,6 +32,7 @@ from media_library.services.zip import (
     resolve_zip_file_path,
     split_zip_path,
 )
+from media_library.workers import animated_thumb_worker_instance
 
 router = APIRouter()
 
@@ -351,9 +352,10 @@ async def get_animated_thumbnail(
     mtime: float | None = Query(None),
     size: int | None = Query(None),
     v: str | None = Query(None),
+    wait: bool = Query(True),
     request: Request = None,
 ):
-    """Returns an animated looping WebP preview for a video file, generating on-demand if needed."""
+    """Returns an animated looping WebP preview for a video file, serving static thumbnail while generating in background."""
     real_path = validate_backup_path(path)
     ext = os.path.splitext(real_path)[1].lower()
     if ext not in VIDEO_EXTENSIONS:
@@ -369,11 +371,33 @@ async def get_animated_thumbnail(
 
     anim_path = await asyncio.to_thread(get_animated_preview_path, real_path, mtime, size)
     if not (anim_path.exists() and anim_path.stat().st_size > 0):
-        gen_path = await generate_animated_preview(real_path)
-        if gen_path and gen_path.exists() and gen_path.stat().st_size > 0:
-            anim_path = gen_path
+        if wait:
+            gen_path = await generate_animated_preview(real_path)
+            if gen_path and gen_path.exists() and gen_path.stat().st_size > 0:
+                anim_path = gen_path
+            else:
+                # Fallback to static thumbnail if animated generation failed
+                fallback_thumb = await generate_thumbnail(real_path, is_video=True, mtime=mtime, size=size)
+                if fallback_thumb and fallback_thumb.exists():
+                    if request and request.method == "HEAD":
+                        return Response(
+                            status_code=200,
+                            headers={
+                                "Content-Length": str(fallback_thumb.stat().st_size),
+                                "Content-Type": "image/jpeg",
+                            },
+                        )
+                    return FileResponse(
+                        str(fallback_thumb),
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+                    )
+                raise HTTPException(status_code=500, detail="Could not generate animated preview")
         else:
-            # Fallback to static thumbnail if animated generation failed
+            # Enqueue in AnimatedThumbWorker with priority
+            animated_thumb_worker_instance.enqueue(real_path, priority=True)
+
+            # Serve static thumbnail immediately so user never sees a missing/blank box
             fallback_thumb = await generate_thumbnail(real_path, is_video=True, mtime=mtime, size=size)
             if fallback_thumb and fallback_thumb.exists():
                 if request and request.method == "HEAD":
@@ -382,14 +406,18 @@ async def get_animated_thumbnail(
                         headers={
                             "Content-Length": str(fallback_thumb.stat().st_size),
                             "Content-Type": "image/jpeg",
+                            "X-Thumbnail-Status": "generating",
                         },
                     )
                 return FileResponse(
                     str(fallback_thumb),
                     media_type="image/jpeg",
-                    headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "X-Thumbnail-Status": "generating",
+                    },
                 )
-            raise HTTPException(status_code=500, detail="Could not generate animated preview")
+            raise HTTPException(status_code=202, detail="Animated preview generation in progress")
 
     if request and request.method == "HEAD":
         return Response(

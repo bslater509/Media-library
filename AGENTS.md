@@ -214,6 +214,7 @@ media-library/
 │       ├── transfer_worker.py       # Sequential non-blocking file moves with undo
 │       ├── transcode_worker.py      # Background video pre-transcoding
 │       ├── thumbnail_worker.py      # Background video poster frame extraction
+│       ├── animated_thumb_worker.py # Background animated WebP video preview generation
 │       ├── metadata_worker.py       # MediaMetadataWorker: dimensions/duration/codec/capture-time probing
 │       ├── duplicate_hash_worker.py # DuplicateHashWorker (quick) & ThumbHashWorker (visual)
 │       ├── webp_worker.py           # WebPOptimizerWorker for background image conversion
@@ -372,7 +373,8 @@ CREATE TABLE files (
     audio_codec TEXT,                  -- First audio stream codec (e.g. 'aac')
     fps REAL,                          -- Average video frame rate
     capture_time REAL,                 -- Capture/creation epoch (EXIF or container creation_time), or NULL
-    thumb_mtime REAL                   -- Timestamp of custom poster frame extraction (used for URL cache busting)
+    thumb_mtime REAL,                  -- Timestamp of custom poster frame extraction (used for URL cache busting)
+    has_animated INTEGER DEFAULT 0     -- 1 if cached animated WebP video preview exists on disk
 );
 ```
 - `width`/`height` drive natural-aspect-ratio Library tiles (clamped client-side to 2:3–3:2).
@@ -418,6 +420,7 @@ CREATE TABLE db_meta (
 - `idx_files_name ON files(name)`
 - `idx_files_type ON files(type)`
 - `idx_files_has_thumb ON files(has_thumb)`
+- `idx_files_has_animated ON files(has_animated)`
 - `idx_files_size ON files(size)`
 - `idx_files_quick_hash ON files(quick_hash)`
 - `idx_files_thumb_hash ON files(thumb_hash)`
@@ -445,6 +448,7 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
 | `transfer_worker_instance` | `TransferWorker` | `workers.transfer_worker` | Executes queued file moves sequentially; tracks undo operations. |
 | `transcode_worker_instance` | `TranscodeWorker` | `workers.transcode_worker` | Background pre-transcoding of non-web videos to MP4. |
 | `thumbnail_worker_instance` | `ThumbnailWorker` | `workers.thumbnail_worker` | Background extraction of poster frames for videos/images lacking thumbnails; skips non-WebP images inside ZIPs (deferred until WebP conversion). |
+| `animated_thumb_worker_instance` | `AnimatedThumbWorker` | `workers.animated_thumb_worker` | Background sequential generation of looping animated WebP video previews; dual queues (priority queue for visible gallery tiles, batch queue for folder/library batch jobs) with pause/resume/cancel controls and live status. |
 | `metadata_worker_instance` | `MediaMetadataWorker` | `workers.metadata_worker` | Probes source dimensions, duration, codecs, fps, and capture time once per loose file (FFprobe + EXIF); backfills ZIP-member dimensions from cached local thumbnails; powers natural-aspect-ratio tiles and avoids re-probing in the transcode path. |
 | `duplicate_hash_worker_instance` | `DuplicateHashWorker` | `workers.duplicate_hash_worker` | Computes 128 KB head SHA-256 (+ size) for files with identical sizes. |
 | `thumb_hash_worker_instance` | `ThumbHashWorker` | `workers.duplicate_hash_worker` | Computes perceptual `pHash` from video posters & images. |
@@ -460,7 +464,7 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
    - AnyIO thread limiter set to `100` tokens for concurrent FUSE I/O.
    - `check_and_auto_restore_library_backup()`: Detects if database or thumbnails are missing, restoring snapshot if found.
    - `init_backup_db()`: Initializes database schema and runs idempotent migrations.
-   - Workers started: `transfer`, `transcode`, `crawler`, `thumbnail`, `metadata`, `duplicate_hash`, `thumb_hash`, `webp`, `library_ops`, `backup_watcher`.
+   - Workers started: `transfer`, `transcode`, `crawler`, `thumbnail`, `animated_thumb`, `metadata`, `duplicate_hash`, `thumb_hash`, `webp`, `library_ops`, `backup_watcher`.
    - If `source_dir` configured, enqueues pre-transcoding in background thread.
 2. **Shutdown Sequence**:
    - All workers gracefully stopped (`await worker.stop()`).
@@ -489,6 +493,19 @@ Implemented in `media_library.routers.library_media.stream_backup_media` and `me
    - Runs `ffmpeg -ss 00:00:01 -i {file_path} -vf "scale=360:-2:flags=fast_bilinear" -frames:v 1 -update 1 -q:v 3 {temp_file}` (wrapped in `nice`, 8 s timeout, retried at `-ss 00:00:00`).
    - Atomically replaces into final path.
 3. **Deferred ZIP images**: `ThumbnailWorker` skips non-WebP image members inside ZIP archives (predicate `COALESCE(fo.is_zip,0)=1 AND f.type='image' AND f.ext != '.webp'`) because the WebP optimizer will convert them — a pre-conversion thumbnail would be orphaned when the member is renamed to `.webp`. Videos and non-ZIP files are always thumbnailed. Thumbnail totals/pending/percent are recomputed from the DB each loop iteration so they stay accurate as conversion shrinks the deferred set.
+
+### Animated WebP Video Previews
+1. Deterministic hashing: Animated preview path is `THUMBNAIL_CACHE_DIR / "anim_{h}.webp"` where `h` is the first 24 characters of the SHA-256 of `{file_path}_{mtime}_{size}`.
+2. Frame sampling & compilation (`media_library.services.ffmpeg_service.generate_animated_video_preview`):
+   - Samples up to 24 candidate frames evenly spaced across video duration at 480px resolution (`scale=480:-2:flags=fast_bilinear`).
+   - Uses candidate frames cache directory when available; extracts candidate frames in batch via fast FFmpeg seeking if not already cached.
+   - Compiles frames into a seamless looping WebP animation (`-loop 0`, 2 fps / ~500ms duration per frame).
+   - Atomically updates `files.has_animated = 1` in SQLite upon completion.
+3. Queueing & Non-blocking Tile Delivery:
+   - `AnimatedThumbWorker` (`workers.animated_thumb_worker`) manages background generation across two prioritized queues: a high-priority queue for currently visible gallery cards and a background batch queue for entire folders or library sweeps.
+   - When the user enables animated previews, `GET /api/backup/thumbnails/animated?path=...&wait=false` returns the static thumbnail image immediately alongside an `X-Thumbnail-Status: generating` HTTP header if the animated preview is not yet generated, while enqueuing the video into the priority worker queue.
+   - Gallery video tiles immediately render the static poster with an overlay `ANIM ⚙️` spinning badge (`.card-anim-spinner`), preventing blank loading boxes; the frontend seamlessly transitions the tile image to the animated preview upon generation.
+   - Startup reconciliation (`sync_animated_thumb_db_cache`) synchronizes existing `anim_*.webp` cache files with the SQLite database to avoid redundant work.
 
 ### Media Metadata Probing (natural-ratio tiles)
 `MediaMetadataWorker` (`workers.metadata_worker`) probes each loose indexed file once via `probe_media_metadata` (`services.ffmpeg_service`):
@@ -628,6 +645,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
   "transcode": { "active": null, "queued": [], "percent": 0 },
   "index": { "status": "idle", "scanned_folders": 120, "skipped_folders": 0, "total_folders": 120, "percent": 100 },
   "thumbnails": { "status": "idle", "pending_count": 0, "percent": 100 },
+  "animated_thumbnails": { "status": "idle", "pending_count": 0, "priority_count": 0, "batch_count": 0, "completed_count": 10, "percent": 100.0, "active_file": null, "recent_completed": [] },
   "metadata": { "status": "idle", "pending_count": 0, "zip_pending_count": 0, "processed_count": 0, "percent": 100 },
   "duplicate_hash": { "status": "idle", "pending_count": 0, "percent": 100 },
   "thumb_hash": { "status": "idle", "pending_count": 0, "percent": 100 },
@@ -660,10 +678,12 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `GET /api/backup/search?q={query}` — Search media files by multi-word query across index; results include probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time` (`library_browse`)
 - `GET /api/backup/media?path={file_path}` — Stream video/image with byte-range headers and caching (`library_media`)
 - `GET /api/backup/thumbnail?path={file_path}` — Stream thumbnail image (`library_media`)
-- `GET /api/backup/thumbnails/animated?path={file_path}` — Stream looping animated WebP video preview (480px, 2 fps), generating on-demand from candidate frames if not yet cached (`library_media`)
+- `GET /api/backup/thumbnails/animated?path={file_path}&wait={bool}` — Stream looping animated WebP video preview (480px, 2 fps). If not yet cached and `wait=false`, immediately returns static thumbnail with `X-Thumbnail-Status: generating` header while enqueuing video to `AnimatedThumbWorker` priority queue (`library_media`)
 - `POST /api/backup/thumbnails/generate` — Enqueue folder for poster frame extraction (`library_admin`)
 - `POST /api/backup/thumbnails/generate-animated` — Generate looping animated WebP preview for a specific video (`library_admin`)
-- `POST /api/backup/thumbnails/batch-animated` — Enqueue all videos in a folder (or entire library) for animated preview generation (`library_admin`)
+- `POST /api/backup/thumbnails/batch-animated` — Enqueue videos in a folder (or entire library) into `AnimatedThumbWorker` batch queue (`library_admin`)
+- `POST /api/backup/thumbnails/animated-pause` — Pause or resume `AnimatedThumbWorker` (`library_admin`)
+- `POST /api/backup/thumbnails/animated-cancel` — Cancel queued background animated preview generation tasks (`library_admin`)
 - `GET /api/backup/thumbnails/status` — Get poster generation status (`library_admin`)
 - `POST /api/backup/thumbnails/pause` — Pause/resume poster generation (`library_admin`)
 - `POST /api/backup/thumbnails/set-poster` — Extract and set specific video frame timestamp (or image payload) as custom thumbnail poster frame (`library_admin`)

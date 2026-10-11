@@ -208,3 +208,68 @@ async def test_animated_preview_dimension_normalization_and_custom_poster(sandbo
     pdata = res_poster.json()
     assert "animated_url" in pdata
     assert "/api/backup/thumbnails/animated?path=" in pdata["animated_url"]
+
+
+@pytest.mark.anyio
+async def test_animated_thumb_worker_and_system_status(sandbox_env, api_client):
+    from media_library.core.state import state
+    from media_library.workers.animated_thumb_worker import AnimatedThumbWorker
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    vid_path = os.path.join(dest, "worker_test_clip.mp4")
+    _create_mock_video_image(vid_path)
+
+    worker = AnimatedThumbWorker()
+    assert worker.get_status()["status"] == "idle"
+
+    # Enqueue standard
+    enqueued = worker.enqueue(vid_path, priority=False)
+    assert enqueued is True
+    st = worker.get_status()
+    assert st["queue_length"] == 1
+    assert len(st["queued"]) == 1
+    assert st["queued"][0]["name"] == "worker_test_clip.mp4"
+
+    # Enqueue priority promotion
+    worker.enqueue(vid_path, priority=True)
+    assert not worker.priority_queue.empty()
+
+    # Pause and resume
+    worker.pause()
+    assert worker.is_paused() is True
+    assert worker.get_status()["status"] == "paused"
+    worker.resume()
+    assert worker.is_paused() is False
+
+    # Cancel all
+    cancelled = worker.cancel_all()
+    assert cancelled >= 1
+    assert worker.get_status()["queue_length"] == 0
+
+    # API endpoints for pause, resume, cancel
+    res_pause = api_client.post("/api/backup/thumbnails/animated-pause")
+    assert res_pause.status_code == 200
+    assert "is_paused" in res_pause.json()
+
+    # Toggle again to unpause
+    res_resume = api_client.post("/api/backup/thumbnails/animated-pause")
+    assert res_resume.status_code == 200
+
+    res_cancel = api_client.post("/api/backup/thumbnails/animated-cancel")
+    assert res_cancel.status_code == 200
+    assert res_cancel.json()["success"] is True
+
+    # Check /api/system/status returns animated_thumbnails payload
+    res_sys = api_client.get("/api/system/status")
+    assert res_sys.status_code == 200
+    sdata = res_sys.json()
+    assert "animated_thumbnails" in sdata
+    assert "status" in sdata["animated_thumbnails"]
+    assert "queue_length" in sdata["animated_thumbnails"]
+
+    # Immediate fallback when wait=0
+    vid_uncompiled = os.path.join(dest, "uncompiled_clip.mp4")
+    _create_mock_video_image(vid_uncompiled)
+    res_fast = api_client.get(f"/api/backup/thumbnails/animated?path={vid_uncompiled}&wait=0")
+    assert res_fast.status_code in (200, 202)
+    assert res_fast.headers.get("x-thumbnail-status") == "generating"

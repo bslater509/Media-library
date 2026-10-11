@@ -17,6 +17,7 @@ from media_library.services.zip import (
     get_batch_zip_status,
 )
 from media_library.workers import (
+    animated_thumb_worker_instance,
     library_ops_worker_instance,
     metadata_worker_instance,
     thumb_hash_worker_instance,
@@ -86,6 +87,9 @@ async def get_all_system_status() -> dict[str, Any]:
     # 11. Library ops (moves / deletes / renames queued from the Library page)
     library_ops_data = library_ops_worker_instance.get_status()
 
+    # 12. Animated WebP thumbnails worker & queue
+    anim_thumb_data = animated_thumb_worker_instance.get_status()
+
     # Calculate overall activity flag so client can adapt poll interval
     is_active = (
         bool(transfers_data.get("active"))
@@ -103,6 +107,9 @@ async def get_all_system_status() -> dict[str, Any]:
         or batch_unzip_data.get("status") in ("running", "processing")
         or bool(library_ops_data.get("active"))
         or library_ops_data.get("queue_length", 0) > 0
+        or anim_thumb_data.get("status") == "generating"
+        or anim_thumb_data.get("queue_length", 0) > 0
+        or bool(anim_thumb_data.get("active"))
     )
 
     return {
@@ -111,6 +118,7 @@ async def get_all_system_status() -> dict[str, Any]:
         "transcode": transcode_data,
         "index": index_data,
         "thumbnails": thumb_data,
+        "animated_thumbnails": anim_thumb_data,
         "metadata": metadata_data,
         "duplicate_hash": duplicate_hash_data,
         "thumb_hash": thumb_hash_data,

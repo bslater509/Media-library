@@ -578,6 +578,48 @@
             </div>
           </div>
 
+          <!-- Section 2: Animated Previews Queue -->
+          <div id="activeAnimatedSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                <span>🎞️</span> Animated Previews Queue
+              </h4>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span id="animSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                <button id="toggleAnimPauseBtn" title="Pause or resume background animated preview generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                  Pause
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Animation Box -->
+            <div id="activeAnimBox" class="bg-slate-900 p-2.5 rounded-lg border border-violet-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <div class="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                  <span class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 font-mono shrink-0">Gen</span>
+                  <span class="text-violet-200 font-medium truncate" id="activeAnimFilename">clip.mp4</span>
+                </div>
+                <span class="text-violet-400 font-mono text-[10px] font-bold shrink-0" id="activeAnimPercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="activeAnimProgressBar" class="bg-violet-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="activeAnimDetails" class="truncate">Extracting frames</span>
+                <span id="activeAnimCount" class="text-violet-300">0 queued</span>
+              </div>
+            </div>
+
+            <!-- Queued Animations List -->
+            <div id="queuedAnimContainer" class="hidden flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Previews (<span id="queuedAnimCount">0</span>):</span>
+                <button id="cancelAllAnimBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition cursor-pointer">Cancel All</button>
+              </div>
+              <div id="queuedAnimList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+            </div>
+          </div>
+
           <!-- Section: Completed Activity -->
           <div class="flex flex-col gap-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
             <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed Activity</span>
@@ -617,6 +659,35 @@
                 <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
                   <span id="thumbCountsText">0 / 0</span>
                   <span id="thumbStatusLabel" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Worker Card 1b: Animated Preview Generator -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base">🎞️</span>
+                  <div class="min-w-0">
+                    <h4 class="text-xs font-bold text-white truncate">Animated Preview Generator</h4>
+                    <span id="animWorkerSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  </div>
+                </div>
+                <button id="toggleAnimWorkerPauseBtn" title="Pause or resume animated preview generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                  Pause
+                </button>
+              </div>
+              <div id="animWorkerProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="animWorkerCurrentFile">Idle</span>
+                  <span class="text-violet-400 font-mono text-[10px] font-bold shrink-0" id="animWorkerPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="animWorkerProgressBar" class="bg-violet-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="animWorkerCountsText">0 / 0</span>
+                  <span id="animWorkerStatusLabel" class="text-slate-500">Idle</span>
                 </div>
               </div>
             </div>
@@ -992,7 +1063,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=48"></script>
+  <script type="module" src="/static/dist/library.js?v=49"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}
