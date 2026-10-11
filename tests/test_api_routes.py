@@ -15,7 +15,7 @@ def test_html_views(api_client):
     assert "mediaInfoModal" in res_root.text
     assert 'data-cm="info"' in res_root.text
     assert "library.js?v=46" in res_root.text
-    assert "styles.css?v=39" in res_root.text
+    assert "styles.css?v=40" in res_root.text
     assert 'id="mobileHeader"' in res_root.text
     assert 'id="mobileControlsModal"' in res_root.text
     assert 'id="mobileControlsBtn"' in res_root.text
@@ -42,7 +42,7 @@ def test_html_views(api_client):
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
     assert "app.js?v=16" in res_sorter.text
-    assert "styles.css?v=39" in res_sorter.text
+    assert "styles.css?v=40" in res_sorter.text
     assert "sticky top-0 z-50" in res_sorter.text
     assert "themeCustomizerModal" in res_sorter.text
     assert "themeModalBtn" in res_sorter.text
@@ -58,7 +58,7 @@ def test_html_views(api_client):
     assert 'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto' in res_lib.text
     assert "ignoredDuplicatesModal" in res_lib.text
     assert 'id="ignoredDuplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
-    assert "styles.css?v=39" in res_lib.text
+    assert "styles.css?v=40" in res_lib.text
     assert 'id="libraryStickyHeader"' in res_lib.text
     assert 'id="scrollToTopBtn"' in res_lib.text
 
