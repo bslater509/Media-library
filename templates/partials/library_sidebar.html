@@ -1,10 +1,15 @@
-<aside id="sidebarDrawer" class="fixed inset-y-[48px] sm:inset-y-[52px] left-0 z-40 w-72 sm:w-80 bg-slate-900/95 border-r border-slate-800/80 p-3.5 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 md:static md:h-full shrink-0 shadow-2xl md:shadow-none">
+<aside id="sidebarDrawer" class="fixed top-12 sm:top-[52px] bottom-0 left-0 z-[45] w-72 sm:w-80 bg-slate-900 border-r border-slate-800/80 p-3.5 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 md:static md:h-full shrink-0 shadow-2xl md:shadow-none">
       
       <!-- Sidebar Header & Search -->
       <div class="flex flex-col gap-2.5 pb-3 border-b border-slate-800">
         <div class="flex items-center justify-between">
-          <span class="text-xs uppercase font-bold tracking-wider text-slate-400">Categories</span>
-          <span id="folderCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 folders</span>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-xs uppercase font-bold tracking-wider text-slate-400">Categories</span>
+            <span id="folderCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 folders</span>
+          </div>
+          <button id="closeSidebarBtn" type="button" class="md:hidden p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition active:scale-95" title="Close categories" aria-label="Close categories">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
         </div>
         <div class="relative">
           <input 

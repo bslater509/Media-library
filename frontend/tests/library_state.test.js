@@ -86,5 +86,12 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('galleryContentArea');
       expect(els).toHaveProperty('scrollToTopBtn');
     });
+
+    it('verifies sidebar drawer and backdrop element keys exist on els', () => {
+      expect(els).toHaveProperty('toggleSidebarBtn');
+      expect(els).toHaveProperty('closeSidebarBtn');
+      expect(els).toHaveProperty('sidebarDrawer');
+      expect(els).toHaveProperty('sidebarBackdrop');
+    });
   });
 });

@@ -12,7 +12,7 @@
   {{include 'partials/theme_head.html'}}
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/dist/styles.css?v=37">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=38">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -137,12 +137,11 @@
 
   <div class="flex-1 min-h-0 flex max-w-[1920px] w-full mx-auto relative overflow-hidden">
     
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden md:hidden" style="touch-action: none;"></div>
+
     <!-- Left Sidebar: Folder Browser -->
     {{include 'partials/library_sidebar.html'}}
-
-
-    <!-- Mobile Sidebar Backdrop Overlay -->
-    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden md:hidden"></div>
 
     <!-- Right Main Stage: Media Gallery -->
     <main id="mainStage" class="flex-1 flex flex-col min-w-0 h-full overflow-y-auto relative">
@@ -358,7 +357,7 @@
         type="button"
         title="Scroll to top" 
         aria-label="Scroll to top"
-        class="fixed bottom-6 right-6 z-40 p-2.5 sm:p-3 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-xl border border-emerald-400/40 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 transform translate-y-3 hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer group"
+        class="fixed bottom-6 right-6 z-30 p-2.5 sm:p-3 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-xl border border-emerald-400/40 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 transform translate-y-3 hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer group"
       >
         <svg class="w-4 h-4 sm:w-5 sm:h-5 transition-transform group-hover:-translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
@@ -944,7 +943,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=43"></script>
+  <script type="module" src="/static/dist/library.js?v=44"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>

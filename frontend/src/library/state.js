@@ -153,6 +153,7 @@
     folderSearchInput: document.getElementById('folderSearchInput'),
     rootFolderList: document.getElementById('rootFolderList'),
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
+    closeSidebarBtn: document.getElementById('closeSidebarBtn'),
     sidebarDrawer: document.getElementById('sidebarDrawer'),
     sidebarBackdrop: document.getElementById('sidebarBackdrop'),
     breadcrumbNav: document.getElementById('breadcrumbNav'),

@@ -459,12 +459,37 @@ header.sticky {
   z-index: 30 !important;
 }
 
+/* Mobile Sidebar Drawer and Backdrop stacking order guarantee */
+#sidebarBackdrop {
+  z-index: 40 !important;
+}
+
+#sidebarDrawer {
+  z-index: 45 !important;
+}
+
+@media (max-width: 767px) {
+  #sidebarDrawer {
+    top: 48px;
+    bottom: 0;
+    padding-bottom: max(1rem, var(--sab, env(safe-area-inset-bottom, 0px)));
+  }
+}
+
+@media (min-width: 640px) and (max-width: 767px) {
+  #sidebarDrawer {
+    top: 52px;
+  }
+}
+
 /* Floating Scroll to Top button with safe-area spacing and smooth spring transition */
 #scrollToTopBtn {
+  z-index: 30 !important;
   bottom: max(1.5rem, calc(var(--sab, 0px) + 1.25rem));
   right: max(1.5rem, calc(var(--sar, 0px) + 1.25rem));
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
 }
+
 
 
 

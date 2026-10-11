@@ -152,6 +152,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
   // Mobile Sidebar Drawer
   function setSidebarOpen(open) {
+    if (!els.sidebarDrawer || !els.sidebarBackdrop) return;
     if (open) {
       els.sidebarDrawer.classList.remove('-translate-x-full');
       els.sidebarBackdrop.classList.remove('hidden');
@@ -2043,6 +2044,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (e.key === 'Escape') {
         e.preventDefault();
         closeThemeModal();
+        return;
+      }
+    }
+
+    if (els.sidebarDrawer && !els.sidebarDrawer.classList.contains('-translate-x-full')) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSidebarOpen(false);
         return;
       }
     }
@@ -5818,9 +5827,19 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       });
     }
 
-    // Mobile Drawer Toggle
-    els.toggleSidebarBtn.addEventListener('click', () => setSidebarOpen(true));
-    els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+    // Mobile Drawer Toggle & Close
+    if (els.toggleSidebarBtn) {
+      els.toggleSidebarBtn.addEventListener('click', () => {
+        const isOpen = els.sidebarDrawer && !els.sidebarDrawer.classList.contains('-translate-x-full');
+        setSidebarOpen(!isOpen);
+      });
+    }
+    if (els.closeSidebarBtn) {
+      els.closeSidebarBtn.addEventListener('click', () => setSidebarOpen(false));
+    }
+    if (els.sidebarBackdrop) {
+      els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+    }
 
     // Tasks tab switcher
     const switchTasksTab = (tabName) => {
