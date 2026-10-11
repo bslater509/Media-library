@@ -8,6 +8,9 @@ import {
   SIDEBAR_TREE_KEY,
   loadExpandedFolders,
   persistExpandedFolders,
+  ANIMATED_THUMBS_KEY,
+  loadAnimatedThumbs,
+  persistAnimatedThumbs,
   state,
   els,
 } from '../src/library/state.js';
@@ -119,6 +122,28 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('thumbChooserPreviewImg');
       expect(els).toHaveProperty('thumbChooserPreviewVideo');
       expect(els).toHaveProperty('thumbChooserCandCount');
+    });
+
+    it('verifies animated preview toolbar, sheet and batch button element keys exist on els', () => {
+      expect(els).toHaveProperty('toggleAnimatedPreviewsBtn');
+      expect(els).toHaveProperty('mobileSheetAnimatedPreviewsToggle');
+      expect(els).toHaveProperty('generateFolderAnimatedBtn');
+    });
+  });
+
+  describe('animated thumbnails persistence', () => {
+    it('defaults to false when nothing is in localStorage', () => {
+      expect(loadAnimatedThumbs()).toBe(false);
+    });
+
+    it('persists and loads animated preview preference', () => {
+      persistAnimatedThumbs(true);
+      expect(loadAnimatedThumbs()).toBe(true);
+      expect(localStorage.getItem(ANIMATED_THUMBS_KEY)).toBe('true');
+
+      persistAnimatedThumbs(false);
+      expect(loadAnimatedThumbs()).toBe(false);
+      expect(localStorage.getItem(ANIMATED_THUMBS_KEY)).toBe('false');
     });
   });
 });

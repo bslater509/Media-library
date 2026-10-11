@@ -1,5 +1,4 @@
-"""FastAPI router for Media Library file/folder admin: rename, delete, thumbnail controls."""
-
+import asyncio
 import logging
 import os
 import shutil
@@ -18,7 +17,10 @@ from media_library.db.indexer import (
     remove_file_from_index,
     update_file_in_index,
 )
-from media_library.services.ffmpeg_service import extract_frame_poster
+from media_library.services.ffmpeg_service import (
+    extract_frame_poster,
+    generate_animated_preview,
+)
 from media_library.services.media_service import validate_backup_path
 from media_library.services.zip import (
     get_zip_cache_dir,
@@ -294,5 +296,76 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         "path": real_path,
         "timestamp": timestamp,
         "thumb_url": f"/api/backup/thumbnail{thumb_query}",
+    }
+
+
+class AnimatedPreviewRequest(BaseModel):
+    path: str
+
+
+class BatchAnimatedPreviewRequest(BaseModel):
+    folder_path: str | None = None
+    folder: str | None = None
+
+
+@router.post("/api/backup/thumbnails/generate-animated")
+async def trigger_animated_thumbnail_generate(req: AnimatedPreviewRequest):
+    real_path = validate_backup_path(req.path)
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, detail="Only video files support animated previews"
+        )
+
+    zip_p, inner_p = split_zip_path(real_path)
+    if not (zip_p and inner_p):
+        if not os.path.exists(real_path) or not os.path.isfile(real_path):
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+    anim = await generate_animated_preview(real_path)
+    if not anim or not anim.exists():
+        raise HTTPException(
+            status_code=500, detail="Failed to generate animated preview"
+        )
+
+    v_tag = int(time.time())
+    return {
+        "success": True,
+        "path": real_path,
+        "animated_url": f"/api/backup/thumbnails/animated?path={urllib.parse.quote(real_path)}&v={v_tag}",
+    }
+
+
+@router.post("/api/backup/thumbnails/batch-animated")
+async def trigger_batch_animated_preview_generate(req: BatchAnimatedPreviewRequest):
+    videos_to_process: list[str] = []
+    target_folder = req.folder_path or req.folder
+    with db_conn() as conn:
+        if target_folder:
+            real_folder = validate_backup_path(target_folder)
+            rows = conn.execute(
+                "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
+                (real_folder,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT path FROM files WHERE type = 'video' LIMIT 500"
+            ).fetchall()
+        videos_to_process = [r["path"] for r in rows]
+
+    async def _process_batch(paths: list[str]):
+        for p in paths:
+            try:
+                await generate_animated_preview(p)
+            except Exception as e:
+                logger.warning(f"Error in batch animated preview for {p}: {e}")
+
+    asyncio.create_task(_process_batch(videos_to_process))
+
+    return {
+        "success": True,
+        "count": len(videos_to_process),
+        "queued": len(videos_to_process),
+        "message": f"Started generating animated previews for {len(videos_to_process)} video(s)",
     }
 

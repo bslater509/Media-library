@@ -19,7 +19,9 @@ from media_library.core.http_stream import stream_file_with_range
 from media_library.db.connection import db_conn
 from media_library.services.ffmpeg_service import (
     extract_candidate_frame,
+    generate_animated_preview,
     generate_thumbnail,
+    get_animated_preview_path,
     get_candidate_cache_path,
     get_thumbnail_path_fast,
     probe_video_meta,
@@ -340,4 +342,72 @@ async def get_thumbnail_frame(
         str(cand_path),
         media_type="image/jpeg",
         headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+    )
+
+
+@router.api_route("/api/backup/thumbnails/animated", methods=["GET", "HEAD"])
+async def get_animated_thumbnail(
+    path: str = Query(...),
+    mtime: float | None = Query(None),
+    size: int | None = Query(None),
+    v: str | None = Query(None),
+    request: Request = None,
+):
+    """Returns an animated looping WebP preview for a video file, generating on-demand if needed."""
+    real_path = validate_backup_path(path)
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, detail="Only video files support animated previews"
+        )
+
+    zip_p, inner_p = split_zip_path(real_path)
+    if not (zip_p and inner_p):
+        file_exists = await asyncio.to_thread(os.path.exists, real_path)
+        if not file_exists:
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+    anim_path = await asyncio.to_thread(get_animated_preview_path, real_path, mtime, size)
+    if not (anim_path.exists() and anim_path.stat().st_size > 0):
+        gen_path = await generate_animated_preview(real_path)
+        if gen_path and gen_path.exists() and gen_path.stat().st_size > 0:
+            anim_path = gen_path
+        else:
+            # Fallback to static thumbnail if animated generation failed
+            fallback_thumb = await generate_thumbnail(real_path, is_video=True, mtime=mtime, size=size)
+            if fallback_thumb and fallback_thumb.exists():
+                if request and request.method == "HEAD":
+                    return Response(
+                        status_code=200,
+                        headers={
+                            "Content-Length": str(fallback_thumb.stat().st_size),
+                            "Content-Type": "image/jpeg",
+                        },
+                    )
+                return FileResponse(
+                    str(fallback_thumb),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+                )
+            raise HTTPException(status_code=500, detail="Could not generate animated preview")
+
+    if request and request.method == "HEAD":
+        return Response(
+            status_code=200,
+            headers={
+                "Content-Length": str(anim_path.stat().st_size),
+                "Content-Type": "image/webp",
+            },
+        )
+
+    cache_header = (
+        f"public, max-age={THUMB_CACHE_MAX_AGE_IMMUTABLE}, immutable"
+        if (mtime is not None or v is not None)
+        else f"public, max-age={MEDIA_CACHE_MAX_AGE}"
+    )
+
+    return FileResponse(
+        str(anim_path),
+        media_type="image/webp",
+        headers={"Cache-Control": cache_header},
     )

@@ -274,6 +274,9 @@
               <button id="filterImagesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
                 🖼️ Images <span id="countImagesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
               </button>
+              <button id="toggleAnimatedPreviewsBtn" title="Toggle animated WebP previews on video tiles" class="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap flex items-center gap-1">
+                <span>🎞️</span><span class="hidden sm:inline">Animated</span>
+              </button>
             </div>
 
             <!-- Action Buttons (Convert Non-MP4s & Cache Thumbs) -->
@@ -773,6 +776,21 @@
               </button>
             </div>
 
+            <!-- Tool Card: Batch Animated Video Previews -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🎞️</span>
+                  <h4 class="text-xs font-bold text-white">Generate Animated Previews</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Sample candidate frames and compile looping animated WebPs (480px, 2 fps) for videos in current folder.</p>
+              </div>
+              <button id="generateFolderAnimatedBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Generate animated WebP previews for videos in current folder">
+                <span>🎞️</span>
+                <span id="generateFolderAnimatedBtnText">Generate Animated Previews</span>
+              </button>
+            </div>
+
             <!-- Tool Card 4: Batch Compress Image Folders -->
             <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
               <div class="flex flex-col gap-1">
@@ -940,6 +958,7 @@
   <div id="contextMenu" class="hidden fixed z-[60] min-w-[160px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5">
     <button data-cm="info" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">ℹ️ Media Info</button>
     <button data-cm="set-poster" class="cm-item hidden items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">📷 Set Poster Frame</button>
+    <button data-cm="gen-animated" class="cm-item hidden items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">🎞️ Generate Animated Preview</button>
     <button data-cm="download" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">⬇️ Download</button>
     <button data-cm="move" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">📁 Move to…</button>
     <button data-cm="rename" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">✏️ Rename</button>
@@ -973,7 +992,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=46"></script>
+  <script type="module" src="/static/dist/library.js?v=47"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

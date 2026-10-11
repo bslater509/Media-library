@@ -1,6 +1,6 @@
 import "../../../static/styles.css";
 import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate } from './utils.js';
-import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, state, els } from './state.js';
+import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 
 
   // Toast Notifications
@@ -167,6 +167,53 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     state.tileScale = TILE_SCALES[next];
     applyTileScale();
   }
+
+  // Reflect animated previews toggle state on toolbar button and mobile sheet
+  function syncAnimatedPreviewsUI() {
+    if (els.toggleAnimatedPreviewsBtn) {
+      if (state.animatedThumbs) {
+        els.toggleAnimatedPreviewsBtn.className = 'px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-violet-300 bg-violet-950/60 border border-violet-500/40 shadow-sm transition whitespace-nowrap flex items-center gap-1';
+      } else {
+        els.toggleAnimatedPreviewsBtn.className = 'px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap flex items-center gap-1';
+      }
+    }
+    if (els.mobileSheetAnimatedPreviewsToggle) {
+      els.mobileSheetAnimatedPreviewsToggle.checked = !!state.animatedThumbs;
+    }
+  }
+
+  // Update existing video tiles on screen when toggling animated previews
+  function updateCardsAnimatedThumbnails() {
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card') : [];
+    cards.forEach(card => {
+      if (card.dataset.fileType !== 'video') return;
+      const img = card.querySelector('.card-thumb');
+      const badge = card.querySelector('.card-anim-badge');
+      const path = card.dataset.path;
+      if (!img || !path) return;
+
+      if (state.animatedThumbs) {
+        img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`;
+        if (badge) badge.classList.remove('hidden');
+      } else {
+        const fallback = img.dataset.fallbackThumb;
+        if (fallback) {
+          img.src = fallback;
+        }
+        if (badge) badge.classList.add('hidden');
+      }
+    });
+  }
+
+  // Apply animated previews toggle: persist and update active media tiles
+  function setAnimatedPreviews(enabled) {
+    state.animatedThumbs = !!enabled;
+    persistAnimatedThumbs(state.animatedThumbs);
+    syncAnimatedPreviewsUI();
+    updateCardsAnimatedThumbnails();
+    showToast(state.animatedThumbs ? 'Animated previews enabled' : 'Animated previews disabled', 'info');
+  }
+  window.setAnimatedPreviews = setAnimatedPreviews;
 
   // Mobile Sidebar Drawer
   function setSidebarOpen(open) {
@@ -976,6 +1023,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       card.dataset.index = globalIdx;
       card.dataset.path = file.path;
       card.dataset.name = file.name;
+      card.dataset.fileType = file.type;
 
       card.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -984,6 +1032,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       attachLongPress(card, () => ({ path: file.path, name: file.name, kind: 'file' }));
 
       const isVid = file.type === 'video';
+      const useAnim = isVid && state.animatedThumbs;
+      const thumbSrc = useAnim
+        ? `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`
+        : file.thumb_url;
       const extLabel = file.ext.toUpperCase().replace('.', '');
       const resLabel = getResolutionLabel(file.width, file.height);
       const durLabel = isVid && file.duration ? formatDuration(file.duration) : '';
@@ -993,11 +1045,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         <!-- Thumbnail / Player Trigger Area -->
         <div class="card-thumb-wrap relative w-full bg-slate-950 overflow-hidden cursor-pointer select-none" style="height: ${Math.round(row.height)}px">
           <img 
-            src="${file.thumb_url}" 
+            src="${thumbSrc}" 
+            data-fallback-thumb="${file.thumb_url}"
             alt="${file.name}" 
             loading="lazy" 
             class="card-thumb w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'%2364748b\\' stroke-width=\\'2\\'><rect width=\\'18\\' height=\\'18\\' x=\\'3\\' y=\\'3\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg>';"
+            onerror="if (this.dataset.fallbackThumb && this.src !== this.dataset.fallbackThumb) { this.src = this.dataset.fallbackThumb; } else { this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'%2364748b\\' stroke-width=\\'2\\'><rect width=\\'18\\' height=\\'18\\' x=\\'3\\' y=\\'3\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg>'; }"
           />
 
           <!-- Video Play Icon & Badge -->
@@ -1009,11 +1062,16 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
             </div>
           ` : ''}
 
-          <!-- Top-Left Badges (Extension, Resolution, FPS) -->
+          <!-- Top-Left Badges (Extension, Resolution, FPS, ANIM) -->
           <div class="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
             <span class="card-ext-badge px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold ${file.needs_transcode ? 'text-amber-400 border-amber-500/30' : (isVid ? 'text-emerald-400 border-emerald-500/30' : 'text-slate-300 border-slate-700')} border">
               ${extLabel}
             </span>
+            ${isVid ? `
+              <span class="card-anim-badge ${useAnim ? '' : 'hidden'} px-1 py-0.5 rounded bg-violet-950/80 backdrop-blur-md text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30 shadow">
+                ANIM
+              </span>
+            ` : ''}
             ${resLabel ? `
               <span class="card-res-badge px-1.5 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[9px] font-mono font-bold text-sky-300 border border-sky-500/30 shadow">
                 ${resLabel}
@@ -2484,6 +2542,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       posterBtn.classList.toggle('hidden', !isVid);
       posterBtn.classList.toggle('flex', isVid);
     }
+    const animBtn = els.contextMenu ? els.contextMenu.querySelector('button[data-cm="gen-animated"]') : null;
+    if (animBtn) {
+      animBtn.classList.toggle('hidden', !isVid);
+      animBtn.classList.toggle('flex', isVid);
+    }
     els.contextMenu.style.left = `${x}px`;
     els.contextMenu.style.top = `${y}px`;
     els.contextMenu.classList.remove('hidden');
@@ -2513,6 +2576,72 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         openFancybox(idx);
         showToast("Scrub to desired frame and click 'Set Poster' (or press P)", 'info');
       }
+    } else if (action === 'gen-animated') {
+      generateAnimatedPreviewForTarget(target);
+    }
+  }
+
+  // Trigger Animated Preview Generation for Current Folder
+  async function triggerFolderAnimatedPreviews() {
+    try {
+      if (els.generateFolderAnimatedBtn) {
+        els.generateFolderAnimatedBtn.disabled = true;
+      }
+      const res = await fetch('/api/backup/thumbnails/batch-animated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: state.currentPath || '', recursive: false }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || `Queued ${data.queued} video(s) for animated preview generation`, 'success');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Failed to queue animated preview generation', 'error');
+      }
+    } catch (err) {
+      console.error('Error triggering folder animated previews:', err);
+      showToast('Failed to queue animated preview generation', 'error');
+    } finally {
+      if (els.generateFolderAnimatedBtn) {
+        els.generateFolderAnimatedBtn.disabled = false;
+      }
+    }
+  }
+
+  // Generate Animated Preview for a Single Video Target
+  async function generateAnimatedPreviewForTarget(target) {
+    if (!target || !target.path) return;
+    try {
+      showToast(`Generating animated preview for ${target.name}...`, 'info');
+      const res = await fetch('/api/backup/thumbnails/generate-animated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: target.path }),
+      });
+      if (res.ok) {
+        showToast(`Animated preview generated for ${target.name}`, 'success');
+        const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card') : [];
+        for (const card of cards) {
+          if (card.dataset.path === target.path) {
+            const img = card.querySelector('.card-thumb');
+            if (img) {
+              img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(target.path)}&t=${Date.now()}`;
+            }
+            const badge = card.querySelector('.card-anim-badge');
+            if (badge && state.animatedThumbs) {
+              badge.classList.remove('hidden');
+            }
+            break;
+          }
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Failed to generate animated preview', 'error');
+      }
+    } catch (err) {
+      console.error('Error generating animated preview:', err);
+      showToast('Failed to generate animated preview', 'error');
     }
   }
 
@@ -6221,6 +6350,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       });
     }
 
+    // Animated Previews Toggle in Sheet
+    if (els.mobileSheetAnimatedPreviewsToggle) {
+      els.mobileSheetAnimatedPreviewsToggle.addEventListener('change', (e) => {
+        setAnimatedPreviews(e.target.checked);
+      });
+    }
+
     // Tab 3: Folder Actions Triggers
     if (els.mobileUploadFilesTrigger) {
       els.mobileUploadFilesTrigger.addEventListener('click', () => {
@@ -6453,6 +6589,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     // Cache Current Folder Thumbnails Button
     if (els.generateFolderThumbsBtn) {
       els.generateFolderThumbsBtn.addEventListener('click', triggerFolderThumbnails);
+    }
+
+    // Generate Current Folder Animated Previews Button
+    if (els.generateFolderAnimatedBtn) {
+      els.generateFolderAnimatedBtn.addEventListener('click', triggerFolderAnimatedPreviews);
     }
 
     // Pause / Resume WebP Optimizer
@@ -6738,6 +6879,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (els.tileSizeDownBtn) els.tileSizeDownBtn.addEventListener('click', () => stepTileScale(-1));
     if (els.tileSizeUpBtn) els.tileSizeUpBtn.addEventListener('click', () => stepTileScale(1));
     syncTileScaleUI();
+
+    // Animated Previews Toggle Button
+    if (els.toggleAnimatedPreviewsBtn) {
+      els.toggleAnimatedPreviewsBtn.addEventListener('click', () => {
+        setAnimatedPreviews(!state.animatedThumbs);
+      });
+    }
+    syncAnimatedPreviewsUI();
 
     // Filter Buttons (All, Videos, Images)
     const setFilter = (type) => {

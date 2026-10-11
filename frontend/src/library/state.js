@@ -36,6 +36,22 @@
     } catch (e) { /* ignore quota/security errors */ }
   }
 
+  export const ANIMATED_THUMBS_KEY = 'lib_animated_thumbs';
+
+  export function loadAnimatedThumbs() {
+    try {
+      return localStorage.getItem(ANIMATED_THUMBS_KEY) === 'true';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  export function persistAnimatedThumbs(val) {
+    try {
+      localStorage.setItem(ANIMATED_THUMBS_KEY, val ? 'true' : 'false');
+    } catch (e) { /* ignore */ }
+  }
+
   export const state = {
     basePath: '',
     currentPath: '',
@@ -48,6 +64,7 @@
     _gridPendingRowEl: null,
     _gridPendingStart: 0,
     tileScale: loadTileScale(),
+    animatedThumbs: loadAnimatedThumbs(),
     activeFilter: 'all', // 'all' | 'video' | 'image'
     activeSort: 'name_asc',
     searchScope: 'current', // 'current' | 'global'
@@ -560,4 +577,9 @@
     thumbChooserGrid: document.getElementById('thumbChooserGrid'),
     thumbChooserFileName: document.getElementById('thumbChooserFileName'),
     thumbChooserCandCount: document.getElementById('thumbChooserCandCount'),
+
+    // Animated WebP Previews
+    toggleAnimatedPreviewsBtn: document.getElementById('toggleAnimatedPreviewsBtn'),
+    mobileSheetAnimatedPreviewsToggle: document.getElementById('mobileSheetAnimatedPreviewsToggle'),
+    generateFolderAnimatedBtn: document.getElementById('generateFolderAnimatedBtn'),
   };
