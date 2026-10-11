@@ -15,8 +15,9 @@ def test_html_views(api_client):
     assert "mediaInfoModal" in res_root.text
     assert 'data-cm="info"' in res_root.text
     assert 'data-cm="download"' in res_root.text
-    assert "library.js?v=36" in res_root.text
+    assert "library.js?v=37" in res_root.text
     assert "sticky top-0 z-50" in res_root.text
+    assert "h-[100dvh] overflow-hidden" in res_root.text
     assert "themeCustomizerModal" in res_root.text
     assert "themeModalBtn" in res_root.text
 
@@ -27,7 +28,7 @@ def test_html_views(api_client):
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
-    assert "app.js?v=15" in res_sorter.text
+    assert "app.js?v=16" in res_sorter.text
     assert "sticky top-0 z-50" in res_sorter.text
     assert "themeCustomizerModal" in res_sorter.text
     assert "themeModalBtn" in res_sorter.text
@@ -43,7 +44,7 @@ def test_html_views(api_client):
     assert 'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto' in res_lib.text
     assert "ignoredDuplicatesModal" in res_lib.text
     assert 'id="ignoredDuplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
-    assert "styles.css?v=35" in res_lib.text
+    assert "styles.css?v=36" in res_lib.text
 
 
 def test_config_and_destinations(api_client, tmp_path):

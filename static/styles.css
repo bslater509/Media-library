@@ -437,3 +437,19 @@ header.sticky {
   z-index: 50 !important;
 }
 
+/* Modal scroll isolation: prevent overscroll from scrolling background page */
+.modal-scroll-lock {
+  overflow: hidden !important;
+}
+
+#themeCustomizerModal,
+#themeCustomizerModal .overflow-y-auto,
+#tasksModal .overflow-y-auto,
+#duplicatesModal .overflow-y-auto,
+#batchZipModal .overflow-y-auto,
+#batchUnpackModal .overflow-y-auto,
+#emptyFoldersModal .overflow-y-auto {
+  overscroll-behavior: contain !important;
+}
+
+

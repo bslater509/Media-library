@@ -46,12 +46,11 @@
    - Zero-delay live updates via CSS custom properties + dynamic style rules, zero flash on reload via `<head>` bootstrapping, and persistence in `localStorage` (`lib_theme_accent`, `lib_theme_base`).
    - Accessible via the `🎨 Theme` button in top navigation or shortcut `T`.
    - Mobile touch enhancements: double-tap video sides to seek ±5s with animated ripple bubbles (`⏪ -5s` / `⏩ +5s`), touch swipe carousel navigation, and touch-adapted tap targets.
-9. **UI Stacking Context & Top Navigation Layering Hierarchy**:
-   - Fixed/sticky navigation header (`<header class="sticky top-0 z-50">`) is pinned at `z-50` with an explicit CSS declaration (`header.sticky { position: sticky !important; top: 0 !important; z-index: 50 !important; }`), guaranteeing it never sinks beneath page content, breadcrumb bars, drawers, or scrolling media tiles across desktop and mobile.
-   - Page containers, sidebars, breadcrumbs, and floating toolbars remain strictly below `z-50` (or `z-30`/`z-40`).
-   - Transfer dropdowns sit at `z-[70]` with backdrops at `z-[60]`.
-   - Fullscreen and dialog overlays sit cleanly above the header: full-page workflow modals (`duplicatesModal`, `batchZipModal`, `themeCustomizerModal`, `tasksModal`) at `z-[80]`, and high-priority action dialogs (`renameModal`, `mediaInfoModal`, `moveModal`, `deleteModal`) at `z-[1200]`.
-   - Modals use pure `hidden` when closed (without conflicting static `.flex` classes) and toggle `flex` on demand in JavaScript.
+9. **UI Stacking Context, Solid Header & Viewport Scroll Lockdown**:
+   - Navigation header (`<header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 ... shrink-0">`) is pinned at `z-50` with an explicit CSS declaration (`header.sticky { position: sticky !important; top: 0 !important; z-index: 50 !important; }`), rendered with a solid opaque dark surface (`s[950]` / `#000000` in OLED) so content never bleeds through.
+   - Dual-pane Media Library layout locks document scrolling to prevent body overflow: `body` uses `h-screen h-[100dvh] overflow-hidden flex flex-col`, header takes `flex-none`, sidebar is `md:h-full`, and main stage is `h-full min-h-0 flex-1 overflow-y-auto`. Content scrolls strictly within `<main>` below the top bar and never slips under the navigation header.
+   - Modal scroll isolation: modals apply `.modal-scroll-lock` (`overflow: hidden !important`) to `document.body` and set `overscroll-behavior: contain !important` on scrollable bodies, preventing theme/task modal interactions from causing background overscroll.
+   - Transfer dropdowns sit at `z-[70]` with backdrops at `z-[60]`. Full-page modals sit at `z-[80]` and high-priority action dialogs at `z-[1200]`.
 
 
 ### Tech Stack

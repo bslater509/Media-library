@@ -5270,12 +5270,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   function openThemeModal() {
     if (!els.themeCustomizerModal) return;
     renderThemeModalPickers();
+    document.body.classList.add('modal-scroll-lock');
     els.themeCustomizerModal.classList.remove('hidden');
     els.themeCustomizerModal.classList.add('flex');
   }
 
   function closeThemeModal() {
     if (!els.themeCustomizerModal) return;
+    document.body.classList.remove('modal-scroll-lock');
     els.themeCustomizerModal.classList.add('hidden');
     els.themeCustomizerModal.classList.remove('flex');
   }

@@ -2629,11 +2629,13 @@ function initThemeCustomizer() {
 
   function openModal() {
     renderPickers();
+    document.body.classList.add("modal-scroll-lock");
     themeModal.classList.remove("hidden");
     themeModal.classList.add("flex");
   }
 
   function closeModal() {
+    document.body.classList.remove("modal-scroll-lock");
     themeModal.classList.add("hidden");
     themeModal.classList.remove("flex");
   }

@@ -226,8 +226,9 @@
         .border-teal-500\\/30 { border-color: ${accent.accentSoft} !important; }
         .bg-teal-500\\/15 { background-color: ${accent.accentSoft} !important; }
 
-        /* Surface overrides (preserves translucency for frosted headers & modal overlays) */
+        /* Surface overrides (preserves clean solid navigation bar & modal overlays) */
         body { background-color: ${s[950]} !important; color: ${s[100]} !important; }
+        header { background-color: ${s[950]} !important; }
         .bg-slate-950 { background-color: ${s[950]} !important; }
         .bg-slate-950\\/80 { background-color: ${hexToRgba(s[950], 0.8)} !important; }
         .bg-slate-950\\/70 { background-color: ${hexToRgba(s[950], 0.7)} !important; }
@@ -247,6 +248,7 @@
       if (baseKey === 'oled') {
         css += `
           body::before { display: none !important; }
+          header { background-color: #000000 !important; }
           .bg-slate-950 { background-color: #000000 !important; }
           .bg-slate-900 { background-color: #050506 !important; }
           .bg-slate-800 { background-color: #121214 !important; }
@@ -254,6 +256,7 @@
       }
       el.textContent = css;
     }
+    applyDynamicOverrides(savedAccent, savedBase);
 
     // Expose Global Theme API
     window.THEME_MANAGER = {
