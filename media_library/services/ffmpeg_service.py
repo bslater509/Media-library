@@ -451,6 +451,25 @@ async def generate_thumbnail(
                     except Exception:
                         pass
 
+            if not is_video and (
+                not temp_thumb.exists() or temp_thumb.stat().st_size == 0
+            ):
+
+                def _pil_fallback():
+                    try:
+                        from PIL import Image
+
+                        with Image.open(input_path) as im:
+                            im = im.convert("RGB")
+                            im.thumbnail((360, 360))
+                            im.save(str(temp_thumb), "JPEG", quality=85)
+                    except Exception as err:
+                        logger.debug(
+                            f"PIL thumbnail fallback failed for {input_path}: {err}"
+                        )
+
+                await asyncio.to_thread(_pil_fallback)
+
             if temp_thumb.exists() and temp_thumb.stat().st_size > 0:
                 temp_thumb.rename(thumb_path)
                 if update_db:

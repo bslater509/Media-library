@@ -31,7 +31,8 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     backup_staging = data_dir / "backup_staging"
     zip_staging = data_dir / "zip_staging"
     zip_cache = data_dir / "cache" / "zips"
-    for d in (transcode_dir, webp_staging, backup_staging, zip_staging, zip_cache):
+    upload_staging = data_dir / "upload_staging"
+    for d in (transcode_dir, webp_staging, backup_staging, zip_staging, zip_cache, upload_staging):
         d.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("TRANSCODE_DIR", str(transcode_dir))
@@ -39,6 +40,7 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setenv("BACKUP_STAGING_DIR", str(backup_staging))
     monkeypatch.setenv("ZIP_STAGING_DIR", str(zip_staging))
     monkeypatch.setenv("ZIP_CACHE_DIR", str(zip_cache))
+    monkeypatch.setenv("UPLOAD_STAGING_DIR", str(upload_staging))
 
     monkeypatch.setattr(config_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
     monkeypatch.setattr(config_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
@@ -46,6 +48,10 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(config_mod, "BACKUP_STAGING_DIR", backup_staging)
     monkeypatch.setattr(config_mod, "ZIP_STAGING_DIR", zip_staging)
     monkeypatch.setattr(config_mod, "ZIP_CACHE_DIR", zip_cache)
+    monkeypatch.setattr(config_mod, "UPLOAD_STAGING_DIR", upload_staging)
+
+    upload_service_mod = importlib.import_module("media_library.services.upload_service")
+    monkeypatch.setattr(upload_service_mod, "UPLOAD_STAGING_DIR", upload_staging)
 
     monkeypatch.setattr(state_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     monkeypatch.setattr(indexer_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)

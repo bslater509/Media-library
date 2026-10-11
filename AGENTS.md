@@ -18,6 +18,7 @@
    - Fullscreen lightbox viewer with HTTP 206 byte-range media streaming, playback speed control (`0.5x`–`2.0x`), loop toggle (`L`), custom video poster frame capture (`P` / "Set Poster"), persistent volume/mute (`M`), direct file download, in-viewer "Move to...", inline rename (`R`), deletion (`D`), frame stepping (`,` and `.`), and quick metadata inspection (`I`).
    - Media Details & EXIF Inspector Modal: Technical specs breakdown (resolution, aspect ratio, duration, estimated bitrate, video/audio codecs, framerate, container), EXIF capture time vs modification timestamp, and full path with one-click clipboard copying.
    - File management: right-click (desktop) or tap-and-hold (mobile) context menu with Media Info / Set Poster Frame / Download / Move / Rename / Delete; multi-select (checkbox, Ctrl/Cmd-click, Shift-range, a Select All / Deselect All toolbar button, or Ctrl/Cmd+A) bulk Move / Delete / Rename / WebP; plus folder creation, rename, recursive delete, and empty folder cleanup via the "Clean Empty Folders" card in the Background Tasks modal.
+   - Chunked File & Mobile Upload: In-browser chunked upload engine supporting single/multi-file uploads, drag-and-drop, and mobile Safari/iOS native photo and video picking with full `.heic`/`.heif`/`.dng` photo support and `.mov`/`.mp4` video support; atomic staging with FUSE-safe renaming, collision handling (`auto-rename`, `skip`, `overwrite`), and instant post-upload folder re-indexing.
    - Background Tasks & System Status Modal: Centered solid dark dialog (replacing legacy glassmorphic popover) structured into 3 categorized tabs ("Active & Queues", "Background Workers", and "Tools & Maintenance") with live badge counts, smart default tab selection, uncluttered empty states, and responsive 2-column card layouts.
 2. **Incoming Video Sorter Workflow**:
    - High-speed review (<50ms per item) with instant pre-buffering and autoplay.
@@ -58,7 +59,7 @@
 - **Web Framework**: FastAPI (v0.110+) with Uvicorn ASGI server and Starlette
 - **Concurrency & Threads**: AnyIO (expanded threadpool tokens to 100), asyncio, Python `threading`
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
-- **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL), ImageHash, NumPy, SciPy
+- **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
 - **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video
 - **Testing**: Pytest (v8.0+) with `conftest.py` sandboxing fixtures
 

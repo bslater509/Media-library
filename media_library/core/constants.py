@@ -21,8 +21,27 @@ VIDEO_EXTENSIONS = {
     ".asf",
 }
 
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+except Exception:
+    pass
+
 # Supported image extensions
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg"}
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".avif",
+    ".svg",
+    ".heic",
+    ".heif",
+    ".dng",
+}
 
 # Browser-native streaming extensions
 NATIVE_EXTENSIONS = {".mp4", ".m4v", ".webm", ".mov"}

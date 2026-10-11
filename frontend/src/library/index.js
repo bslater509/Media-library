@@ -6105,13 +6105,25 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         e.stopPropagation();
         uploadDropdownMenu.classList.toggle('hidden');
       });
-      document.addEventListener('click', () => {
-        if(uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
+      document.addEventListener('click', (e) => {
+        if (uploadDropdownMenu && !uploadDropdownMenu.contains(e.target) && e.target !== uploadDropdownBtn) {
+          uploadDropdownMenu.classList.add('hidden');
+        }
       });
     }
 
-    if (uploadFilesBtn) uploadFilesBtn.addEventListener('click', () => hiddenFileInput.click());
-    if (uploadFolderBtn) uploadFolderBtn.addEventListener('click', () => hiddenFolderInput.click());
+    if (uploadFilesBtn) {
+      uploadFilesBtn.addEventListener('click', () => {
+        if (uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
+        if (hiddenFileInput) hiddenFileInput.click();
+      });
+    }
+    if (uploadFolderBtn) {
+      uploadFolderBtn.addEventListener('click', () => {
+        if (uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
+        if (hiddenFolderInput) hiddenFolderInput.click();
+      });
+    }
 
     if (hiddenFileInput) hiddenFileInput.addEventListener('change', handleFileInput);
     if (hiddenFolderInput) hiddenFolderInput.addEventListener('change', handleFileInput);
@@ -6207,21 +6219,38 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   }
 
   function showUploadReviewModal(files) {
+    const target = state.currentPath || state.basePath || '/';
     uploadState.queue = files.map((item, idx) => ({
       ...item,
-      id: 'upload_' + Date.now() + '_' + idx,
+      id: 'upl_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7),
       status: 'pending',
       uploadedBytes: 0,
-      mtime: item.file.lastModified
+      mtime: (item.file && item.file.lastModified) ? item.file.lastModified : Date.now()
     }));
     
-    uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + f.size, 0);
-    uploadState.targetFolder = state.currentPath;
+    uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + (f.size || 0), 0);
+    uploadState.targetFolder = target;
     
-    document.getElementById('uploadTargetFolderLabel').textContent = state.currentPath;
-    document.getElementById('uploadTotalFilesLabel').textContent = files.length.toLocaleString();
-    document.getElementById('uploadTotalSizeLabel').textContent = formatBytes(uploadState.totalBytes);
+    const targetLabel = document.getElementById('uploadTargetFolderLabel');
+    if (targetLabel) targetLabel.textContent = target;
+    const totalFilesLabel = document.getElementById('uploadTotalFilesLabel');
+    if (totalFilesLabel) totalFilesLabel.textContent = files.length.toLocaleString();
+    const totalSizeLabel = document.getElementById('uploadTotalSizeLabel');
+    if (totalSizeLabel) totalSizeLabel.textContent = formatBytes(uploadState.totalBytes);
     
+    const warningEl = document.getElementById('uploadWarningText');
+    const startBtn = document.getElementById('startUploadBtn');
+    if (state.isZip) {
+      if (warningEl) {
+        warningEl.textContent = 'Cannot upload files directly into a virtual ZIP archive. Navigate to a folder first.';
+        warningEl.classList.remove('hidden');
+      }
+      if (startBtn) startBtn.disabled = true;
+    } else {
+      if (warningEl) warningEl.classList.add('hidden');
+      if (startBtn) startBtn.disabled = false;
+    }
+
     document.getElementById('uploadReviewModal').classList.remove('hidden');
   }
 
@@ -6235,6 +6264,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     uploadState.collisionPolicy = collisionPolicy;
     closeUploadReviewModal();
     
+    const count = uploadState.queue.length;
+    showToast(`Starting upload for ${count} file${count === 1 ? '' : 's'}...`, 'info');
+
     const section = document.getElementById('browserUploadsSection');
     if (section) section.classList.remove('hidden');
     
@@ -6308,7 +6340,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
             const res = await fetch('/api/backup/upload/chunk', { method: 'POST', body: formData });
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text);
+                let detail = text;
+                try {
+                  const j = JSON.parse(text);
+                  if (j.detail) detail = j.detail;
+                } catch (_) {}
+                throw new Error(detail);
             }
             success = true;
           } catch (err) {
@@ -6345,14 +6382,19 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       
       if (!finalizeRes.ok) {
           const text = await finalizeRes.text();
-          throw new Error(text);
+          let detail = text;
+          try {
+            const j = JSON.parse(text);
+            if (j.detail) detail = j.detail;
+          } catch (_) {}
+          throw new Error(detail);
       }
       
       fileObj.status = 'done';
     } catch (err) {
       console.error('Upload failed for', file.name, err);
       fileObj.status = 'error';
-      showToast(`Failed to upload ${file.name}`, 'error');
+      showToast(`Failed to upload ${file.name}: ${err.message || 'Error'}`, 'error');
     }
     updateUploadsUI();
   }

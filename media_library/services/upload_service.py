@@ -14,13 +14,25 @@ from media_library.db.indexer import index_folder
 from media_library.services.library_manage_service import classify_library_path
 from media_library.services.media_service import validate_backup_path
 
+import re
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | {".zip"}
 
-async def handle_upload_chunk(upload_id: str, chunk_index: int, total_chunks: int, chunk_data: bytes) -> dict[str, Any]:
+
+def _is_valid_upload_id(upload_id: str) -> bool:
+    """Validates upload_id format to prevent directory traversal."""
+    if not upload_id or len(upload_id) > 64:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9_\-]+$", upload_id))
+
+
+async def handle_upload_chunk(
+    upload_id: str, chunk_index: int, total_chunks: int, chunk_data: bytes
+) -> dict[str, Any]:
     """Appends a chunk of data to the staging file."""
-    if not upload_id or not upload_id.isalnum():
+    if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
     
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
@@ -68,7 +80,7 @@ async def finalize_upload(
     mtime: int | None = None
 ) -> dict[str, Any]:
     """Moves the staged file to its final destination and indexes it."""
-    if not upload_id or not upload_id.isalnum():
+    if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
         
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
@@ -119,18 +131,25 @@ async def finalize_upload(
         tmp_final_path = target_parent / f".tmp_{upload_id}_{target_file_path.name}"
         
         def _finalize():
-            shutil.move(str(staging_file), str(tmp_final_path))
-            os.replace(str(tmp_final_path), str(target_file_path))
-            
-            # Apply mtime if provided
-            if mtime is not None:
-                try:
-                    os.utime(target_file_path, (time.time(), mtime / 1000.0))
-                except Exception as e:
-                    logger.warning(f"Failed to set mtime on {target_file_path}: {e}")
-                    
-            # Index the parent folder
-            index_folder(str(target_parent))
+            try:
+                shutil.move(str(staging_file), str(tmp_final_path))
+                os.replace(str(tmp_final_path), str(target_file_path))
+                
+                # Apply mtime if provided
+                if mtime is not None:
+                    try:
+                        os.utime(target_file_path, (time.time(), mtime / 1000.0))
+                    except Exception as e:
+                        logger.warning(f"Failed to set mtime on {target_file_path}: {e}")
+                        
+                # Index the parent folder
+                index_folder(str(target_parent))
+            finally:
+                if tmp_final_path.exists():
+                    try:
+                        tmp_final_path.unlink()
+                    except Exception:
+                        pass
             
         await asyncio.to_thread(_finalize)
         
@@ -146,7 +165,7 @@ async def finalize_upload(
 
 async def cancel_upload(upload_id: str) -> dict[str, Any]:
     """Cleans up a cancelled upload."""
-    if not upload_id or not upload_id.isalnum():
+    if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
         
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
