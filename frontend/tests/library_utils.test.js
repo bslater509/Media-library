@@ -7,6 +7,8 @@ import {
   getResolutionLabel,
   getAspectRatio,
   showToast,
+  formatTimestamp,
+  formatBitrate,
 } from '../src/library/utils.js';
 
 describe('library/utils.js unit tests', () => {
@@ -90,6 +92,32 @@ describe('library/utils.js unit tests', () => {
       expect(toast).not.toBeNull();
       expect(toast.textContent).toContain('Action successful');
       expect(toast.textContent).toContain('✓');
+    });
+  });
+
+  describe('formatTimestamp', () => {
+    it('formats epoch seconds and milliseconds to local string', () => {
+      expect(formatTimestamp(null)).toBe('Unknown');
+      expect(formatTimestamp(0)).toBe('Unknown');
+      expect(formatTimestamp('invalid')).toBe('Unknown');
+      // Valid epoch timestamp (1700000000 -> Nov 14, 2023)
+      const res = formatTimestamp(1700000000);
+      expect(res).not.toBe('Unknown');
+      expect(typeof res).toBe('string');
+    });
+  });
+
+  describe('formatBitrate', () => {
+    it('calculates Mbps and kbps from bytes and duration seconds', () => {
+      expect(formatBitrate(0, 10)).toBe('');
+      expect(formatBitrate(1000, 0)).toBe('');
+      expect(formatBitrate(null, null)).toBe('');
+
+      // 10,000,000 bytes over 10s = 8,000,000 bps = 8.0 Mbps
+      expect(formatBitrate(10000000, 10)).toBe('8.0 Mbps');
+
+      // 50,000 bytes over 10s = 40,000 bps = 40 kbps
+      expect(formatBitrate(50000, 10)).toBe('40 kbps');
     });
   });
 });

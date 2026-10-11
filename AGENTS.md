@@ -240,6 +240,7 @@ media-library/
 │   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
 │   ├── test_performance_features.py# In-memory stat cache, subfolder caching, status API
 │   ├── test_sorter_browse.py        # Video sorter browsing, queue scanning & destination listing
+│   ├── test_sorter_move.py          # Sorter moves, undo stack, file rename, delete & transfers
 │   ├── test_webp_memory_guard.py    # WebP conversion memory safeguards and skip logic
 │   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
 │   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
