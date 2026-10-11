@@ -420,21 +420,36 @@ def find_visual_duplicates(
 
 def _prune_missing_files_bg(missing_paths: list[str]):
     from media_library.db.indexer import _path_confirmed_gone, remove_file_from_index
+    from media_library.services.zip.core import split_zip_path
+
     for p in missing_paths:
-        if _path_confirmed_gone(p, attempts=2, delay=0.1):
+        zip_p, inner_p = split_zip_path(p)
+        target = zip_p if (zip_p and inner_p) else p
+        if _path_confirmed_gone(target, attempts=2, delay=0.1):
             remove_file_from_index(p)
 
+
 def filter_and_prune_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from media_library.services.zip.core import split_zip_path
+
     valid_groups = []
     missing_paths = []
 
     for g in groups:
         valid_files = []
         for f in g.get("files", []):
-            if os.path.exists(f["path"]):
+            fpath = f["path"]
+            zip_p, inner_p = split_zip_path(fpath)
+            target = zip_p if (zip_p and inner_p) else fpath
+            try:
+                exists = os.path.exists(target)
+            except OSError:
+                exists = False
+
+            if exists:
                 valid_files.append(f)
             else:
-                missing_paths.append(f["path"])
+                missing_paths.append(fpath)
         
         if len(valid_files) >= 2:
             g["files"] = valid_files

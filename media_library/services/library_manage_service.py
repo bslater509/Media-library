@@ -295,7 +295,7 @@ def compute_bulk_rename(
         real = validate_backup_path(p)
         kind = classify_library_path(real)
         name = os.path.basename(real.rstrip(os.sep))
-        if kind == "file":
+        if kind in ("file", "zip"):
             base, ext = os.path.splitext(name)
         else:
             base, ext = name, ""
@@ -544,19 +544,20 @@ def delete_empty_folder(
 
     if os.path.isdir(real_path):
         # 1. Clean benign OS junk (.DS_Store, Thumbs.db, desktop.ini, .tmp_*)
-        for entry in os.scandir(real_path):
-            if (
-                entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
-                or entry.name.startswith(".tmp_")
-            ):
-                try:
-                    os.remove(entry.path)
-                except OSError:
-                    pass
-            elif entry.is_file():
-                raise OSError(f"Folder is not empty: contains file '{entry.name}'")
-            elif entry.is_dir():
-                raise OSError(f"Folder is not empty: contains subfolder '{entry.name}'")
+        with os.scandir(real_path) as entries:
+            for entry in entries:
+                if (
+                    entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
+                    or entry.name.startswith(".tmp_")
+                ):
+                    try:
+                        os.remove(entry.path)
+                    except OSError:
+                        pass
+                elif entry.is_file():
+                    raise OSError(f"Folder is not empty: contains file '{entry.name}'")
+                elif entry.is_dir():
+                    raise OSError(f"Folder is not empty: contains subfolder '{entry.name}'")
 
         # 2. Remove directory
         os.rmdir(real_path)

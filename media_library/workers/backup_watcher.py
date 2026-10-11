@@ -101,8 +101,14 @@ class BackupWatcherWorker(BaseWorker):
         from media_library.services.zip import zip_tasks_state
         from media_library.workers.duplicate_hash_worker import (
             duplicate_hash_worker_instance,
+            thumb_hash_worker_instance,
         )
+        from media_library.workers.library_ops_worker import (
+            library_ops_worker_instance,
+        )
+        from media_library.workers.metadata_worker import metadata_worker_instance
         from media_library.workers.thumbnail_worker import thumbnail_worker_instance
+        from media_library.workers.transcode_worker import transcode_worker_instance
         from media_library.workers.transfer_worker import transfer_worker_instance
         from media_library.workers.webp_worker import webp_worker_instance
 
@@ -124,11 +130,22 @@ class BackupWatcherWorker(BaseWorker):
                 )
                 is_hash_busy = (
                     duplicate_hash_worker_instance.state.get("status") == "hashing"
+                    or thumb_hash_worker_instance.state.get("status")
+                    in ("hashing", "migrating")
                 )
                 is_webp_busy = webp_worker_instance.state.get("status") == "converting"
                 is_transfer_busy = (
                     transfer_worker_instance.active_transfer is not None
                 ) or (transfer_worker_instance.transfer_queue.qsize() > 0)
+                is_transcode_busy = (
+                    transcode_worker_instance.active_transcode is not None
+                ) or (transcode_worker_instance.transcode_queue.qsize() > 0)
+                is_lib_ops_busy = (
+                    library_ops_worker_instance.active_op is not None
+                ) or (library_ops_worker_instance.ops_queue.qsize() > 0)
+                is_metadata_busy = (
+                    metadata_worker_instance.state.get("status") == "probing"
+                )
                 is_zip_busy = any(
                     t.get("status") == "running"
                     for t in zip_tasks_state.get("active_tasks", {}).values()
@@ -143,6 +160,9 @@ class BackupWatcherWorker(BaseWorker):
                     or is_hash_busy
                     or is_webp_busy
                     or is_transfer_busy
+                    or is_transcode_busy
+                    or is_lib_ops_busy
+                    or is_metadata_busy
                     or is_zip_busy
                     or is_backup_busy
                 )

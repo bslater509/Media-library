@@ -16,14 +16,26 @@ class SafeHTML(str):
     """Marker for already-safe HTML: :func:`render` substitutes it verbatim."""
 
 
-def _resolve_includes(template_str: str, current_dir) -> str:
+def _resolve_includes(
+    template_str: str, current_dir, visited: set[str] | None = None
+) -> str:
+    if visited is None:
+        visited = set()
+
     def repl(m):
         inc_file = m.group(1).strip("'\"")
-        inc_path = current_dir / inc_file
-        if inc_path.exists():
-            return _resolve_includes(inc_path.read_text(encoding="utf-8"), inc_path.parent)
+        inc_path = (current_dir / inc_file).resolve()
+        inc_key = str(inc_path)
+        if inc_key in visited:
+            return ""
+        if inc_path.exists() and inc_path.is_file():
+            return _resolve_includes(
+                inc_path.read_text(encoding="utf-8"),
+                inc_path.parent,
+                visited | {inc_key},
+            )
         return ""
-    
+
     # Matches {{include 'file.html'}} or {{ include "file.html" }}
     pattern = r"\{\{\s*include\s+(['\"].*?['\"])\s*\}\}"
     return re.sub(pattern, repl, template_str)
@@ -40,7 +52,7 @@ def load_template(name: str) -> str | None:
     if not path.exists():
         return None
     raw = path.read_text(encoding="utf-8")
-    return _resolve_includes(raw, path.parent)
+    return _resolve_includes(raw, path.parent, {str(path.resolve())})
 
 
 def render(template: str, /, **tokens: str) -> str:

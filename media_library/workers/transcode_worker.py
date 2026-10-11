@@ -37,6 +37,17 @@ class TranscodeWorker(BaseWorker):
         self.transcode_pause_event.set()
 
     def enqueue(self, item: dict[str, Any]):
+        if len(self.transcode_items_map) > 1000:
+            active_ids = {h.get("id") for h in self.transcode_history[-100:]}
+            if self.active_transcode:
+                active_ids.add(self.active_transcode.get("id"))
+            for k in list(self.transcode_items_map.keys()):
+                if k not in active_ids and self.transcode_items_map[k].get("status") in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    del self.transcode_items_map[k]
         self.transcode_items_map[item["id"]] = item
         self.enqueue_nowait(self.transcode_queue, item)
 
@@ -557,22 +568,49 @@ class TranscodeWorker(BaseWorker):
                 success = True
 
         if success:
-            try:
-                await asyncio.to_thread(shutil.move, temp_path, target_path)
-            except Exception:
+            def _commit_transcode():
+                target_dir = os.path.dirname(target_path)
+                commit_tmp = os.path.join(
+                    target_dir, f".tmp_tc_{uuid.uuid4().hex[:8]}.mp4"
+                )
                 try:
-                    await asyncio.to_thread(os.replace, temp_path, target_path)
-                except Exception as e2:
-                    logger.error(f"Error moving transcoded file to {target_path}: {e2}")
-                    item["status"] = "failed"
-                    item["error"] = f"Failed to commit transcoded file: {e2}"
-                    if os.path.exists(temp_path):
+                    # Try os.replace first (instantaneous if same filesystem)
+                    os.replace(temp_path, target_path)
+                except OSError:
+                    # Cross-device filesystem: copy to atomic tmp in target dir then replace
+                    shutil.copy2(temp_path, commit_tmp)
+                    if (
+                        not os.path.exists(commit_tmp)
+                        or os.path.getsize(commit_tmp) != os.path.getsize(temp_path)
+                    ):
+                        raise OSError("Cross-device transcode copy verification failed")
+                    os.replace(commit_tmp, target_path)
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+                finally:
+                    if os.path.exists(commit_tmp):
                         try:
-                            os.remove(temp_path)
-                        except Exception:
+                            os.remove(commit_tmp)
+                        except OSError:
                             pass
-                    self.transcode_history.append(item)
-                    return
+
+            try:
+                await asyncio.to_thread(_commit_transcode)
+            except Exception as e2:
+                logger.error(f"Error moving transcoded file to {target_path}: {e2}")
+                item["status"] = "failed"
+                item["error"] = f"Failed to commit transcoded file: {e2}"
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                self.transcode_history.append(item)
+                if len(self.transcode_history) > 500:
+                    self.transcode_history = self.transcode_history[-500:]
+                return
 
             if os.path.exists(source_path) and os.path.abspath(
                 source_path
@@ -599,6 +637,8 @@ class TranscodeWorker(BaseWorker):
             item["status"] = "completed"
             item["completed_at"] = time.time()
             self.transcode_history.append(item)
+            if len(self.transcode_history) > 500:
+                self.transcode_history = self.transcode_history[-500:]
 
             update_file_in_index(
                 source_path,
@@ -629,6 +669,8 @@ class TranscodeWorker(BaseWorker):
             item["status"] = "failed"
             item["error"] = "Conversion failed (safe fallback preserved original file)"
             self.transcode_history.append(item)
+            if len(self.transcode_history) > 500:
+                self.transcode_history = self.transcode_history[-500:]
 
 
 transcode_worker_instance = TranscodeWorker()

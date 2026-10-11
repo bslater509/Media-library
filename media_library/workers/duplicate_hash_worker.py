@@ -241,6 +241,8 @@ class ThumbHashWorker(BaseWorker):
 
         async def hash_single_thumb(row) -> tuple:
             async with concurrency_sem:
+                if not self._pause_event.is_set():
+                    await self._pause_event.wait()
                 fpath = row["path"]
                 self.state["current_file"] = row["name"]
                 tpath = get_thumbnail_cache_path(
@@ -251,6 +253,12 @@ class ThumbHashWorker(BaseWorker):
 
         while True:
             try:
+                if not self._pause_event.is_set():
+                    self.state["status"] = "paused"
+                    self.state["is_paused"] = True
+                    await self._pause_event.wait()
+                    self.state["status"] = "hashing"
+                    self.state["is_paused"] = False
                 try:
                     with db_conn() as conn:
                         tot_row = conn.execute(

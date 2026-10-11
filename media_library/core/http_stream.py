@@ -105,11 +105,39 @@ async def stream_file_with_range(
             full_file_sender(real_path), status_code=200, headers=headers
         )
 
+    if file_size == 0:
+        return Response(
+            status_code=416,
+            headers={"Content-Range": "bytes */0"},
+        )
+
     try:
         range_val = range_header.strip().replace("bytes=", "")
         parts = range_val.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+        if len(parts) != 2:
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
+
+        if not parts[0]:
+            # Suffix range: -N requests the last N bytes of the representation
+            if not parts[1]:
+                return Response(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{file_size}"},
+                )
+            suffix_len = int(parts[1])
+            if suffix_len <= 0:
+                return Response(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{file_size}"},
+                )
+            start = max(0, file_size - suffix_len)
+            end = file_size - 1
+        else:
+            start = int(parts[0])
+            end = int(parts[1]) if parts[1] else file_size - 1
 
         if start >= file_size:
             return Response(

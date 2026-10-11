@@ -155,7 +155,12 @@ def save_config_data(current_state: dict[str, Any]):
             "recent_destinations": current_state.get("recent_destinations", [])[:15],
             "source_dir": current_state.get("source_dir", ""),
         }
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        tmp_file = CONFIG_FILE.with_name(f".tmp_{CONFIG_FILE.name}_{os.getpid()}")
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, CONFIG_FILE)
     except Exception as e:
         logger.error(f"Error saving config.json: {e}")
+

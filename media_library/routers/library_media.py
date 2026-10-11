@@ -48,7 +48,7 @@ async def get_backup_thumbnail(
             try:
                 cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
                 resolved = resolve_zip_file_path(real_path)
-                if not resolved:
+                if not resolved and cache_dir:
                     resolved = str(cache_dir / inner_p)
             except Exception as ex:
                 logger.error(f"Extraction error for thumbnail {real_path}: {ex}")
@@ -141,7 +141,7 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
             try:
                 cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
                 resolved = resolve_zip_file_path(real_path)
-                if not resolved:
+                if not resolved and cache_dir:
                     resolved = str(cache_dir / inner_p)
             except Exception as ex:
                 logger.error(f"Extraction error for media stream {real_path}: {ex}")

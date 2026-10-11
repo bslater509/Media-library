@@ -116,7 +116,13 @@ class ThumbnailWorker(BaseWorker):
                 self.state["current_folder"] = os.path.basename(
                     item.get("folder_path", os.path.dirname(fpath))
                 )
-                ok = await generate_thumbnail(fpath, is_video=is_vid, update_db=False)
+                ok = await generate_thumbnail(
+                    fpath,
+                    is_video=is_vid,
+                    update_db=False,
+                    mtime=item.get("mtime"),
+                    size=item.get("size"),
+                )
                 return fpath, bool(ok)
 
         async def execute_batch(items: list[dict[str, Any]]):
@@ -196,7 +202,7 @@ class ThumbnailWorker(BaseWorker):
                 try:
                     with db_conn() as conn:
                         cur = conn.execute(
-                            f"SELECT f.path, f.type, f.name, f.folder_path FROM files f "
+                            f"SELECT f.path, f.type, f.name, f.folder_path, f.mtime, f.size FROM files f "
                             f"LEFT JOIN folders fo ON f.folder_path = fo.path "
                             f"WHERE f.has_thumb = 0 AND NOT {_DEFERRED_ZIP_IMAGE_PREDICATE} LIMIT 25"
                         )
@@ -207,6 +213,8 @@ class ThumbnailWorker(BaseWorker):
                                     "type": r["type"],
                                     "name": r["name"],
                                     "folder_path": r["folder_path"],
+                                    "mtime": r["mtime"],
+                                    "size": r["size"],
                                 }
                             )
                 except Exception as e:

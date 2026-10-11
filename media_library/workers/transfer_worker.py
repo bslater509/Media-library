@@ -22,6 +22,17 @@ class TransferWorker(BaseWorker):
         self.transfer_items_map: dict[str, dict[str, Any]] = {}
 
     def enqueue(self, item: dict[str, Any]):
+        if len(self.transfer_items_map) > 1000:
+            active_ids = {h.get("id") for h in self.transfers_history[-100:]}
+            if self.active_transfer:
+                active_ids.add(self.active_transfer.get("id"))
+            for k in list(self.transfer_items_map.keys()):
+                if k not in active_ids and self.transfer_items_map[k].get("status") in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    del self.transfer_items_map[k]
         self.transfer_items_map[item["id"]] = item
         self.enqueue_nowait(self.transfer_queue, item)
 
@@ -67,6 +78,8 @@ class TransferWorker(BaseWorker):
 
                 await asyncio.to_thread(do_transfer, item, transcode_map)
                 self.transfers_history.append(item)
+                if len(self.transfers_history) > 500:
+                    self.transfers_history = self.transfers_history[-500:]
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -74,6 +87,8 @@ class TransferWorker(BaseWorker):
                 item["status"] = "failed"
                 item["error"] = str(e)
                 self.transfers_history.append(item)
+                if len(self.transfers_history) > 500:
+                    self.transfers_history = self.transfers_history[-500:]
             finally:
                 self.active_transfer = None
                 self._status = "idle"

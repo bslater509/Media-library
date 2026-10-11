@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -373,6 +374,7 @@ def update_file_in_index(
 ):
     try:
         folder_path = os.path.dirname(new_path)
+        old_folder = os.path.dirname(old_path)
         ext = new_ext or os.path.splitext(new_name)[1].lower()
         is_vid = ext in VIDEO_EXTENSIONS
         disk_path = new_path
@@ -476,6 +478,16 @@ def update_file_in_index(
                     "UPDATE folders SET file_count = ?, total_size = ?, last_scanned = ? WHERE path = ?",
                     (cnt, total, time.time(), folder_path),
                 )
+                if old_folder != folder_path:
+                    cur_old = conn.execute(
+                        "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE folder_path = ?",
+                        (old_folder,),
+                    )
+                    old_cnt, old_total = cur_old.fetchone()
+                    conn.execute(
+                        "UPDATE folders SET file_count = ?, total_size = ?, last_scanned = ? WHERE path = ?",
+                        (old_cnt, old_total, time.time(), old_folder),
+                    )
     except Exception as e:
         logger.error(f"Error updating {old_path} -> {new_path} in index: {e}")
 
@@ -557,12 +569,13 @@ def delete_path_from_index(path: str, kind: str):
                 )
                 folder_path = os.path.dirname(path)
                 cur = conn.execute(
-                    "SELECT COUNT(*) FROM files WHERE folder_path = ?", (folder_path,)
+                    "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE folder_path = ?",
+                    (folder_path,),
                 )
-                cnt = cur.fetchone()[0]
+                cnt, total_size = cur.fetchone()
                 conn.execute(
-                    "UPDATE folders SET file_count = ?, last_scanned = ? WHERE path = ?",
-                    (cnt, time.time(), folder_path),
+                    "UPDATE folders SET file_count = ?, total_size = ?, last_scanned = ? WHERE path = ?",
+                    (cnt, total_size, time.time(), folder_path),
                 )
             elif kind == "zip":
                 conn.execute("DELETE FROM folders WHERE path = ?", (path,))
@@ -665,6 +678,10 @@ def _clean_orphaned_thumbnails(conn: Any, thumb_dir: Any) -> int:
             k2 = p
             h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
             valid_thumb_names.add(f"thumb_{h2}.jpg")
+            if s is not None:
+                k3 = f"{p}_{s}"
+                h3 = hashlib.sha256(k3.encode("utf-8")).hexdigest()[:24]
+                valid_thumb_names.add(f"thumb_{h3}.jpg")
 
         for t_file in thumb_dir.glob("thumb_*.jpg"):
             if t_file.name not in valid_thumb_names:
@@ -929,6 +946,8 @@ async def run_background_crawler(force_full: bool = False):
             indexer_state["current_folder"] = ""
 
 def deep_clean_database():
+    from media_library.services.zip.core import split_zip_path
+
     logger.info("[Deep Clean] Starting deep scan of database for missing files...")
     indexer_state["status"] = "crawling"
     indexer_state["current_folder"] = "Deep cleaning DB (checking missing files)..."
@@ -940,29 +959,41 @@ def deep_clean_database():
         logger.info(f"[Deep Clean] Checking existence of {len(paths)} files concurrently...")
         missing = []
         checked = 0
-        
+        lock = threading.Lock()
+
         def _check(p):
             nonlocal checked
-            if not os.path.exists(p):
-                missing.append(p)
-            checked += 1
-            if checked % 1000 == 0:
-                indexer_state["current_folder"] = f"Deep cleaning DB (checked {checked}/{len(paths)})..."
-                
+            zip_p, inner_p = split_zip_path(p)
+            target = zip_p if (zip_p and inner_p) else p
+            is_missing = False
+            try:
+                if not (os.path.isdir(target) or os.path.isfile(target)):
+                    is_missing = True
+            except OSError:
+                is_missing = True
+            with lock:
+                if is_missing:
+                    missing.append(p)
+                checked += 1
+                if checked % 1000 == 0:
+                    indexer_state["current_folder"] = f"Deep cleaning DB (checked {checked}/{len(paths)})..."
+
         with ThreadPoolExecutor(max_workers=16) as ex:
             ex.map(_check, paths)
-            
+
         logger.info(f"[Deep Clean] Found {len(missing)} potentially missing files.")
         indexer_state["current_folder"] = f"Deep cleaning DB (verifying {len(missing)} missing files)..."
-        
+
         removed = 0
         for i, p in enumerate(missing):
-            if _path_confirmed_gone(p, attempts=2, delay=0.1):
+            zip_p, inner_p = split_zip_path(p)
+            target = zip_p if (zip_p and inner_p) else p
+            if _path_confirmed_gone(target, attempts=2, delay=0.1):
                 remove_file_from_index(p)
                 removed += 1
             if i % 50 == 0:
                 indexer_state["current_folder"] = f"Deep cleaning DB (verified {i}/{len(missing)} missing files)..."
-                
+
         logger.info(f"[Deep Clean] Removed {removed} confirmed missing files. Running stale index prune...")
         indexer_state["current_folder"] = "Deep cleaning DB (pruning stale entries)..."
         prune_stale_index_entries(clean_orphaned_thumbnails=True, force=True)

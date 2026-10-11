@@ -36,6 +36,17 @@ class LibraryOpsWorker(BaseWorker):
         self.undo_stack: list[dict[str, Any]] = []
 
     def enqueue(self, item: dict[str, Any]):
+        if len(self.items_map) > 1000:
+            active_ids = {h.get("id") for h in self.history[-100:]}
+            if self.active_op:
+                active_ids.add(self.active_op.get("id"))
+            for k in list(self.items_map.keys()):
+                if k not in active_ids and self.items_map[k].get("status") in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    del self.items_map[k]
         item.setdefault("abort_event", threading.Event())
         item.setdefault("status", "queued")
         item.setdefault("error", None)
@@ -143,6 +154,8 @@ class LibraryOpsWorker(BaseWorker):
                 self.active_op = None
                 self._status = "idle"
                 self.history.append(item)
+                if len(self.history) > 500:
+                    self.history = self.history[-500:]
                 self.ops_queue.task_done()
 
     def pop_undo(self) -> dict[str, Any] | None:

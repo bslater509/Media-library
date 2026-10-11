@@ -416,3 +416,9 @@ def test_range_byte_streaming_media_and_sorter(api_client):
     assert r.status_code == 206
     assert r.headers["Content-Range"] == "bytes 0-100/1024"
     assert r.content == b"\x00" * 101
+
+    # Suffix range requests final N bytes
+    r = api_client.get("/api/stream/test_clip.mp4", headers={"Range": "bytes=-100"})
+    assert r.status_code == 206
+    assert r.headers["Content-Range"] == "bytes 924-1023/1024"
+    assert len(r.content) == 100

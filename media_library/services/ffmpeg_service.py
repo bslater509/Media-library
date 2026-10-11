@@ -336,7 +336,7 @@ async def generate_thumbnail(
                     if not resolved:
                         cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
                         resolved = resolve_zip_file_path(file_path)
-                        if not resolved:
+                        if not resolved and cache_dir:
                             resolved = str(cache_dir / inner_p)
                     if resolved and os.path.exists(resolved):
                         input_path = resolved
@@ -712,6 +712,18 @@ def convert_image_file_to_webp(file_path: str, quality: int | None = None) -> di
             conn.execute(
                 "UPDATE webp_stats SET saved_bytes = saved_bytes + ?, converted_count = converted_count + 1 WHERE id = 1",
                 (saved_bytes,),
+            )
+            conn.execute(
+                "UPDATE folders SET total_size = MAX(0, total_size - ?) WHERE path = ?",
+                (saved_bytes, str(fpath.parent)),
+            )
+            conn.execute(
+                "UPDATE ignored_duplicates SET path1 = ? WHERE path1 = ?",
+                (str(target_path), str(fpath)),
+            )
+            conn.execute(
+                "UPDATE ignored_duplicates SET path2 = ? WHERE path2 = ?",
+                (str(target_path), str(fpath)),
             )
     except Exception as e:
         logger.error(f"Error updating SQLite index for WebP: {e}")

@@ -605,3 +605,73 @@ def test_empty_folders_api_endpoints(api_client):
     assert not f2.exists()
 
 
+def test_bulk_rename_zip_extension_preserved(api_client):
+    client, media_dir, _ = api_client
+    z = media_dir / "my_archive.zip"
+    z.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+
+    res = client.post(
+        "/api/backup/bulk/rename/preview",
+        json={
+            "paths": [str(z)],
+            "mode": "base_counter",
+            "params": {"base": "Album_", "start": 1},
+        },
+    )
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["new_name"] == "Album_1.zip"
+    assert items[0]["kind"] == "zip"
+
+
+def test_update_file_in_index_updates_both_folders(api_client):
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer import update_file_in_index
+
+    _, media_dir, _ = api_client
+    folder_a = media_dir / "FolderA"
+    folder_b = media_dir / "FolderB"
+    folder_a.mkdir(exist_ok=True)
+    folder_b.mkdir(exist_ok=True)
+
+    file_a = folder_a / "clip.mp4"
+    file_a.write_bytes(b"\x00" * 500)
+    file_b = folder_b / "clip.mp4"
+
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO folders (path, name, file_count, total_size) VALUES (?, 'FolderA', 1, 500)",
+            (str(folder_a),),
+        )
+        conn.execute(
+            "INSERT INTO folders (path, name, file_count, total_size) VALUES (?, 'FolderB', 0, 0)",
+            (str(folder_b),),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size) VALUES (?, 'clip.mp4', ?, 'video', '.mp4', 500)",
+            (str(file_a), str(folder_a)),
+        )
+
+    # Move file from FolderA to FolderB
+    file_b.write_bytes(b"\x00" * 500)
+    file_a.unlink()
+
+    update_file_in_index(
+        str(file_a),
+        str(file_b),
+        "clip.mp4",
+        500,
+        ".mp4",
+    )
+
+    with db_conn() as conn:
+        fa = conn.execute("SELECT file_count, total_size FROM folders WHERE path = ?", (str(folder_a),)).fetchone()
+        fb = conn.execute("SELECT file_count, total_size FROM folders WHERE path = ?", (str(folder_b),)).fetchone()
+        assert fa["file_count"] == 0
+        assert fa["total_size"] == 0
+        assert fb["file_count"] == 1
+        assert fb["total_size"] == 500
+
+
+

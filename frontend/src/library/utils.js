@@ -7,7 +7,8 @@ export function showToast(message, type = 'info') {
     };
     toast.className = `p-3 rounded-xl border text-xs font-medium backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0 ${colors[type] || colors.info}`;
     toast.innerHTML = `<span>${type === 'success' ? '✓' : type === 'error' ? '⚠️' : 'ℹ️'}</span><span class="truncate">${message}</span>`;
-    els.toastContainer.appendChild(toast);
+    const container = document.getElementById('toastContainer') || document.body;
+    container.appendChild(toast);
 
     requestAnimationFrame(() => {
       toast.classList.remove('translate-y-2', 'opacity-0');
