@@ -996,9 +996,33 @@ async def generate_animated_preview(
                             pil_frames.append(rgb)
                     except Exception:
                         pass
+            else:
+                # If a custom/static thumbnail already exists for this video, ensure it leads the animation
+                try:
+                    custom_thumb = await asyncio.to_thread(get_thumbnail_path_fast, file_path)
+                    if custom_thumb and custom_thumb.exists() and custom_thumb.stat().st_size > 0:
+                        with Image.open(custom_thumb) as c_img:
+                            c_rgb = c_img.convert("RGB")
+                            pil_frames.insert(0, c_rgb)
+                            if len(pil_frames) > max_frames:
+                                pil_frames.pop()
+                except Exception:
+                    pass
 
             if not pil_frames:
                 return None
+
+            # CRITICAL: Normalize ALL frames to the exact same (480, target_h) dimensions.
+            # In animated WebP, Pillow/libwebp strictly rejects frames with differing dimensions.
+            heights = [f.height for f in pil_frames]
+            target_h = max(set(heights), key=heights.count) if heights else 270
+            target_w = 480
+
+            for idx in range(len(pil_frames)):
+                if pil_frames[idx].size != (target_w, target_h):
+                    pil_frames[idx] = pil_frames[idx].resize(
+                        (target_w, target_h), Image.Resampling.BILINEAR
+                    )
 
             # Animated WebP requires at least 2 distinct frames for animation
             if len(pil_frames) == 1:

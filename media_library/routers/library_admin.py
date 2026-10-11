@@ -291,11 +291,21 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         thumb_query += f"&mtime={fmtime}&size={fsize}"
     thumb_query += f"&v={v_tag}"
 
+    # Invalidate existing animated preview so it regenerates with the new custom poster
+    try:
+        anim_path = await asyncio.to_thread(get_animated_preview_path, real_path)
+        if anim_path.exists():
+            anim_path.unlink()
+        asyncio.create_task(generate_animated_preview(real_path))
+    except Exception as e:
+        logger.warning(f"Failed to invalidate/recompile animated preview for {real_path}: {e}")
+
     return {
         "success": True,
         "path": real_path,
         "timestamp": timestamp,
         "thumb_url": f"/api/backup/thumbnail{thumb_query}",
+        "animated_url": f"/api/backup/thumbnails/animated?path={urllib.parse.quote(real_path)}&v={v_tag}",
     }
 
 

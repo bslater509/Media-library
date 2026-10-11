@@ -1558,7 +1558,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
       if (card) {
         const img = card.querySelector('img');
-        if (img) img.src = data.thumb_url;
+        if (img) {
+          img.dataset.fallbackThumb = data.thumb_url;
+          if (state.animatedThumbs) {
+            img.src = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
+          } else {
+            img.src = data.thumb_url;
+          }
+        }
       }
 
       if (activeSlide.thumb) activeSlide.thumb = data.thumb_url;
@@ -1960,7 +1967,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
       if (card) {
         const img = card.querySelector('img');
-        if (img) img.src = data.thumb_url;
+        if (img) {
+          img.dataset.fallbackThumb = data.thumb_url;
+          if (state.animatedThumbs) {
+            img.src = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
+          } else {
+            img.src = data.thumb_url;
+          }
+        }
       }
 
       const activeSlide = state.fancyboxInstance?.getSlide();

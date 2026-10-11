@@ -17,7 +17,7 @@ def test_html_views(api_client):
     assert 'data-cm="gen-animated"' in res_root.text
     assert "toggleAnimatedPreviewsBtn" in res_root.text
     assert "generateFolderAnimatedBtn" in res_root.text
-    assert "library.js?v=47" in res_root.text
+    assert "library.js?v=48" in res_root.text
     assert "styles.css?v=40" in res_root.text
     assert 'id="mobileHeader"' in res_root.text
     assert 'id="mobileControlsModal"' in res_root.text

@@ -162,3 +162,49 @@ def test_api_generate_and_batch_animated_endpoints(sandbox_env, api_client):
     bdata = res_batch.json()
     assert "queued" in bdata
     assert bdata["queued"] >= 1
+
+
+@pytest.mark.anyio
+async def test_animated_preview_dimension_normalization_and_custom_poster(sandbox_env, api_client):
+    from media_library.core.state import state
+    from media_library.services.ffmpeg_service import get_thumbnail_path_fast
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    vid_path = os.path.join(dest, "custom_poster_clip.mp4")
+    _create_mock_video_image(vid_path)
+
+    from media_library.db.connection import db_conn
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
+               VALUES (?, ?, ?, 'video', '.mp4', 1024, '1 KB', 12345.0, 1800.0, 1280, 720)""",
+            (vid_path, "custom_poster_clip.mp4", dest),
+        )
+
+    # Create a custom poster frame of size 360x202 (different aspect/rounding than 480x270)
+    custom_thumb = get_thumbnail_path_fast(vid_path)
+    custom_thumb.parent.mkdir(parents=True, exist_ok=True)
+    img = Image.new("RGB", (360, 202), color="purple")
+    img.save(custom_thumb, format="JPEG")
+
+    # Generate animated preview: must succeed without "Invalid frame dimensions" error
+    anim = await generate_animated_preview(vid_path)
+    assert anim is not None
+    assert anim.exists()
+
+    with Image.open(anim) as out_img:
+        assert out_img.format == "WEBP"
+        assert getattr(out_img, "is_animated", False) is True
+        assert out_img.size == (480, 270)
+
+    # Calling set-poster should return animated_url and invalidate old anim file
+    import base64
+    img_b64 = "data:image/jpeg;base64," + base64.b64encode(open(vid_path, "rb").read()).decode()
+    res_poster = api_client.post(
+        "/api/backup/thumbnails/set-poster",
+        json={"path": vid_path, "timestamp": 12.5, "image_base64": img_b64},
+    )
+    assert res_poster.status_code == 200
+    pdata = res_poster.json()
+    assert "animated_url" in pdata
+    assert "/api/backup/thumbnails/animated?path=" in pdata["animated_url"]
