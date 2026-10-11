@@ -20,6 +20,7 @@ from media_library.db.indexer import (
 from media_library.services.ffmpeg_service import (
     extract_frame_poster,
     generate_animated_preview,
+    get_animated_preview_path,
 )
 from media_library.services.media_service import validate_backup_path
 from media_library.services.zip import (
