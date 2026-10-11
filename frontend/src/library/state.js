@@ -467,6 +467,20 @@
     resetThemeDefaultsBtn: document.getElementById('resetThemeDefaultsBtn'),
     themeAccentPicker: document.getElementById('themeAccentPicker'),
     themeBasePicker: document.getElementById('themeBasePicker'),
-    themePreviewCard: document.getElementById('themePreviewCard'),
     mobileDoubleTapSeekToggle: document.getElementById('mobileDoubleTapSeekToggle'),
+
+    // Video Thumbnail Chooser Elements
+    thumbnailChooserModal: document.getElementById('thumbnailChooserModal'),
+    closeThumbChooserBtn: document.getElementById('closeThumbChooserBtn'),
+    thumbChooserCancelBtn: document.getElementById('thumbChooserCancelBtn'),
+    thumbChooserApplyBtn: document.getElementById('thumbChooserApplyBtn'),
+    thumbChooserPreviewImg: document.getElementById('thumbChooserPreviewImg'),
+    thumbChooserPreviewVideo: document.getElementById('thumbChooserPreviewVideo'),
+    thumbChooserPreviewLoading: document.getElementById('thumbChooserPreviewLoading'),
+    thumbChooserSelectedTime: document.getElementById('thumbChooserSelectedTime'),
+    thumbChooserTimeDisplay: document.getElementById('thumbChooserTimeDisplay'),
+    thumbChooserScrubber: document.getElementById('thumbChooserScrubber'),
+    thumbChooserUseCurrentBtn: document.getElementById('thumbChooserUseCurrentBtn'),
+    thumbChooserGrid: document.getElementById('thumbChooserGrid'),
+    thumbChooserFileName: document.getElementById('thumbChooserFileName'),
   };

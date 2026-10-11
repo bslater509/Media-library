@@ -4,6 +4,7 @@ import asyncio
 import logging
 import mimetypes
 import os
+import urllib.parse
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -15,9 +16,13 @@ from media_library.core.constants import (
     VIDEO_EXTENSIONS,
 )
 from media_library.core.http_stream import stream_file_with_range
+from media_library.db.connection import db_conn
 from media_library.services.ffmpeg_service import (
+    extract_candidate_frame,
     generate_thumbnail,
+    get_candidate_cache_path,
     get_thumbnail_path_fast,
+    probe_video_meta,
 )
 from media_library.services.media_service import validate_backup_path
 from media_library.services.zip import (
@@ -172,3 +177,124 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
         )
 
     return await stream_file_with_range(real_path, request, mime_type)
+
+
+@router.get("/api/backup/thumbnails/candidates")
+async def get_thumbnail_candidates(
+    path: str = Query(...),
+    count: int = Query(12, ge=2, le=24),
+):
+    """Calculates candidate thumbnail timestamps evenly across video duration."""
+    real_path = validate_backup_path(path)
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, detail="Only video files support thumbnail candidates"
+        )
+
+    zip_p, inner_p = split_zip_path(real_path)
+    if not (zip_p and inner_p):
+        file_exists = await asyncio.to_thread(os.path.exists, real_path)
+        if not file_exists:
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+    duration = 0.0
+    width = None
+    height = None
+    try:
+        with db_conn() as conn:
+            row = conn.execute(
+                "SELECT duration, width, height FROM files WHERE path = ? LIMIT 1",
+                (real_path,),
+            ).fetchone()
+            if row:
+                duration = float(row["duration"] or 0.0)
+                width = row["width"]
+                height = row["height"]
+    except Exception:
+        pass
+
+    if duration <= 0.0:
+        meta = await probe_video_meta(real_path)
+        duration = float(meta.get("duration") or 0.0)
+
+    if duration <= 0.0:
+        duration = 1.0
+
+    margin = min(1.0, duration * 0.05) if duration > 3.0 else 0.0
+    start_t = margin
+    end_t = max(margin, duration - margin)
+    if end_t <= start_t:
+        timestamps = [start_t] * count
+    else:
+        step = (end_t - start_t) / max(1, count - 1)
+        timestamps = [round(start_t + i * step, 3) for i in range(count)]
+
+    def _format_time(sec: float) -> str:
+        s = int(sec)
+        m, s = divmod(s, 60)
+        h, m = divmod(m, 60)
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    candidates = [
+        {
+            "timestamp": ts,
+            "time_str": _format_time(ts),
+            "url": f"/api/backup/thumbnails/frame?path={urllib.parse.quote(real_path)}&timestamp={ts}",
+        }
+        for ts in timestamps
+    ]
+
+    return {
+        "path": real_path,
+        "duration": round(duration, 3),
+        "duration_formatted": _format_time(duration),
+        "width": width,
+        "height": height,
+        "count": len(candidates),
+        "candidates": candidates,
+    }
+
+
+@router.api_route("/api/backup/thumbnails/frame", methods=["GET", "HEAD"])
+async def get_thumbnail_frame(
+    path: str = Query(...),
+    timestamp: float = Query(0.0, ge=0.0),
+    request: Request = None,
+):
+    """Returns a specific candidate video frame image at the given timestamp."""
+    real_path = validate_backup_path(path)
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, detail="Only video files support frame extraction"
+        )
+
+    zip_p, inner_p = split_zip_path(real_path)
+    if not (zip_p and inner_p):
+        file_exists = await asyncio.to_thread(os.path.exists, real_path)
+        if not file_exists:
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+    cand_path = await asyncio.to_thread(get_candidate_cache_path, real_path, timestamp)
+    if not (cand_path.exists() and cand_path.stat().st_size > 0):
+        frame_path = await extract_candidate_frame(real_path, timestamp)
+        if not frame_path or not frame_path.exists():
+            raise HTTPException(status_code=500, detail="Could not extract candidate frame")
+        cand_path = frame_path
+
+    if request and request.method == "HEAD":
+        return Response(
+            status_code=200,
+            headers={
+                "Content-Length": str(cand_path.stat().st_size),
+                "Content-Type": "image/jpeg",
+            },
+        )
+    return FileResponse(
+        str(cand_path),
+        media_type="image/jpeg",
+        headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+    )

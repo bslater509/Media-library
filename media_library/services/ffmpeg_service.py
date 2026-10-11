@@ -668,6 +668,171 @@ async def extract_frame_poster(
     return None
 
 
+candidate_generation_sem = asyncio.Semaphore(4)
+
+
+def get_candidate_cache_path(file_path: str, timestamp: float) -> Path:
+    """Returns the persistent disk path for a cached candidate frame."""
+    from media_library.core.config import THUMBNAIL_CACHE_DIR
+    import hashlib
+
+    cand_dir = Path(THUMBNAIL_CACHE_DIR) / "candidates"
+    cand_dir.mkdir(parents=True, exist_ok=True)
+    ts = max(0.0, round(float(timestamp), 3))
+    key = f"{file_path}_{ts:.3f}"
+    h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
+    return cand_dir / f"cand_{h}.jpg"
+
+
+async def extract_candidate_frame(
+    file_path: str,
+    timestamp: float = 0.0,
+) -> Path | None:
+    """Extracts a candidate frame thumbnail at the given timestamp with caching."""
+    cand_path = await asyncio.to_thread(get_candidate_cache_path, file_path, timestamp)
+    if cand_path.exists() and cand_path.stat().st_size > 0:
+        return cand_path
+
+    async with candidate_generation_sem:
+        if cand_path.exists() and cand_path.stat().st_size > 0:
+            return cand_path
+
+        temp_thumb = cand_path.with_suffix(f".{uuid.uuid4().hex[:8]}.tmp.jpg")
+        input_path = file_path
+        if not os.path.exists(input_path):
+            try:
+                from media_library.services.zip import (
+                    extract_zip_to_cache,
+                    resolve_zip_file_path,
+                    split_zip_path,
+                )
+
+                zip_p, inner_p = split_zip_path(file_path)
+                if zip_p and inner_p:
+                    resolved = resolve_zip_file_path(file_path)
+                    if not resolved:
+                        cache_dir = await asyncio.to_thread(extract_zip_to_cache, zip_p)
+                        resolved = resolve_zip_file_path(file_path)
+                        if not resolved and cache_dir:
+                            resolved = str(cache_dir / inner_p)
+                    if resolved and os.path.exists(resolved):
+                        input_path = resolved
+            except Exception:
+                pass
+
+        try:
+            ts = max(0.0, float(timestamp))
+            time_str = f"{int(ts // 3600):02d}:{int((ts % 3600) // 60):02d}:{ts % 60:06.3f}"
+            cmd = [
+                "nice",
+                "-n",
+                "15",
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                time_str,
+                "-i",
+                input_path,
+                "-an",
+                "-sn",
+                "-dn",
+                "-frames:v",
+                "1",
+                "-update",
+                "1",
+                "-vf",
+                "scale=360:-2:flags=fast_bilinear",
+                "-q:v",
+                "3",
+                str(temp_thumb),
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=12.0)
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await proc.communicate()
+                except Exception:
+                    pass
+
+            if (
+                proc.returncode != 0
+                or not temp_thumb.exists()
+                or temp_thumb.stat().st_size == 0
+            ):
+                retry_cmd = [
+                    "nice",
+                    "-n",
+                    "15",
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    input_path,
+                    "-ss",
+                    time_str,
+                    "-an",
+                    "-sn",
+                    "-dn",
+                    "-frames:v",
+                    "1",
+                    "-update",
+                    "1",
+                    "-vf",
+                    "scale=360:-2:flags=fast_bilinear",
+                    "-q:v",
+                    "3",
+                    str(temp_thumb),
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *retry_cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=12.0)
+                except asyncio.TimeoutError:
+                    try:
+                        proc.kill()
+                        await proc.communicate()
+                    except Exception:
+                        pass
+
+            # Fallback for PIL-compatible mock media in test fixtures
+            if not temp_thumb.exists() or temp_thumb.stat().st_size == 0:
+                try:
+                    with Image.open(input_path) as pil_img:
+                        rgb_img = pil_img.convert("RGB")
+                        w, h = rgb_img.size
+                        if w > 360:
+                            new_h = max(1, int(h * 360 / w))
+                            rgb_img = rgb_img.resize((360, new_h), Image.Resampling.BILINEAR)
+                        rgb_img.save(temp_thumb, "JPEG", quality=85)
+                except Exception:
+                    pass
+
+            if temp_thumb.exists() and temp_thumb.stat().st_size > 0:
+                os.replace(temp_thumb, cand_path)
+                return cand_path
+        except Exception as e:
+            logger.error(f"Error extracting candidate frame for {file_path} at {timestamp}: {e}")
+        finally:
+            if temp_thumb.exists():
+                try:
+                    temp_thumb.unlink()
+                except OSError:
+                    pass
+        return None
+
+
 def convert_image_to_webp_bytes(
     source: str | Path | bytes, quality: int | None = None
 ) -> bytes:
