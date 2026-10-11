@@ -6105,28 +6105,28 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         e.stopPropagation();
         uploadDropdownMenu.classList.toggle('hidden');
       });
-      document.addEventListener('click', (e) => {
-        if (uploadDropdownMenu && !uploadDropdownMenu.contains(e.target) && e.target !== uploadDropdownBtn) {
-          uploadDropdownMenu.classList.add('hidden');
-        }
-      });
     }
+    // Outside click/touch listener to close dropdown
+    const closeDropdownHandler = (e) => {
+      if (uploadDropdownMenu && !uploadDropdownMenu.contains(e.target) && !uploadDropdownBtn.contains(e.target)) {
+        uploadDropdownMenu.classList.add('hidden');
+      }
+    };
+    document.addEventListener('click', closeDropdownHandler);
+    document.addEventListener('touchstart', closeDropdownHandler, { passive: true });
 
-    if (uploadFilesBtn) {
-      uploadFilesBtn.addEventListener('click', () => {
+    if (hiddenFileInput) {
+      hiddenFileInput.addEventListener('change', (e) => {
         if (uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
-        if (hiddenFileInput) hiddenFileInput.click();
+        handleFileInput(e);
       });
     }
-    if (uploadFolderBtn) {
-      uploadFolderBtn.addEventListener('click', () => {
+    if (hiddenFolderInput) {
+      hiddenFolderInput.addEventListener('change', (e) => {
         if (uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
-        if (hiddenFolderInput) hiddenFolderInput.click();
+        handleFileInput(e);
       });
     }
-
-    if (hiddenFileInput) hiddenFileInput.addEventListener('change', handleFileInput);
-    if (hiddenFolderInput) hiddenFolderInput.addEventListener('change', handleFileInput);
 
     // Drag and Drop
     let dragCounter = 0;
@@ -6180,17 +6180,20 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   }
 
   function handleFileInput(e) {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    const rawFiles = e.target.files;
+    if (!rawFiles || rawFiles.length === 0) {
+      console.warn('handleFileInput: no files selected');
+      return;
+    }
+    const files = Array.from(rawFiles);
     
     const filesToUpload = files.map(f => ({
       file: f,
       relativePath: f.webkitRelativePath || f.name,
-      size: f.size
+      size: f.size || 0
     }));
     
     showUploadReviewModal(filesToUpload);
-    e.target.value = ''; // reset
   }
 
   async function traverseFileTree(item, path, fileList) {
@@ -6219,50 +6222,72 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   }
 
   function showUploadReviewModal(files) {
-    const target = state.currentPath || state.basePath || '/';
-    uploadState.queue = files.map((item, idx) => ({
-      ...item,
-      id: 'upl_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7),
-      status: 'pending',
-      uploadedBytes: 0,
-      mtime: (item.file && item.file.lastModified) ? item.file.lastModified : Date.now()
-    }));
-    
-    uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + (f.size || 0), 0);
-    uploadState.targetFolder = target;
-    
-    const targetLabel = document.getElementById('uploadTargetFolderLabel');
-    if (targetLabel) targetLabel.textContent = target;
-    const totalFilesLabel = document.getElementById('uploadTotalFilesLabel');
-    if (totalFilesLabel) totalFilesLabel.textContent = files.length.toLocaleString();
-    const totalSizeLabel = document.getElementById('uploadTotalSizeLabel');
-    if (totalSizeLabel) totalSizeLabel.textContent = formatBytes(uploadState.totalBytes);
-    
-    const warningEl = document.getElementById('uploadWarningText');
-    const startBtn = document.getElementById('startUploadBtn');
-    if (state.isZip) {
-      if (warningEl) {
-        warningEl.textContent = 'Cannot upload files directly into a virtual ZIP archive. Navigate to a folder first.';
-        warningEl.classList.remove('hidden');
+    try {
+      const target = state.currentPath || state.basePath || '/';
+      uploadState.queue = files.map((item, idx) => ({
+        ...item,
+        id: 'upl_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7),
+        status: 'pending',
+        uploadedBytes: 0,
+        mtime: (item.file && item.file.lastModified) ? item.file.lastModified : Date.now()
+      }));
+      
+      uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + (f.size || 0), 0);
+      uploadState.targetFolder = target;
+      
+      const targetLabel = document.getElementById('uploadTargetFolderLabel');
+      if (targetLabel) targetLabel.textContent = target;
+      const totalFilesLabel = document.getElementById('uploadTotalFilesLabel');
+      if (totalFilesLabel) totalFilesLabel.textContent = files.length.toLocaleString();
+      const totalSizeLabel = document.getElementById('uploadTotalSizeLabel');
+      if (totalSizeLabel) totalSizeLabel.textContent = formatBytes(uploadState.totalBytes);
+      
+      const warningEl = document.getElementById('uploadWarningText');
+      const startBtn = document.getElementById('startUploadBtn');
+      if (state.isZip) {
+        if (warningEl) {
+          warningEl.textContent = 'Cannot upload files directly into a virtual ZIP archive. Navigate to a folder first.';
+          warningEl.classList.remove('hidden');
+        }
+        if (startBtn) startBtn.disabled = true;
+      } else {
+        if (warningEl) warningEl.classList.add('hidden');
+        if (startBtn) startBtn.disabled = false;
       }
-      if (startBtn) startBtn.disabled = true;
-    } else {
-      if (warningEl) warningEl.classList.add('hidden');
-      if (startBtn) startBtn.disabled = false;
-    }
 
-    document.getElementById('uploadReviewModal').classList.remove('hidden');
+      const modal = document.getElementById('uploadReviewModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+    } catch (err) {
+      console.error('Error in showUploadReviewModal:', err);
+      showToast('Error displaying upload review: ' + (err.message || 'Unknown'), 'error');
+    }
   }
 
   function closeUploadReviewModal() {
-    document.getElementById('uploadReviewModal').classList.add('hidden');
+    const modal = document.getElementById('uploadReviewModal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
     uploadState.queue = [];
+    const fi = document.getElementById('hiddenUploadFileInput');
+    if (fi) fi.value = '';
+    const fo = document.getElementById('hiddenUploadFolderInput');
+    if (fo) fo.value = '';
   }
 
   async function startUploadBatch() {
     const collisionPolicy = document.getElementById('uploadCollisionPolicy').value;
     uploadState.collisionPolicy = collisionPolicy;
-    closeUploadReviewModal();
+    
+    const modal = document.getElementById('uploadReviewModal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
     
     const count = uploadState.queue.length;
     showToast(`Starting upload for ${count} file${count === 1 ? '' : 's'}...`, 'info');
