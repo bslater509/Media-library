@@ -36,6 +36,7 @@ async def get_backup_thumbnail(
     path: str = Query(...),
     mtime: float | None = Query(None),
     size: int | None = Query(None),
+    v: str | None = Query(None),
     request: Request = None,
 ):
     real_path = validate_backup_path(path)
@@ -59,10 +60,10 @@ async def get_backup_thumbnail(
         get_thumbnail_path_fast, real_path, mtime, size
     )
     if thumb_path.exists() and thumb_path.stat().st_size > 0:
-        etag = f'"{thumb_path.name}"'
+        etag = f'"{thumb_path.name}_{int(thumb_path.stat().st_mtime)}"'
         cache_hdr = (
             f"public, max-age={THUMB_CACHE_MAX_AGE_IMMUTABLE}, immutable"
-            if (mtime is not None and size is not None)
+            if (mtime is not None and size is not None and v is None)
             else f"public, max-age={MEDIA_CACHE_MAX_AGE}"
         )
         if request and request.headers.get("if-none-match") == etag:

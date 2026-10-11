@@ -1,5 +1,6 @@
 """Integration tests for all major API routes and endpoints."""
 
+import os
 from media_library.core.state import state
 
 
@@ -14,7 +15,7 @@ def test_html_views(api_client):
     assert "mediaInfoModal" in res_root.text
     assert 'data-cm="info"' in res_root.text
     assert 'data-cm="download"' in res_root.text
-    assert "library.js?v=33" in res_root.text
+    assert "library.js?v=34" in res_root.text
 
     res_sorter = api_client.get("/sorter")
     assert res_sorter.status_code == 200
@@ -432,3 +433,56 @@ def test_range_byte_streaming_media_and_sorter(api_client):
     assert r.status_code == 206
     assert r.headers["Content-Range"] == "bytes 924-1023/1024"
     assert len(r.content) == 100
+
+
+def test_set_poster_frame(api_client):
+    from media_library.core.state import state
+
+    dest = state["destination_dir"]
+    video_path = os.path.join(dest, "sample_clip.mp4")
+    with open(video_path, "wb") as f:
+        f.write(b"\x00" * 1024)
+
+    # 1. Reject non-video
+    img_path = os.path.join(dest, "sample_photo.jpg")
+    with open(img_path, "wb") as f:
+        f.write(b"\x00" * 1024)
+    res_bad = api_client.post(
+        "/api/backup/thumbnails/set-poster",
+        json={"path": img_path, "timestamp": 5.0},
+    )
+    assert res_bad.status_code == 400
+    assert "Only video files" in res_bad.json()["detail"]
+
+    # 2. Reject non-existent video
+    res_404 = api_client.post(
+        "/api/backup/thumbnails/set-poster",
+        json={"path": os.path.join(dest, "missing.mp4"), "timestamp": 5.0},
+    )
+    assert res_404.status_code == 404
+
+    # 3. Successful poster frame set using base64 image payload
+    # Generate a small 10x10 JPEG in base64
+    import io
+    import base64
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(buf, format="JPEG")
+    b64_str = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    res_ok = api_client.post(
+        "/api/backup/thumbnails/set-poster",
+        json={"path": video_path, "timestamp": 12.5, "image_base64": b64_str},
+    )
+    assert res_ok.status_code == 200
+    data = res_ok.json()
+    assert data["success"] is True
+    assert data["timestamp"] == 12.5
+    assert "thumb_url" in data
+    assert "&v=" in data["thumb_url"]
+
+    # Check thumbnail can be retrieved
+    res_thumb = api_client.get(data["thumb_url"])
+    assert res_thumb.status_code == 200
+    assert res_thumb.headers["content-type"] == "image/jpeg"
+

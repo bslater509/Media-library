@@ -457,4 +457,5 @@
     infoModalCopyPathBtn: document.getElementById('infoModalCopyPathBtn'),
     infoModalDownloadBtn: document.getElementById('infoModalDownloadBtn'),
     infoModalMoveBtn: document.getElementById('infoModalMoveBtn'),
+    infoModalPosterBtn: document.getElementById('infoModalPosterBtn'),
   };

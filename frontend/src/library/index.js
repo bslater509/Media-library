@@ -1172,6 +1172,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
                   <span>🔁</span>
                   <span class="hidden sm:inline">Loop</span>
                 </button>
+                <button onclick="window.libraryApp.captureCurrentFrameAsPoster()" class="lightbox-poster-btn px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Set current frame as thumbnail poster (P)">
+                  <span>📷</span>
+                  <span class="hidden sm:inline">Set Poster</span>
+                </button>
               ` : ''}
               <button onclick="window.libraryApp.openMediaInfoModalByPath('${safeAttrEscape(f.path)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Media Details (I)">
                 <span>ℹ️</span>
@@ -1293,6 +1297,81 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       btn.classList.toggle('bg-emerald-950/40', state.lightboxVideoLoop);
     });
     showToast(state.lightboxVideoLoop ? 'Video loop enabled' : 'Video loop disabled', 'info');
+  }
+
+  async function captureCurrentFrameAsPoster() {
+    if (!state.fancyboxInstance) return;
+    const activeSlide = state.fancyboxInstance.getSlide();
+    if (!activeSlide || !activeSlide.customData) return;
+    const { file, path } = activeSlide.customData;
+    if (!file || file.type !== 'video') {
+      showToast('Poster capture is only available for videos', 'info');
+      return;
+    }
+    const activeVideo = document.querySelector('.fancybox__slide.is-selected video') ||
+                        document.querySelector('.fancybox__container video');
+    if (!activeVideo) {
+      showToast('No active video found', 'error');
+      return;
+    }
+    const currentTime = activeVideo.currentTime || 0;
+    const durStr = formatDuration(currentTime);
+    showToast(`Capturing poster frame at ${durStr}...`, 'info');
+
+    let canvasB64 = null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = activeVideo.videoWidth || 360;
+      canvas.height = activeVideo.videoHeight || 240;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(activeVideo, 0, 0, canvas.width, canvas.height);
+      canvasB64 = canvas.toDataURL('image/jpeg', 0.85);
+    } catch (e) {
+      canvasB64 = null;
+    }
+
+    try {
+      const payload = { path: path, timestamp: currentTime };
+      if (canvasB64) payload.image_base64 = canvasB64;
+
+      const res = await fetch('/api/backup/thumbnails/set-poster', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to update poster frame');
+      }
+
+      showToast(`Poster updated to ${durStr}!`, 'success');
+
+      file.has_thumb = true;
+      file.thumb_url = data.thumb_url;
+
+      const idxAll = state.allFiles ? state.allFiles.findIndex(f => f.path === path) : -1;
+      if (idxAll >= 0) {
+        state.allFiles[idxAll].has_thumb = true;
+        state.allFiles[idxAll].thumb_url = data.thumb_url;
+      }
+      const idxFiltered = state.filteredFiles ? state.filteredFiles.findIndex(f => f.path === path) : -1;
+      if (idxFiltered >= 0) {
+        state.filteredFiles[idxFiltered].has_thumb = true;
+        state.filteredFiles[idxFiltered].thumb_url = data.thumb_url;
+      }
+
+      const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
+      if (card) {
+        const img = card.querySelector('img');
+        if (img) img.src = data.thumb_url;
+      }
+
+      if (activeSlide.thumb) activeSlide.thumb = data.thumb_url;
+      const activeThumbEl = document.querySelector('.fancybox__thumbs .is-nav-selected img, .fancybox__thumb.is-selected img');
+      if (activeThumbEl) activeThumbEl.src = data.thumb_url;
+    } catch (err) {
+      showToast(err.message || 'Failed to set poster frame', 'error');
+    }
   }
 
   function openMoveModalFromLightbox(path, name) {
@@ -1424,6 +1503,16 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.infoModalPath.textContent = file.path || '';
     }
 
+    if (els.infoModalPosterBtn) {
+      if (isVid) {
+        els.infoModalPosterBtn.classList.remove('hidden');
+        els.infoModalPosterBtn.classList.add('flex');
+      } else {
+        els.infoModalPosterBtn.classList.add('hidden');
+        els.infoModalPosterBtn.classList.remove('flex');
+      }
+    }
+
     if (els.mediaInfoModal) {
       els.mediaInfoModal.classList.remove('hidden');
     }
@@ -1525,6 +1614,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       } else if ((e.key === 'l' || e.key === 'L') && activeVideo) {
         e.preventDefault();
         toggleLightboxVideoLoop();
+      } else if ((e.key === 'p' || e.key === 'P') && activeVideo) {
+        e.preventDefault();
+        captureCurrentFrameAsPoster();
       } else if (e.key === '[' && activeVideo) {
         e.preventDefault();
         const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
@@ -1798,6 +1890,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   // --- Context Menu ---
   function openContextMenu(x, y, target) {
     state.contextMenuTarget = target;
+    const isVid = target && (target.type === 'video' || (target.kind === 'file' && target.ext && ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts'].includes(target.ext.toLowerCase())));
+    const posterBtn = els.contextMenu ? els.contextMenu.querySelector('button[data-cm="set-poster"]') : null;
+    if (posterBtn) {
+      posterBtn.classList.toggle('hidden', !isVid);
+      posterBtn.classList.toggle('flex', isVid);
+    }
     els.contextMenu.style.left = `${x}px`;
     els.contextMenu.style.top = `${y}px`;
     els.contextMenu.classList.remove('hidden');
@@ -1821,6 +1919,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     else if (action === 'delete') openDeleteModal(target.path, target.name, target.size_formatted || '', target.kind);
     else if (action === 'info') openMediaInfoModal(target);
     else if (action === 'download') downloadMediaFile(target);
+    else if (action === 'set-poster') {
+      const idx = state.filteredFiles ? state.filteredFiles.findIndex(f => f.path === target.path) : -1;
+      if (idx >= 0) {
+        openFancybox(idx);
+        showToast("Scrub to desired frame and click 'Set Poster' (or press P)", 'info');
+      }
+    }
   }
 
   // Tap-and-hold (touch) support: opens the same context menu as right-click.
@@ -5645,6 +5750,18 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         }
       });
     }
+    if (els.infoModalPosterBtn) {
+      els.infoModalPosterBtn.addEventListener('click', () => {
+        if (!state.currentInfoFile) return;
+        const targetPath = state.currentInfoFile.path;
+        closeMediaInfoModal();
+        const idx = state.filteredFiles ? state.filteredFiles.findIndex(f => f.path === targetPath) : -1;
+        if (idx >= 0) {
+          openFancybox(idx);
+          showToast("Scrub to desired frame and click 'Set Poster' (or press P)", 'info');
+        }
+      });
+    }
     if (els.infoModalDownloadBtn) {
       els.infoModalDownloadBtn.addEventListener('click', () => {
         if (state.currentInfoFile) {
@@ -6191,6 +6308,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     downloadMediaFile,
     setLightboxVideoSpeed,
     toggleLightboxVideoLoop,
+    captureCurrentFrameAsPoster,
     openMoveModalFromLightbox,
   };
 

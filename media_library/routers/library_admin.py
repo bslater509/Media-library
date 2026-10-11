@@ -4,18 +4,21 @@ import logging
 import os
 import shutil
 import sqlite3
+import time
 import urllib.parse
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from media_library.core.constants import VIDEO_EXTENSIONS
 from media_library.core.state import get_thumbnail_cache_path
 from media_library.db.connection import db_conn
 from media_library.db.indexer import (
     remove_file_from_index,
     update_file_in_index,
 )
+from media_library.services.ffmpeg_service import extract_frame_poster
 from media_library.services.media_service import validate_backup_path
 from media_library.services.zip import (
     get_zip_cache_dir,
@@ -227,3 +230,45 @@ async def trigger_thumbnail_generate(req: ThumbnailGenerateRequest) -> dict:
                 logger.warning("Could not reset stale has_thumb markers", exc_info=True)
         thumbnail_worker_instance.resume()
         return {"success": True, "message": "Thumbnail generator active for all files"}
+
+
+class SetPosterFrameRequest(BaseModel):
+    path: str
+    timestamp: float = 0.0
+    image_base64: str | None = None
+
+
+@router.post("/api/backup/thumbnails/set-poster")
+async def set_poster_frame(req: SetPosterFrameRequest):
+    real_path = validate_backup_path(req.path)
+
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, detail="Only video files support custom poster frames"
+        )
+
+    zip_p, inner_p = split_zip_path(real_path)
+    if not (zip_p and inner_p):
+        if not os.path.exists(real_path) or not os.path.isfile(real_path):
+            raise HTTPException(status_code=404, detail="Video file not found")
+
+    timestamp = max(0.0, float(req.timestamp))
+    thumb = await extract_frame_poster(
+        real_path,
+        timestamp=timestamp,
+        image_base64=req.image_base64,
+    )
+    if not thumb or not thumb.exists():
+        raise HTTPException(
+            status_code=500, detail="Failed to extract poster frame from video"
+        )
+
+    v_tag = int(time.time())
+    return {
+        "success": True,
+        "path": real_path,
+        "timestamp": timestamp,
+        "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(real_path)}&v={v_tag}",
+    }
+
