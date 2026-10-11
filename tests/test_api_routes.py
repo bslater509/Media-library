@@ -14,7 +14,7 @@ def test_html_views(api_client):
     assert "activeQueuesEmptyState" in res_root.text
     assert "mediaInfoModal" in res_root.text
     assert 'data-cm="info"' in res_root.text
-    assert "library.js?v=45" in res_root.text
+    assert "library.js?v=46" in res_root.text
     assert "styles.css?v=39" in res_root.text
     assert 'id="mobileHeader"' in res_root.text
     assert 'id="mobileControlsModal"' in res_root.text

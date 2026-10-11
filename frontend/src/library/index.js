@@ -1559,7 +1559,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     updateThumbChooserTimeDisplay(currentVidTime, file.duration || 0);
 
     // Render skeleton placeholders in grid
-    renderThumbChooserSkeletons();
+    const approxCandCount = file.duration ? Math.ceil(file.duration / 30) : 12;
+    renderThumbChooserSkeletons(approxCandCount);
+    if (els.thumbChooserCandCount) {
+      els.thumbChooserCandCount.textContent = '(loading...)';
+    }
 
     // Show modal
     if (els.thumbnailChooserModal) {
@@ -1567,14 +1571,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       document.body.classList.add('modal-scroll-lock');
     }
 
-    // Fetch candidates
+    // Fetch candidates (every 30s)
     if (activeThumbChooserAbortCtrl) {
       activeThumbChooserAbortCtrl.abort();
     }
     activeThumbChooserAbortCtrl = new AbortController();
 
     try {
-      const res = await fetch(`/api/backup/thumbnails/candidates?path=${encodeURIComponent(path)}&count=12`, {
+      const res = await fetch(`/api/backup/thumbnails/candidates?path=${encodeURIComponent(path)}&interval=30`, {
         signal: activeThumbChooserAbortCtrl.signal,
       });
       if (!res.ok) {
@@ -1595,6 +1599,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error('Error fetching candidates:', err);
+      if (els.thumbChooserCandCount) {
+        els.thumbChooserCandCount.textContent = '(error)';
+      }
       showToast(err.message || 'Error loading candidate frames', 'error');
     }
   }
@@ -1611,6 +1618,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (!anyModalOpen) {
       document.body.classList.remove('modal-scroll-lock');
     }
+    if (els.thumbChooserCandCount) {
+      els.thumbChooserCandCount.textContent = '(every 30s)';
+    }
     if (els.thumbChooserPreviewVideo) {
       els.thumbChooserPreviewVideo.pause();
       els.thumbChooserPreviewVideo.removeAttribute('src');
@@ -1625,10 +1635,11 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
-  function renderThumbChooserSkeletons() {
+  function renderThumbChooserSkeletons(approxCount = 12) {
     if (!els.thumbChooserGrid) return;
     let html = '';
-    for (let i = 0; i < 12; i++) {
+    const count = Math.min(24, Math.max(4, approxCount));
+    for (let i = 0; i < count; i++) {
       html += `
         <div class="thumb-cand-skeleton rounded-lg bg-slate-800/80 border border-slate-700/60 aspect-video animate-pulse flex items-center justify-center">
           <span class="text-slate-600 text-xs">...</span>
@@ -1640,6 +1651,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
   function renderThumbChooserCandidates(candidates) {
     if (!els.thumbChooserGrid) return;
+    if (els.thumbChooserCandCount) {
+      const len = candidates ? candidates.length : 0;
+      els.thumbChooserCandCount.textContent = `(${len} frames • every 30s)`;
+    }
     if (!candidates || candidates.length === 0) {
       els.thumbChooserGrid.innerHTML = '<div class="col-span-full py-4 text-center text-slate-500">No candidate frames available</div>';
       return;

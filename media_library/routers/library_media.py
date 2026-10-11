@@ -188,9 +188,15 @@ async def stream_backup_media(path: str = Query(...), request: Request = None):
 @router.get("/api/backup/thumbnails/candidates")
 async def get_thumbnail_candidates(
     path: str = Query(...),
-    count: int = Query(12, ge=2, le=24),
+    count: int | None = Query(None, ge=2, le=500),
+    interval: float | None = Query(None, ge=1.0, le=3600.0),
 ):
-    """Calculates candidate thumbnail timestamps evenly across video duration."""
+    """Calculates candidate thumbnail timestamps spaced across video duration.
+
+    If `count` is specified (and `interval` is omitted), evenly divides the duration into `count` frames.
+    Otherwise (by default, or when `interval` is provided), candidates are sampled every `interval` seconds
+    (default 30.0s) across the video duration.
+    """
     real_path = validate_backup_path(path)
     ext = os.path.splitext(real_path)[1].lower()
     if ext not in VIDEO_EXTENSIONS:
@@ -227,17 +233,47 @@ async def get_thumbnail_candidates(
     if duration <= 0.0:
         duration = 1.0
 
-    margin = min(1.0, duration * 0.05) if duration > 3.0 else 0.0
-    start_t = margin
-    end_t = max(margin, duration - margin)
-    if end_t <= start_t:
-        timestamps = [start_t] * count
+    chosen_interval: float | None = None
+    if count is not None and interval is None:
+        # Fixed count mode (evenly spaced across duration)
+        margin = min(1.0, duration * 0.05) if duration > 3.0 else 0.0
+        start_t = margin
+        end_t = max(margin, duration - margin)
+        if end_t <= start_t:
+            timestamps = [start_t] * count
+        else:
+            step = (end_t - start_t) / max(1, count - 1)
+            timestamps = [round(start_t + i * step, 3) for i in range(count)]
     else:
-        step = (end_t - start_t) / max(1, count - 1)
-        timestamps = [round(start_t + i * step, 3) for i in range(count)]
+        # Interval mode (default 30.0s)
+        chosen_interval = float(interval if interval is not None else 30.0)
+        max_safe = max(0.0, duration - min(0.5, duration * 0.02))
+
+        if duration <= chosen_interval:
+            # For short videos (<= interval), offer a few evenly spaced candidates across the video
+            sub_count = max(2, min(6, int(duration // 2) + 1))
+            step = duration / max(1, sub_count - 1)
+            timestamps = [
+                round(min(i * step, max_safe), 3)
+                for i in range(sub_count)
+            ]
+        else:
+            timestamps = []
+            curr = 0.0
+            while curr < duration and len(timestamps) < 500:
+                ts = min(curr, max_safe)
+                timestamps.append(round(ts, 3))
+                curr += chosen_interval
+
+            # If the tail after the last candidate is significant (>= interval * 0.33 or >= 10s),
+            # include a near-end candidate frame as well
+            if (duration - timestamps[-1]) >= max(5.0, chosen_interval * 0.33):
+                end_ts = round(max_safe, 3)
+                if end_ts > timestamps[-1] and (end_ts - timestamps[-1]) >= 3.0 and len(timestamps) < 500:
+                    timestamps.append(end_ts)
 
     def _format_time(sec: float) -> str:
-        s = int(sec)
+        s = int(round(sec))
         m, s = divmod(s, 60)
         h, m = divmod(m, 60)
         if h > 0:
@@ -259,6 +295,7 @@ async def get_thumbnail_candidates(
         "duration_formatted": _format_time(duration),
         "width": width,
         "height": height,
+        "interval": chosen_interval,
         "count": len(candidates),
         "candidates": candidates,
     }

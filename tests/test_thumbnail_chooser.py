@@ -48,6 +48,99 @@ def test_candidates_endpoint_valid_video(sandbox_env, api_client):
         assert item["url"].startswith("/api/backup/thumbnails/frame?")
 
 
+def test_candidates_endpoint_default_interval_30s(sandbox_env, api_client):
+    """Calling without count or interval defaults to candidate frames every 30 seconds."""
+    from media_library.core.state import state
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    video_path = os.path.join(dest, "test_30s_interval.mp4")
+    _create_mock_video_file(video_path)
+
+    from media_library.db.connection import db_conn
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
+               VALUES (?, ?, ?, 'video', '.mp4', 2048, '2 KB', 12345.0, 120.0, 1920, 1080)""",
+            (video_path, "test_30s_interval.mp4", dest),
+        )
+
+    # Call endpoint with NO count or interval parameter
+    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["path"] == video_path
+    assert data["duration"] == 120.0
+    assert data["interval"] == 30.0
+    # For 120s: 0.0, 30.0, 60.0, 90.0, and near-end (119.5) -> 5 candidates
+    timestamps = [c["timestamp"] for c in data["candidates"]]
+    assert len(timestamps) == 5
+    assert timestamps[0] == 0.0
+    assert timestamps[1] == 30.0
+    assert timestamps[2] == 60.0
+    assert timestamps[3] == 90.0
+    assert timestamps[4] > 115.0
+    assert data["candidates"][0]["time_str"] == "00:00"
+    assert data["candidates"][1]["time_str"] == "00:30"
+    assert data["candidates"][2]["time_str"] == "01:00"
+    assert data["candidates"][3]["time_str"] == "01:30"
+
+
+def test_candidates_endpoint_explicit_interval(sandbox_env, api_client):
+    """Explicit interval=15.0 produces candidates every 15 seconds."""
+    from media_library.core.state import state
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    video_path = os.path.join(dest, "test_15s.mp4")
+    _create_mock_video_file(video_path)
+
+    from media_library.db.connection import db_conn
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
+               VALUES (?, ?, ?, 'video', '.mp4', 1024, '1 KB', 12345.0, 60.0)""",
+            (video_path, "test_15s.mp4", dest),
+        )
+
+    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}&interval=15")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["interval"] == 15.0
+    timestamps = [c["timestamp"] for c in data["candidates"]]
+    # 0, 15, 30, 45, and end frame ~59.5 -> 5 candidates
+    assert len(timestamps) == 5
+    assert timestamps[0] == 0.0
+    assert timestamps[1] == 15.0
+    assert timestamps[2] == 30.0
+    assert timestamps[3] == 45.0
+    assert timestamps[4] > 58.0
+
+
+def test_candidates_endpoint_short_video_fallback(sandbox_env, api_client):
+    """Short video (< 30s) produces a reasonable set of evenly spaced candidate frames."""
+    from media_library.core.state import state
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    video_path = os.path.join(dest, "short_clip.mp4")
+    _create_mock_video_file(video_path)
+
+    from media_library.db.connection import db_conn
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
+               VALUES (?, ?, ?, 'video', '.mp4', 512, '512 B', 12345.0, 10.0)""",
+            (video_path, "short_clip.mp4", dest),
+        )
+
+    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}&interval=30")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["count"] >= 3
+    assert len(data["candidates"]) == data["count"]
+    # Timestamps are strictly within [0.0, 10.0]
+    for c in data["candidates"]:
+        assert 0.0 <= c["timestamp"] < 10.0
+
+
 def test_candidates_endpoint_invalid_file_type(sandbox_env, api_client):
     from media_library.core.state import state
     dest = str(sandbox_env["media_dir"])

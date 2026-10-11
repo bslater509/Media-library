@@ -559,4 +559,5 @@
     thumbChooserUseCurrentBtn: document.getElementById('thumbChooserUseCurrentBtn'),
     thumbChooserGrid: document.getElementById('thumbChooserGrid'),
     thumbChooserFileName: document.getElementById('thumbChooserFileName'),
+    thumbChooserCandCount: document.getElementById('thumbChooserCandCount'),
   };

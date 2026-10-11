@@ -111,5 +111,14 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('mobileTabActionsBtn');
       expect(els).toHaveProperty('mobileTabSystemBtn');
     });
+
+    it('verifies thumbnail chooser modal element keys exist on els', () => {
+      expect(els).toHaveProperty('thumbnailChooserModal');
+      expect(els).toHaveProperty('thumbChooserGrid');
+      expect(els).toHaveProperty('thumbChooserScrubber');
+      expect(els).toHaveProperty('thumbChooserPreviewImg');
+      expect(els).toHaveProperty('thumbChooserPreviewVideo');
+      expect(els).toHaveProperty('thumbChooserCandCount');
+    });
   });
 });
