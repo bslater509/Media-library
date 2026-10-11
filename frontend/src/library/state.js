@@ -84,6 +84,7 @@
     lastSelectedIndex: null,
     bulkRenamePreview: [],
     observer: null,
+    animObserver: null,
     fancyboxInstance: null,
     transcodePollTimer: null,
     latestTranscodeData: null,

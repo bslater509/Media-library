@@ -78,6 +78,7 @@ describe('library/state.js unit tests', () => {
       expect(state).toHaveProperty('allFiles');
       expect(state).toHaveProperty('activeFilter');
       expect(state).toHaveProperty('activeSort');
+      expect(state).toHaveProperty('animObserver');
       expect(state.activeFilter).toBe('all');
     });
   });

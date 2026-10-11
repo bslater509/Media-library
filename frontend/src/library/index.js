@@ -211,6 +211,174 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
+  // Dedicated IntersectionObserver to ensure animated WebP previews ONLY play when on screen
+  function setupAnimObserver() {
+    if (state.animObserver) return state.animObserver;
+    if (typeof IntersectionObserver === 'undefined') return null;
+
+    try {
+      state.animObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          const card = entry.target;
+          if (!card || card.dataset.fileType !== 'video') return;
+          card.dataset.isVisible = entry.isIntersecting ? 'true' : 'false';
+          syncCardAnimationState(card);
+        });
+      }, {
+        root: null, // viewport (clips against scrollable ancestors such as #mainStage)
+        rootMargin: '0px', // strictly when on screen
+        threshold: 0,
+      });
+    } catch (e) {
+      console.warn('Could not initialize animObserver:', e);
+      state.animObserver = null;
+    }
+    return state.animObserver;
+  }
+
+  function observeAnimatedCard(card) {
+    if (!card || card.dataset.fileType !== 'video') return;
+    const obs = setupAnimObserver();
+    if (obs) {
+      obs.observe(card);
+    } else {
+      // Fallback if IntersectionObserver is not available: mark visible
+      card.dataset.isVisible = 'true';
+      syncCardAnimationState(card);
+    }
+  }
+
+  function isElementInViewport(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return true;
+    try {
+      const rect = el.getBoundingClientRect();
+      const vHeight = window.innerHeight || (document.documentElement ? document.documentElement.clientHeight : 1000);
+      const vWidth = window.innerWidth || (document.documentElement ? document.documentElement.clientWidth : 1000);
+      return (
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < vHeight &&
+        rect.left < vWidth
+      );
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function syncCardAnimationState(card) {
+    if (!card || card.dataset.fileType !== 'video') return;
+    const img = card.querySelector('.card-thumb');
+    if (!img) return;
+    const path = card.dataset.path;
+    if (!path) return;
+
+    // Pause animations when lightbox is open or tab is hidden
+    if (state.fancyboxInstance || (typeof document !== 'undefined' && document.hidden)) {
+      if (img.dataset.playingAnim === 'true') {
+        const fallback = img.dataset.fallbackThumb || '';
+        if (fallback) img.src = fallback;
+        img.dataset.playingAnim = 'false';
+      }
+      return;
+    }
+
+    const badge = card.querySelector('.card-anim-badge');
+    const spinner = card.querySelector('.card-anim-spinner');
+
+    if (!state.animatedThumbs) {
+      // Animated mode is OFF: ensure static thumbnail and hide badges
+      const fallback = img.dataset.fallbackThumb || img.src;
+      if (fallback && img.src !== fallback && img.dataset.playingAnim === 'true') {
+        img.src = fallback;
+      }
+      img.dataset.playingAnim = 'false';
+      if (badge) badge.classList.add('hidden');
+      if (spinner) {
+        spinner.classList.add('hidden');
+        spinner.classList.remove('animate-spin');
+      }
+      card.removeAttribute('data-anim-pending');
+      return;
+    }
+
+    // Animated mode is ON:
+    const isVisible = card.dataset.isVisible === 'true' ||
+      (card.dataset.isVisible === undefined && isElementInViewport(card));
+
+    const file = state.allFiles ? state.allFiles.find((f) => f.path === path) : null;
+    const hasAnimated = file ? Boolean(file.has_animated) : (card.dataset.hasAnimated === 'true');
+
+    if (isVisible) {
+      // ON SCREEN:
+      if (hasAnimated) {
+        const animUrl = file && file.animated_url
+          ? file.animated_url
+          : (card.dataset.animatedUrl || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`);
+
+        if (img.dataset.playingAnim !== 'true' || img.src !== animUrl) {
+          img.src = animUrl;
+          img.dataset.playingAnim = 'true';
+        }
+        if (badge) {
+          badge.classList.remove('hidden');
+          badge.title = 'Looping animated preview';
+        }
+        if (spinner) {
+          spinner.classList.add('hidden');
+          spinner.classList.remove('animate-spin');
+        }
+        card.removeAttribute('data-anim-pending');
+      } else {
+        // Not yet generated: show static fallback with spinning indicator and enqueue
+        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : img.src);
+        if (fallback && img.dataset.playingAnim === 'true') {
+          img.src = fallback;
+        }
+        img.dataset.playingAnim = 'false';
+        if (badge) {
+          badge.classList.remove('hidden');
+          badge.title = 'Generating animated preview...';
+        }
+        if (spinner) {
+          spinner.classList.remove('hidden');
+          spinner.classList.add('animate-spin');
+        }
+        card.dataset.animPending = 'true';
+        enqueueAnimatedThumbnail(path);
+      }
+    } else {
+      // OFF SCREEN:
+      // Pause animation if it was playing by reverting to static thumbnail
+      if (img.dataset.playingAnim === 'true') {
+        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
+        if (fallback) {
+          img.src = fallback;
+        }
+        img.dataset.playingAnim = 'false';
+      }
+    }
+  }
+
+  function pauseAllGalleryAnimations() {
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-file-type="video"]') : [];
+    cards.forEach((card) => {
+      const img = card.querySelector('.card-thumb');
+      if (img && img.dataset.playingAnim === 'true') {
+        const fallback = img.dataset.fallbackThumb || '';
+        if (fallback) img.src = fallback;
+        img.dataset.playingAnim = 'false';
+      }
+    });
+  }
+
+  function resumeVisibleGalleryAnimations() {
+    if (!state.animatedThumbs) return;
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-file-type="video"]') : [];
+    cards.forEach((card) => {
+      syncCardAnimationState(card);
+    });
+  }
+
   // Reactive tile updater when background worker finishes animated previews
   function updateCardsAnimatedStatus(data) {
     if (!data || !data.recent_completed || data.recent_completed.length === 0) return;
@@ -225,79 +393,25 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       });
     }
 
-    // Update visible media cards that are pending animated preview
-    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-anim-pending="true"]') : [];
+    // Update visible media cards that match completed items
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-file-type="video"]') : [];
     cards.forEach(card => {
       const path = card.dataset.path;
       if (!path || !completedSet.has(path)) return;
 
+      card.dataset.hasAnimated = 'true';
+      const vTag = Date.now();
+      card.dataset.animatedUrl = `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${vTag}`;
       card.removeAttribute('data-anim-pending');
-      const badge = card.querySelector('.card-anim-badge');
-      const spinner = card.querySelector('.card-anim-spinner');
-      const img = card.querySelector('.card-thumb');
-
-      if (spinner) {
-        spinner.classList.add('hidden');
-        spinner.classList.remove('animate-spin');
-      }
-      if (badge) {
-        badge.title = 'Looping animated preview';
-        if (state.animatedThumbs) badge.classList.remove('hidden');
-      }
-      if (img && state.animatedThumbs) {
-        const vTag = Date.now();
-        img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${vTag}`;
-      }
+      syncCardAnimationState(card);
     });
   }
 
   // Update existing video tiles on screen when toggling animated previews
   function updateCardsAnimatedThumbnails() {
-    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card') : [];
+    const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-file-type="video"]') : [];
     cards.forEach(card => {
-      if (card.dataset.fileType !== 'video') return;
-      const img = card.querySelector('.card-thumb');
-      const badge = card.querySelector('.card-anim-badge');
-      const spinner = card.querySelector('.card-anim-spinner');
-      const path = card.dataset.path;
-      if (!img || !path) return;
-
-      const file = state.allFiles ? state.allFiles.find(f => f.path === path) : null;
-      const hasAnimated = file ? Boolean(file.has_animated) : false;
-
-      if (state.animatedThumbs) {
-        if (hasAnimated) {
-          img.src = file && file.animated_url ? file.animated_url : `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`;
-          if (badge) {
-            badge.classList.remove('hidden');
-            badge.title = 'Looping animated preview';
-          }
-          if (spinner) spinner.classList.add('hidden');
-          card.removeAttribute('data-anim-pending');
-        } else {
-          // Keep static thumbnail so user never sees a missing/blank box!
-          const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
-          if (fallback) img.src = fallback;
-          if (badge) {
-            badge.classList.remove('hidden');
-            badge.title = 'Generating animated preview...';
-          }
-          if (spinner) {
-            spinner.classList.remove('hidden');
-            spinner.classList.add('animate-spin');
-          }
-          card.dataset.animPending = 'true';
-          enqueueAnimatedThumbnail(path);
-        }
-      } else {
-        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
-        if (fallback) {
-          img.src = fallback;
-        }
-        if (badge) badge.classList.add('hidden');
-        if (spinner) spinner.classList.add('hidden');
-        card.removeAttribute('data-anim-pending');
-      }
+      syncCardAnimationState(card);
     });
   }
 
@@ -1084,6 +1198,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       state._gridPendingRowEl = null;
     } else {
       els.mediaGrid.innerHTML = '';
+      if (state.animObserver) {
+        state.animObserver.disconnect();
+      }
       state._gridPendingRowEl = null;
       state._gridPendingStart = 0;
     }
@@ -1131,18 +1248,18 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       const isAnimActive = isVid && state.animatedThumbs;
       const hasAnimated = Boolean(file.has_animated);
 
-      // If animated previews are turned on:
-      // - If already compiled: load animated preview
-      // - If generating or queued: load static thumbnail immediately (NO empty black box!) with generating spinner!
-      const thumbSrc = (isAnimActive && hasAnimated)
-        ? (file.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`)
-        : file.thumb_url;
+      // Start all cards with lightweight static poster thumbnail;
+      // animObserver promotes cards currently on screen to animated WebP.
+      const thumbSrc = file.thumb_url;
+      const animUrl = file.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`;
 
       const isAnimGenerating = isAnimActive && !hasAnimated;
       if (isAnimGenerating) {
         card.dataset.animPending = 'true';
-        enqueueAnimatedThumbnail(file.path);
       }
+
+      card.dataset.hasAnimated = hasAnimated ? 'true' : 'false';
+      card.dataset.animatedUrl = animUrl;
 
       const extLabel = file.ext.toUpperCase().replace('.', '');
       const resLabel = getResolutionLabel(file.width, file.height);
@@ -1350,6 +1467,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       });
 
         rowEl.appendChild(card);
+        if (isVid) {
+          observeAnimatedCard(card);
+        }
       });
 
       els.mediaGrid.appendChild(rowEl);
@@ -1456,6 +1576,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       on: {
         init: (fancybox) => {
           state.fancyboxInstance = fancybox;
+          pauseAllGalleryAnimations();
         },
         'Carousel.change': () => {
           setTimeout(syncActiveLightboxVideo, 50);
@@ -1465,6 +1586,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         },
         destroy: () => {
           state.fancyboxInstance = null;
+          resumeVisibleGalleryAnimations();
         }
       }
     });
@@ -1667,15 +1789,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
       const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
       if (card) {
+        card.dataset.hasAnimated = 'true';
+        card.dataset.animatedUrl = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
         const img = card.querySelector('img');
         if (img) {
           img.dataset.fallbackThumb = data.thumb_url;
-          if (state.animatedThumbs) {
-            img.src = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
-          } else {
-            img.src = data.thumb_url;
-          }
         }
+        syncCardAnimationState(card);
       }
 
       if (activeSlide.thumb) activeSlide.thumb = data.thumb_url;
@@ -2076,15 +2196,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
       const card = document.querySelector(`[data-path="${CSS.escape(path)}"]`);
       if (card) {
+        card.dataset.hasAnimated = 'true';
+        card.dataset.animatedUrl = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
         const img = card.querySelector('img');
         if (img) {
           img.dataset.fallbackThumb = data.thumb_url;
-          if (state.animatedThumbs) {
-            img.src = data.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}&v=${Date.now()}`;
-          } else {
-            img.src = data.thumb_url;
-          }
         }
+        syncCardAnimationState(card);
       }
 
       const activeSlide = state.fancyboxInstance?.getSlide();
@@ -2746,19 +2864,17 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       });
       if (res.ok) {
         showToast(`Animated preview generated for ${target.name}`, 'success');
-        const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card') : [];
-        for (const card of cards) {
-          if (card.dataset.path === target.path) {
-            const img = card.querySelector('.card-thumb');
-            if (img) {
-              img.src = `/api/backup/thumbnails/animated?path=${encodeURIComponent(target.path)}&t=${Date.now()}`;
-            }
-            const badge = card.querySelector('.card-anim-badge');
-            if (badge && state.animatedThumbs) {
-              badge.classList.remove('hidden');
-            }
-            break;
-          }
+        const file = state.allFiles ? state.allFiles.find(f => f.path === target.path) : null;
+        if (file) {
+          file.has_animated = true;
+          file.animated_url = `/api/backup/thumbnails/animated?path=${encodeURIComponent(target.path)}&t=${Date.now()}`;
+        }
+        const card = document.querySelector(`[data-path="${CSS.escape(target.path)}"]`);
+        if (card) {
+          card.dataset.hasAnimated = 'true';
+          card.dataset.animatedUrl = file ? file.animated_url : `/api/backup/thumbnails/animated?path=${encodeURIComponent(target.path)}&t=${Date.now()}`;
+          card.removeAttribute('data-anim-pending');
+          syncCardAnimationState(card);
         }
       } else {
         const err = await res.json().catch(() => ({}));
@@ -7419,6 +7535,15 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         relayoutMediaGrid();
         relayoutSubfolders();
       }, 150);
+    });
+
+    // Pause gallery animations when browser tab is inactive / minimized
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        pauseAllGalleryAnimations();
+      } else {
+        resumeVisibleGalleryAnimations();
+      }
     });
 
     // Scroll to Top floating button handler & Mobile Single-Line Header auto-hide
