@@ -102,6 +102,41 @@ div[id$="Modal"].fixed.inset-0 > div:first-child {
   -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 
+/* Duplicates & Ignored modals — dynamic viewport height & safe-area containment */
+#duplicatesModal,
+#ignoredDuplicatesModal {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding-top: max(0.5rem, var(--sat, env(safe-area-inset-top, 0px)));
+  padding-bottom: max(0.5rem, var(--sab, env(safe-area-inset-bottom, 0px)));
+  padding-left: max(0.5rem, var(--sal, env(safe-area-inset-left, 0px)));
+  padding-right: max(0.5rem, var(--sar, env(safe-area-inset-right, 0px)));
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  #duplicatesModal,
+  #ignoredDuplicatesModal {
+    padding-top: max(1rem, var(--sat, env(safe-area-inset-top, 0px)));
+    padding-bottom: max(1rem, var(--sab, env(safe-area-inset-bottom, 0px)));
+    padding-left: max(1rem, var(--sal, env(safe-area-inset-left, 0px)));
+    padding-right: max(1rem, var(--sar, env(safe-area-inset-right, 0px)));
+  }
+}
+
+@media (min-width: 768px) {
+  #duplicatesModal,
+  #ignoredDuplicatesModal {
+    padding: 1.5rem;
+  }
+}
+
+#duplicateCardsContainer,
+#ignoredDuplicatesList {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Background tasks modal — modern solid dark surface (no glassmorphism) */
 #transferDropdown,
 #transferDropdown * {

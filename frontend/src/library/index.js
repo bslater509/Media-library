@@ -2261,6 +2261,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     state.duplicates.isOpen = true;
     if (els.duplicatesModal) {
       els.duplicatesModal.classList.remove('hidden');
+      if (els.duplicateCardsContainer) {
+        els.duplicateCardsContainer.scrollTop = 0;
+      }
       loadDuplicateGroups(true);
     }
   }
@@ -2416,6 +2419,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       } catch (e) {}
     });
 
+    els.duplicateCardsContainer.scrollTop = 0;
     els.duplicateCardsContainer.innerHTML = group.files.map((file, fIdx) => {
       const isRecommended = (fIdx === group.suggested_keep_index);
       const isVid = (file.type === 'video');
@@ -5661,11 +5665,21 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     // Duplicates Review Modal Events
     if (els.openDuplicatesBtn) els.openDuplicatesBtn.addEventListener('click', openDuplicatesModal);
     if (els.closeDuplicatesModalBtn) els.closeDuplicatesModalBtn.addEventListener('click', closeDuplicatesModal);
+    if (els.duplicatesModal) {
+      els.duplicatesModal.addEventListener('click', (e) => {
+        if (e.target === els.duplicatesModal) closeDuplicatesModal();
+      });
+    }
     if (els.dupModeContentBtn) els.dupModeContentBtn.addEventListener('click', () => setDuplicatesMode('content'));
     if (els.dupModeVisualBtn) els.dupModeVisualBtn.addEventListener('click', () => setDuplicatesMode('visual'));
     if (els.openIgnoredDuplicatesBtn) els.openIgnoredDuplicatesBtn.addEventListener('click', openIgnoredDuplicatesModal);
     if (els.closeIgnoredDuplicatesModalBtn) els.closeIgnoredDuplicatesModalBtn.addEventListener('click', closeIgnoredDuplicatesModal);
     if (els.closeIgnoredDuplicatesFooterBtn) els.closeIgnoredDuplicatesFooterBtn.addEventListener('click', closeIgnoredDuplicatesModal);
+    if (els.ignoredDuplicatesModal) {
+      els.ignoredDuplicatesModal.addEventListener('click', (e) => {
+        if (e.target === els.ignoredDuplicatesModal) closeIgnoredDuplicatesModal();
+      });
+    }
     if (els.autoDeleteAllVerifiedBtn) els.autoDeleteAllVerifiedBtn.addEventListener('click', (e) => autoDeleteAllVerified(e.currentTarget));
     if (els.ignoreCurrentGroupBtn) els.ignoreCurrentGroupBtn.addEventListener('click', (e) => ignoreCurrentDuplicateMatch(e.currentTarget));
     if (els.prevDuplicateGroupBtn) els.prevDuplicateGroupBtn.addEventListener('click', () => {
