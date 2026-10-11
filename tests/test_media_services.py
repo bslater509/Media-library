@@ -165,6 +165,53 @@ def test_ffmpeg_service_helpers():
     assert str(cand_p).endswith(".jpg")
     assert "cand_" in str(cand_p)
 
+    # relay_process_stdout
+    import asyncio
+    from unittest.mock import AsyncMock
+    from media_library.services.ffmpeg_service import relay_process_stdout, probe_video_meta, probe_media_metadata
+
+    async def _test_relay():
+        mock_proc = AsyncMock()
+        mock_proc.stdout.read.side_effect = [b"chunk1", b"chunk2", b""]
+        mock_proc.terminate = AsyncMock()
+        mock_proc.wait = AsyncMock()
+        chunks = []
+        async for ch in relay_process_stdout(mock_proc):
+            chunks.append(ch)
+        assert chunks == [b"chunk1", b"chunk2"]
+
+        # probe functions on missing path
+        m_vid = await probe_video_meta("/nonexistent/video.mp4")
+        assert m_vid["duration"] == 0.0
+
+        m_media = await probe_media_metadata("/nonexistent/video.mp4")
+        assert m_media is None
+
+    asyncio.run(_test_relay())
+
+
+def test_extract_frame_poster_base64(sandbox_env):
+    import asyncio
+    import base64
+    import io
+    from PIL import Image
+    from media_library.services.ffmpeg_service import extract_frame_poster
+
+    media = sandbox_env["media_dir"]
+    vid = media / "test_poster_vid.mp4"
+    vid.write_bytes(b"\x00" * 100)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), color="blue").save(buf, format="JPEG")
+    b64_str = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    async def _test():
+        res = await extract_frame_poster(str(vid), image_base64=b64_str)
+        assert res is not None
+        assert res.exists()
+
+    asyncio.run(_test())
+
 
 def test_ffmpeg_image_dimensions_and_webp(sandbox_env):
     from PIL import Image

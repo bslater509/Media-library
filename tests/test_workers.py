@@ -1,6 +1,7 @@
 """Tests for background worker managers and lifecycles."""
 
 import asyncio
+from unittest.mock import patch
 
 from media_library.workers.backup_watcher import BackupWatcherWorker
 from media_library.workers.base import BaseWorker
@@ -230,3 +231,92 @@ def test_backup_watcher_worker_status():
     assert "status" in status
     assert "progress_percent" in status
     assert "current_step" in status
+
+
+def test_thumbnail_worker_run_loop(sandbox_env):
+    from media_library.db.connection import db_conn
+    from PIL import Image
+
+    media = sandbox_env["media_dir"]
+    sub = media / "thumb_loop_test"
+    sub.mkdir()
+    img = sub / "pic.jpg"
+    Image.new("RGB", (64, 64), color="blue").save(img, format="JPEG")
+
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, has_thumb) VALUES (?, ?, ?, 'image', '.jpg', 100, '100 B', 100.0, 0)",
+            (str(img), "pic.jpg", str(sub)),
+        )
+
+    worker = ThumbnailWorker()
+    worker.enqueue_folder(str(sub))
+    assert worker.priority_queue.qsize() == 1
+
+    orig_sleep = asyncio.sleep
+
+    async def fast_sleep(s):
+        if s > 0.05:
+            await orig_sleep(0.01)
+        else:
+            await orig_sleep(s)
+
+    async def _run():
+        with patch("asyncio.sleep", side_effect=fast_sleep):
+            task = asyncio.create_task(worker._run_loop())
+            for _ in range(50):
+                await orig_sleep(0.05)
+                if worker.state["cached_count"] >= 1:
+                    break
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    asyncio.run(_run())
+    assert worker.state["cached_count"] >= 1
+
+
+def test_webp_worker_run_loop(sandbox_env):
+    from media_library.db.connection import db_conn
+    from PIL import Image
+
+    media = sandbox_env["media_dir"]
+    sub = media / "webp_loop_test"
+    sub.mkdir()
+    img = sub / "photo_to_conv.jpg"
+    Image.new("RGB", (64, 64), color="red").save(img, format="JPEG")
+
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, webp_optimized) VALUES (?, ?, ?, 'image', '.jpg', 100, '100 B', 100.0, 0)",
+            (str(img), "photo_to_conv.jpg", str(sub)),
+        )
+
+    worker = WebPOptimizerWorker()
+    worker.enqueue_folder(str(sub))
+
+    orig_sleep = asyncio.sleep
+
+    async def fast_sleep(s):
+        if s > 0.05:
+            await orig_sleep(0.01)
+        else:
+            await orig_sleep(s)
+
+    async def _run():
+        with patch("asyncio.sleep", side_effect=fast_sleep):
+            task = asyncio.create_task(worker._run_loop())
+            for _ in range(50):
+                await orig_sleep(0.05)
+                if worker.state["converted_count"] >= 1 or not worker.priority_queue.empty():
+                    break
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    asyncio.run(_run())
+

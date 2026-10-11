@@ -232,15 +232,23 @@ media-library/
 │   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
 │   ├── test_api_routes.py           # HTTP endpoints & status verification
 │   ├── test_auth.py                 # Shared-password authentication & session protection
+│   ├── test_backup_and_admin_operations.py # Backup snapshot/restore, rename/delete, poster capture
 │   ├── test_backup_service.py       # Backup snapshot & restore tests
 │   ├── test_core_config.py          # Configuration loading & path resolution
 │   ├── test_db_indexer.py           # SQLite indexer & pruning tests
+│   ├── test_deep_coverage_workers_services.py # Worker loops, upload service, deep clean, WebP/FFmpeg
+│   ├── test_duplicates_comprehensive.py # Quick & visual deduplication, cliques, auto-delete, worker loops
 │   ├── test_library_manage.py       # File management, empty folder cleanup & undo operations
+│   ├── test_library_media_and_http_stream.py # Byte-range streaming, ETag 304 caching, thumbnail candidate frames
 │   ├── test_media_dimensions.py     # Dimension/metadata probing, natural-ratio tile data, folder totals
+│   ├── test_media_service_and_ops_worker.py # LAN IP, token search, ops worker queue/undo, debounced sync-back
 │   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
 │   ├── test_performance_features.py# In-memory stat cache, subfolder caching, status API
 │   ├── test_sorter_browse.py        # Video sorter browsing, queue scanning & destination listing
+│   ├── test_sorter_media_and_queue.py # Sorter streaming, queue refresh, transfer abort, tolerant path resolution
 │   ├── test_sorter_move.py          # Sorter moves, undo stack, file rename, delete & transfers
+│   ├── test_thumbnail_chooser.py    # Video poster selection, candidate generation & timeline scrubbing
+│   ├── test_transcode_comprehensive.py # Transcoding pause/resume, cancel, queue, and worker execution
 │   ├── test_webp_memory_guard.py    # WebP conversion memory safeguards and skip logic
 │   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
 │   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
