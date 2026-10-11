@@ -640,18 +640,31 @@ async def extract_frame_poster(
                 except Exception:
                     thumb_hash_val = None
 
+                now_ts = time.time()
                 try:
                     with db_conn() as conn, conn:
-                        if thumb_hash_val:
-                            conn.execute(
-                                "UPDATE files SET has_thumb = 1, thumb_hash = ? WHERE path = ?",
-                                (thumb_hash_val, file_path),
-                            )
-                        else:
-                            conn.execute(
-                                "UPDATE files SET has_thumb = 1 WHERE path = ?",
-                                (file_path,),
-                            )
+                        try:
+                            if thumb_hash_val:
+                                conn.execute(
+                                    "UPDATE files SET has_thumb = 1, thumb_hash = ?, thumb_mtime = ? WHERE path = ?",
+                                    (thumb_hash_val, now_ts, file_path),
+                                )
+                            else:
+                                conn.execute(
+                                    "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
+                                    (now_ts, file_path),
+                                )
+                        except Exception:
+                            if thumb_hash_val:
+                                conn.execute(
+                                    "UPDATE files SET has_thumb = 1, thumb_hash = ? WHERE path = ?",
+                                    (thumb_hash_val, file_path),
+                                )
+                            else:
+                                conn.execute(
+                                    "UPDATE files SET has_thumb = 1 WHERE path = ?",
+                                    (file_path,),
+                                )
                 except Exception:
                     pass
 

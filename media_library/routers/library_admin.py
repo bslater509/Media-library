@@ -265,10 +265,34 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         )
 
     v_tag = int(time.time())
+    fmtime = None
+    fsize = None
+    try:
+        from media_library.db.connection import db_conn
+        with db_conn() as conn, conn:
+            conn.execute(
+                "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
+                (float(v_tag), real_path),
+            )
+            row = conn.execute(
+                "SELECT mtime, size FROM files WHERE path = ? LIMIT 1",
+                (real_path,),
+            ).fetchone()
+            if row:
+                fmtime = row["mtime"]
+                fsize = row["size"]
+    except Exception:
+        pass
+
+    thumb_query = f"?path={urllib.parse.quote(real_path)}"
+    if fmtime is not None and fsize is not None:
+        thumb_query += f"&mtime={fmtime}&size={fsize}"
+    thumb_query += f"&v={v_tag}"
+
     return {
         "success": True,
         "path": real_path,
         "timestamp": timestamp,
-        "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(real_path)}&v={v_tag}",
+        "thumb_url": f"/api/backup/thumbnail{thumb_query}",
     }
 

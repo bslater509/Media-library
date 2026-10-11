@@ -340,7 +340,8 @@ CREATE TABLE files (
     video_codec TEXT,                  -- First video stream codec (e.g. 'h264')
     audio_codec TEXT,                  -- First audio stream codec (e.g. 'aac')
     fps REAL,                          -- Average video frame rate
-    capture_time REAL                  -- Capture/creation epoch (EXIF or container creation_time), or NULL
+    capture_time REAL,                 -- Capture/creation epoch (EXIF or container creation_time), or NULL
+    thumb_mtime REAL                   -- Timestamp of custom poster frame extraction (used for URL cache busting)
 );
 ```
 - `width`/`height` drive natural-aspect-ratio Library tiles (clamped client-side to 2:3–3:2).

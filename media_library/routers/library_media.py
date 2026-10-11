@@ -61,6 +61,12 @@ async def get_backup_thumbnail(
         if resolved and os.path.exists(resolved):
             real_path = resolved
 
+    ext = os.path.splitext(real_path)[1].lower()
+    is_video = ext in VIDEO_EXTENSIONS
+    is_img = ext in IMAGE_EXTENSIONS
+    if not is_video and not is_img:
+        raise HTTPException(status_code=400, detail="Unsupported media file type")
+
     thumb_path = await asyncio.to_thread(
         get_thumbnail_path_fast, real_path, mtime, size
     )

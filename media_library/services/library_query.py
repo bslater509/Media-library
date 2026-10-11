@@ -30,6 +30,13 @@ def _build_file_entry(r: Any) -> dict[str, Any]:
     thumb_query = f"?path={urllib.parse.quote(fpath)}"
     if fmtime is not None and fsize is not None:
         thumb_query += f"&mtime={fmtime}&size={fsize}"
+    v_tag = None
+    if "thumb_mtime" in r.keys() and r["thumb_mtime"]:
+        v_tag = int(r["thumb_mtime"])
+    elif "thumb_hash" in r.keys() and r["thumb_hash"]:
+        v_tag = r["thumb_hash"]
+    if v_tag is not None:
+        thumb_query += f"&v={v_tag}"
     return {
         "name": r["name"],
         "path": fpath,
@@ -101,7 +108,7 @@ def _query_first_child_cover(
         try:
             cur = conn.execute(
                 f"""
-                SELECT f.folder_path, f.path, f.mtime, f.size, f.has_thumb, f.width, f.height
+                SELECT f.folder_path, f.path, f.mtime, f.size, f.has_thumb, f.thumb_hash, f.thumb_mtime, f.width, f.height
                 FROM files f
                 WHERE f.type = ? AND f.folder_path IN ({placeholders})
                   AND LOWER(f.name) = (
@@ -153,6 +160,13 @@ def _attach_folder_covers(conn, folders: list[dict[str, Any]]) -> None:
         q = f"?path={urllib.parse.quote(r['path'])}"
         if r["mtime"] is not None and r["size"] is not None:
             q += f"&mtime={r['mtime']}&size={r['size']}"
+        v_tag = None
+        if "thumb_mtime" in r.keys() and r["thumb_mtime"]:
+            v_tag = int(r["thumb_mtime"])
+        elif "thumb_hash" in r.keys() and r["thumb_hash"]:
+            v_tag = r["thumb_hash"]
+        if v_tag is not None:
+            q += f"&v={v_tag}"
         f["thumb_url"] = f"/api/backup/thumbnail{q}"
         f["has_thumb"] = bool(r["has_thumb"]) if "has_thumb" in r.keys() else False
         f["width"] = r["width"] if "width" in r.keys() else None

@@ -246,7 +246,11 @@ def search_backup_index(
                         "capture_time": r["capture_time"]
                         if "capture_time" in r.keys()
                         else None,
-                        "thumb_url": f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}",
+                        "thumb_url": (
+                            f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}"
+                            + (f"&mtime={r['mtime']}&size={r['size']}" if (r["mtime"] is not None and r["size"] is not None) else "")
+                            + (f"&v={int(r['thumb_mtime'])}" if ("thumb_mtime" in r.keys() and r["thumb_mtime"]) else (f"&v={r['thumb_hash']}" if ("thumb_hash" in r.keys() and r["thumb_hash"]) else ""))
+                        ),
                         "media_url": media_url,
                     }
                 )

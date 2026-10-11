@@ -104,3 +104,55 @@ def test_candidate_frame_extraction_and_caching(sandbox_env, api_client):
     res_cached = api_client.get(f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0")
     assert res_cached.status_code == 200
     assert res_cached.content == res_ok.content
+
+
+def test_set_poster_frame_cache_busting_and_persistence(sandbox_env, api_client):
+    from media_library.core.state import state
+    from media_library.db.connection import db_conn
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+    video_path = os.path.join(dest, "poster_test.mp4")
+    _create_mock_video_file(video_path)
+
+    # Insert file record without custom thumb_mtime
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
+               VALUES (?, ?, ?, 'video', '.mp4', 2048, '2 KB', 50000.0, 10.0)""",
+            (video_path, "poster_test.mp4", dest),
+        )
+
+    # Browse before setting poster
+    res_browse_before = api_client.get(f"/api/backup/browse?folder={dest}")
+    assert res_browse_before.status_code == 200
+    files_before = res_browse_before.json()["files"]
+    target_before = next(f for f in files_before if f["path"] == video_path)
+    assert "&v=" not in target_before["thumb_url"]
+
+    # Set custom poster
+    import base64
+    img_b64 = "data:image/jpeg;base64," + base64.b64encode(open(video_path, "rb").read()).decode()
+    res_set = api_client.post(
+        "/api/backup/thumbnails/set-poster",
+        json={"path": video_path, "timestamp": 3.0, "image_base64": img_b64},
+    )
+    assert res_set.status_code == 200
+    set_data = res_set.json()
+    assert set_data["success"] is True
+    assert "&v=" in set_data["thumb_url"]
+
+    # Verify DB has thumb_mtime set
+    with db_conn() as conn:
+        row = conn.execute("SELECT thumb_mtime, has_thumb FROM files WHERE path = ?", (video_path,)).fetchone()
+        assert row["has_thumb"] == 1
+        assert row["thumb_mtime"] is not None
+
+    # Browse after setting poster: must include &v= matching the saved version
+    res_browse_after = api_client.get(f"/api/backup/browse?folder={dest}")
+    assert res_browse_after.status_code == 200
+    files_after = res_browse_after.json()["files"]
+    target_after = next(f for f in files_after if f["path"] == video_path)
+    assert "&v=" in target_after["thumb_url"]
+    assert f"&v={int(row['thumb_mtime'])}" in target_after["thumb_url"]
+    assert target_after["thumb_url"] == set_data["thumb_url"]
+

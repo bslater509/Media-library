@@ -55,7 +55,8 @@ def init_backup_db(custom_path: str | Path | None = None):
             video_codec TEXT,
             audio_codec TEXT,
             fps REAL,
-            capture_time REAL
+            capture_time REAL,
+            thumb_mtime REAL
         )""")
         try:
             conn.execute("ALTER TABLE files ADD COLUMN has_thumb INTEGER DEFAULT 0")
@@ -95,6 +96,10 @@ def init_backup_db(custom_path: str | Path | None = None):
             pass
         try:
             conn.execute("ALTER TABLE files ADD COLUMN thumb_hash TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE files ADD COLUMN thumb_mtime REAL")
         except sqlite3.OperationalError:
             pass
         try:
