@@ -429,3 +429,11 @@ div[id$="Modal"].fixed.inset-0 > div:first-child {
   font-size: 11px;
   color: var(--accent, #f59e0b);
 }
+
+/* Header stacking guarantee — navigation bar is permanently on top of all page content */
+header.sticky {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 50 !important;
+}
+

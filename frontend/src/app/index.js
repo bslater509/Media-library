@@ -2630,10 +2630,12 @@ function initThemeCustomizer() {
   function openModal() {
     renderPickers();
     themeModal.classList.remove("hidden");
+    themeModal.classList.add("flex");
   }
 
   function closeModal() {
     themeModal.classList.add("hidden");
+    themeModal.classList.remove("flex");
   }
 
   if (themeModalBtn) themeModalBtn.addEventListener("click", openModal);

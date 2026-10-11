@@ -12,7 +12,7 @@
   {{include 'partials/theme_head.html'}}
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/dist/styles.css?v=34">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=35">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -47,7 +47,7 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
 
   <!-- Top Navigation Bar -->
-  <header class="bg-slate-950/70 border-b border-slate-800/80 backdrop-blur-xl sticky top-0 z-30 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] flex items-center">
+  <header class="bg-slate-950/70 border-b border-slate-800/80 backdrop-blur-xl sticky top-0 z-50 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] flex items-center">
     <div class="max-w-[1920px] w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
       
       <!-- Brand & Mobile Drawer Trigger -->
@@ -341,10 +341,10 @@
     </main>
 
   <!-- Hidden backdrop element kept for legacy event bindings -->
-  <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-40"></div>
+  <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-[60]"></div>
 
   <!-- Background Tasks Centered Modal Dialog -->
-  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
     <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
       
       <!-- Modal Header -->
@@ -917,7 +917,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=35"></script>
+  <script type="module" src="/static/dist/library.js?v=36"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>

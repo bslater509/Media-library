@@ -5271,11 +5271,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (!els.themeCustomizerModal) return;
     renderThemeModalPickers();
     els.themeCustomizerModal.classList.remove('hidden');
+    els.themeCustomizerModal.classList.add('flex');
   }
 
   function closeThemeModal() {
     if (!els.themeCustomizerModal) return;
     els.themeCustomizerModal.classList.add('hidden');
+    els.themeCustomizerModal.classList.remove('flex');
   }
 
   function renderThemeModalPickers() {

@@ -10,12 +10,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   {{include 'partials/theme_head.html'}}
-  <link rel="stylesheet" href="/static/dist/styles.css?v=34">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=35">
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white pb-20 md:pb-6">
 
   <!-- Top Navigation Bar -->
-  <header class="bg-slate-950/70 border-b border-slate-800/80 backdrop-blur-xl sticky top-0 z-30 px-2.5 sm:px-4 h-12 sm:h-[52px] flex items-center">
+  <header class="bg-slate-950/70 border-b border-slate-800/80 backdrop-blur-xl sticky top-0 z-50 px-2.5 sm:px-4 h-12 sm:h-[52px] flex items-center">
     <div class="max-w-7xl w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
       
       <!-- Brand & Title -->
@@ -365,10 +365,10 @@
   <!-- ==================== MODALS ==================== -->
 
   <!-- Hidden backdrop element kept for legacy event bindings -->
-  <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-40"></div>
+  <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-[60]"></div>
 
   <!-- Background Tasks Centered Modal Dialog -->
-  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
     <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
       
       <!-- Modal Header -->
@@ -701,7 +701,7 @@
   <!-- Delete Empty Folders Modal -->
   
 
-  <script type="module" src="/static/dist/app.js?v=14"></script>
+  <script type="module" src="/static/dist/app.js?v=15"></script>
   {{include 'partials/index_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>
