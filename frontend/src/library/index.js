@@ -1268,6 +1268,78 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         localStorage.setItem('lib_player_muted', String(video.muted));
       } catch (e) {}
     };
+
+    // Attach mobile double-tap seek handler
+    setupVideoTouchSeek(video);
+  }
+
+  function setupVideoTouchSeek(video) {
+    if (!video || video._touchSeekAttached) return;
+    video._touchSeekAttached = true;
+
+    const container = video.parentElement || video;
+    if (getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+
+    video.addEventListener('touchend', (e) => {
+      const isDoubleTapEnabled = localStorage.getItem('lib_touch_double_tap_seek') !== 'false';
+      if (!isDoubleTapEnabled) return;
+
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+
+      const now = Date.now();
+      const timeDiff = now - lastTapTime;
+      const distDiff = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+
+      if (timeDiff > 40 && timeDiff < 320 && distDiff < 45) {
+        // Double-tap detected
+        const rect = video.getBoundingClientRect();
+        const clickX = touch.clientX - rect.left;
+        const ratio = clickX / rect.width;
+
+        if (ratio <= 0.42) {
+          e.preventDefault();
+          e.stopPropagation();
+          video.currentTime = Math.max(0, video.currentTime - 5);
+          showMobileSeekRipple(container, 'left', '-5s');
+        } else if (ratio >= 0.58) {
+          e.preventDefault();
+          e.stopPropagation();
+          video.currentTime = Math.min(video.duration || 999999, video.currentTime + 5);
+          showMobileSeekRipple(container, 'right', '+5s');
+        }
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+        lastTapX = touch.clientX;
+        lastTapY = touch.clientY;
+      }
+    }, { passive: false });
+  }
+
+  function showMobileSeekRipple(container, side, text) {
+    const old = container.querySelector('.mobile-seek-ripple-container');
+    if (old) old.remove();
+
+    const ripple = document.createElement('div');
+    ripple.className = `mobile-seek-ripple-container ${side}`;
+    const icon = side === 'left' ? '⏪' : '⏩';
+    ripple.innerHTML = `
+      <div class="mobile-seek-ripple-bubble">
+        <span class="icon">${icon}</span>
+        <span class="label font-mono font-bold">${text}</span>
+      </div>
+    `;
+    container.appendChild(ripple);
+    setTimeout(() => {
+      if (ripple.parentNode) ripple.remove();
+    }, 650);
   }
 
   function setLightboxVideoSpeed(speed) {
@@ -1549,6 +1621,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       }
     }
 
+    if (els.themeCustomizerModal && !els.themeCustomizerModal.classList.contains('hidden')) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeThemeModal();
+        return;
+      }
+    }
+
     // Ctrl/Cmd+A selects (or deselects) every item in the current filtered view.
     if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')
         && !state.duplicates.isOpen && !state.fancyboxInstance
@@ -1637,6 +1717,15 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         e.preventDefault();
         const step = activeVideo.paused ? 0.05 : 5.0;
         activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + step);
+      }
+    } else if (!state.duplicates.isOpen) {
+      if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (els.themeCustomizerModal && !els.themeCustomizerModal.classList.contains('hidden')) {
+          closeThemeModal();
+        } else {
+          openThemeModal();
+        }
       }
     }
   });
@@ -5175,6 +5264,120 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     state.observer.observe(els.infiniteScrollSentinel);
   }
 
+  // ==========================================
+  // APPEARANCE & THEME CUSTOMIZER
+  // ==========================================
+  function openThemeModal() {
+    if (!els.themeCustomizerModal) return;
+    renderThemeModalPickers();
+    els.themeCustomizerModal.classList.remove('hidden');
+  }
+
+  function closeThemeModal() {
+    if (!els.themeCustomizerModal) return;
+    els.themeCustomizerModal.classList.add('hidden');
+  }
+
+  function renderThemeModalPickers() {
+    if (!window.THEME_MANAGER) return;
+    const cur = window.THEME_MANAGER.getCurrent();
+    const accents = window.THEME_MANAGER.getAccents();
+    const bases = window.THEME_MANAGER.getBases();
+
+    // Render accents
+    if (els.themeAccentPicker) {
+      els.themeAccentPicker.innerHTML = accents.map(acc => {
+        const isSel = acc.key === cur.accent;
+        return `
+          <button type="button" data-accent="${acc.key}" class="theme-accent-btn group flex flex-col items-center gap-1.5 p-2 rounded-xl border transition cursor-pointer select-none ${isSel ? 'border-emerald-500 bg-emerald-500/10 shadow-sm' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
+            <div class="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full shadow-md flex items-center justify-center transition-transform group-hover:scale-110" style="background-color: ${acc.accent};">
+              ${isSel ? '<span class="text-white text-xs font-bold drop-shadow">✓</span>' : ''}
+            </div>
+            <span class="text-[11px] font-medium ${isSel ? 'text-white font-semibold' : 'text-slate-400 group-hover:text-slate-300'}">${acc.name}</span>
+          </button>
+        `;
+      }).join('');
+
+      els.themeAccentPicker.querySelectorAll('.theme-accent-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const accKey = btn.dataset.accent;
+          const currentBase = window.THEME_MANAGER.getCurrent().base;
+          window.THEME_MANAGER.setTheme(accKey, currentBase);
+          renderThemeModalPickers();
+          showToast(`🎨 Accent changed to ${accKey.charAt(0).toUpperCase() + accKey.slice(1)}`, 'success');
+        });
+      });
+    }
+
+    // Render base contrast options
+    if (els.themeBasePicker) {
+      els.themeBasePicker.innerHTML = bases.map(b => {
+        const isSel = b.key === cur.base;
+        return `
+          <button type="button" data-base="${b.key}" class="theme-base-btn text-left p-3 rounded-xl border transition cursor-pointer select-none ${isSel ? 'border-emerald-500 bg-emerald-500/10 shadow-sm' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>${b.emoji}</span>
+                <span>${b.name}</span>
+              </span>
+              ${isSel ? '<span class="text-emerald-400 text-xs font-bold">✓</span>' : ''}
+            </div>
+            <p class="text-[11px] text-slate-400 leading-tight">${b.desc}</p>
+          </button>
+        `;
+      }).join('');
+
+      els.themeBasePicker.querySelectorAll('.theme-base-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const baseKey = btn.dataset.base;
+          const currentAcc = window.THEME_MANAGER.getCurrent().accent;
+          window.THEME_MANAGER.setTheme(currentAcc, baseKey);
+          renderThemeModalPickers();
+          showToast(`🌌 Theme changed to ${btn.querySelector('span:last-child').textContent}`, 'success');
+        });
+      });
+    }
+
+    // Double tap toggle
+    if (els.mobileDoubleTapSeekToggle) {
+      els.mobileDoubleTapSeekToggle.checked = localStorage.getItem('lib_touch_double_tap_seek') !== 'false';
+    }
+  }
+
+  function initThemeCustomizerEvents() {
+    if (els.themeModalBtn) {
+      els.themeModalBtn.addEventListener('click', openThemeModal);
+    }
+    if (els.closeThemeModalBtn) {
+      els.closeThemeModalBtn.addEventListener('click', closeThemeModal);
+    }
+    if (els.applyThemeModalCloseBtn) {
+      els.applyThemeModalCloseBtn.addEventListener('click', closeThemeModal);
+    }
+    if (els.themeCustomizerModal) {
+      els.themeCustomizerModal.addEventListener('click', (e) => {
+        if (e.target === els.themeCustomizerModal) closeThemeModal();
+      });
+    }
+    if (els.resetThemeDefaultsBtn) {
+      els.resetThemeDefaultsBtn.addEventListener('click', () => {
+        if (window.THEME_MANAGER) {
+          window.THEME_MANAGER.setTheme('amber', 'stone');
+        }
+        localStorage.setItem('lib_touch_double_tap_seek', 'true');
+        if (els.mobileDoubleTapSeekToggle) els.mobileDoubleTapSeekToggle.checked = true;
+        renderThemeModalPickers();
+        showToast('🎨 Theme reset to default (Amber · Midnight Stone)', 'info');
+      });
+    }
+    if (els.mobileDoubleTapSeekToggle) {
+      els.mobileDoubleTapSeekToggle.addEventListener('change', (e) => {
+        localStorage.setItem('lib_touch_double_tap_seek', e.target.checked ? 'true' : 'false');
+        showToast(e.target.checked ? 'Double-tap seek enabled (±5s)' : 'Double-tap seek disabled', 'info');
+      });
+    }
+  }
+
   // Event Listeners Initialization
   function initEvents() {
     // Delegated sidebar tree click handler (expand toggle + node navigation)
@@ -5843,6 +6046,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         relayoutSubfolders();
       }, 150);
     });
+
+    // Theme Customizer & Mobile Gestures
+    initThemeCustomizerEvents();
   }
 
   // App Initialization
@@ -6310,6 +6516,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     toggleLightboxVideoLoop,
     captureCurrentFrameAsPoster,
     openMoveModalFromLightbox,
+    openThemeModal,
+    closeThemeModal,
   };
 
   // Start app when DOM is ready

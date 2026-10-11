@@ -7,6 +7,23 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  try {
+    const acc = localStorage.getItem('lib_theme_accent');
+    const colors = {
+      amber: { a: '#f59e0b', s: '#d97706' },
+      emerald: { a: '#10b981', s: '#059669' },
+      violet: { a: '#8b5cf6', s: '#7c3aed' },
+      sky: { a: '#0ea5e9', s: '#0284c7' },
+      rose: { a: '#f43f5e', s: '#e11d48' },
+      sun: { a: '#eab308', s: '#ca8a04' }
+    };
+    if (acc && colors[acc]) {
+      document.documentElement.style.setProperty('--accent', colors[acc].a);
+      document.documentElement.style.setProperty('--accent-strong', colors[acc].s);
+    }
+  } catch(e){}
+</script>
 <style>
   :root { color-scheme: dark; --accent: #f59e0b; --accent-strong: #d97706; }
   * { box-sizing: border-box; }

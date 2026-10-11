@@ -2455,6 +2455,11 @@ function setupEventListeners() {
       closeRenameModal();
       closeDeleteModal();
       shortcutsModal.classList.add("hidden");
+      const themeModal = document.getElementById("themeCustomizerModal");
+      if (themeModal && !themeModal.classList.contains("hidden")) {
+        themeModal.classList.add("hidden");
+        return;
+      }
       if (transferDropdown) transferDropdown.classList.add("hidden");
       return;
     }
@@ -2532,11 +2537,194 @@ function setupEventListeners() {
           videoPlayer.requestFullscreen().catch(() => {});
         }
         break;
+      case "t":
+        e.preventDefault();
+        const themeBtn = document.getElementById("themeModalBtn");
+        if (themeBtn) themeBtn.click();
+        break;
       case "?":
         shortcutsModal.classList.toggle("hidden");
         break;
     }
   });
+
+  initThemeCustomizer();
+  setupSorterTouchSeek();
+}
+
+function initThemeCustomizer() {
+  const themeModalBtn = document.getElementById("themeModalBtn");
+  const themeModal = document.getElementById("themeCustomizerModal");
+  const closeThemeModalBtn = document.getElementById("closeThemeModalBtn");
+  const applyThemeModalCloseBtn = document.getElementById("applyThemeModalCloseBtn");
+  const resetThemeDefaultsBtn = document.getElementById("resetThemeDefaultsBtn");
+  const themeAccentPicker = document.getElementById("themeAccentPicker");
+  const themeBasePicker = document.getElementById("themeBasePicker");
+  const mobileDoubleTapSeekToggle = document.getElementById("mobileDoubleTapSeekToggle");
+
+  if (!themeModal) return;
+
+  function renderPickers() {
+    if (!window.THEME_MANAGER) return;
+    const cur = window.THEME_MANAGER.getCurrent();
+    const accents = window.THEME_MANAGER.getAccents();
+    const bases = window.THEME_MANAGER.getBases();
+
+    if (themeAccentPicker) {
+      themeAccentPicker.innerHTML = accents.map(acc => {
+        const isSel = acc.key === cur.accent;
+        return `
+          <button type="button" data-accent="${acc.key}" class="theme-accent-btn group flex flex-col items-center gap-1.5 p-2 rounded-xl border transition cursor-pointer select-none ${isSel ? 'border-emerald-500 bg-emerald-500/10 shadow-sm' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
+            <div class="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full shadow-md flex items-center justify-center transition-transform group-hover:scale-110" style="background-color: ${acc.accent};">
+              ${isSel ? '<span class="text-white text-xs font-bold drop-shadow">✓</span>' : ''}
+            </div>
+            <span class="text-[11px] font-medium ${isSel ? 'text-white font-semibold' : 'text-slate-400 group-hover:text-slate-300'}">${acc.name}</span>
+          </button>
+        `;
+      }).join('');
+
+      themeAccentPicker.querySelectorAll('.theme-accent-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const accKey = btn.dataset.accent;
+          const currentBase = window.THEME_MANAGER.getCurrent().base;
+          window.THEME_MANAGER.setTheme(accKey, currentBase);
+          renderPickers();
+          showToast(`🎨 Accent changed to ${accKey.charAt(0).toUpperCase() + accKey.slice(1)}`, 'success', 2000);
+        });
+      });
+    }
+
+    if (themeBasePicker) {
+      themeBasePicker.innerHTML = bases.map(b => {
+        const isSel = b.key === cur.base;
+        return `
+          <button type="button" data-base="${b.key}" class="theme-base-btn text-left p-3 rounded-xl border transition cursor-pointer select-none ${isSel ? 'border-emerald-500 bg-emerald-500/10 shadow-sm' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>${b.emoji}</span>
+                <span>${b.name}</span>
+              </span>
+              ${isSel ? '<span class="text-emerald-400 text-xs font-bold">✓</span>' : ''}
+            </div>
+            <p class="text-[11px] text-slate-400 leading-tight">${b.desc}</p>
+          </button>
+        `;
+      }).join('');
+
+      themeBasePicker.querySelectorAll('.theme-base-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const baseKey = btn.dataset.base;
+          const currentAcc = window.THEME_MANAGER.getCurrent().accent;
+          window.THEME_MANAGER.setTheme(currentAcc, baseKey);
+          renderPickers();
+          showToast(`🌌 Theme changed to ${btn.querySelector('span:last-child').textContent}`, 'success', 2000);
+        });
+      });
+    }
+
+    if (mobileDoubleTapSeekToggle) {
+      mobileDoubleTapSeekToggle.checked = localStorage.getItem('lib_touch_double_tap_seek') !== 'false';
+    }
+  }
+
+  function openModal() {
+    renderPickers();
+    themeModal.classList.remove("hidden");
+  }
+
+  function closeModal() {
+    themeModal.classList.add("hidden");
+  }
+
+  if (themeModalBtn) themeModalBtn.addEventListener("click", openModal);
+  if (closeThemeModalBtn) closeThemeModalBtn.addEventListener("click", closeModal);
+  if (applyThemeModalCloseBtn) applyThemeModalCloseBtn.addEventListener("click", closeModal);
+  themeModal.addEventListener("click", (e) => {
+    if (e.target === themeModal) closeModal();
+  });
+
+  if (resetThemeDefaultsBtn) {
+    resetThemeDefaultsBtn.addEventListener("click", () => {
+      if (window.THEME_MANAGER) window.THEME_MANAGER.setTheme('amber', 'stone');
+      localStorage.setItem('lib_touch_double_tap_seek', 'true');
+      if (mobileDoubleTapSeekToggle) mobileDoubleTapSeekToggle.checked = true;
+      renderPickers();
+      showToast('🎨 Theme reset to default', 'info', 2000);
+    });
+  }
+
+  if (mobileDoubleTapSeekToggle) {
+    mobileDoubleTapSeekToggle.addEventListener("change", (e) => {
+      localStorage.setItem('lib_touch_double_tap_seek', e.target.checked ? 'true' : 'false');
+      showToast(e.target.checked ? 'Double-tap seek enabled (±5s)' : 'Double-tap seek disabled', 'info', 2000);
+    });
+  }
+}
+
+function setupSorterTouchSeek() {
+  if (!videoPlayer) return;
+  const container = videoContainer || videoPlayer.parentElement || videoPlayer;
+  if (getComputedStyle(container).position === 'static') {
+    container.style.position = 'relative';
+  }
+
+  let lastTapTime = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+
+  videoPlayer.addEventListener('touchend', (e) => {
+    const isDoubleTapEnabled = localStorage.getItem('lib_touch_double_tap_seek') !== 'false';
+    if (!isDoubleTapEnabled) return;
+
+    const touch = e.changedTouches && e.changedTouches[0];
+    if (!touch) return;
+
+    const now = Date.now();
+    const timeDiff = now - lastTapTime;
+    const distDiff = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+
+    if (timeDiff > 40 && timeDiff < 320 && distDiff < 45) {
+      const rect = videoPlayer.getBoundingClientRect();
+      const clickX = touch.clientX - rect.left;
+      const ratio = clickX / rect.width;
+
+      if (ratio <= 0.42) {
+        e.preventDefault();
+        e.stopPropagation();
+        videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 5);
+        showSorterSeekRipple(container, 'left', '-5s');
+      } else if (ratio >= 0.58) {
+        e.preventDefault();
+        e.stopPropagation();
+        videoPlayer.currentTime = Math.min(videoPlayer.duration || 999999, videoPlayer.currentTime + 5);
+        showSorterSeekRipple(container, 'right', '+5s');
+      }
+      lastTapTime = 0;
+    } else {
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+    }
+  }, { passive: false });
+}
+
+function showSorterSeekRipple(container, side, text) {
+  const old = container.querySelector('.mobile-seek-ripple-container');
+  if (old) old.remove();
+
+  const ripple = document.createElement('div');
+  ripple.className = `mobile-seek-ripple-container ${side}`;
+  const icon = side === 'left' ? '⏪' : '⏩';
+  ripple.innerHTML = `
+    <div class="mobile-seek-ripple-bubble">
+      <span class="icon">${icon}</span>
+      <span class="label font-mono font-bold">${text}</span>
+    </div>
+  `;
+  container.appendChild(ripple);
+  setTimeout(() => {
+    if (ripple.parentNode) ripple.remove();
+  }, 650);
 }
 
 function escapeHtml(text) {

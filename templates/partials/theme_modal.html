@@ -1,0 +1,106 @@
+<!-- Theme & Mobile Settings Modal -->
+<div id="themeCustomizerModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-3 sm:p-5">
+  <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    
+    <!-- Header -->
+    <div class="px-5 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-sm">
+          <span>🎨</span>
+        </div>
+        <div>
+          <h3 class="text-sm sm:text-base font-bold text-white">Appearance & Mobile Settings</h3>
+          <p class="text-xs text-slate-400">Accent colors, OLED contrast & touch gestures</p>
+        </div>
+      </div>
+      <button id="closeThemeModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer" title="Close (Esc)">
+        ✕
+      </button>
+    </div>
+
+    <!-- Scrollable Body -->
+    <div class="p-4 sm:p-5 flex-1 overflow-y-auto space-y-5">
+      
+      <!-- Accent Color Selection -->
+      <div>
+        <label class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
+          Accent Palette
+        </label>
+        <div id="themeAccentPicker" class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          <!-- Filled dynamically by theme manager -->
+        </div>
+      </div>
+
+      <!-- Surface / Background Mode Selection -->
+      <div>
+        <label class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
+          Background & Contrast Mode
+        </label>
+        <div id="themeBasePicker" class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <!-- Filled dynamically by theme manager -->
+        </div>
+      </div>
+
+      <!-- Live Interactive Preview Card -->
+      <div>
+        <label class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">
+          Live Preview
+        </label>
+        <div id="themePreviewCard" class="bg-slate-950 p-3.5 sm:p-4 rounded-xl border border-slate-800 flex flex-col gap-3 shadow-inner">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-300">Sample Card Surface</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              Active Tag
+            </span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow-sm transition">
+              Primary Action
+            </button>
+            <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium border border-slate-700 transition">
+              Default Action
+            </button>
+            <span class="text-xs font-mono text-emerald-400 font-semibold cursor-pointer">Accent Link →</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile & Touch Gestures -->
+      <div class="border-t border-slate-800/80 pt-4">
+        <label class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
+          📱 Touch & Mobile Experience
+        </label>
+        
+        <!-- Toggle: Double-tap seek -->
+        <label class="flex items-start gap-3 p-3 bg-slate-950/60 rounded-xl border border-slate-800 cursor-pointer hover:border-slate-700 transition select-none">
+          <input type="checkbox" id="mobileDoubleTapSeekToggle" checked class="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500/40 cursor-pointer" />
+          <div class="flex-1 text-xs">
+            <span class="font-semibold text-slate-200 block">Double-tap video to seek ±5s</span>
+            <span class="text-slate-400 text-[11px] leading-relaxed block mt-0.5">Rapidly tap the left or right side of a video in the lightbox viewer to skip 5 seconds with an animated ripple indicator.</span>
+          </div>
+        </label>
+
+        <!-- Touch Gestures Guide -->
+        <div class="mt-2.5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-xs text-slate-400 space-y-1.5">
+          <div class="font-semibold text-slate-300 text-[11px] mb-1">Supported Touch Actions:</div>
+          <div class="flex items-center gap-2"><span class="font-mono text-emerald-400 text-[11px]">👆 Tap:</span> <span>Play / Pause video or toggle viewer controls</span></div>
+          <div class="flex items-center gap-2"><span class="font-mono text-emerald-400 text-[11px]">⏪⏩ 2× Tap:</span> <span>Left half -5s / Right half +5s seek (with ripple)</span></div>
+          <div class="flex items-center gap-2"><span class="font-mono text-emerald-400 text-[11px]">👈👉 Swipe:</span> <span>Flick left/right to browse previous/next item</span></div>
+          <div class="flex items-center gap-2"><span class="font-mono text-emerald-400 text-[11px]">⏱️ Long-Press:</span> <span>Open context menu on any gallery item</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="px-5 py-3.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
+      <button id="resetThemeDefaultsBtn" class="text-xs text-slate-400 hover:text-slate-200 transition cursor-pointer">
+        Reset to Default
+      </button>
+      <button id="applyThemeModalCloseBtn" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm transition cursor-pointer">
+        Done
+      </button>
+    </div>
+
+  </div>
+</div>

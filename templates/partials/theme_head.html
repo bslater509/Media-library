@@ -1,0 +1,300 @@
+<script>
+  /* ---- Media Library & Video Sorter Theme Engine ----
+     Loads saved theme & accent from localStorage synchronously in <head>
+     so that the initial paint has zero flash of incorrect colors.
+  */
+  (function() {
+    const ACCENTS = {
+      amber: {
+        name: 'Amber',
+        emoji: '🟠',
+        accent: '#f59e0b',
+        accentStrong: '#d97706',
+        accentSoft: 'rgba(245, 158, 11, 0.22)',
+        glowTop: 'rgba(245, 158, 11, 0.08)',
+        glowBottom: 'rgba(217, 119, 6, 0.05)',
+        tokens: {
+          50: '#fffbeb', 100: '#fef3c7', 200: '#fde68a', 300: '#fcd34d',
+          400: '#fbbf24', 500: '#f59e0b', 600: '#d97706', 700: '#b45309',
+          800: '#92400e', 900: '#78350f', 950: '#451a03'
+        }
+      },
+      emerald: {
+        name: 'Emerald',
+        emoji: '🟢',
+        accent: '#10b981',
+        accentStrong: '#059669',
+        accentSoft: 'rgba(16, 185, 129, 0.22)',
+        glowTop: 'rgba(16, 185, 129, 0.08)',
+        glowBottom: 'rgba(5, 150, 105, 0.05)',
+        tokens: {
+          50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7',
+          400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
+          800: '#065f46', 900: '#064e3b', 950: '#022c22'
+        }
+      },
+      violet: {
+        name: 'Violet',
+        emoji: '🟣',
+        accent: '#8b5cf6',
+        accentStrong: '#7c3aed',
+        accentSoft: 'rgba(139, 92, 246, 0.22)',
+        glowTop: 'rgba(139, 92, 246, 0.08)',
+        glowBottom: 'rgba(124, 58, 237, 0.05)',
+        tokens: {
+          50: '#f5f3ff', 100: '#ede9fe', 200: '#ddd6fe', 300: '#c4b5fd',
+          400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9',
+          800: '#5b21b6', 900: '#4c1d95', 950: '#2e1065'
+        }
+      },
+      sky: {
+        name: 'Sky',
+        emoji: '🔵',
+        accent: '#0ea5e9',
+        accentStrong: '#0284c7',
+        accentSoft: 'rgba(14, 165, 233, 0.22)',
+        glowTop: 'rgba(14, 165, 233, 0.08)',
+        glowBottom: 'rgba(2, 132, 199, 0.05)',
+        tokens: {
+          50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc',
+          400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1',
+          800: '#075985', 900: '#0c4a6e', 950: '#082f49'
+        }
+      },
+      rose: {
+        name: 'Rose',
+        emoji: '🔴',
+        accent: '#f43f5e',
+        accentStrong: '#e11d48',
+        accentSoft: 'rgba(244, 63, 94, 0.22)',
+        glowTop: 'rgba(244, 63, 94, 0.08)',
+        glowBottom: 'rgba(225, 29, 72, 0.05)',
+        tokens: {
+          50: '#fff1f2', 100: '#ffe4e6', 200: '#fecdd3', 300: '#fda4af',
+          400: '#fb7185', 500: '#f43f5e', 600: '#e11d48', 700: '#be123c',
+          800: '#9f1239', 900: '#881337', 950: '#4c0519'
+        }
+      },
+      sun: {
+        name: 'Yellow',
+        emoji: '🟡',
+        accent: '#eab308',
+        accentStrong: '#ca8a04',
+        accentSoft: 'rgba(234, 179, 8, 0.22)',
+        glowTop: 'rgba(234, 179, 8, 0.08)',
+        glowBottom: 'rgba(202, 138, 4, 0.05)',
+        tokens: {
+          50: '#fefce8', 100: '#fef9c3', 200: '#fef08a', 300: '#fde047',
+          400: '#facc15', 500: '#eab308', 600: '#ca8a04', 700: '#a16207',
+          800: '#854d0e', 900: '#713f12', 950: '#422006'
+        }
+      }
+    };
+
+    const BASES = {
+      stone: {
+        name: 'Midnight Stone',
+        emoji: '🌌',
+        desc: 'Warm neutral dark aesthetic (default)',
+        surfaces: {
+          50: '#fafaf9', 100: '#f5f5f4', 200: '#e7e5e4', 300: '#d6d3d1',
+          400: '#a8a29e', 500: '#78716c', 600: '#57534e', 700: '#44403c',
+          750: '#33302c', 800: '#292524', 850: '#211e1b', 900: '#1c1917',
+          950: '#0c0a09'
+        },
+        vars: {
+          '--warm-950': '#0c0a09',
+          '--warm-900': '#1c1917',
+          '--warm-800': '#292524',
+          '--warm-700': '#44403c',
+          '--warm-600': '#57534e',
+          '--glass-bg': 'rgba(28, 25, 23, 0.72)',
+          '--glass-bg-strong': 'rgba(12, 10, 9, 0.82)',
+          '--glass-border': 'rgba(168, 162, 158, 0.16)'
+        }
+      },
+      oled: {
+        name: 'Pure OLED Black',
+        emoji: '🖤',
+        desc: 'Pitch true black for infinite OLED contrast',
+        surfaces: {
+          50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8',
+          400: '#a1a1aa', 500: '#71717a', 600: '#3f3f46', 700: '#27272a',
+          750: '#18181b', 800: '#121214', 850: '#09090b', 900: '#050506',
+          950: '#000000'
+        },
+        vars: {
+          '--warm-950': '#000000',
+          '--warm-900': '#050506',
+          '--warm-800': '#121214',
+          '--warm-700': '#27272a',
+          '--warm-600': '#3f3f46',
+          '--glass-bg': 'rgba(5, 5, 6, 0.88)',
+          '--glass-bg-strong': 'rgba(0, 0, 0, 0.96)',
+          '--glass-border': 'rgba(63, 63, 70, 0.3)'
+        }
+      },
+      slate: {
+        name: 'Slate Navy',
+        emoji: '🌑',
+        desc: 'Deep cosmic slate navy surfaces',
+        surfaces: {
+          50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
+          400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155',
+          750: '#1e293b', 800: '#1e293b', 850: '#0f172a', 900: '#0b1120',
+          950: '#020617'
+        },
+        vars: {
+          '--warm-950': '#020617',
+          '--warm-900': '#0b1120',
+          '--warm-800': '#1e293b',
+          '--warm-700': '#334155',
+          '--warm-600': '#475569',
+          '--glass-bg': 'rgba(11, 17, 32, 0.78)',
+          '--glass-bg-strong': 'rgba(2, 6, 23, 0.92)',
+          '--glass-border': 'rgba(148, 163, 184, 0.16)'
+        }
+      }
+    };
+
+    let savedAccent = 'amber';
+    let savedBase = 'stone';
+    try {
+      savedAccent = localStorage.getItem('lib_theme_accent') || 'amber';
+      savedBase = localStorage.getItem('lib_theme_base') || 'stone';
+    } catch (e) {}
+
+    const curAccent = ACCENTS[savedAccent] || ACCENTS.amber;
+    const curBase = BASES[savedBase] || BASES.stone;
+
+    const root = document.documentElement;
+    root.dataset.accent = savedAccent;
+    root.dataset.theme = savedBase;
+
+    function applyCssVars(accent, base) {
+      root.style.setProperty('--accent', accent.accent);
+      root.style.setProperty('--accent-strong', accent.accentStrong);
+      root.style.setProperty('--accent-soft', accent.accentSoft);
+      root.style.setProperty('--accent-glow-top', accent.glowTop);
+      root.style.setProperty('--accent-glow-bottom', accent.glowBottom);
+      Object.entries(base.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    }
+    applyCssVars(curAccent, curBase);
+
+    // Dynamic runtime override stylesheet generator
+    function applyDynamicOverrides(accentKey, baseKey) {
+      const accent = ACCENTS[accentKey] || ACCENTS.amber;
+      const base = BASES[baseKey] || BASES.stone;
+      const t = accent.tokens;
+      const s = base.surfaces;
+
+      let el = document.getElementById('dynamicThemeOverrides');
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'dynamicThemeOverrides';
+        document.head.appendChild(el);
+      }
+
+      let css = `
+        /* Accent overrides */
+        .bg-emerald-600 { background-color: ${t[600]} !important; }
+        .hover\\:bg-emerald-500:hover { background-color: ${t[500]} !important; }
+        .hover\\:bg-emerald-600\\/25:hover { background-color: ${accent.accentSoft} !important; }
+        .bg-emerald-600\\/15 { background-color: ${accent.accentSoft} !important; }
+        .text-emerald-300 { color: ${t[300]} !important; }
+        .text-emerald-400 { color: ${t[400]} !important; }
+        .text-emerald-500 { color: ${t[500]} !important; }
+        .border-emerald-500 { border-color: ${t[500]} !important; }
+        .border-emerald-600 { border-color: ${t[600]} !important; }
+        .border-emerald-500\\/30, .border-emerald-600\\/30 { border-color: ${accent.accentSoft} !important; }
+        .focus\\:border-emerald-500:focus { border-color: ${t[500]} !important; }
+        .bg-emerald-500 { background-color: ${t[500]} !important; }
+        .bg-emerald-500\\/20, .bg-emerald-500\\/15 { background-color: ${accent.accentSoft} !important; }
+        
+        /* Brand & Teal tokens */
+        .bg-brand-600 { background-color: ${t[600]} !important; }
+        .text-brand-400 { color: ${t[400]} !important; }
+        .text-teal-300 { color: ${t[300]} !important; }
+        .border-teal-500\\/30 { border-color: ${accent.accentSoft} !important; }
+        .bg-teal-500\\/15 { background-color: ${accent.accentSoft} !important; }
+
+        /* Surface overrides */
+        body { background-color: ${s[950]} !important; color: ${s[100]} !important; }
+        .bg-slate-950, .bg-slate-950\\/80, .bg-slate-950\\/70, .bg-slate-950\\/60 { background-color: ${s[950]} !important; }
+        .bg-slate-900, .bg-slate-900\\/50, .bg-slate-900\\/80, .bg-slate-900\\/40 { background-color: ${s[900]} !important; }
+        .bg-slate-800, .bg-slate-800\\/60, .bg-slate-800\\/80 { background-color: ${s[800]} !important; }
+        .hover\\:bg-slate-700:hover, .hover\\:bg-slate-750:hover { background-color: ${s[700]} !important; }
+        .border-slate-800, .border-slate-800\\/70, .border-slate-800\\/60 { border-color: ${s[800]} !important; }
+        .border-slate-700, .border-slate-700\\/80, .border-slate-700\\/60 { border-color: ${s[700]} !important; }
+      `;
+
+      if (baseKey === 'oled') {
+        css += `
+          body::before { display: none !important; }
+          .bg-slate-950 { background-color: #000000 !important; }
+          .bg-slate-900 { background-color: #050506 !important; }
+          .bg-slate-800 { background-color: #121214 !important; }
+        `;
+      }
+      el.textContent = css;
+    }
+
+    // Expose Global Theme API
+    window.THEME_MANAGER = {
+      ACCENTS: ACCENTS,
+      BASES: BASES,
+      getAccents: () => Object.entries(ACCENTS).map(([k, v]) => ({ key: k, ...v })),
+      getBases: () => Object.entries(BASES).map(([k, v]) => ({ key: k, ...v })),
+      getCurrent: () => ({
+        accent: localStorage.getItem('lib_theme_accent') || 'amber',
+        base: localStorage.getItem('lib_theme_base') || 'stone'
+      }),
+      setTheme: function(accentKey, baseKey) {
+        if (!ACCENTS[accentKey]) accentKey = 'amber';
+        if (!BASES[baseKey]) baseKey = 'stone';
+        try {
+          localStorage.setItem('lib_theme_accent', accentKey);
+          localStorage.setItem('lib_theme_base', baseKey);
+        } catch (e) {}
+        root.dataset.accent = accentKey;
+        root.dataset.theme = baseKey;
+        applyCssVars(ACCENTS[accentKey], BASES[baseKey]);
+        applyDynamicOverrides(accentKey, baseKey);
+        window.dispatchEvent(new CustomEvent('themechange', { detail: { accent: accentKey, base: baseKey } }));
+      }
+    };
+
+    // Configure Tailwind CDN
+    window.tailwind = window.tailwind || {};
+    window.tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          screens: { xs: '480px' },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+          borderRadius: {
+            md: '0.3rem',
+            lg: '0.375rem',
+            xl: '0.5rem',
+            '2xl': '0.625rem',
+            '3xl': '0.875rem',
+          },
+          colors: {
+            brand: curAccent.tokens,
+            slate: curBase.surfaces,
+            emerald: curAccent.tokens,
+            teal: curAccent.tokens,
+            amber: {
+              50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74',
+              400: '#fb923c', 500: '#f97316', 600: '#ea580c', 700: '#c2410c',
+              800: '#9a3412', 900: '#7c2d12', 950: '#431407',
+            },
+          },
+        },
+      },
+    };
+  })();
+</script>

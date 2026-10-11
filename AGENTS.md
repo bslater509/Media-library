@@ -40,6 +40,12 @@
    - Non-destructive SQLite live snapshotting (`sqlite3_backup`) and uncompressed thumbnail bundling directly into `<LIBRARY_DIR>/.media_library_backup/`.
    - Automatic restore on startup if local database or thumbnails are missing.
    - Clean shutdown snapshot creation.
+8. **Theme & Appearance Customizer + Mobile Touch Experience**:
+   - Customizable accent color palettes (Amber, Emerald, Violet, Sky, Rose, Yellow) dynamically remapping UI actions, badges, borders, and ambient glow.
+   - Background contrast modes: Midnight Stone (warm neutral dark), Pure OLED Black (true `#000000` pitch black with zero ambient glow for OLED displays), and Slate Navy (deep space surfaces).
+   - Zero-delay live updates via CSS custom properties + dynamic style rules, zero flash on reload via `<head>` bootstrapping, and persistence in `localStorage` (`lib_theme_accent`, `lib_theme_base`).
+   - Accessible via the `🎨 Theme` button in top navigation or shortcut `T`.
+   - Mobile touch enhancements: double-tap video sides to seek ±5s with animated ripple bubbles (`⏪ -5s` / `⏩ +5s`), touch swipe carousel navigation, and touch-adapted tap targets.
 
 ### Tech Stack
 - **Language & Runtime**: Python 3.9+ (tested on Python 3.13)

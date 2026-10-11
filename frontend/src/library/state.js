@@ -458,4 +458,15 @@
     infoModalDownloadBtn: document.getElementById('infoModalDownloadBtn'),
     infoModalMoveBtn: document.getElementById('infoModalMoveBtn'),
     infoModalPosterBtn: document.getElementById('infoModalPosterBtn'),
+
+    // Theme & Mobile Settings Modal Elements
+    themeModalBtn: document.getElementById('themeModalBtn'),
+    themeCustomizerModal: document.getElementById('themeCustomizerModal'),
+    closeThemeModalBtn: document.getElementById('closeThemeModalBtn'),
+    applyThemeModalCloseBtn: document.getElementById('applyThemeModalCloseBtn'),
+    resetThemeDefaultsBtn: document.getElementById('resetThemeDefaultsBtn'),
+    themeAccentPicker: document.getElementById('themeAccentPicker'),
+    themeBasePicker: document.getElementById('themeBasePicker'),
+    themePreviewCard: document.getElementById('themePreviewCard'),
+    mobileDoubleTapSeekToggle: document.getElementById('mobileDoubleTapSeekToggle'),
   };

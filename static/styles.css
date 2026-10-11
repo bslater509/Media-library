@@ -47,8 +47,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Warm ambient backdrop — a very subtle amber glow in the corners so the
-   near-black canvas doesn't read as flat. */
+/* Ambient backdrop — uses dynamic accent glow variables with smooth transition */
 body::before {
   content: "";
   position: fixed;
@@ -56,8 +55,17 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(1100px 620px at 88% -12%, rgba(245, 158, 11, 0.07), transparent 60%),
-    radial-gradient(900px 560px at -8% 108%, rgba(217, 119, 6, 0.05), transparent 58%);
+    radial-gradient(1100px 620px at 88% -12%, var(--accent-glow-top, rgba(245, 158, 11, 0.07)), transparent 60%),
+    radial-gradient(900px 560px at -8% 108%, var(--accent-glow-bottom, rgba(217, 119, 6, 0.05)), transparent 58%);
+  transition: opacity 0.3s ease;
+}
+
+html[data-theme="oled"] body::before {
+  display: none !important;
+}
+
+html[data-theme="oled"] body {
+  background-color: #000000 !important;
 }
 
 /* Force minimum 16px on mobile inputs to prevent iOS Safari auto-zoom */
@@ -344,4 +352,80 @@ div[id$="Modal"].fixed.inset-0 > div:first-child {
   .mobile-bottom-bar {
     display: none !important;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Mobile Double-Tap Video Seek Ripple Indicators
+   -------------------------------------------------------------------------- */
+@keyframes mobileSeekPulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+.mobile-seek-ripple-container {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 60;
+  transition: opacity 0.2s ease;
+}
+.mobile-seek-ripple-container.left {
+  left: 0;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.45) 0%, transparent 75%);
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+.mobile-seek-ripple-container.right {
+  right: 0;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.45) 0%, transparent 75%);
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.mobile-seek-ripple-bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(12, 10, 9, 0.9);
+  border: 2px solid var(--accent, #f59e0b);
+  box-shadow: 0 0 24px var(--accent-soft, rgba(245, 158, 11, 0.4));
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 13px;
+  animation: mobileSeekPulse 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mobile-seek-ripple-bubble .icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.mobile-seek-ripple-bubble .label {
+  font-size: 11px;
+  color: var(--accent, #f59e0b);
 }
