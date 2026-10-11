@@ -17,7 +17,7 @@ from media_library.db.indexer import (
     update_file_in_index,
 )
 from media_library.services.media_service import validate_backup_path
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     get_zip_cache_dir,
     is_zip_file,
     resolve_zip_file_path,

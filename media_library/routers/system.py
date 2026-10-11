@@ -12,7 +12,7 @@ from media_library.services.status import (
     transfers_payload,
     zip_status_payload,
 )
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     get_batch_unzip_status,
     get_batch_zip_status,
 )
@@ -121,3 +121,11 @@ async def get_all_system_status() -> dict[str, Any]:
         "batch_unzip": batch_unzip_data,
         "library_ops": library_ops_data,
     }
+
+from fastapi import BackgroundTasks
+from media_library.db.indexer import deep_clean_database
+
+@router.post("/api/system/clean-db")
+async def clean_database_and_thumbnails(background_tasks: BackgroundTasks):
+    background_tasks.add_task(deep_clean_database)
+    return {"success": True, "message": "Deep database scan and thumbnail cleanup started in the background."}

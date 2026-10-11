@@ -96,6 +96,9 @@
     batchUnpackSelectedPaths: new Set(),
     batchUnpackFilterQuery: '',
     latestBatchUnpackData: null,
+    emptyFoldersCandidates: [],
+    emptyFoldersSelectedPaths: new Set(),
+    emptyFoldersFilterQuery: '',
     duplicates: {
       isOpen: false,
       mode: 'content',
@@ -236,6 +239,20 @@
     batchUnpackSelectedBadge: document.getElementById('batchUnpackSelectedBadge'),
     batchUnpackFilterInput: document.getElementById('batchUnpackFilterInput'),
     batchUnpackCandidatesList: document.getElementById('batchUnpackCandidatesList'),
+    // Delete Empty Folders Modal & Controls
+    deleteEmptyFoldersBtn: document.getElementById('deleteEmptyFoldersBtn'),
+    deleteEmptyFoldersBtnText: document.getElementById('deleteEmptyFoldersBtnText'),
+    emptyFoldersModal: document.getElementById('emptyFoldersModal'),
+    closeEmptyFoldersModalBtn: document.getElementById('closeEmptyFoldersModalBtn'),
+    cancelEmptyFoldersModalBtn: document.getElementById('cancelEmptyFoldersModalBtn'),
+    confirmEmptyFoldersBtn: document.getElementById('confirmEmptyFoldersBtn'),
+    confirmEmptyFoldersBtnText: document.getElementById('confirmEmptyFoldersBtnText'),
+    emptyFoldersCandidateCount: document.getElementById('emptyFoldersCandidateCount'),
+    emptyFoldersLeafCount: document.getElementById('emptyFoldersLeafCount'),
+    emptyFoldersSelectAllToggle: document.getElementById('emptyFoldersSelectAllToggle'),
+    emptyFoldersSelectedBadge: document.getElementById('emptyFoldersSelectedBadge'),
+    emptyFoldersFilterInput: document.getElementById('emptyFoldersFilterInput'),
+    emptyFoldersCandidatesList: document.getElementById('emptyFoldersCandidatesList'),
     countAllBadge: document.getElementById('countAllBadge'),
     countVideosBadge: document.getElementById('countVideosBadge'),
     countImagesBadge: document.getElementById('countImagesBadge'),
@@ -3414,8 +3431,44 @@
       els.transferBadgeBtn.classList.remove('text-emerald-300', 'border-emerald-500/40');
       els.transferBadgeBtn.classList.add('text-slate-300');
       els.transferBadgeBtn.title = 'View background activity (Idle)';
-      els.transferCountText.textContent = 'Tasks';
       // Keep transferDropdown open if the user opened it; do not auto-close
+    }
+
+    // Update tab badges and empty state in tasks modal
+    const activeQueueCount = (trData && trData.active ? 1 : 0) +
+      (trData && trData.queued ? trData.queued.length : 0) +
+      (libOpsData && libOpsData.active ? 1 : 0) +
+      (libOpsData && libOpsData.queued ? libOpsData.queued.length : 0) +
+      (tData && tData.active ? 1 : 0) +
+      (tData && tData.queued ? tData.queued.length : 0);
+
+    const tabBadgeActive = document.getElementById('tabBadgeActive');
+    const activeQueuesEmptyState = document.getElementById('activeQueuesEmptyState');
+    if (tabBadgeActive) {
+      if (activeQueueCount > 0) {
+        tabBadgeActive.textContent = activeQueueCount;
+        tabBadgeActive.classList.remove('hidden');
+      } else {
+        tabBadgeActive.classList.add('hidden');
+      }
+    }
+    if (activeQueuesEmptyState) {
+      activeQueuesEmptyState.classList.toggle('hidden', activeQueueCount > 0);
+    }
+
+    const tabBadgeWorkers = document.getElementById('tabBadgeWorkers');
+    if (tabBadgeWorkers) {
+      const hData = state.latestHashData;
+      const isAnyWorkerActive = idxActive || thActive || wActive || (hData && (hData.status === 'checking' || (hData.pending_count > 0)));
+      if (isAnyWorkerActive) {
+        tabBadgeWorkers.textContent = 'Active';
+        tabBadgeWorkers.className = 'px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono';
+        tabBadgeWorkers.classList.remove('hidden');
+      } else {
+        tabBadgeWorkers.textContent = 'Idle';
+        tabBadgeWorkers.className = 'px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-mono';
+        tabBadgeWorkers.classList.remove('hidden');
+      }
     }
   }
 
@@ -4827,6 +4880,191 @@
     pollSystemStatus(true);
   }
 
+  // ==================== DELETE EMPTY FOLDERS MODAL & LOGIC ====================
+
+  async function openEmptyFoldersModal() {
+    if (els.transferDropdown) {
+      els.transferDropdown.classList.add('hidden');
+    }
+    if (!els.emptyFoldersModal) return;
+    els.emptyFoldersModal.classList.remove('hidden');
+    if (els.emptyFoldersCandidatesList) {
+      els.emptyFoldersCandidatesList.innerHTML = `
+        <div class="col-span-full py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <span class="w-6 h-6 border-2 border-rose-400 border-t-transparent rounded-full animate-spin"></span>
+          <span class="text-xs">Scanning library for empty folders...</span>
+        </div>
+      `;
+    }
+    if (els.confirmEmptyFoldersBtn) els.confirmEmptyFoldersBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/backup/folders/empty/candidates');
+      if (!res.ok) throw new Error('Failed to fetch candidate empty folders');
+      const data = await res.json();
+
+      state.emptyFoldersCandidates = data.candidates || [];
+      state.emptyFoldersSelectedPaths = new Set(state.emptyFoldersCandidates.map(c => c.path));
+      state.emptyFoldersFilterQuery = '';
+      if (els.emptyFoldersFilterInput) els.emptyFoldersFilterInput.value = '';
+
+      if (els.emptyFoldersCandidateCount) els.emptyFoldersCandidateCount.textContent = data.total_candidates;
+      const leafCount = state.emptyFoldersCandidates.filter(c => c.is_leaf).length;
+      if (els.emptyFoldersLeafCount) els.emptyFoldersLeafCount.textContent = leafCount;
+
+      renderEmptyFoldersCandidates();
+    } catch (err) {
+      console.error('Error opening empty folders modal:', err);
+      showToast('Could not load empty folders', 'error');
+      if (els.emptyFoldersCandidatesList) {
+        els.emptyFoldersCandidatesList.innerHTML = `<div class="text-center py-8 text-xs text-rose-400">Error loading empty folders: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+  }
+
+  function closeEmptyFoldersModal() {
+    if (els.emptyFoldersModal) els.emptyFoldersModal.classList.add('hidden');
+  }
+
+  function renderEmptyFoldersCandidates() {
+    if (!els.emptyFoldersCandidatesList) return;
+    const q = (state.emptyFoldersFilterQuery || '').toLowerCase().trim();
+    const filtered = state.emptyFoldersCandidates.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.parent_name && c.parent_name.toLowerCase().includes(q)) ||
+      (c.relative_path && c.relative_path.toLowerCase().includes(q)) ||
+      c.path.toLowerCase().includes(q)
+    );
+
+    if (filtered.length === 0) {
+      els.emptyFoldersCandidatesList.innerHTML = `
+        <div class="text-center py-8 text-xs text-slate-500">
+          ${state.emptyFoldersCandidates.length === 0 ? 'No empty folders found in library.' : 'No candidates match your search filter.'}
+        </div>
+      `;
+      if (els.emptyFoldersSelectedBadge) els.emptyFoldersSelectedBadge.textContent = `0 of ${state.emptyFoldersCandidates.length} selected`;
+      if (els.confirmEmptyFoldersBtn) els.confirmEmptyFoldersBtn.disabled = true;
+      if (els.confirmEmptyFoldersBtnText) els.confirmEmptyFoldersBtnText.textContent = 'Delete Selected (0)';
+      return;
+    }
+
+    const selectedCount = state.emptyFoldersSelectedPaths.size;
+    const totalCount = state.emptyFoldersCandidates.length;
+
+    if (els.emptyFoldersSelectedBadge) {
+      els.emptyFoldersSelectedBadge.textContent = `${selectedCount} of ${totalCount} selected`;
+    }
+    if (els.confirmEmptyFoldersBtn) {
+      els.confirmEmptyFoldersBtn.disabled = selectedCount === 0;
+    }
+    if (els.confirmEmptyFoldersBtnText) {
+      els.confirmEmptyFoldersBtnText.textContent = `Delete Selected (${selectedCount})`;
+    }
+    if (els.emptyFoldersSelectAllToggle) {
+      els.emptyFoldersSelectAllToggle.checked = selectedCount === totalCount && totalCount > 0;
+      els.emptyFoldersSelectAllToggle.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+    }
+
+    els.emptyFoldersCandidatesList.innerHTML = filtered.map(c => {
+      const isChecked = state.emptyFoldersSelectedPaths.has(c.path);
+      return `
+        <div class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition cursor-pointer group" data-path="${escapeHtml(c.path)}">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <input 
+              type="checkbox" 
+              class="empty-folder-item-checkbox rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500 cursor-pointer"
+              data-path="${escapeHtml(c.path)}"
+              ${isChecked ? 'checked' : ''}
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs font-semibold text-white group-hover:text-rose-300 transition truncate">${escapeHtml(c.name)}</span>
+                ${c.is_leaf ? '<span class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-mono">leaf</span>' : ''}
+              </div>
+              <div class="text-[11px] text-slate-400 font-mono truncate">📁 ${escapeHtml(c.relative_path || c.name)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach click events on checkboxes
+    els.emptyFoldersCandidatesList.querySelectorAll('.empty-folder-item-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const path = e.target.dataset.path;
+        if (e.target.checked) {
+          state.emptyFoldersSelectedPaths.add(path);
+        } else {
+          state.emptyFoldersSelectedPaths.delete(path);
+        }
+        renderEmptyFoldersCandidates();
+      });
+    });
+
+    // Row click toggle
+    els.emptyFoldersCandidatesList.querySelectorAll('[data-path]').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('empty-folder-item-checkbox')) return;
+        const cb = row.querySelector('.empty-folder-item-checkbox');
+        if (cb) {
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+  }
+
+  async function submitDeleteEmptyFolders() {
+    const selected = Array.from(state.emptyFoldersSelectedPaths);
+    if (selected.length === 0) return;
+
+    try {
+      if (els.confirmEmptyFoldersBtn) {
+        els.confirmEmptyFoldersBtn.disabled = true;
+      }
+      if (els.confirmEmptyFoldersBtnText) {
+        els.confirmEmptyFoldersBtnText.textContent = 'Deleting...';
+      }
+
+      const res = await fetch('/api/backup/folders/empty/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_paths: selected }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to delete empty folders');
+      }
+
+      const data = await res.json();
+      closeEmptyFoldersModal();
+
+      if (data.deleted_count > 0) {
+        showToast(`Successfully deleted ${data.deleted_count} empty folder${data.deleted_count === 1 ? '' : 's'}!`, 'success');
+      } else {
+        showToast('No empty folders were deleted', 'info');
+      }
+
+      // Refresh current folder view & folder tree
+      if (state.currentFolder) {
+        loadFolderContents(state.currentFolder);
+      } else {
+        loadRootFolders();
+      }
+    } catch (err) {
+      console.error('Error deleting empty folders:', err);
+      showToast(err.message || 'Error deleting empty folders', 'error');
+    } finally {
+      if (els.confirmEmptyFoldersBtn) {
+        els.confirmEmptyFoldersBtn.disabled = false;
+      }
+      if (els.confirmEmptyFoldersBtnText) {
+        els.confirmEmptyFoldersBtnText.textContent = `Delete Selected (${state.emptyFoldersSelectedPaths.size})`;
+      }
+    }
+  }
+
   // Toggle Duplicate Hash Pause / Resume
   async function toggleDuplicateHashPause() {
     try {
@@ -4971,11 +5209,59 @@
     els.toggleSidebarBtn.addEventListener('click', () => setSidebarOpen(true));
     els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
 
-    // Tasks dropdown toggle
+    // Tasks tab switcher
+    const switchTasksTab = (tabName) => {
+      const tabs = ['active', 'workers', 'tools'];
+      const target = tabs.includes(tabName) ? tabName : 'active';
+      try { localStorage.setItem('tasks_active_tab', target); } catch (e) {}
+
+      const btnActive = document.getElementById('tasksTabBtnActive');
+      const btnWorkers = document.getElementById('tasksTabBtnWorkers');
+      const btnTools = document.getElementById('tasksTabBtnTools');
+      const paneActive = document.getElementById('tasksPaneActive');
+      const paneWorkers = document.getElementById('tasksPaneWorkers');
+      const paneTools = document.getElementById('tasksPaneTools');
+
+      const setTabStyle = (btn, isActive) => {
+        if (!btn) return;
+        if (isActive) {
+          btn.className = 'tasks-tab-btn py-2.5 px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer';
+        } else {
+          btn.className = 'tasks-tab-btn py-2.5 px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer';
+        }
+      };
+
+      setTabStyle(btnActive, target === 'active');
+      setTabStyle(btnWorkers, target === 'workers');
+      setTabStyle(btnTools, target === 'tools');
+
+      if (paneActive) paneActive.classList.toggle('hidden', target !== 'active');
+      if (paneWorkers) paneWorkers.classList.toggle('hidden', target !== 'workers');
+      if (paneTools) paneTools.classList.toggle('hidden', target !== 'tools');
+    };
+    window.switchTasksTab = switchTasksTab;
+
+    // Tasks modal toggle with smart tab selection
     const setTransferDropdownOpen = (open) => {
       if (open) {
         els.transferDropdown.classList.remove('hidden');
         if (els.transferBackdrop) els.transferBackdrop.classList.remove('hidden');
+
+        // Smart tab selection: default to 'active' if tasks are queued/active, else last saved or 'workers'
+        const trData = state.latestTransferData;
+        const libOpsData = state.latestLibraryOpsData;
+        const tData = state.latestTranscodeData;
+        const hasActiveQueues = (trData && (trData.active || (trData.queued && trData.queued.length > 0))) ||
+          (libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0))) ||
+          (tData && (tData.active || (tData.queued && tData.queued.length > 0)));
+
+        if (hasActiveQueues) {
+          switchTasksTab('active');
+        } else {
+          let saved = 'workers';
+          try { saved = localStorage.getItem('tasks_active_tab') || 'workers'; } catch (e) {}
+          switchTasksTab(saved);
+        }
       } else {
         els.transferDropdown.classList.add('hidden');
         if (els.transferBackdrop) els.transferBackdrop.classList.add('hidden');
@@ -5004,11 +5290,22 @@
       });
     }
 
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('#transferDropdown') && !e.target.closest('#transferBadgeBtn')) {
-        setTransferDropdownOpen(false);
-      }
-    });
+    if (els.transferDropdown) {
+      els.transferDropdown.addEventListener('click', (e) => {
+        if (e.target === els.transferDropdown) {
+          setTransferDropdownOpen(false);
+        }
+      });
+    }
+
+    const btnActive = document.getElementById('tasksTabBtnActive');
+    const btnWorkers = document.getElementById('tasksTabBtnWorkers');
+    const btnTools = document.getElementById('tasksTabBtnTools');
+    const jumpToWorkers = document.getElementById('jumpToWorkersBtn');
+    if (btnActive) btnActive.addEventListener('click', () => switchTasksTab('active'));
+    if (btnWorkers) btnWorkers.addEventListener('click', () => switchTasksTab('workers'));
+    if (btnTools) btnTools.addEventListener('click', () => switchTasksTab('tools'));
+    if (jumpToWorkers) jumpToWorkers.addEventListener('click', () => switchTasksTab('workers'));
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && els.transferDropdown && !els.transferDropdown.classList.contains('hidden')) {
@@ -5165,6 +5462,41 @@
           state.batchUnpackSelectedPaths.clear();
         }
         renderBatchUnpackCandidates();
+      });
+    }
+
+    // Delete Empty Folders Modal & Controls
+    if (els.deleteEmptyFoldersBtn) {
+      els.deleteEmptyFoldersBtn.addEventListener('click', openEmptyFoldersModal);
+    }
+    if (els.closeEmptyFoldersModalBtn) {
+      els.closeEmptyFoldersModalBtn.addEventListener('click', closeEmptyFoldersModal);
+    }
+    if (els.cancelEmptyFoldersModalBtn) {
+      els.cancelEmptyFoldersModalBtn.addEventListener('click', closeEmptyFoldersModal);
+    }
+    if (els.emptyFoldersModal) {
+      els.emptyFoldersModal.addEventListener('click', (e) => {
+        if (e.target === els.emptyFoldersModal) closeEmptyFoldersModal();
+      });
+    }
+    if (els.confirmEmptyFoldersBtn) {
+      els.confirmEmptyFoldersBtn.addEventListener('click', submitDeleteEmptyFolders);
+    }
+    if (els.emptyFoldersFilterInput) {
+      els.emptyFoldersFilterInput.addEventListener('input', (e) => {
+        state.emptyFoldersFilterQuery = e.target.value;
+        renderEmptyFoldersCandidates();
+      });
+    }
+    if (els.emptyFoldersSelectAllToggle) {
+      els.emptyFoldersSelectAllToggle.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          state.emptyFoldersSelectedPaths = new Set(state.emptyFoldersCandidates.map(c => c.path));
+        } else {
+          state.emptyFoldersSelectedPaths.clear();
+        }
+        renderEmptyFoldersCandidates();
       });
     }
 
@@ -5459,6 +5791,425 @@
     fetchDuplicateSummary();
     updateIgnoredCountBadge();
   }
+
+
+  // ==========================================
+  // BROWSER UPLOAD FEATURE
+  // ==========================================
+  const uploadState = {
+    queue: [], // { file, relativePath, id, status, size, uploadedBytes, mtime }
+    activeUploads: 0,
+    maxConcurrent: 3,
+    chunkSize: 5 * 1024 * 1024, // 5MB
+    totalBytes: 0,
+    uploadedBytes: 0,
+    isCancelled: false,
+    startTime: null,
+    targetFolder: null
+  };
+
+  function initUploadEvents() {
+    const dropzone = document.getElementById('globalDropzone');
+    const uploadDropdownBtn = document.getElementById('uploadDropdownBtn');
+    const uploadDropdownMenu = document.getElementById('uploadDropdownMenu');
+    const uploadFilesBtn = document.getElementById('uploadFilesBtn');
+    const uploadFolderBtn = document.getElementById('uploadFolderBtn');
+    const hiddenFileInput = document.getElementById('hiddenUploadFileInput');
+    const hiddenFolderInput = document.getElementById('hiddenUploadFolderInput');
+    const startUploadBtn = document.getElementById('startUploadBtn');
+    const cancelUploadReviewBtn = document.getElementById('cancelUploadReviewBtn');
+    const cancelUploadReviewBtnTop = document.getElementById('cancelUploadReviewBtnTop');
+    const cancelAllUploadsBtn = document.getElementById('cancelAllUploadsBtn');
+
+    // Toggle dropdown
+    if (uploadDropdownBtn) {
+      uploadDropdownBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        uploadDropdownMenu.classList.toggle('hidden');
+      });
+      document.addEventListener('click', () => {
+        if(uploadDropdownMenu) uploadDropdownMenu.classList.add('hidden');
+      });
+    }
+
+    if (uploadFilesBtn) uploadFilesBtn.addEventListener('click', () => hiddenFileInput.click());
+    if (uploadFolderBtn) uploadFolderBtn.addEventListener('click', () => hiddenFolderInput.click());
+
+    if (hiddenFileInput) hiddenFileInput.addEventListener('change', handleFileInput);
+    if (hiddenFolderInput) hiddenFolderInput.addEventListener('change', handleFileInput);
+
+    // Drag and Drop
+    let dragCounter = 0;
+    document.body.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      if (!state.currentPath || state.currentPath === state.basePath) return; // Disallow root upload for safety if preferred, or allow. We allow if state.currentPath exists.
+      dragCounter++;
+      if (dropzone) dropzone.classList.remove('hidden');
+      const textEl = document.getElementById('dropzoneTargetText');
+      if (textEl) textEl.textContent = 'Target: ' + state.currentPath;
+    });
+    
+    document.body.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        if (dropzone) dropzone.classList.add('hidden');
+      }
+    });
+    
+    document.body.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    
+    document.body.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      if (dropzone) dropzone.classList.add('hidden');
+      if (!state.currentPath || state.currentPath === state.basePath) return;
+      
+      const items = e.dataTransfer.items;
+      if (!items) return;
+      
+      const filesToUpload = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i].webkitGetAsEntry();
+        if (item) {
+          await traverseFileTree(item, item.name, filesToUpload);
+        }
+      }
+      if (filesToUpload.length > 0) {
+        showUploadReviewModal(filesToUpload);
+      }
+    });
+
+    if (startUploadBtn) startUploadBtn.addEventListener('click', startUploadBatch);
+    if (cancelUploadReviewBtn) cancelUploadReviewBtn.addEventListener('click', closeUploadReviewModal);
+    if (cancelUploadReviewBtnTop) cancelUploadReviewBtnTop.addEventListener('click', closeUploadReviewModal);
+    if (cancelAllUploadsBtn) cancelAllUploadsBtn.addEventListener('click', cancelAllUploads);
+  }
+
+  function handleFileInput(e) {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    const filesToUpload = files.map(f => ({
+      file: f,
+      relativePath: f.webkitRelativePath || f.name,
+      size: f.size
+    }));
+    
+    showUploadReviewModal(filesToUpload);
+    e.target.value = ''; // reset
+  }
+
+  async function traverseFileTree(item, path, fileList) {
+    if (item.isFile) {
+      const file = await new Promise((resolve) => item.file(resolve));
+      fileList.push({ file, relativePath: path, size: file.size });
+    } else if (item.isDirectory) {
+      const dirReader = item.createReader();
+      const entries = await new Promise((resolve) => {
+        const results = [];
+        const readEntries = () => {
+          dirReader.readEntries((entriesBatch) => {
+            if (entriesBatch.length === 0) resolve(results);
+            else {
+              results.push(...entriesBatch);
+              readEntries();
+            }
+          });
+        };
+        readEntries();
+      });
+      for (let entry of entries) {
+        await traverseFileTree(entry, path + "/" + entry.name, fileList);
+      }
+    }
+  }
+
+  function showUploadReviewModal(files) {
+    uploadState.queue = files.map((item, idx) => ({
+      ...item,
+      id: 'upload_' + Date.now() + '_' + idx,
+      status: 'pending',
+      uploadedBytes: 0,
+      mtime: item.file.lastModified
+    }));
+    
+    uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + f.size, 0);
+    uploadState.targetFolder = state.currentPath;
+    
+    document.getElementById('uploadTargetFolderLabel').textContent = state.currentPath;
+    document.getElementById('uploadTotalFilesLabel').textContent = files.length.toLocaleString();
+    document.getElementById('uploadTotalSizeLabel').textContent = formatBytes(uploadState.totalBytes);
+    
+    document.getElementById('uploadReviewModal').classList.remove('hidden');
+  }
+
+  function closeUploadReviewModal() {
+    document.getElementById('uploadReviewModal').classList.add('hidden');
+    uploadState.queue = [];
+  }
+
+  async function startUploadBatch() {
+    const collisionPolicy = document.getElementById('uploadCollisionPolicy').value;
+    uploadState.collisionPolicy = collisionPolicy;
+    closeUploadReviewModal();
+    
+    const section = document.getElementById('browserUploadsSection');
+    if (section) section.classList.remove('hidden');
+    
+    uploadState.isCancelled = false;
+    uploadState.activeUploads = 0;
+    uploadState.uploadedBytes = 0;
+    uploadState.startTime = Date.now();
+    
+    updateUploadsUI();
+    
+    // Switch to active uploads icon in header
+    const transferBadgeBtn = document.getElementById('transferBadgeBtn');
+    const transferIcon = document.getElementById('transferIcon');
+    const transferSpinner = document.getElementById('transferSpinner');
+    const transferCountText = document.getElementById('transferCountText');
+    if (transferBadgeBtn) transferBadgeBtn.classList.add('bg-emerald-600/20', 'border-emerald-500/50', 'text-emerald-300');
+    if (transferIcon) transferIcon.classList.add('hidden');
+    if (transferSpinner) transferSpinner.classList.remove('hidden');
+    if (transferCountText) transferCountText.textContent = 'Uploading...';
+    
+    processUploadQueue();
+  }
+
+  async function processUploadQueue() {
+    if (uploadState.isCancelled) return;
+    
+    const pending = uploadState.queue.filter(f => f.status === 'pending');
+    if (pending.length === 0 && uploadState.activeUploads === 0) {
+      finishUploadBatch();
+      return;
+    }
+    
+    while (uploadState.activeUploads < uploadState.maxConcurrent && pending.length > 0) {
+      const fileObj = pending.shift();
+      uploadState.activeUploads++;
+      fileObj.status = 'uploading';
+      updateUploadsUI();
+      uploadFile(fileObj).finally(() => {
+        uploadState.activeUploads--;
+        processUploadQueue();
+      });
+    }
+  }
+
+  async function uploadFile(fileObj) {
+    const { file, id, relativePath, size, mtime } = fileObj;
+    const totalChunks = Math.ceil(size / uploadState.chunkSize) || 1;
+    
+    try {
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        if (uploadState.isCancelled || fileObj.status === 'cancelled') {
+          await cancelBackendUpload(id);
+          return;
+        }
+        
+        const start = chunkIndex * uploadState.chunkSize;
+        const end = Math.min(start + uploadState.chunkSize, size);
+        const chunk = file.slice(start, end);
+        
+        let attempts = 0;
+        let success = false;
+        while (attempts < 3 && !success) {
+          if (uploadState.isCancelled || fileObj.status === 'cancelled') return;
+          try {
+            const formData = new FormData();
+            formData.append('upload_id', id);
+            formData.append('chunk_index', chunkIndex);
+            formData.append('total_chunks', totalChunks);
+            formData.append('chunk', chunk, file.name);
+            
+            const res = await fetch('/api/backup/upload/chunk', { method: 'POST', body: formData });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text);
+            }
+            success = true;
+          } catch (err) {
+            attempts++;
+            if (attempts >= 3) throw err;
+            await new Promise(r => setTimeout(r, 1000 * attempts)); // backoff
+          }
+        }
+        
+        fileObj.uploadedBytes = end;
+        updateUploadBatchStats();
+        updateUploadsUI();
+      }
+      
+      if (uploadState.isCancelled || fileObj.status === 'cancelled') {
+        await cancelBackendUpload(id);
+        return;
+      }
+      
+      // Finalize
+      const finalizeRes = await fetch('/api/backup/upload/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_id: id,
+          original_filename: file.name,
+          relative_path: relativePath,
+          destination_dir: uploadState.targetFolder,
+          collision_policy: uploadState.collisionPolicy,
+          total_size: size,
+          mtime: mtime
+        })
+      });
+      
+      if (!finalizeRes.ok) {
+          const text = await finalizeRes.text();
+          throw new Error(text);
+      }
+      
+      fileObj.status = 'done';
+    } catch (err) {
+      console.error('Upload failed for', file.name, err);
+      fileObj.status = 'error';
+      showToast(`Failed to upload ${file.name}`, 'error');
+    }
+    updateUploadsUI();
+  }
+
+  async function cancelBackendUpload(id) {
+    try {
+      await fetch('/api/backup/upload/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: id })
+      });
+    } catch (err) { }
+  }
+
+  function cancelAllUploads() {
+    uploadState.isCancelled = true;
+    uploadState.queue.forEach(f => {
+      if (f.status === 'uploading' || f.status === 'pending') {
+        f.status = 'cancelled';
+        if (f.status === 'uploading') cancelBackendUpload(f.id);
+      }
+    });
+    updateUploadsUI();
+    finishUploadBatch();
+  }
+
+  window.cancelSingleUpload = function(id) {
+    const f = uploadState.queue.find(item => item.id === id);
+    if (f) {
+      if (f.status === 'pending') {
+        f.status = 'cancelled';
+        updateUploadsUI();
+      } else if (f.status === 'uploading') {
+        f.status = 'cancelled';
+      }
+    }
+  };
+
+  function updateUploadBatchStats() {
+    let totalUploaded = 0;
+    uploadState.queue.forEach(f => {
+      if (f.status === 'done') totalUploaded += f.size;
+      else if (f.status === 'uploading') totalUploaded += f.uploadedBytes;
+    });
+    uploadState.uploadedBytes = totalUploaded;
+  }
+
+  function updateUploadsUI() {
+    const progressEl = document.getElementById('uploadBatchProgress');
+    const barEl = document.getElementById('uploadBatchProgressBar');
+    const speedEl = document.getElementById('uploadBatchSpeed');
+    const statusEl = document.getElementById('uploadBatchStatus');
+    const listEl = document.getElementById('activeUploadsList');
+    
+    if (!listEl) return;
+
+    let totalUploaded = uploadState.uploadedBytes;
+    const total = uploadState.totalBytes || 1;
+    const percent = Math.floor((totalUploaded / total) * 100);
+    
+    if (progressEl) progressEl.textContent = percent + '%';
+    if (barEl) barEl.style.width = percent + '%';
+    
+    const elapsedSecs = (Date.now() - uploadState.startTime) / 1000;
+    const speed = elapsedSecs > 1 ? (totalUploaded / elapsedSecs) : 0;
+    if (speedEl) speedEl.textContent = formatBytes(speed) + '/s';
+    
+    const doneCount = uploadState.queue.filter(f => f.status === 'done').length;
+    if (statusEl) statusEl.textContent = `${doneCount} of ${uploadState.queue.length} files`;
+    
+    // Update header badge dynamically
+    const transferCountText = document.getElementById('transferCountText');
+    if (transferCountText && uploadState.activeUploads > 0) {
+      transferCountText.textContent = `Upload ${percent}%`;
+    }
+
+    // Render list
+    listEl.innerHTML = uploadState.queue.slice().sort((a,b) => {
+      const order = { 'uploading': 1, 'pending': 2, 'error': 3, 'done': 4, 'cancelled': 5 };
+      return order[a.status] - order[b.status];
+    }).map(f => {
+      let statusIcon = '⏳';
+      let rowClass = 'bg-slate-900 border-slate-700/50';
+      if (f.status === 'uploading') { statusIcon = '⬆️'; rowClass = 'bg-emerald-950/20 border-emerald-900/30'; }
+      if (f.status === 'done') { statusIcon = '✅'; rowClass = 'bg-emerald-950/40 border-emerald-800/40 opacity-70'; }
+      if (f.status === 'error') { statusIcon = '❌'; rowClass = 'bg-red-950/30 border-red-900/40'; }
+      if (f.status === 'cancelled') { statusIcon = '🚫'; rowClass = 'bg-slate-900/50 border-slate-800/50 opacity-50'; }
+      
+      const filePercent = f.size > 0 ? Math.floor((f.uploadedBytes / f.size) * 100) : 100;
+      
+      return `
+        <div class="flex items-center gap-2 p-2 rounded-lg border text-xs ${rowClass}">
+          <span class="shrink-0 w-4 text-center">${statusIcon}</span>
+          <div class="flex-1 min-w-0 flex flex-col">
+            <span class="text-slate-300 truncate font-medium">${f.relativePath}</span>
+            ${f.status === 'uploading' ? `<div class="h-1 w-full bg-slate-800 rounded-full mt-1 overflow-hidden"><div class="h-full bg-emerald-500" style="width: ${filePercent}%"></div></div>` : ''}
+          </div>
+          <span class="shrink-0 text-slate-500 text-[10px] w-12 text-right">${formatBytes(f.size)}</span>
+          ${(f.status === 'pending' || f.status === 'uploading') ? `
+            <button onclick="window.cancelSingleUpload('${f.id}')" class="shrink-0 text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition">✕</button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function finishUploadBatch() {
+    setTimeout(() => {
+      const section = document.getElementById('browserUploadsSection');
+      if (section) section.classList.add('hidden');
+      
+      const transferBadgeBtn = document.getElementById('transferBadgeBtn');
+      const transferIcon = document.getElementById('transferIcon');
+      const transferSpinner = document.getElementById('transferSpinner');
+      const transferCountText = document.getElementById('transferCountText');
+      if (transferBadgeBtn) transferBadgeBtn.classList.remove('bg-emerald-600/20', 'border-emerald-500/50', 'text-emerald-300');
+      if (transferIcon) transferIcon.classList.remove('hidden');
+      if (transferSpinner) transferSpinner.classList.add('hidden');
+      if (transferCountText) transferCountText.textContent = 'Tasks';
+      
+      const successCount = uploadState.queue.filter(f => f.status === 'done').length;
+      if (successCount > 0) {
+        showToast(`Successfully uploaded ${successCount} files`, 'success');
+        if (state.currentPath === uploadState.targetFolder) {
+          loadFolder(state.currentPath, false, false, true); // silent refresh
+        }
+      }
+      
+      uploadState.queue = [];
+    }, 2000);
+  }
+
+  // Hook into events
+  initUploadEvents();
+
 
   // Expose callbacks globally
   window.libraryApp = {

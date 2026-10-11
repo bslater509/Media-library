@@ -85,7 +85,7 @@ def test_webp_enqueue_folder_zip_single_item(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
 
     media_dir = sandbox_env["media_dir"]
     zip_path = media_dir / "album.zip"
@@ -119,7 +119,7 @@ def test_webp_auto_items_only_loose_images(sandbox_env, monkeypatch):
 
     from media_library.db.connection import get_db
     from media_library.db.indexer import index_folder
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
 
     media_dir = sandbox_env["media_dir"]
 
@@ -170,7 +170,7 @@ def test_webp_enqueue_folder_zip_throttle(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
 
     media_dir = sandbox_env["media_dir"]
     zip_path = media_dir / "throttle.zip"
@@ -195,7 +195,7 @@ def test_thumbnail_worker_skips_deferred_zip_images(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
 
     media_dir = sandbox_env["media_dir"]
     zip_path = media_dir / "mixed.zip"

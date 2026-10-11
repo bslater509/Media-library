@@ -46,6 +46,13 @@ WEBP_STAGING_DIR = Path(
     os.environ.get("WEBP_STAGING_DIR", DATA_DIR / "webp_staging")
 ).resolve()
 WEBP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+
+UPLOAD_STAGING_DIR = Path(
+    os.environ.get("UPLOAD_STAGING_DIR", DATA_DIR / "upload_staging")
+).resolve()
+UPLOAD_STAGING_DIR.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_FILE_SIZE_GB = float(os.environ.get("MAX_UPLOAD_FILE_SIZE_GB", "20.0"))
+
 WEBP_WORKER_CONCURRENCY = max(1, int(os.environ.get("WEBP_WORKER_CONCURRENCY", "1")))
 WEBP_QUALITY = max(1, min(100, int(os.environ.get("WEBP_QUALITY", "85"))))
 WEBP_SKIP_LARGER = os.environ.get("WEBP_SKIP_LARGER", "false").lower() in (

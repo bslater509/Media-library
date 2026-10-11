@@ -10,17 +10,22 @@ All functions follow the repo's FUSE rules:
 - index updates happen via the dedicated helpers in ``db.indexer``.
 """
 
+import logging
 import os
 import shutil
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from media_library.core.state import get_thumbnail_cache_path
+from media_library.core.config import DEFAULT_DESTINATION_DIR
+from media_library.core.state import get_thumbnail_cache_path, state
 from media_library.db.connection import db_conn
 from media_library.db.indexer import delete_path_from_index, move_path_in_index
 from media_library.services.media_service import validate_backup_path
-from media_library.services.zip_service import get_zip_cache_dir, is_zip_file
+from media_library.services.zip import get_zip_cache_dir, is_zip_file
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Path classification & conflict detection (no heavy I/O)
@@ -341,3 +346,310 @@ def create_library_folder(parent_path: str, name: str) -> dict[str, Any]:
         )
 
     return {"success": True, "path": target, "name": name}
+
+
+def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
+    """Finds all empty folders across the library that have zero files and zero non-empty subfolders.
+
+    Returns candidate list and aggregate statistics.
+    Candidates are sorted bottom-up (deepest paths first).
+    """
+    base_dir = os.path.realpath(
+        base_path or state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    )
+
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT path, name, parent_path, file_count, subfolder_count, is_zip
+            FROM folders
+            WHERE (is_zip = 0 OR is_zip IS NULL)
+            """
+        )
+        rows = cur.fetchall()
+
+        cur.execute("SELECT DISTINCT folder_path FROM files")
+        folders_with_files = set(r[0] for r in cur.fetchall() if r[0])
+
+        cur.execute("SELECT DISTINCT parent_path FROM folders WHERE is_zip = 1")
+        folders_with_zips = set(r[0] for r in cur.fetchall() if r[0])
+
+    all_folders: dict[str, dict[str, Any]] = {}
+    children_map: dict[str, list[str]] = {}
+
+    for r in rows:
+        path = r[0] if isinstance(r, (list, tuple)) else r["path"]
+        name = r[1] if isinstance(r, (list, tuple)) else r["name"]
+        parent_path = r[2] if isinstance(r, (list, tuple)) else r["parent_path"]
+        file_count = r[3] if isinstance(r, (list, tuple)) else r["file_count"]
+        subfolder_count = r[4] if isinstance(r, (list, tuple)) else r["subfolder_count"]
+
+        # Normalize and filter
+        norm_path = os.path.realpath(path)
+        if norm_path == base_dir:
+            continue
+        try:
+            if os.path.commonpath([base_dir, norm_path]) != base_dir:
+                continue
+        except ValueError:
+            continue
+        base_name = name or os.path.basename(norm_path)
+        if base_name.startswith("."):
+            continue
+        if ".media_library_backup" in norm_path:
+            continue
+
+        p_parent = (
+            os.path.realpath(parent_path)
+            if parent_path
+            else os.path.dirname(norm_path)
+        )
+        all_folders[norm_path] = {
+            "path": norm_path,
+            "name": base_name,
+            "parent_path": p_parent,
+            "file_count": file_count or 0,
+            "subfolder_count": subfolder_count or 0,
+        }
+        children_map.setdefault(p_parent, []).append(norm_path)
+
+    # Determine which folders in the DB have content (files or zip archives)
+    has_content_map: dict[str, bool] = {}
+
+    def has_direct_content(p: str) -> bool:
+        if p in folders_with_files:
+            return True
+        info = all_folders.get(p)
+        if info and (info["file_count"] > 0):
+            return True
+        if p in folders_with_zips:
+            return True
+        return False
+
+    def folder_has_content(p: str) -> bool:
+        if p in has_content_map:
+            return has_content_map[p]
+        if has_direct_content(p):
+            has_content_map[p] = True
+            return True
+        for child in children_map.get(p, []):
+            if folder_has_content(child):
+                has_content_map[p] = True
+                return True
+        has_content_map[p] = False
+        return False
+
+    empty_from_db = [p for p in all_folders if not folder_has_content(p)]
+
+    # Sort candidate paths bottom-up (deepest first)
+    empty_from_db.sort(
+        key=lambda p: (p.count(os.sep), len(p)),
+        reverse=True,
+    )
+
+    if not empty_from_db:
+        return {"total_candidates": 0, "candidates": []}
+
+    # Verify candidate folders on disk (excluding benign OS files):
+    # Candidate must not contain any real non-media files, and any subdirectories
+    # must themselves be confirmed empty candidates.
+    def _inspect_folder(p: str) -> tuple[str, bool, list[str]]:
+        has_file = False
+        subdirs: list[str] = []
+        try:
+            if os.path.isdir(p):
+                with os.scandir(p) as it:
+                    for entry in it:
+                        if (
+                            entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
+                            or entry.name.startswith(".tmp_")
+                        ):
+                            continue
+                        if entry.is_file():
+                            has_file = True
+                            break
+                        elif entry.is_dir():
+                            subdirs.append(os.path.realpath(entry.path))
+        except Exception:
+            has_file = True
+        return p, has_file, subdirs
+
+    max_threads = min(16, max(1, len(empty_from_db)))
+    with ThreadPoolExecutor(max_workers=max_threads) as ex:
+        scan_results = list(ex.map(_inspect_folder, empty_from_db))
+
+    valid_candidates_set = {
+        p for p, has_file, _ in scan_results if not has_file
+    }
+    subdirs_by_folder = {p: subdirs for p, _, subdirs in scan_results}
+
+    # Bottom-up hierarchical confirmation (deepest first):
+    confirmed_empty: list[str] = []
+    for p in empty_from_db:
+        if p not in valid_candidates_set:
+            continue
+        # Subdirectories on disk must all be in valid_candidates_set
+        if all(sub in valid_candidates_set for sub in subdirs_by_folder.get(p, [])):
+            confirmed_empty.append(p)
+        else:
+            valid_candidates_set.discard(p)
+
+    final_candidates: list[dict[str, Any]] = []
+    for p in confirmed_empty:
+        p_info = all_folders.get(p)
+        name = p_info["name"] if p_info else os.path.basename(p)
+        parent_path = p_info["parent_path"] if p_info else os.path.dirname(p)
+        rel_path = os.path.relpath(p, base_dir)
+        parent_name = (
+            os.path.basename(parent_path) if parent_path else ""
+        )
+        is_leaf = len(children_map.get(p, [])) == 0
+
+        final_candidates.append(
+            {
+                "path": p,
+                "name": name,
+                "parent_path": parent_path,
+                "parent_name": parent_name,
+                "relative_path": rel_path,
+                "is_leaf": is_leaf,
+            }
+        )
+
+    return {
+        "total_candidates": len(final_candidates),
+        "candidates": final_candidates,
+    }
+
+
+def delete_empty_folder(
+    path: str,
+    abort_event: threading.Event | None = None,
+    base_path: str | None = None,
+) -> dict[str, Any]:
+    """Safely deletes an empty folder on disk and removes it from the index.
+
+    If the folder contains files, it will NOT be deleted.
+    Benign OS metadata (.DS_Store, Thumbs.db, desktop.ini) is removed prior to rmdir.
+    """
+    if abort_event is not None and abort_event.is_set():
+        raise InterruptedError("Delete cancelled by user")
+
+    base_dir = os.path.realpath(
+        base_path or state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    )
+    real_path = validate_backup_path(path, base_dir)
+    if os.path.realpath(real_path) == base_dir:
+        raise ValueError("Cannot delete the root library directory")
+
+    if os.path.isdir(real_path):
+        # 1. Clean benign OS junk (.DS_Store, Thumbs.db, desktop.ini, .tmp_*)
+        for entry in os.scandir(real_path):
+            if (
+                entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
+                or entry.name.startswith(".tmp_")
+            ):
+                try:
+                    os.remove(entry.path)
+                except OSError:
+                    pass
+            elif entry.is_file():
+                raise OSError(f"Folder is not empty: contains file '{entry.name}'")
+            elif entry.is_dir():
+                raise OSError(f"Folder is not empty: contains subfolder '{entry.name}'")
+
+        # 2. Remove directory
+        os.rmdir(real_path)
+
+    # 3. Clean database index
+    delete_path_from_index(real_path, "folder")
+
+    # 4. Update parent's subfolder_count in folders table
+    parent_path = os.path.dirname(real_path)
+    if parent_path:
+        try:
+            with db_conn() as conn, conn:
+                conn.execute(
+                    """
+                    UPDATE folders
+                    SET subfolder_count = (
+                        SELECT COUNT(*) FROM folders 
+                        WHERE parent_path = ? AND (is_zip = 0 OR is_zip IS NULL)
+                    )
+                    WHERE path = ?
+                    """,
+                    (parent_path, parent_path),
+                )
+        except Exception as e:
+            logger.warning(
+                f"Error updating parent subfolder_count for {parent_path}: {e}"
+            )
+
+    return {"deleted_path": real_path, "kind": "folder"}
+
+
+def delete_empty_folders(
+    paths: list[str] | None = None,
+    base_path: str | None = None,
+    abort_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    """Deletes multiple empty folders bottom-up and updates the index."""
+    import uuid
+    from media_library.workers.library_ops_worker import (
+        library_ops_worker_instance,
+    )
+
+    base_dir = os.path.realpath(
+        base_path or state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    )
+
+    if paths is None:
+        candidates_data = find_empty_folders(base_dir)
+        target_paths = [c["path"] for c in candidates_data["candidates"]]
+    else:
+        target_paths = []
+        for p in paths:
+            try:
+                target_paths.append(validate_backup_path(p, base_dir))
+            except Exception as e:
+                logger.warning(f"Skipping invalid/external path {p}: {e}")
+
+    # Sort bottom-up: deepest paths first
+    sorted_paths = sorted(
+        target_paths,
+        key=lambda p: (p.count(os.sep), len(p)),
+        reverse=True,
+    )
+
+    deleted = []
+    failed = []
+
+    for p in sorted_paths:
+        if abort_event is not None and abort_event.is_set():
+            break
+        try:
+            delete_empty_folder(p, abort_event=abort_event, base_path=base_dir)
+            deleted.append(p)
+            library_ops_worker_instance.history.append(
+                {
+                    "id": uuid.uuid4().hex[:10],
+                    "op": "delete",
+                    "source_path": p,
+                    "target_path": None,
+                    "status": "completed",
+                    "error": None,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to delete empty folder {p}: {e}")
+            failed.append({"path": p, "error": str(e)})
+
+    return {
+        "success": True,
+        "deleted_count": len(deleted),
+        "deleted_paths": deleted,
+        "failed_count": len(failed),
+        "failed": failed,
+    }
+

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from media_library.services.media_service import validate_backup_path
 from media_library.services.status import zip_status_payload
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     cancel_batch_unzip,
     cancel_batch_zip,
     check_folder_compressibility,

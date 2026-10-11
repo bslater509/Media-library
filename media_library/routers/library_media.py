@@ -20,7 +20,7 @@ from media_library.services.ffmpeg_service import (
     get_thumbnail_path_fast,
 )
 from media_library.services.media_service import validate_backup_path
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     extract_zip_to_cache,
     resolve_zip_file_path,
     split_zip_path,

@@ -68,7 +68,7 @@
   </script>
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/dist/styles.css">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -157,372 +157,14 @@
           <span id="duplicatesHeaderBadge" class="hidden px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono">0</span>
         </button>
 
-        <!-- Background Tasks Status Badge & Dropdown -->
+        <!-- Background Tasks Status Badge -->
         <div class="relative shrink-0">
           <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
             <span id="transferIcon" class="text-xs leading-none">⚙️</span>
             <span id="transferSpinner" class="hidden w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
             <span id="transferCountText" class="whitespace-nowrap">Tasks</span>
           </button>
-
-          <!-- Mobile Backdrop Overlay -->
-          <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-40 sm:hidden"></div>
-
-          <!-- Background Activity Dropdown Panel (Fixed on mobile to prevent left-side clipping) -->
-          <div id="transferDropdown" class="hidden fixed inset-x-3 top-[48px] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-w-sm bg-slate-900/85 border border-slate-700/60 rounded-2xl shadow-2xl z-50 p-3 sm:p-3.5 flex flex-col gap-3 backdrop-blur-2xl max-h-[80vh] overflow-y-auto">
-            
-            <!-- Panel Header (Title + Close Button) -->
-            <div class="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span class="text-xs font-bold text-white uppercase tracking-wider">Background Tasks</span>
-              </div>
-              <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-md text-xs flex items-center justify-center w-6 h-6 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition cursor-pointer" title="Close Panel">
-                ✕
-              </button>
-            </div>
-
-            <!-- SECTION 0: File Transfers -->
-            <div id="cloudTransfersSection" class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>📁</span> File Transfers
-                </h4>
-                <span id="transferDropdownSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
-              </div>
-              
-              <!-- Active Transfer Box -->
-              <div id="activeTransferBox" class="bg-slate-950 p-2.5 rounded-xl border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-emerald-200 font-medium truncate flex-1 min-w-0" id="activeTransferFilename">clip.mp4</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTransferPercent">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="activeTransferProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="activeTransferTarget" class="truncate max-w-[180px]">→ /destination</span>
-                  <span id="activeTransferSize">0 / 0 MB</span>
-                </div>
-              </div>
-
-              <!-- Queued Transfers List -->
-              <div id="queuedTransfersContainer" class="hidden flex flex-col gap-1">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Transfers (<span id="queuedTransfersCount">0</span>):</span>
-                </div>
-                <div id="queuedTransfersList" class="flex flex-col gap-1 max-h-24 overflow-y-auto no-scrollbar text-xs"></div>
-              </div>
-            </div>
-
-            <!-- SECTION 0b: Library Operations (move / delete / rename) -->
-            <div id="libraryOpsSection" class="hidden flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>🗂️</span> Library Operations
-                </h4>
-                <span id="libraryOpsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
-              </div>
-
-              <!-- Active Operation Box -->
-              <div id="activeLibraryOpBox" class="bg-slate-950 p-2.5 rounded-xl border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center gap-1.5 text-[11px] min-w-0">
-                  <span id="activeLibraryOpKind" class="text-[9px] uppercase px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Move</span>
-                  <span class="text-emerald-200 font-medium truncate" id="activeLibraryOpName">item</span>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono gap-2">
-                  <span id="activeLibraryOpTarget" class="truncate max-w-[200px]">→ /destination</span>
-                  <span id="libraryOpsProgress" class="text-emerald-300 shrink-0">0 done</span>
-                </div>
-              </div>
-
-              <!-- Queued Operations List -->
-              <div id="queuedLibraryOpsContainer" class="hidden flex flex-col gap-1">
-                <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Operations (<span id="queuedLibraryOpsCount">0</span>):</span>
-                <div id="queuedLibraryOpsList" class="flex flex-col gap-1 max-h-24 overflow-y-auto no-scrollbar text-xs"></div>
-              </div>
-            </div>
-
-            <!-- SECTION 1: Automatic Pre-Transcoding (Auto-MP4) -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>⚙️</span> Auto-MP4 Pre-Transcoder
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="transcodeSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="toggleTranscodePauseBtn" title="Pause or resume background pre-transcoding" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
-                    Pause
-                  </button>
-                </div>
-              </div>
-
-              <!-- Active Conversion Box -->
-              <div id="activeTranscodeBox" class="bg-slate-950 p-2.5 rounded-xl border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <div class="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                    <span id="activeTranscodeMethodBadge" class="text-[9px] uppercase px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Encode</span>
-                    <span class="text-emerald-200 font-medium truncate" id="activeTranscodeFilename">clip.mkv</span>
-                  </div>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTranscodePercent">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="activeTranscodeProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="activeTranscodeSpeed">0 fps</span>
-                  <span id="activeTranscodeEta" class="text-emerald-300">ETA: --</span>
-                </div>
-              </div>
-
-              <!-- Queued Transcodes List -->
-              <div id="queuedTranscodesContainer" class="hidden flex flex-col gap-1">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming (<span id="queuedTranscodesCount">0</span>):</span>
-                  <button id="cancelAllTranscodesBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition">Cancel All</button>
-                </div>
-                <div id="queuedTranscodesList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
-              </div>
-
-              <!-- Convert All Library Videos Action Button -->
-              <button id="convertAllLibraryBtn" class="w-full mt-0.5 py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition active:scale-98 shadow-sm">
-                <span>⚡</span>
-                <span id="convertAllLibraryBtnText">Convert All Library Videos to MP4</span>
-                <span id="convertAllLibraryBadge" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-mono border border-emerald-500/30">0</span>
-              </button>
-            </div>
-
-            <!-- SECTION: Library Indexer -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>🗄️</span> Library Indexer
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="indexSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="triggerIndexSyncDropdownBtn" title="Scan destination directory and re-index all folders/files" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
-                    <span id="indexSyncDropdownIcon">↻</span>
-                    <span>Sync</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Index Progress Box -->
-              <div id="indexProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="indexCurrentFolder">All folders indexed</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="indexPercentText">100%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="indexProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="indexCountsText">0 / 0 folders</span>
-                  <span id="indexFilesText" class="text-slate-500">0 files</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION 2: Thumbnail Generator -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>🖼️</span> Thumbnail Generator
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="thumbSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="toggleThumbPauseBtn" title="Pause or resume background thumbnail generation" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
-                    Pause
-                  </button>
-                </div>
-              </div>
-
-              <!-- Thumbnail Progress Box -->
-              <div id="thumbProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="thumbCurrentFile">Checking thumbnails...</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="thumbPercentText">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="thumbProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="thumbCountsText">0 / 0</span>
-                  <span id="thumbStatusLabel" class="text-slate-500">Idle</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION 3: Duplicate Hash Pre-Verifier -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>🔍</span> Duplicate Hash Verifier
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="hashSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="toggleHashPauseBtn" title="Pause or resume background duplicate hash verification" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
-                    Pause
-                  </button>
-                </div>
-              </div>
-
-              <!-- Hash Progress Box -->
-              <div id="hashProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="hashCurrentFile">Checking candidate hashes...</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="hashPercentText">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="hashProgressBar" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="hashCountsText">0 / 0</span>
-                  <span id="hashStatusLabel" class="text-slate-500">Idle</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION: WebP Image Optimizer -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>⚡</span> WebP Image Optimizer
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="webpSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="toggleWebpPauseBtn" title="Pause or resume background WebP optimization" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition">
-                    Pause
-                  </button>
-                </div>
-              </div>
-
-              <!-- WebP Progress Box -->
-              <div id="webpProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="webpCurrentFile">Checking images...</span>
-                  <span class="text-teal-400 font-mono text-[10px] font-bold shrink-0" id="webpPercentText">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="webpProgressBar" class="bg-gradient-to-r from-teal-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="webpCountsText">0 / 0 converted</span>
-                  <span id="webpSavedText" class="text-emerald-400 font-semibold">Saved: 0 B</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION: Library Backup to Folder -->
-            <div class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>💾</span> Library Backup to Folder
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="libBackupSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="triggerLibBackupBtn" title="Snapshot database and bundle thumbnails to library folder" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
-                    <span id="libBackupIcon">↻</span>
-                    <span>Backup Now</span>
-                  </button>
-                  <button id="triggerLibRestoreBtn" title="Restore database and thumbnails from library backup" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1">
-                    <span>Restore</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Backup Progress / Status Box -->
-              <div id="libBackupProgressBox" class="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="libBackupStatusText">Checking backup status...</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="libBackupPercentText">100%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="libBackupProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="libBackupCountsText">No backup yet</span>
-                  <span id="libBackupSizeText" class="text-slate-500">0 MB</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION: ZIP Archive & Cloud Sync Tasks -->
-            <div id="zipTasksSection" class="flex flex-col gap-2 border-b border-slate-800 pb-3">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                  <span>📦</span> Archive & Cloud Sync
-                </h4>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span id="zipTasksSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
-                  <button id="openBatchZipBtn" title="Find all image-only folders across the library and batch zip them" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1 cursor-pointer">
-                    <span>📦</span> Batch Zip Images
-                  </button>
-                  <button id="openBatchUnpackBtn" title="Find all ZIP archives across the library and extract them to folders" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition flex items-center gap-1 cursor-pointer">
-                    <span>🗜️</span> Extract All ZIPs
-                  </button>
-                  <button id="toggleBatchZipPauseBtn" title="Pause or resume batch compression" class="hidden px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition cursor-pointer">
-                    Pause
-                  </button>
-                  <button id="cancelBatchZipBtn" title="Cancel remaining batch compression" class="hidden px-2 py-0.5 bg-red-950/80 hover:bg-red-900 text-red-300 hover:text-white border border-red-800 rounded text-[10px] font-semibold transition cursor-pointer">
-                    Cancel
-                  </button>
-                  <button id="toggleBatchUnpackPauseBtn" title="Pause or resume batch extraction" class="hidden px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition cursor-pointer">
-                    Pause
-                  </button>
-                  <button id="cancelBatchUnpackBtn" title="Cancel remaining batch extraction" class="hidden px-2 py-0.5 bg-red-950/80 hover:bg-red-900 text-red-300 hover:text-white border border-red-800 rounded text-[10px] font-semibold transition cursor-pointer">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-
-              <!-- Batch Zip Progress Box -->
-              <div id="batchZipProgressBox" class="hidden bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="batchZipCurrentFolder">Compressing folder...</span>
-                  <span class="text-sky-400 font-mono text-[10px] font-bold shrink-0" id="batchZipPercentText">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="batchZipProgressBar" class="bg-gradient-to-r from-sky-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="batchZipCountsText">0 / 0 folders</span>
-                  <span id="batchZipStatusText" class="text-slate-500">Idle</span>
-                </div>
-              </div>
-
-              <!-- Batch Unpack Progress Box -->
-              <div id="batchUnpackProgressBox" class="hidden bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 flex flex-col gap-1.5 shadow-inner">
-                <div class="flex items-center justify-between text-[11px] gap-2">
-                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="batchUnpackCurrentZip">Extracting archive...</span>
-                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="batchUnpackPercentText">0%</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div id="batchUnpackProgressBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
-                </div>
-                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                  <span id="batchUnpackCountsText">0 / 0 archives</span>
-                  <span id="batchUnpackStatusText" class="text-slate-500">Idle</span>
-                </div>
-              </div>
-
-              <div id="zipTasksList" class="flex flex-col gap-1.5">
-                <div class="text-[10px] text-slate-500 italic">No active zip operations</div>
-              </div>
-            </div>
-
-            <!-- SECTION 4: Completed Activity -->
-            <div class="flex flex-col gap-1.5">
-              <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed</span>
-              <div id="transcodeHistoryList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
-                <span class="text-slate-600 italic">No conversions yet</span>
-              </div>
-            </div>
-
-          </div>
         </div>
-
-
 
       </div>
 
@@ -530,46 +172,33 @@
   </header>
 
   <!-- Notification Banner / Toaster -->
-  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 max-w-sm pointer-events-none"></div>
 
   <!-- Main Dual-Pane Layout -->
+  
+  <!-- Global Upload Dropzone Overlay -->
+  <div id="globalDropzone" class="fixed inset-0 bg-emerald-900/40 backdrop-blur-[2px] z-[60] hidden flex flex-col items-center justify-center border-4 border-dashed border-emerald-500 pointer-events-none transition-all">
+    <div class="bg-slate-900/90 rounded-2xl p-8 flex flex-col items-center gap-3 shadow-2xl border border-emerald-500/30 backdrop-blur-md">
+      <span class="text-5xl">📥</span>
+      <h2 class="text-xl font-bold text-white tracking-tight">Drop files or folders to upload</h2>
+      <p id="dropzoneTargetText" class="text-emerald-400 font-mono text-sm max-w-sm truncate text-center"></p>
+    </div>
+  </div>
+
   <div class="flex-1 flex max-w-[1920px] w-full mx-auto relative overflow-hidden">
     
     <!-- Left Sidebar: Folder Browser -->
-    <aside id="sidebarDrawer" class="fixed inset-y-[53px] left-0 z-40 w-72 sm:w-80 bg-slate-900/75 backdrop-blur-xl border-r border-slate-800/80 p-3.5 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 md:static md:h-[calc(100vh-53px)] shrink-0 shadow-2xl md:shadow-none">
-      
-      <!-- Sidebar Header & Search -->
-      <div class="flex flex-col gap-2.5 pb-3 border-b border-slate-800">
-        <div class="flex items-center justify-between">
-          <span class="text-xs uppercase font-bold tracking-wider text-slate-400">Categories</span>
-          <span id="folderCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 folders</span>
-        </div>
-        <div class="relative">
-          <input 
-            type="text" 
-            id="folderSearchInput" 
-            placeholder="Search folders..." 
-            class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
-          />
-          <svg class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-        </div>
-      </div>
+    {{include 'partials/library_sidebar.html'}}
 
-      <!-- Root Folders List -->
-      <div id="rootFolderList" class="flex-1 overflow-y-auto no-scrollbar py-2 space-y-1">
-        <div class="text-center py-8 text-xs text-slate-500">Loading categories...</div>
-      </div>
-      
-    </aside>
 
     <!-- Mobile Sidebar Backdrop Overlay -->
-    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-30 hidden md:hidden"></div>
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden md:hidden"></div>
 
     <!-- Right Main Stage: Media Gallery -->
     <main class="flex-1 flex flex-col min-w-0 h-[calc(100vh-49px)] overflow-y-auto p-2.5 sm:p-4 md:p-6 gap-2 sm:gap-3.5">
       
       <!-- Breadcrumb Bar -->
-      <div class="flex items-center justify-between gap-2 bg-slate-900/50 backdrop-blur-md px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/70 shrink-0">
+      <div class="relative z-30 flex items-center justify-between gap-2 bg-slate-900/50 backdrop-blur-md px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/70 shrink-0">
         <nav id="breadcrumbNav" class="flex items-center gap-1.5 text-xs sm:text-sm font-medium overflow-x-auto no-scrollbar py-0.5 min-w-0">
           <span class="text-slate-500">Loading path...</span>
         </nav>
@@ -577,6 +206,18 @@
           <button id="newFolderBtn" title="Create a new folder inside the current folder" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 hover:text-emerald-200 border border-emerald-600/30 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shrink-0">
             <span>＋</span><span class="hidden sm:inline">New Folder</span>
           </button>
+          
+          <div class="relative shrink-0 flex items-center">
+            <button id="uploadDropdownBtn" title="Upload files or folders" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-sm">
+              <span>⬆️</span><span class="hidden sm:inline">Upload</span>
+            </button>
+            <div id="uploadDropdownMenu" class="hidden absolute right-0 top-full mt-1 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-[60] flex flex-col py-1 overflow-hidden">
+              <button id="uploadFilesBtn" class="px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2">📄 Files</button>
+              <button id="uploadFolderBtn" class="px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2">📁 Folder</button>
+            </div>
+            <input type="file" id="hiddenUploadFileInput" multiple class="hidden" accept=".mp4,.m4v,.mkv,.webm,.avi,.mov,.wmv,.flv,.ts,.m2ts,.mpg,.mpeg,.vob,.3gp,.asf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg,.zip" />
+            <input type="file" id="hiddenUploadFolderInput" webkitdirectory directory multiple class="hidden" />
+          </div>
           <button id="refreshFolderBtn" title="Refresh folder" class="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border border-slate-700 transition shrink-0">
             <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
           </button>
@@ -749,746 +390,581 @@
 
     </main>
 
-  </div>
+  <!-- Hidden backdrop element kept for legacy event bindings -->
+  <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-40"></div>
 
-  <!-- Rename Modal -->
-  <div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <span>✏️</span> Rename File
-        </h3>
-        <button id="closeRenameModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <label for="newFileNameInput" class="text-xs text-slate-400">File Name:</label>
-        <input 
-          type="text" 
-          id="newFileNameInput" 
-          class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono"
-        />
-        <p class="text-[10px] text-slate-500">Include the file extension (e.g. .mp4, .jpg)</p>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-2">
-        <button id="cancelRenameBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmRenameBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">
-          Save Name
+  <!-- Background Tasks Centered Modal Dialog -->
+  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+    <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-3.5 py-2.5 sm:px-5 sm:py-3.5 bg-slate-900 border-b border-slate-800 shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+          <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">Background Tasks & System Status</h3>
+        </div>
+        <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs flex items-center justify-center w-7 h-7 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition cursor-pointer shrink-0" title="Close Panel">
+          ✕
         </button>
       </div>
+
+      <!-- Tab Navigation Bar (Scrollable on small screens) -->
+      <div class="flex items-center px-2.5 sm:px-5 bg-slate-900 border-b border-slate-800 shrink-0 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+        <button type="button" id="tasksTabBtnActive" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
+          <span>⚡</span>
+          <span>Active & Queues</span>
+          <span id="tabBadgeActive" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">0</span>
+        </button>
+        <button type="button" id="tasksTabBtnWorkers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
+          <span>⚙️</span>
+          <span>Background Workers</span>
+          <span id="tabBadgeWorkers" class="hidden px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">Idle</span>
+        </button>
+        <button type="button" id="tasksTabBtnTools" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
+          <span>🛠️</span>
+          <span>Tools & Maintenance</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Tab Content Container -->
+      <div class="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 flex flex-col gap-4 bg-slate-900">
+        
+        <!-- PANE 1: Active & Queues -->
+        <div id="tasksPaneActive" class="tasks-pane flex flex-col gap-3.5">
+          
+          <!-- Empty State (Shown when all queues idle) -->
+          <div id="activeQueuesEmptyState" class="p-8 text-center flex flex-col items-center justify-center gap-2.5 bg-slate-950 border border-slate-800 rounded-xl">
+            <div class="w-10 h-10 rounded-full bg-emerald-950/60 border border-emerald-800/50 flex items-center justify-center text-emerald-400 text-lg">
+              ✓
+            </div>
+            <div class="text-sm font-semibold text-slate-200">All Queues are Idle</div>
+            <p class="text-xs text-slate-400 max-w-sm">No file transfers, video transcodes, or library operations are currently running.</p>
+            <button type="button" id="jumpToWorkersBtn" class="mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition cursor-pointer">
+              View Background Workers →
+            </button>
+          </div>
+
+          <!-- Section: Browser Uploads -->
+          <div id="browserUploadsSection" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <span>⬆️</span> Browser Uploads
+              </h4>
+              <div class="flex items-center gap-2">
+                <span id="uploadBatchProgress" class="text-[10px] text-emerald-400 font-mono">0%</span>
+                <button id="cancelAllUploadsBtn" class="text-[10px] px-2 py-0.5 bg-red-900/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 rounded border border-red-900/50 transition">Cancel All</button>
+              </div>
+            </div>
+            
+            <div class="bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
+              <div class="h-1 bg-slate-800 w-full"><div id="uploadBatchProgressBar" class="h-full bg-emerald-500 transition-all" style="width: 0%"></div></div>
+              <div class="p-2 text-[10px] text-slate-400 flex justify-between items-center bg-slate-900">
+                <span id="uploadBatchSpeed">0 MB/s</span>
+                <span id="uploadBatchStatus">0 of 0 files</span>
+              </div>
+            </div>
+
+            <!-- Active Uploads List -->
+            <div id="activeUploadsList" class="flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"></div>
+          </div>
+
+          <!-- Section 0: File Transfers -->
+          <div id="cloudTransfersSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                <span>📁</span> File Transfers
+              </h4>
+              <span id="transferDropdownSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+            </div>
+            
+            <!-- Active Transfer Box -->
+            <div id="activeTransferBox" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-emerald-200 font-medium truncate flex-1 min-w-0" id="activeTransferFilename">clip.mp4</span>
+                <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTransferPercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="activeTransferProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="activeTransferTarget" class="truncate max-w-[240px]">→ /destination</span>
+                <span id="activeTransferSize">0 / 0 MB</span>
+              </div>
+            </div>
+
+            <!-- Queued Transfers List -->
+            <div id="queuedTransfersContainer" class="hidden flex flex-col gap-1.5">
+              <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Transfers (<span id="queuedTransfersCount">0</span>):</span>
+              <div id="queuedTransfersList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+            </div>
+          </div>
+
+          <!-- Section 0b: Library Operations -->
+          <div id="libraryOpsSection" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                <span>🗂️</span> Library Operations
+              </h4>
+              <span id="libraryOpsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+            </div>
+
+            <!-- Active Operation Box -->
+            <div id="activeLibraryOpBox" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center gap-1.5 text-[11px] min-w-0">
+                <span id="activeLibraryOpKind" class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Move</span>
+                <span class="text-emerald-200 font-medium truncate" id="activeLibraryOpName">item</span>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono gap-2">
+                <span id="activeLibraryOpTarget" class="truncate max-w-[240px]">→ /destination</span>
+                <span id="libraryOpsProgress" class="text-emerald-300 shrink-0">0 done</span>
+              </div>
+            </div>
+
+            <!-- Queued Operations List -->
+            <div id="queuedLibraryOpsContainer" class="hidden flex flex-col gap-1.5">
+              <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Operations (<span id="queuedLibraryOpsCount">0</span>):</span>
+              <div id="queuedLibraryOpsList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+            </div>
+          </div>
+
+          <!-- Section 1: Auto-MP4 Pre-Transcoding -->
+          <div id="activeTranscodeSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                <span>⚙️</span> Video Pre-Transcoding
+              </h4>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span id="transcodeSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                <button id="toggleTranscodePauseBtn" title="Pause or resume background pre-transcoding" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                  Pause
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Conversion Box -->
+            <div id="activeTranscodeBox" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <div class="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                  <span id="activeTranscodeMethodBadge" class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Encode</span>
+                  <span class="text-emerald-200 font-medium truncate" id="activeTranscodeFilename">clip.mkv</span>
+                </div>
+                <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTranscodePercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="activeTranscodeProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="activeTranscodeSpeed">0 fps</span>
+                <span id="activeTranscodeEta" class="text-emerald-300">ETA: --</span>
+              </div>
+            </div>
+
+            <!-- Queued Transcodes List -->
+            <div id="queuedTranscodesContainer" class="hidden flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Conversions (<span id="queuedTranscodesCount">0</span>):</span>
+                <button id="cancelAllTranscodesBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition cursor-pointer">Cancel All</button>
+              </div>
+              <div id="queuedTranscodesList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+            </div>
+          </div>
+
+          <!-- Section: Completed Activity -->
+          <div class="flex flex-col gap-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed Activity</span>
+            <div id="transcodeHistoryList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
+              <span class="text-slate-600 italic">No activity yet</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PANE 2: Background Workers -->
+        <div id="tasksPaneWorkers" class="tasks-pane hidden flex flex-col gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            
+            <!-- Worker Card 1: Thumbnail Generator -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base">🖼️</span>
+                  <div class="min-w-0">
+                    <h4 class="text-xs font-bold text-white truncate">Thumbnail Generator</h4>
+                    <span id="thumbSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  </div>
+                </div>
+                <button id="toggleThumbPauseBtn" title="Pause or resume background thumbnail generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                  Pause
+                </button>
+              </div>
+              <div id="thumbProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="thumbCurrentFile">Checking thumbnails...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="thumbPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="thumbProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="thumbCountsText">0 / 0</span>
+                  <span id="thumbStatusLabel" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Worker Card 2: WebP Image Optimizer -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base">⚡</span>
+                  <div class="min-w-0">
+                    <h4 class="text-xs font-bold text-white truncate">WebP Image Optimizer</h4>
+                    <span id="webpSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  </div>
+                </div>
+                <button id="toggleWebpPauseBtn" title="Pause or resume background WebP optimization" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                  Pause
+                </button>
+              </div>
+              <div id="webpProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="webpCurrentFile">Checking images...</span>
+                  <span class="text-teal-400 font-mono text-[10px] font-bold shrink-0" id="webpPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="webpProgressBar" class="bg-teal-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="webpCountsText">0 / 0 converted</span>
+                  <span id="webpSavedText" class="text-emerald-400 font-semibold">Saved: 0 B</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Worker Card 3: Duplicate Hash Verifier -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base">🔍</span>
+                  <div class="min-w-0">
+                    <h4 class="text-xs font-bold text-white truncate">Duplicate Hash Verifier</h4>
+                    <span id="hashSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  </div>
+                </div>
+                <button id="toggleHashPauseBtn" title="Pause or resume background duplicate hash verification" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                  Pause
+                </button>
+              </div>
+              <div id="hashProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="hashCurrentFile">Checking candidate hashes...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="hashPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="hashProgressBar" class="bg-amber-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="hashCountsText">0 / 0</span>
+                  <span id="hashStatusLabel" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Worker Card 4: Library Indexer -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base">🗄️</span>
+                  <div class="min-w-0">
+                    <h4 class="text-xs font-bold text-white truncate">Library Indexer</h4>
+                    <span id="indexSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                  </div>
+                </div>
+                <button id="triggerIndexSyncDropdownBtn" title="Scan destination directory and re-index all folders/files" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition flex items-center gap-1 cursor-pointer shrink-0">
+                  <span id="indexSyncDropdownIcon">↻</span>
+                  <span>Sync</span>
+                </button>
+              </div>
+              <div id="indexProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="indexCurrentFolder">All folders indexed</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="indexPercentText">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="indexProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="indexCountsText">0 / 0 folders</span>
+                  <span id="indexFilesText" class="text-slate-500">0 files</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- PANE 3: Tools & Maintenance -->
+        <div id="tasksPaneTools" class="tasks-pane hidden flex flex-col gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            
+            <!-- Tool Card 1: Library Index Sync -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🔄</span>
+                  <h4 class="text-xs font-bold text-white">Filesystem Index Sync</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Crawl destination directory and sync newly added, modified, or moved files with the SQLite index.</p>
+              </div>
+              <button type="button" onclick="document.getElementById('triggerIndexSyncDropdownBtn').click()" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer">
+                <span>↻</span> Scan & Resync Library
+              </button>
+            </div>
+
+            <!-- Tool Card: Clean DB & Thumbnails -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🧹</span>
+                  <h4 class="text-xs font-bold text-white">Clean DB & Thumbnails</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Deep scan the database to remove missing files and delete orphaned thumbnails.</p>
+              </div>
+              <button id="cleanDbBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 hover:text-white border border-amber-800/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Clean stale entries and thumbnails">
+                <span>🧹</span>
+                <span>Run Deep Clean</span>
+              </button>
+            </div>
+
+            <!-- Tool Card 2: Delete All Empty Folders -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🗑️</span>
+                  <h4 class="text-xs font-bold text-white">Clean Empty Folders</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Scan the media collection for directories containing 0 files and permanently delete them.</p>
+              </div>
+              <button id="deleteEmptyFoldersBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white border border-rose-800/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Find and delete all empty folders across the library">
+                <span>🗑️</span>
+                <span id="deleteEmptyFoldersBtnText">Delete All Empty Folders</span>
+              </button>
+            </div>
+
+            <!-- Tool Card 3: Convert All Library Videos to MP4 -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">⚡</span>
+                  <h4 class="text-xs font-bold text-white">Batch Convert Videos to MP4</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Detect non-web videos (.mkv, .avi, .wmv, .flv, .mov) across the collection and batch transcode to MP4.</p>
+              </div>
+              <button id="convertAllLibraryBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer">
+                <span>⚡</span>
+                <span id="convertAllLibraryBtnText">Convert All Videos to MP4</span>
+                <span id="convertAllLibraryBadge" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-mono border border-emerald-500/30">0</span>
+              </button>
+            </div>
+
+            <!-- Tool Card 4: Batch Compress Image Folders -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">📦</span>
+                  <h4 class="text-xs font-bold text-white">Batch ZIP Image Folders</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Find folders containing only images and compress them into fast virtual ZIP archives.</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button id="openBatchZipBtn" title="Find all image-only folders across the library and batch zip them" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer">
+                  <span>📦</span> Batch Zip Images
+                </button>
+                <button id="toggleBatchZipPauseBtn" title="Pause or resume batch compression" class="hidden px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer">
+                  Pause
+                </button>
+                <button id="cancelBatchZipBtn" title="Cancel remaining batch compression" class="hidden px-2 py-1.5 bg-red-950/80 hover:bg-red-900 text-red-300 hover:text-white border border-red-800 rounded-lg text-xs font-semibold transition cursor-pointer">
+                  Cancel
+                </button>
+              </div>
+              <!-- Batch Zip Progress Box -->
+              <div id="batchZipProgressBox" class="hidden bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="batchZipCurrentFolder">Compressing folder...</span>
+                  <span class="text-sky-400 font-mono text-[10px] font-bold shrink-0" id="batchZipPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="batchZipProgressBar" class="bg-sky-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="batchZipCountsText">0 / 0 folders</span>
+                  <span id="batchZipStatusText" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tool Card 5: Extract All ZIPs -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🗜️</span>
+                  <h4 class="text-xs font-bold text-white">Extract All ZIP Archives</h4>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Find all ZIP archives in the library and batch extract them into standard filesystem folders.</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button id="openBatchUnpackBtn" title="Find all ZIP archives across the library and extract them to folders" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer">
+                  <span>🗜️</span> Extract All ZIPs
+                </button>
+                <button id="toggleBatchUnpackPauseBtn" title="Pause or resume batch extraction" class="hidden px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer">
+                  Pause
+                </button>
+                <button id="cancelBatchUnpackBtn" title="Cancel remaining batch extraction" class="hidden px-2 py-1.5 bg-red-950/80 hover:bg-red-900 text-red-300 hover:text-white border border-red-800 rounded-lg text-xs font-semibold transition cursor-pointer">
+                  Cancel
+                </button>
+              </div>
+              <!-- Batch Unpack Progress Box -->
+              <div id="batchUnpackProgressBox" class="hidden bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="batchUnpackCurrentZip">Extracting archive...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="batchUnpackPercentText">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="batchUnpackProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="batchUnpackCountsText">0 / 0 archives</span>
+                  <span id="batchUnpackStatusText" class="text-slate-500">Idle</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tool Card 6: Library Snapshot Backup & Restore -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-base">💾</span>
+                    <h4 class="text-xs font-bold text-white">Snapshot Backup & Restore</h4>
+                  </div>
+                  <span id="libBackupSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Snapshot SQLite database and thumbnail bundle into the backup directory, or restore from snapshot.</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="triggerLibBackupBtn" title="Snapshot database and bundle thumbnails to library folder" class="flex-1 py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer">
+                  <span id="libBackupIcon">↻</span>
+                  <span>Backup Now</span>
+                </button>
+                <button id="triggerLibRestoreBtn" title="Restore database and thumbnails from library backup" class="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer">
+                  <span>Restore</span>
+                </button>
+              </div>
+              <!-- Backup Progress / Status Box -->
+              <div id="libBackupProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+                <div class="flex items-center justify-between text-[11px] gap-2">
+                  <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="libBackupStatusText">Checking backup status...</span>
+                  <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="libBackupPercentText">100%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div id="libBackupProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span id="libBackupCountsText">No backup yet</span>
+                  <span id="libBackupSizeText" class="text-slate-500">0 MB</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Active Archive Tasks Container -->
+          <div id="zipTasksSection" class="flex flex-col gap-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>📦</span> Active Archive Operations
+              </h4>
+              <span id="zipTasksSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+            </div>
+            <div id="zipTasksList" class="flex flex-col gap-1.5">
+              <div class="text-[10px] text-slate-500 italic">No active zip operations</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-3.5 py-2 sm:px-5 sm:py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0 gap-2">
+        <div class="flex items-center gap-2 truncate min-w-0">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+          <span id="tasksModalGlobalStatus" class="truncate">System ready · All background services active</span>
+        </div>
+        <button type="button" onclick="document.getElementById('transferDropdown').classList.add('hidden')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-medium transition cursor-pointer shrink-0">
+          Close
+        </button>
+      </div>
+
     </div>
   </div>
+
+  <!-- Upload Review Modal -->
+  
+
+<!-- Rename Modal -->
+  
 
   <!-- New Folder Modal -->
-  <div id="newFolderModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <span>📁</span> New Folder
-        </h3>
-        <button id="closeNewFolderModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
-      </div>
-      <div class="flex flex-col gap-1.5">
-        <label for="newFolderNameInput" class="text-xs text-slate-400">Folder Name:</label>
-        <input
-          type="text"
-          id="newFolderNameInput"
-          class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono"
-          placeholder="e.g. Vacation 2024"
-        />
-      </div>
-      <div class="flex items-center justify-end gap-2 pt-2">
-        <button id="cancelNewFolderBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmNewFolderBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">
-          Create
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Move Conflict Modal -->
-  <div id="moveConflictModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-amber-900/50 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 text-lg">⚠️</div>
-        <div>
-          <h3 class="text-sm font-bold text-white">Name Conflicts Detected</h3>
-          <p class="text-xs text-slate-400" id="moveConflictCount">Some items already exist at the destination.</p>
-        </div>
-      </div>
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="moveConflictCancelBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Cancel</button>
-        <button id="moveConflictSkipBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Skip Conflicts</button>
-        <button id="moveConflictRenameBtn" class="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white transition shadow-sm">Auto-rename</button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Bulk Rename Modal -->
-  <div id="bulkRenameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-lg w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <span>✏️</span> Bulk Rename <span id="bulkRenameCount" class="text-[11px] font-mono text-sky-300">0 files</span>
-        </h3>
-        <button id="closeBulkRenameModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
-      </div>
-
-      <div class="flex flex-col gap-2">
-        <label class="text-xs text-slate-400">Rename mode:</label>
-        <select id="bulkRenameMode" class="bg-slate-950/80 border border-slate-700 focus:border-emerald-500 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none cursor-pointer">
-          <option value="prefix">Prefix / Suffix</option>
-          <option value="numbering">Numbering</option>
-          <option value="base_counter">New base name + counter</option>
-          <option value="find_replace">Find &amp; replace</option>
-          <option value="case">Change case</option>
-        </select>
-
-        <!-- Params: prefix/suffix -->
-        <div id="bulkPrefixParams" class="bulk-param flex gap-2">
-          <input id="bulkPrefixInput" placeholder="Prefix" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none font-mono" />
-          <input id="bulkSuffixInput" placeholder="Suffix" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none font-mono" />
-        </div>
-
-        <!-- Params: numbering -->
-        <div id="bulkNumberingParams" class="bulk-param hidden flex gap-2 items-end">
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] text-slate-500">Start</label>
-            <input id="bulkNumStart" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] text-slate-500">Step</label>
-            <input id="bulkNumStep" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] text-slate-500">Padding</label>
-            <input id="bulkNumPadding" type="number" value="0" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
-          </div>
-          <select id="bulkNumPosition" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white h-[30px]">
-            <option value="suffix">After name</option>
-            <option value="prefix">Before name</option>
-          </select>
-        </div>
-
-        <!-- Params: base + counter -->
-        <div id="bulkBaseCounterParams" class="bulk-param hidden flex gap-2 items-end">
-          <div class="flex flex-col gap-1 flex-1">
-            <label class="text-[10px] text-slate-500">Base name</label>
-            <input id="bulkBaseName" placeholder="Trip" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] text-slate-500">Start</label>
-            <input id="bulkBaseStart" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] text-slate-500">Padding</label>
-            <input id="bulkBasePadding" type="number" value="2" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
-          </div>
-        </div>
-
-        <!-- Params: find & replace -->
-        <div id="bulkFindReplaceParams" class="bulk-param hidden flex gap-2">
-          <input id="bulkFindInput" placeholder="Find" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
-          <input id="bulkReplaceInput" placeholder="Replace" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
-        </div>
-
-        <!-- Params: case -->
-        <div id="bulkCaseParams" class="bulk-param hidden">
-          <select id="bulkCaseSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white">
-            <option value="lower">lowercase</option>
-            <option value="upper">UPPERCASE</option>
-            <option value="title">Title Case</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="bulkRenamePreviewList" class="max-h-48 overflow-y-auto no-scrollbar bg-slate-950/60 rounded-xl border border-slate-800 p-2 flex flex-col gap-1"></div>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="cancelBulkRenameBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Cancel</button>
-        <button id="applyBulkRenameBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">Apply Rename</button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Delete Confirmation Modal -->
-  <div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-red-900/50 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 text-lg">
-          ⚠️
-        </div>
-        <div>
-          <h3 id="deleteModalTitle" class="text-sm font-bold text-white">Permanently Delete File?</h3>
-          <p id="deleteModalSubtitle" class="text-xs text-slate-400">This action cannot be undone.</p>
-        </div>
-      </div>
-
-      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1">
-        <span id="deleteFileName" class="text-xs font-mono text-red-300 break-all">filename.mp4</span>
-        <span id="deleteFileSize" class="text-[10px] text-slate-500 font-mono">0 MB</span>
-      </div>
-
-      <!-- Every delete requires an explicit acknowledgement -->
-      <label
-        id="deleteConfirmAck"
-        for="deleteConfirmAckInput"
-        class="hidden items-start gap-2.5 cursor-pointer select-none"
-      >
-        <input
-          type="checkbox"
-          id="deleteConfirmAckInput"
-          class="mt-0.5 w-4 h-4 shrink-0 rounded border-slate-600 bg-slate-950 text-red-500 focus:ring-red-500/40 cursor-pointer"
-        />
-        <span class="text-xs text-slate-300 leading-snug">I understand this action cannot be undone.</span>
-      </label>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="cancelDeleteBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmDeleteBtn" class="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition shadow-sm disabled:opacity-40 disabled:pointer-events-none">
-          Delete File
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Move To... Modal -->
-  <div id="moveModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <span>📁</span> Move To…
-        </h3>
-        <button id="closeMoveModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <p class="text-xs text-slate-400">Moving <span id="moveItemName" class="font-mono text-emerald-300">item</span></p>
-        <div class="flex items-center gap-1">
-          <button id="moveUpBtn" title="Go to parent folder" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs shrink-0 transition">⬆ Up</button>
-          <span id="moveCurrentPath" class="flex-1 truncate text-[11px] font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">/</span>
-        </div>
-        <div id="moveFolderList" class="max-h-64 overflow-y-auto no-scrollbar bg-slate-950/60 rounded-xl border border-slate-800 p-1.5 flex flex-col gap-1"></div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-2">
-        <button id="cancelMoveBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmMoveBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">
-          Move Here
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Right-click Context Menu -->
-  <div id="contextMenu" class="hidden fixed z-50 min-w-[160px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5">
+  <div id="contextMenu" class="hidden fixed z-[60] min-w-[160px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5">
     <button data-cm="move" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">📁 Move to…</button>
     <button data-cm="rename" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">✏️ Rename</button>
     <button data-cm="delete" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-red-300 hover:bg-red-900/40 text-left transition">🗑️ Delete</button>
   </div>
 
   <!-- Convert All Library Videos Confirmation Modal -->
-  <div id="convertAllModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-emerald-900/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 text-base">
-            ⚡
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-white">Convert All Library Videos</h3>
-            <p class="text-[11px] text-slate-400">Batch convert non-MP4 videos to MP4</p>
-          </div>
-        </div>
-        <button id="closeConvertAllModalBtn" class="text-slate-400 hover:text-white text-base p-1">✕</button>
-      </div>
-
-      <!-- Stats Summary Card -->
-      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2.5">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-400">Pending Videos:</span>
-          <span id="convertAllModalCount" class="text-xs font-mono font-bold text-emerald-400">Loading...</span>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-400">Estimated Total Size:</span>
-          <span id="convertAllModalSize" class="text-xs font-mono font-bold text-slate-200">--</span>
-        </div>
-        <!-- Format breakdown chips -->
-        <div class="pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
-          <span class="text-[10px] uppercase font-bold text-slate-500">Formats to Convert:</span>
-          <div id="convertAllBreakdownChips" class="flex flex-wrap gap-1.5">
-            <span class="text-[11px] text-slate-500 italic">Checking formats...</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Info Details -->
-      <div class="text-[11px] text-slate-400 flex flex-col gap-1.5 bg-slate-800/40 p-2.5 rounded-xl border border-slate-800">
-        <div class="flex items-start gap-1.5">
-          <span class="text-emerald-400 font-bold">✓</span>
-          <span><strong>Smallest files first:</strong> Short clips and WebMs convert rapidly before larger movies.</span>
-        </div>
-        <div class="flex items-start gap-1.5">
-          <span class="text-emerald-400 font-bold">✓</span>
-          <span><strong>In-place replacement:</strong> Originals are replaced with verified web-compatible <code>.mp4</code>.</span>
-        </div>
-        <div class="flex items-start gap-1.5">
-          <span class="text-emerald-400 font-bold">✓</span>
-          <span><strong>Background task:</strong> Runs with low CPU priority; you can pause or cancel anytime.</span>
-        </div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="cancelConvertAllModalBtn" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmConvertAllModalBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
-          <span>Start Conversion</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Duplicates Review Modal -->
-  <div id="duplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-1.5 sm:p-4 md:p-6">
-    <div class="bg-slate-900 border border-amber-500/30 rounded-2xl w-full max-w-6xl h-[95vh] sm:h-auto sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Modal Header -->
-      <div class="px-3.5 py-2.5 sm:px-6 sm:py-3.5 bg-slate-950/80 border-b border-slate-800 grid grid-cols-[1fr_auto] md:flex md:items-center md:justify-between gap-2.5 sm:gap-3 shrink-0">
-        
-        <!-- Left / Row 1 Left: Icon + Title + Set Pill -->
-        <div class="col-start-1 row-start-1 flex items-center gap-2 sm:gap-2.5 min-w-0">
-          <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 text-sm sm:text-base">
-            🔍
-          </div>
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5 sm:gap-2">
-              <h3 class="text-sm sm:text-base font-bold text-white truncate">
-                <span class="sm:hidden">Duplicates</span>
-                <span class="hidden sm:inline">Duplicate Files Review</span>
-              </h3>
-              <span id="duplicatesGroupPill" class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30 shrink-0">Set 1 of 0</span>
-            </div>
-            <p id="duplicatesSubtitle" class="text-[11px] sm:text-xs text-slate-400 truncate hidden sm:block">Detect, compare, and safely clean up duplicate files</p>
-          </div>
-        </div>
-
-        <!-- Right / Row 1 Right: Ignored Button + Close Button -->
-        <div class="col-start-2 row-start-1 md:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0 justify-self-end">
-          <button id="openIgnoredDuplicatesBtn" class="px-2 sm:px-2.5 py-1 rounded-xl bg-slate-800/80 border border-slate-700/60 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition shadow-sm cursor-pointer" title="View ignored duplicate matches">
-            <i class="fa-solid fa-ban text-amber-400"></i>
-            <span><span class="hidden sm:inline">Ignored </span>(<span id="ignoredDuplicatesCount">0</span>)</span>
-          </button>
-          <button id="closeDuplicatesModalBtn" class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs sm:text-sm transition" title="Close Modal (Esc)">
-            ✕
-          </button>
-        </div>
-
-        <!-- Mode Switcher Tabs: Row 2 (Full width) on mobile, Center/Right (order-2) on desktop -->
-        <div class="col-span-2 row-start-2 md:order-2 w-full md:w-auto">
-          <div class="grid grid-cols-2 w-full md:w-auto bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[11px] font-medium text-center">
-            <button id="dupModeContentBtn" class="px-2.5 sm:px-3 py-1 rounded-lg bg-amber-600 text-white font-semibold shadow-sm transition text-center truncate font-medium">
-              <span class="sm:hidden">Size & Hash</span><span class="hidden sm:inline">Content (Size & Hash)</span>
-            </button>
-            <button id="dupModeVisualBtn" class="px-2.5 sm:px-3 py-1 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center gap-1 text-center truncate font-medium">
-              <i class="fa-solid fa-eye text-sky-400 shrink-0"></i>
-              <span class="sm:hidden">Visual</span><span class="hidden sm:inline">Visual (Videos)</span>
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Verification & Navigator Toolbar -->
-      <div class="px-3.5 py-2 sm:px-6 sm:py-2.5 bg-slate-950/40 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs gap-2 sm:gap-3 shrink-0">
-        
-        <!-- Left: Status & Pre-hashing info -->
-        <div class="flex items-center justify-between sm:justify-start gap-2 min-w-0">
-          <span id="duplicatesVerificationBadge" class="text-[11px] font-mono px-2 sm:px-2.5 py-0.5 rounded-lg bg-slate-800 text-slate-400 flex items-center gap-1.5 border border-slate-700 min-w-0 truncate max-w-full">
-            <span class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
-            <span class="truncate">Checking hash...</span>
-          </span>
-          <span id="duplicatesGroupSizeBadge" class="text-slate-400 font-mono text-[11px] truncate hidden sm:inline"></span>
-          <!-- Background Hash Pre-Verification Live Status Pill -->
-          <div id="duplicateBgHashBadge" class="hidden sm:flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
-            <span id="dupBgHashIcon" class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            <span id="dupBgHashText">Pre-hashing: 0%</span>
-            <button id="dupBgHashPauseBtn" class="text-amber-400 hover:text-white underline ml-1 font-sans">Pause</button>
-          </div>
-        </div>
-
-        <!-- Right: Actions & Pagination -->
-        <div class="flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2 w-full sm:w-auto shrink-0">
-          <label class="hidden md:flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-300 hover:text-white select-none bg-slate-900/90 px-2.5 py-1 rounded-xl border border-slate-800 transition" title="Automatically keep recommended file and delete duplicate copy as soon as a 100% hash match is verified">
-            <input type="checkbox" id="autoDeleteOnBrowseToggle" class="rounded bg-slate-950 border-slate-700 text-emerald-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer">
-            <span class="font-medium text-emerald-400">⚡ Auto-delete on 100% match</span>
-          </label>
-
-          <button 
-            id="autoDeleteAllVerifiedBtn" 
-            class="flex-1 sm:flex-initial px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-semibold flex items-center justify-center gap-1 sm:gap-1.5 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-40 disabled:pointer-events-none truncate"
-            title="Automatically keep recommended file and delete duplicates for all 100% hash-verified sets"
-          >
-            <span>⚡</span>
-            <span class="truncate"><span class="sm:hidden">Auto-Delete</span><span class="hidden sm:inline">Auto-Delete All Verified</span></span>
-            <span id="autoDeleteBadgeCount" class="px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-300 text-[10px] font-mono border border-emerald-700/80 shrink-0">0</span>
-          </button>
-
-          <button 
-            id="ignoreCurrentGroupBtn" 
-            class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-xl bg-slate-900 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500/50 text-slate-300 hover:text-amber-300 text-[11px] font-medium flex items-center justify-center gap-1 sm:gap-1.5 transition shadow-sm cursor-pointer shrink-0" 
-            title="Ignore this match so it never appears in duplicate scans again"
-          >
-            <i class="fa-solid fa-ban text-amber-400 shrink-0"></i>
-            <span>Ignore<span class="hidden sm:inline"> Match</span></span>
-          </button>
-
-          <div class="h-4 w-px bg-slate-800 mx-0.5 hidden sm:block"></div>
-
-          <div class="flex items-center gap-1 sm:gap-2 shrink-0">
-            <button id="prevDuplicateGroupBtn" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1 transition disabled:opacity-40 disabled:pointer-events-none">
-              ◀<span class="hidden sm:inline"> Prev</span>
-            </button>
-            <span id="duplicateGroupCounter" class="text-slate-300 font-mono text-[11px] sm:text-xs px-1 shrink-0 whitespace-nowrap">1 / 1</span>
-            <button id="nextDuplicateGroupBtn" class="px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1 transition disabled:opacity-40 disabled:pointer-events-none">
-              <span class="hidden sm:inline">Next </span>▶
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Main Stage: Side-by-Side Comparison Container -->
-      <div id="duplicateCardsContainer" class="flex-1 overflow-y-auto p-3 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <!-- Rendered dynamically -->
-      </div>
-
-      <!-- Footer Info Bar -->
-      <div class="px-3.5 py-2.5 sm:px-6 sm:py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between gap-3 text-xs shrink-0 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-        <div class="flex items-center gap-2 text-slate-400 min-w-0">
-          <span class="shrink-0">Reclaimable:</span>
-          <span id="duplicatesTotalReclaimable" class="text-emerald-400 font-mono font-bold shrink-0">0 GB</span>
-          <span class="text-slate-600 hidden sm:inline">|</span>
-          <span id="duplicatesTotalSets" class="text-slate-300 font-mono hidden sm:inline truncate">0 duplicate sets</span>
-        </div>
-
-        <div class="flex items-center gap-2 shrink-0">
-          <button id="refreshDuplicatesBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium flex items-center gap-1.5 transition">
-            <span>↻</span> Rescan
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </div>
+  
 
   <!-- Ignored Matches Modal -->
-  <div id="ignoredDuplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-2 sm:p-4 md:p-6">
-    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Header -->
-      <div class="px-5 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 text-sm">
-            <i class="fa-solid fa-ban"></i>
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-sm sm:text-base font-bold text-white truncate">Ignored Duplicate Matches</h3>
-            <p class="text-xs text-slate-400 truncate">Pairs marked to be ignored will not appear in duplicate scans</p>
-          </div>
-        </div>
-        <button id="closeIgnoredDuplicatesModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition" title="Close (Esc)">
-          ✕
-        </button>
-      </div>
-
-      <!-- List Container -->
-      <div id="ignoredDuplicatesList" class="flex-1 overflow-y-auto p-4 space-y-3">
-        <!-- Rendered dynamically -->
-      </div>
-
-      <!-- Footer -->
-      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
-        <span id="ignoredDuplicatesFooterCount" class="font-mono">0 ignored pairs</span>
-        <button id="closeIgnoredDuplicatesFooterBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Compress Folder to ZIP Modal -->
-  <div id="compressZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-sky-800/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-300 shrink-0 text-xl">
-            📦
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-sm font-bold text-white truncate">Compress Folder to ZIP Archive</h3>
-            <p class="text-xs text-slate-400 truncate">Reduce cloud IO latency from pCloud</p>
-          </div>
-        </div>
-        <button id="closeCompressZipXBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
-      </div>
-
-      <p class="text-xs text-slate-300 leading-relaxed">
-        This folder contains only images. Compressing it into a single <span class="font-mono text-sky-300">.zip</span> archive significantly speeds up directory loading and image scrolling.
-      </p>
-
-      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1.5 text-xs font-mono">
-        <div class="flex justify-between text-slate-400">
-          <span>Folder:</span>
-          <span id="compressFolderName" class="text-white truncate max-w-[200px]">album</span>
-        </div>
-        <div class="flex justify-between text-slate-400">
-          <span>Images:</span>
-          <span id="compressImageCount" class="text-sky-300">0 files</span>
-        </div>
-        <div class="flex justify-between text-slate-400">
-          <span>Total Size:</span>
-          <span id="compressTotalSize" class="text-slate-300">0 MB</span>
-        </div>
-        <div class="flex justify-between text-slate-400">
-          <span>Target File:</span>
-          <span id="compressTargetZip" class="text-emerald-300 truncate max-w-[200px]">album.zip</span>
-        </div>
-      </div>
-
-      <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-tight">
-        ⚠️ <strong>Note:</strong> After archive integrity (CRC) is verified, the original folder will be removed. The archive will continue to be browsable just like a regular folder.
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="cancelCompressZipBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmCompressZipBtn" class="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
-          <span>📦</span>
-          <span>Compress & Replace Folder with ZIP</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Unpack ZIP to Folder Modal -->
-  <div id="unpackZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-indigo-800/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 shrink-0 text-xl">
-            📂
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-sm font-bold text-white truncate">Unpack ZIP to Regular Folder</h3>
-            <p class="text-xs text-slate-400 truncate">Restore archive back into a standard directory</p>
-          </div>
-        </div>
-        <button id="closeUnpackZipXBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
-      </div>
-
-      <p class="text-xs text-slate-300 leading-relaxed">
-        This will extract all files from the <span class="font-mono text-indigo-300" id="unpackZipFileName">archive.zip</span> back into a standard folder on storage and delete the archive file.
-      </p>
-
-      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1.5 text-xs font-mono">
-        <div class="flex justify-between text-slate-400">
-          <span>Archive:</span>
-          <span id="unpackZipSource" class="text-white truncate max-w-[200px]">archive.zip</span>
-        </div>
-        <div class="flex justify-between text-slate-400">
-          <span>Target Directory:</span>
-          <span id="unpackZipTarget" class="text-emerald-300 truncate max-w-[200px]">archive</span>
-        </div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button id="cancelUnpackZipBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
-          Cancel
-        </button>
-        <button id="confirmUnpackZipBtn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
-          <span>📂</span>
-          <span>Unpack Archive</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  
 
   <!-- Batch Zip Image Folders Modal -->
-  <div id="batchZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-5">
-    <div class="bg-slate-900 border border-sky-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Modal Header -->
-      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-300 shrink-0 text-lg">
-            📦
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-sm sm:text-base font-bold text-white truncate">Batch Compress Image Folders</h3>
-            <p class="text-xs text-slate-400 truncate">Find all leaf folders with only images and compress to ZIP</p>
-          </div>
-        </div>
-        <button id="closeBatchZipModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
-      </div>
-
-      <!-- Summary Stats & Filter Banner -->
-      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">Eligible Folders</span>
-            <span id="batchZipCandidateCount" class="text-sm font-bold font-mono text-sky-400">0</span>
-          </div>
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Images</span>
-            <span id="batchZipImageCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
-          </div>
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Size</span>
-            <span id="batchZipTotalSize" class="text-sm font-bold font-mono text-amber-400">0 B</span>
-          </div>
-        </div>
-
-        <!-- Controls Row: Search + Select All -->
-        <div class="flex items-center justify-between gap-2 text-xs">
-          <div class="flex items-center gap-2">
-            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
-              <input type="checkbox" id="batchZipSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-sky-600 focus:ring-sky-500" checked />
-              <span>Select All</span>
-            </label>
-            <span id="batchZipSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800/60 font-mono">0 selected</span>
-          </div>
-          <div class="relative w-48 sm:w-60">
-            <input 
-              type="text" 
-              id="batchZipFilterInput" 
-              placeholder="Filter candidates..." 
-              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-sky-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
-            />
-            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- Candidate Folders Scrollable List -->
-      <div id="batchZipCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
-        <div class="text-center py-10 text-xs text-slate-500">Scanning library for candidate folders...</div>
-      </div>
-
-      <!-- Note / Warning -->
-      <div class="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-200/90 flex items-center gap-2 shrink-0">
-        <span>⚠️</span>
-        <span>Each folder will be compressed to a verified <code>.zip</code> archive and its original folder removed to eliminate pCloud I/O latency.</span>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
-        <button id="cancelBatchZipModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
-          Cancel
-        </button>
-        <button id="confirmBatchZipBtn" class="px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          <span>📦</span>
-          <span id="confirmBatchZipBtnText">Compress Selected (0)</span>
-        </button>
-      </div>
-
-    </div>
-  </div>
+  
 
   <!-- Batch Unpack ZIP Archives Modal -->
-  <div id="batchUnpackModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-5">
-    <div class="bg-slate-900 border border-emerald-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-      
-      <!-- Modal Header -->
-      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-300 shrink-0 text-lg">
-            🗜️
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-sm sm:text-base font-bold text-white truncate">Extract ZIP Archives to Folders</h3>
-            <p class="text-xs text-slate-400 truncate">Select archives to unpack; each is extracted, verified, and its .zip removed</p>
-          </div>
-        </div>
-        <button id="closeBatchUnpackModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
-      </div>
+  
 
-      <!-- Summary Stats & Filter Banner -->
-      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
-        <div class="grid grid-cols-3 gap-2 text-center text-xs">
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">ZIP Archives</span>
-            <span id="batchUnpackCandidateCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
-          </div>
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Files</span>
-            <span id="batchUnpackFileCount" class="text-sm font-bold font-mono text-sky-400">0</span>
-          </div>
-          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Size</span>
-            <span id="batchUnpackTotalSize" class="text-sm font-bold font-mono text-amber-400">0 B</span>
-          </div>
-        </div>
-
-        <!-- Controls Row: Search + Select All -->
-        <div class="flex items-center justify-between gap-2 text-xs">
-          <div class="flex items-center gap-2">
-            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
-              <input type="checkbox" id="batchUnpackSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-emerald-600 focus:ring-emerald-500" checked />
-              <span>Select All</span>
-            </label>
-            <span id="batchUnpackSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/60 font-mono">0 selected</span>
-          </div>
-          <div class="relative w-48 sm:w-60">
-            <input 
-              type="text" 
-              id="batchUnpackFilterInput" 
-              placeholder="Filter archives..." 
-              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
-            />
-            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- Candidate ZIP Archives Scrollable List -->
-      <div id="batchUnpackCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
-        <div class="text-center py-10 text-xs text-slate-500">Scanning library for ZIP archives...</div>
-      </div>
-
-      <!-- Note / Warning -->
-      <div class="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-200/90 flex items-center gap-2 shrink-0">
-        <span>⚠️</span>
-        <span>Each selected archive is extracted to a verified folder and its <code>.zip</code> removed. Conflicting folder names get a numbered suffix.</span>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
-        <button id="cancelBatchUnpackModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
-          Cancel
-        </button>
-        <button id="confirmBatchUnpackBtn" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          <span>🗜️</span>
-          <span id="confirmBatchUnpackBtnText">Extract Selected (0)</span>
-        </button>
-      </div>
-
-    </div>
-  </div>
+  <!-- Delete Empty Folders Modal -->
+  
 
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script src="/static/library.js?v=25"></script>
+  <script type="module" src="/static/dist/library.js?v=30"></script>
+  {{include 'partials/library_modals.html'}}
 </body>
 </html>

@@ -24,6 +24,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Ephemeral AI working plans (delete each file once its issue is fixed)
 plans/
 

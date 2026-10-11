@@ -436,3 +436,175 @@ def test_bulk_webp_optimize(api_client):
     data = res.json()
     assert data["images_queued"] == 1
     assert data["skipped"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Delete Empty Folders (service & endpoints)
+# ---------------------------------------------------------------------------
+
+
+def test_find_empty_folders_service(api_client):
+    from media_library.services.library_manage_service import find_empty_folders
+    from media_library.db.indexer import index_folder
+
+    _client, media_dir, _ = api_client
+
+    # 1. Truly empty folder
+    empty1 = media_dir / "empty1"
+    empty1.mkdir()
+    index_folder(str(empty1), str(media_dir))
+
+    # 2. Nested empty folders
+    empty_parent = media_dir / "empty_parent"
+    empty_parent.mkdir()
+    empty_child = empty_parent / "empty_child"
+    empty_child.mkdir()
+    index_folder(str(empty_parent), str(media_dir))
+    index_folder(str(empty_child), str(media_dir))
+
+    # 3. Non-empty folder with media file
+    not_empty = media_dir / "not_empty"
+    not_empty.mkdir()
+    (not_empty / "pic.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"P" * 64)
+    index_folder(str(not_empty), str(media_dir))
+
+    # 4. Folder with non-empty child
+    parent_of_full = media_dir / "parent_of_full"
+    parent_of_full.mkdir()
+    child_full = parent_of_full / "child_full"
+    child_full.mkdir()
+    (child_full / "vid.mp4").write_bytes(b"\x00\x00\x00 ftypmp42" + b"V" * 64)
+    index_folder(str(parent_of_full), str(media_dir))
+    index_folder(str(child_full), str(media_dir))
+
+    # 5. Folder with non-media file on disk (e.g. notes.txt)
+    txt_folder = media_dir / "txt_folder"
+    txt_folder.mkdir()
+    (txt_folder / "notes.txt").write_text("important user note")
+    index_folder(str(txt_folder), str(media_dir))
+
+    res = find_empty_folders(str(media_dir))
+    candidate_paths = [c["path"] for c in res["candidates"]]
+
+    # empty1, empty_child, and empty_parent should be candidates
+    assert str(empty1) in candidate_paths
+    assert str(empty_child) in candidate_paths
+    assert str(empty_parent) in candidate_paths
+
+    # not_empty, parent_of_full, child_full, and txt_folder must NOT be candidates
+    assert str(not_empty) not in candidate_paths
+    assert str(parent_of_full) not in candidate_paths
+    assert str(child_full) not in candidate_paths
+    assert str(txt_folder) not in candidate_paths
+
+    # Verify bottom-up sorting: empty_child comes before empty_parent
+    assert candidate_paths.index(str(empty_child)) < candidate_paths.index(str(empty_parent))
+
+
+def test_delete_empty_folder_service(api_client):
+    from media_library.services.library_manage_service import (
+        delete_empty_folder,
+        delete_empty_folders,
+    )
+    from media_library.db.indexer import index_folder
+
+    _client, media_dir, _ = api_client
+
+    folder = media_dir / "clean_me"
+    folder.mkdir()
+    index_folder(str(folder), str(media_dir))
+
+    # Deleting an empty folder succeeds
+    result = delete_empty_folder(str(folder), base_path=str(media_dir))
+    assert result["deleted_path"] == str(folder)
+    assert not folder.exists()
+    assert _count(str(folder)) == (0, 0)
+
+    # Deleting a folder with real files fails safely without deleting files
+    full_folder = media_dir / "keep_me"
+    full_folder.mkdir()
+    doc = full_folder / "document.pdf"
+    doc.write_bytes(b"%PDF-1.4 sample")
+    index_folder(str(full_folder), str(media_dir))
+
+    with pytest.raises(OSError):
+        delete_empty_folder(str(full_folder), base_path=str(media_dir))
+
+    assert full_folder.exists()
+    assert doc.exists()
+
+    # Refuses to delete the base media directory
+    with pytest.raises(ValueError):
+        delete_empty_folder(str(media_dir), base_path=str(media_dir))
+
+
+def test_delete_empty_folders_nested_and_ds_store(api_client):
+    from media_library.services.library_manage_service import delete_empty_folders
+    from media_library.db.indexer import index_folder
+
+    _client, media_dir, _ = api_client
+
+    # Nested tree: /media/A/B/C
+    dir_a = media_dir / "A"
+    dir_b = dir_a / "B"
+    dir_c = dir_b / "C"
+    dir_c.mkdir(parents=True)
+    # Add a .DS_Store file in B
+    (dir_b / ".DS_Store").write_bytes(b"dummy metadata")
+
+    index_folder(str(dir_a), str(media_dir))
+    index_folder(str(dir_b), str(media_dir))
+    index_folder(str(dir_c), str(media_dir))
+
+    res = delete_empty_folders(base_path=str(media_dir))
+    assert res["success"] is True
+    assert res["deleted_count"] == 3
+    assert not dir_c.exists()
+    assert not dir_b.exists()
+    assert not dir_a.exists()
+
+
+def test_empty_folders_api_endpoints(api_client):
+    from media_library.db.indexer import index_folder
+
+    client, media_dir, _ = api_client
+
+    f1 = media_dir / "target_empty1"
+    f2 = media_dir / "target_empty2"
+    f1.mkdir()
+    f2.mkdir()
+    index_folder(str(f1), str(media_dir))
+    index_folder(str(f2), str(media_dir))
+
+    # GET candidates
+    cand_res = client.get("/api/backup/folders/empty/candidates")
+    assert cand_res.status_code == 200
+    data = cand_res.json()
+    assert data["total_candidates"] >= 2
+    paths = [c["path"] for c in data["candidates"]]
+    assert str(f1) in paths
+    assert str(f2) in paths
+
+    # POST delete specific
+    del_res = client.post(
+        "/api/backup/folders/empty/delete",
+        json={"folder_paths": [str(f1)]},
+    )
+    assert del_res.status_code == 200
+    del_data = del_res.json()
+    assert del_data["success"] is True
+    assert str(f1) in del_data["deleted_paths"]
+    assert not f1.exists()
+    assert f2.exists()
+
+    # POST delete with an external path mixed in (should skip safely, not fail with 403)
+    del_mixed_res = client.post(
+        "/api/backup/folders/empty/delete",
+        json={"folder_paths": ["/etc/shadow", str(f2)]},
+    )
+    assert del_mixed_res.status_code == 200
+    del_mixed_data = del_mixed_res.json()
+    assert str(f2) in del_mixed_data["deleted_paths"]
+    assert not f2.exists()
+
+

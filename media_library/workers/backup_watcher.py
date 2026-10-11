@@ -98,7 +98,7 @@ class BackupWatcherWorker(BaseWorker):
         idle_since: float | None = None
         DEBOUNCE_COOLDOWN = 120.0
 
-        from media_library.services.zip_service import zip_tasks_state
+        from media_library.services.zip import zip_tasks_state
         from media_library.workers.duplicate_hash_worker import (
             duplicate_hash_worker_instance,
         )

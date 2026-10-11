@@ -7,6 +7,7 @@ from media_library.routers.library_admin import router as library_admin_router
 from media_library.routers.library_browse import router as library_browse_router
 from media_library.routers.library_manage import router as library_manage_router
 from media_library.routers.library_media import router as library_media_router
+from media_library.routers.library_upload import router as library_upload_router
 from media_library.routers.sorter_media import router as sorter_media_router
 from media_library.routers.sorter_move import router as sorter_move_router
 from media_library.routers.sorter_queue import router as sorter_queue_router
@@ -26,6 +27,7 @@ all_routers = [
     library_media_router,
     library_admin_router,
     library_manage_router,
+    library_upload_router,
     duplicates_router,
     transcode_router,
     webp_router,
@@ -43,6 +45,7 @@ __all__ = [
     "library_browse_router",
     "library_manage_router",
     "library_media_router",
+    "library_upload_router",
     "sorter_media_router",
     "sorter_move_router",
     "sorter_queue_router",

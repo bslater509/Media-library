@@ -1,0 +1,249 @@
+<div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl flex flex-col gap-3.5 modal-sheet">
+      <div class="pt-1 pb-1 flex justify-center sm:hidden">
+        <div class="w-10 h-1 bg-slate-700 rounded-full"></div>
+      </div>
+      <h3 class="text-base font-bold text-white flex items-center gap-2">
+        <span>✏️</span> Rename Video
+      </h3>
+      <div class="flex flex-col gap-1.5">
+        <label for="renameInput" class="text-xs uppercase tracking-wider font-semibold text-slate-400">New File Name:</label>
+        <input 
+          type="text" 
+          id="renameInput" 
+          class="w-full min-h-[44px] bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2 text-[16px] md:text-sm text-white font-mono outline-none"
+        >
+      </div>
+      <div class="flex justify-end gap-2 pt-2 pb-2 sm:pb-0">
+        <button id="cancelRenameBtn" class="min-h-[44px] flex-1 sm:flex-initial px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">
+          Cancel
+        </button>
+        <button id="confirmRenameBtn" class="min-h-[44px] flex-1 sm:flex-initial px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow">
+          Save Name
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-red-900/50 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl flex flex-col gap-3.5 modal-sheet">
+      <div class="pt-1 pb-1 flex justify-center sm:hidden">
+        <div class="w-10 h-1 bg-slate-700 rounded-full"></div>
+      </div>
+      <div class="flex items-center gap-3 text-red-400">
+        <div class="w-10 h-10 rounded-full bg-red-950/60 border border-red-800/60 flex items-center justify-center text-xl shrink-0">⚠️</div>
+        <h3 class="text-base font-bold text-white">Permanently Delete Video?</h3>
+      </div>
+      <p class="text-xs text-slate-300">Are you sure you want to permanently delete:</p>
+      <p id="deleteFilenameDisplay" class="text-xs font-mono text-amber-300 bg-slate-950 p-2.5 rounded-xl border border-slate-800 break-all"></p>
+      <p class="text-xs text-red-400 font-medium">This cannot be undone.</p>
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="cancelDeleteBtn" class="min-h-[42px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">
+          Cancel
+        </button>
+        <button id="confirmDeleteBtn" class="min-h-[42px] px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-semibold shadow">
+          Yes, Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="emptyFoldersModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="bg-slate-900 border border-rose-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-300 shrink-0 text-lg">
+            🗑️
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-white truncate">Delete All Empty Folders</h3>
+            <p class="text-xs text-slate-400 truncate">Scan the library for folders containing zero files and remove them</p>
+          </div>
+        </div>
+        <button id="closeEmptyFoldersModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <!-- Summary Stats & Filter Banner -->
+      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
+        <div class="grid grid-cols-2 gap-2 text-center text-xs">
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Empty Folders Found</span>
+            <span id="emptyFoldersCandidateCount" class="text-sm font-bold font-mono text-rose-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Leaf Folders</span>
+            <span id="emptyFoldersLeafCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
+          </div>
+        </div>
+
+        <!-- Controls Row: Search + Select All -->
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
+              <input type="checkbox" id="emptyFoldersSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500" checked />
+              <span>Select All</span>
+            </label>
+            <span id="emptyFoldersSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/60 font-mono">0 selected</span>
+          </div>
+          <div class="relative w-48 sm:w-60">
+            <input 
+              type="text" 
+              id="emptyFoldersFilterInput" 
+              placeholder="Filter folders..." 
+              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-rose-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
+            />
+            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Candidate Folders Scrollable List -->
+      <div id="emptyFoldersCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+        <div class="text-center py-10 text-xs text-slate-500">Scanning library for empty folders...</div>
+      </div>
+
+      <!-- Note / Warning -->
+      <div class="px-4 py-2 bg-rose-500/10 border-t border-rose-500/20 text-[11px] text-rose-200/90 flex items-center gap-2 shrink-0">
+        <span>⚠️</span>
+        <span>Selected folders will be permanently deleted from disk and library index. Only truly empty folders without files are removed.</span>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
+        <button id="cancelEmptyFoldersModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
+          Cancel
+        </button>
+        <button id="confirmEmptyFoldersBtn" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>🗑️</span>
+          <span id="confirmEmptyFoldersBtnText">Delete Selected (0)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+<div id="browserModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden modal-sheet">
+      
+      <div class="pt-3 pb-1 flex justify-center sm:hidden">
+        <div class="w-10 h-1 bg-slate-700 rounded-full"></div>
+      </div>
+
+      <div class="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
+        <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+          <span>📁</span> Choose Source Folder
+        </h3>
+        <button id="closeBrowserModalBtn" class="text-slate-400 hover:text-white text-2xl leading-none px-2">&times;</button>
+      </div>
+
+      <div id="quickNavContainer" class="px-4 sm:px-5 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar">
+        <span class="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Quick:</span>
+        <div id="quickNavButtons" class="flex items-center gap-1.5 flex-nowrap"></div>
+      </div>
+
+      <div class="px-4 sm:px-5 py-2.5 border-b border-slate-800 flex items-center gap-2">
+        <button id="browserUpBtn" title="Go up" class="min-h-[40px] min-w-[40px] flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+        </button>
+        <input 
+          type="text" 
+          id="browserPathInput" 
+          class="flex-1 min-h-[40px] bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-[16px] md:text-xs font-mono text-white outline-none"
+        >
+        <button id="browserGoBtn" class="min-h-[40px] px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-xl">
+          Go
+        </button>
+      </div>
+
+      <div id="browserFolderList" class="flex-1 overflow-y-auto p-3 divide-y divide-slate-800/60 max-h-72 sm:max-h-96">
+        <div class="p-4 text-center text-xs text-slate-500">Loading directories...</div>
+      </div>
+
+      <div class="px-4 sm:px-5 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-2">
+        <span id="browserVideoCountIndicator" class="text-xs text-emerald-400 font-medium truncate">0 videos here</span>
+        <div class="flex gap-2">
+          <button id="cancelBrowserBtn" class="min-h-[42px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">
+            Cancel
+          </button>
+          <button id="selectCurrentFolderBtn" class="min-h-[42px] px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow">
+            Select This Folder
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<div id="shortcutsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 modal-sheet max-h-[85vh] overflow-y-auto">
+      <div class="pt-1 pb-1 flex justify-center sm:hidden">
+        <div class="w-10 h-1 bg-slate-700 rounded-full"></div>
+      </div>
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span>📱</span> Gestures & Shortcuts
+        </h3>
+        <button id="closeShortcutsBtn" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+      </div>
+      
+      <!-- Mobile Gestures -->
+      <div class="flex flex-col gap-2">
+        <h4 class="text-xs uppercase font-bold text-emerald-400 tracking-wider">Mobile Touch Gestures:</h4>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="font-bold text-white block">Double-tap Left</span>
+            <span class="text-slate-400">Rewind 5 seconds</span>
+          </div>
+          <div class="p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="font-bold text-white block">Double-tap Right</span>
+            <span class="text-slate-400">Forward 5 seconds</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Keyboard Shortcuts -->
+      <div class="flex flex-col gap-2 pt-2 border-t border-slate-800">
+        <h4 class="text-xs uppercase font-bold text-emerald-400 tracking-wider">Keyboard Hotkeys:</h4>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Move & Next</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">Enter</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Recent 1-6</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">1 .. 6</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Skip</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">S</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Previous</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">P</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Smart Undo</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-amber-300">U / Ctrl+Z</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Rename</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">R</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Delete</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-red-300">D</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Focus Search</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">/</kbd>
+          </div>
+          <div class="flex items-center justify-between p-2 bg-slate-950 rounded-xl border border-slate-800">
+            <span class="text-slate-300">Toggle Loop</span>
+            <kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded font-mono text-emerald-300">L</kbd>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>

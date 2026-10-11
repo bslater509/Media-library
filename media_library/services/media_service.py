@@ -32,27 +32,27 @@ def get_lan_ip() -> str:
         return "127.0.0.1"
 
 
-def validate_backup_path(path_str: str | None) -> str:
+def validate_backup_path(path_str: str | None, base_dir: str | None = None) -> str:
     """Validates that a path resides strictly within the destination directory."""
-    base_dir = os.path.abspath(
-        os.path.normpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
+    target_base = os.path.abspath(
+        os.path.normpath(base_dir or state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
     )
     if not path_str or not path_str.strip():
-        return base_dir
+        return target_base
     clean_path = urllib.parse.unquote(path_str.strip())
     norm_path = os.path.abspath(os.path.normpath(clean_path))
 
     # If path points to base_dir, its parent directory (e.g. /mnt/pcloud), or root, clamp safely to base_dir
     if (
-        norm_path == base_dir
-        or norm_path == os.path.dirname(base_dir)
+        norm_path == target_base
+        or norm_path == os.path.dirname(target_base)
         or norm_path == "/"
     ):
-        return base_dir
+        return target_base
 
     try:
-        common = os.path.commonpath([base_dir, norm_path])
-        if common != base_dir:
+        common = os.path.commonpath([target_base, norm_path])
+        if common != target_base:
             raise HTTPException(
                 status_code=403,
                 detail="Access denied: path is outside Backup directory",

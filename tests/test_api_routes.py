@@ -7,13 +7,25 @@ def test_html_views(api_client):
     res_root = api_client.get("/")
     assert res_root.status_code == 200
     assert "text/html" in res_root.headers.get("content-type", "")
+    assert "tasksTabBtnActive" in res_root.text
+    assert "tasksTabBtnWorkers" in res_root.text
+    assert "tasksTabBtnTools" in res_root.text
+    assert "activeQueuesEmptyState" in res_root.text
 
     res_sorter = api_client.get("/sorter")
     assert res_sorter.status_code == 200
     assert "text/html" in res_sorter.headers.get("content-type", "")
+    assert "tasksTabBtnActive" in res_sorter.text
+    assert "tasksTabBtnWorkers" in res_sorter.text
+    assert "tasksTabBtnTools" in res_sorter.text
+    assert "activeQueuesEmptyState" in res_sorter.text
 
-    res_lib = api_client.get("/library", follow_redirects=False)
-    assert res_lib.status_code == 302
+    res_lib = api_client.get("/library", follow_redirects=True)
+    assert res_lib.status_code == 200
+    assert "tasksTabBtnActive" in res_lib.text
+    assert "tasksTabBtnWorkers" in res_lib.text
+    assert "tasksTabBtnTools" in res_lib.text
+    assert "activeQueuesEmptyState" in res_lib.text
 
 
 def test_config_and_destinations(api_client, tmp_path):
@@ -153,7 +165,7 @@ def test_browse_zip_auto_enqueues_webp(api_client):
 
     from PIL import Image
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
     from media_library.workers.webp_worker import webp_worker_instance
 
     dest = Path(state["destination_dir"])
@@ -239,7 +251,7 @@ def test_browse_zip_folder_cover_is_first_image(api_client):
 
     from PIL import Image
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
 
     dest = Path(state["destination_dir"])
     zip_path = dest / "cover_album.zip"

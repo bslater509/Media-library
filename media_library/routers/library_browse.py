@@ -33,7 +33,7 @@ from media_library.services.media_service import (
     validate_backup_path,
 )
 from media_library.services.status import index_status_payload
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     extract_zip_to_cache,
     index_zip_archive,
     is_zip_extracted,
@@ -336,6 +336,25 @@ def browse_backup_library(
             }
             for rf in root_folders
         ]
+        
+        if refresh:
+            indexing = _schedule_background_index(target_path, base_dir, False)
+
+        with db_conn() as conn:
+            try:
+                files = _read_indexed_files(conn, target_path)
+            except Exception as e:
+                logger.error(f"Error reading root files: {e}")
+                
+        try:
+            transcode_worker_instance.enqueue_indexed_folder(target_path)
+        except Exception as e:
+            logger.warning(f"Could not enqueue transcode for root: {e}")
+            
+        try:
+            thumbnail_worker_instance.enqueue_folder(target_path)
+        except Exception as e:
+            logger.warning(f"Could not enqueue thumbnail for root: {e}")
 
     # Attach representative cover thumbnails for the card grid (index-only).
     with db_conn() as conn:

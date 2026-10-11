@@ -12,7 +12,7 @@ from media_library.core.constants import IMAGE_EXTENSIONS
 from media_library.core.state import format_size
 from media_library.db.connection import db_conn
 from media_library.services.ffmpeg_service import convert_image_file_to_webp
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     optimize_zip_images_to_webp,
     split_zip_path,
 )

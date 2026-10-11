@@ -102,6 +102,23 @@ div[id$="Modal"].fixed.inset-0 > div:first-child {
   -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 
+/* Background tasks modal — modern solid dark surface (no glassmorphism) */
+#transferDropdown,
+#transferDropdown * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+#transferDropdown .tasks-modal-panel {
+  background-color: #0f172a !important; /* solid slate-900 */
+  border-color: #334155 !important;     /* solid slate-700 */
+}
+
+.tasks-tab-btn {
+  border-bottom-width: 2px;
+  outline: none;
+}
+
 /* --------------------------------------------------------------------------
    Scrollbars (warm neutral + amber on hover)
    -------------------------------------------------------------------------- */

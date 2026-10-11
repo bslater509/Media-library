@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 from media_library.app_factory import create_app
 from media_library.db.connection import get_db
 from media_library.db.indexer import index_folder
-from media_library.services.zip_service import (
+from media_library.services.zip import (
     cancel_batch_unzip,
     cancel_batch_zip,
     check_folder_compressibility,
@@ -578,7 +578,7 @@ def test_optimize_zip_images_to_webp(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import (
+    from media_library.services.zip import (
         index_zip_archive,
         optimize_zip_images_to_webp,
     )
@@ -652,7 +652,7 @@ def test_optimize_zip_images_to_webp_serializes_concurrent_calls(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import (
+    from media_library.services.zip import (
         index_zip_archive,
         optimize_zip_images_to_webp,
     )
@@ -697,7 +697,7 @@ def test_optimize_zip_images_to_webp_uses_cache(sandbox_env):
 
     from PIL import Image
 
-    from media_library.services.zip_service import (
+    from media_library.services.zip import (
         extract_zip_to_cache,
         index_zip_archive,
         is_zip_extracted,
@@ -727,8 +727,8 @@ def test_optimize_zip_images_to_webp_uses_cache(sandbox_env):
 def test_optimize_zip_images_to_webp_skip_larger_marks_member(sandbox_env, monkeypatch):
     """WEBP_SKIP_LARGER should keep the original member and mark it skipped (-1) to avoid retries."""
     import media_library.services.ffmpeg_service as ffmpeg_mod
-    import media_library.services.zip_service as zip_service_mod
-    from media_library.services.zip_service import (
+    import media_library.services.zip as zip_service_mod
+    from media_library.services.zip import (
         index_zip_archive,
         optimize_zip_images_to_webp,
     )
@@ -742,7 +742,7 @@ def test_optimize_zip_images_to_webp_skip_larger_marks_member(sandbox_env, monke
 
     index_zip_archive(str(zip_path))
 
-    monkeypatch.setattr(zip_service_mod, "WEBP_SKIP_LARGER", True)
+    monkeypatch.setattr("media_library.services.zip.optimize.WEBP_SKIP_LARGER", True)
     # Force conversion to produce bytes larger than the original.
     monkeypatch.setattr(
         ffmpeg_mod, "convert_image_to_webp_bytes", lambda src, quality=None: b"W" * 512
@@ -771,7 +771,7 @@ def test_optimize_zip_images_to_webp_skip_larger_marks_member(sandbox_env, monke
 
 def test_zip_staging_directory_usage_and_cleanup(sandbox_env):
     """Verifies that ZIP compression stages archive in ZIP_STAGING_DIR and cleans up temp files."""
-    from media_library.services.zip_service import ZIP_STAGING_DIR
+    from media_library.services.zip import ZIP_STAGING_DIR
 
     media_dir = sandbox_env["media_dir"]
     staging_test_dir = media_dir / "staging_album"
@@ -984,7 +984,7 @@ def test_manage_lru_cache_evicts_oldest_when_over_limit(sandbox_env):
     import zipfile
     from unittest.mock import patch
 
-    from media_library.services.zip_service import (
+    from media_library.services.zip import (
         get_zip_cache_dir,
         manage_lru_cache,
     )
@@ -1018,7 +1018,7 @@ def test_manage_lru_cache_evicts_oldest_when_over_limit(sandbox_env):
     # Both caches together are ~400 KB; patch the limit to 300 KB so one eviction is needed.
     limit_bytes_as_gb = 300_000 / (1024**3)
     with patch(
-        "media_library.services.zip_service.ZIP_CACHE_MAX_SIZE_GB", limit_bytes_as_gb
+        "media_library.services.zip.core.ZIP_CACHE_MAX_SIZE_GB", limit_bytes_as_gb
     ):
         manage_lru_cache()
 
@@ -1033,7 +1033,7 @@ def test_manage_lru_cache_no_eviction_under_limit(sandbox_env):
     """Verifies that manage_lru_cache leaves caches untouched when total size is under the limit."""
     import zipfile
 
-    from media_library.services.zip_service import get_zip_cache_dir, manage_lru_cache
+    from media_library.services.zip import get_zip_cache_dir, manage_lru_cache
 
     media_dir = sandbox_env["media_dir"]
     zip_c = media_dir / "lru_keep.zip"

@@ -25,6 +25,8 @@ from media_library.services.library_manage_service import (
     compute_bulk_rename,
     compute_move_targets,
     create_library_folder,
+    delete_empty_folders,
+    find_empty_folders,
     move_library_path,
     rename_library_path,
 )
@@ -392,3 +394,34 @@ def bulk_webp_optimize(req: BulkDeleteRequest):
         "folders_queued": len(folders),
         "skipped": skipped,
     }
+
+
+class DeleteEmptyFoldersRequest(BaseModel):
+    folder_paths: list[str] | None = None
+
+
+@router.get("/api/backup/folders/empty/candidates")
+async def get_empty_folder_candidates():
+    """Finds all empty folders across the library that have zero files and zero non-empty subfolders."""
+    base_dir = state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    res = await asyncio.to_thread(find_empty_folders, str(base_dir))
+    return res
+
+
+@router.post("/api/backup/folders/empty/delete")
+async def delete_empty_folders_endpoint(
+    req: DeleteEmptyFoldersRequest = DeleteEmptyFoldersRequest(),
+):
+    """Deletes empty folders bottom-up and updates the index."""
+    base_dir = state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    paths = None
+    if req and req.folder_paths:
+        paths = []
+        for p in req.folder_paths:
+            try:
+                paths.append(validate_backup_path(p, str(base_dir)))
+            except HTTPException:
+                logger.warning("Skipping path outside backup directory: %s", p)
+    res = await asyncio.to_thread(delete_empty_folders, paths, str(base_dir))
+    return res
+

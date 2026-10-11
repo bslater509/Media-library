@@ -197,7 +197,7 @@ def test_metadata_worker_probes_loose_files_and_skips_zip(sandbox_env, monkeypat
     import io
     import zipfile
 
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
     from media_library.workers.metadata_worker import MediaMetadataWorker
 
     media_dir = sandbox_env["media_dir"]
@@ -305,7 +305,7 @@ def test_metadata_worker_backfills_zip_from_thumbnail(sandbox_env, monkeypatch):
     import zipfile
 
     from media_library.core.state import get_thumbnail_cache_path
-    from media_library.services.zip_service import index_zip_archive
+    from media_library.services.zip import index_zip_archive
     from media_library.workers.metadata_worker import MediaMetadataWorker
 
     media_dir = sandbox_env["media_dir"]

@@ -162,6 +162,8 @@ def find_visual_duplicates(
             and visual_duplicates_cache["ignored_count"] == cur_ignored_count
         ):
             all_groups = visual_duplicates_cache["groups"]
+            paginated = all_groups[offset : offset + limit]
+            paginated = filter_and_prune_groups(paginated)
             return {
                 "success": True,
                 "mode": "visual",
@@ -173,7 +175,7 @@ def find_visual_duplicates(
                 "verified_groups_count": 0,
                 "verified_reclaimable_bytes": 0,
                 "verified_reclaimable_formatted": "0 B",
-                "groups": all_groups[offset : offset + limit],
+                "groups": paginated,
                 "limit": limit,
                 "offset": offset,
             }
@@ -398,6 +400,9 @@ def find_visual_duplicates(
     visual_duplicates_cache["db_hash_count"] = cur_hash_count
     visual_duplicates_cache["ignored_count"] = cur_ignored_count
 
+    paginated = all_groups[offset : offset + limit]
+    paginated = filter_and_prune_groups(paginated)
+
     return {
         "success": True,
         "mode": "visual",
@@ -407,11 +412,54 @@ def find_visual_duplicates(
         "verified_groups_count": 0,
         "verified_reclaimable_bytes": 0,
         "verified_reclaimable_formatted": "0 B",
-        "groups": all_groups[offset : offset + limit],
+        "groups": paginated,
         "limit": limit,
         "offset": offset,
     }
 
+
+def _prune_missing_files_bg(missing_paths: list[str]):
+    from media_library.db.indexer import _path_confirmed_gone, remove_file_from_index
+    for p in missing_paths:
+        if _path_confirmed_gone(p, attempts=2, delay=0.1):
+            remove_file_from_index(p)
+
+def filter_and_prune_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    valid_groups = []
+    missing_paths = []
+
+    for g in groups:
+        valid_files = []
+        for f in g.get("files", []):
+            if os.path.exists(f["path"]):
+                valid_files.append(f)
+            else:
+                missing_paths.append(f["path"])
+        
+        if len(valid_files) >= 2:
+            g["files"] = valid_files
+            g["files_count"] = len(valid_files)
+            
+            # Recompute reclaimable bytes
+            target_size = g.get("size", 0)
+            if target_size > 0:
+                g["reclaimable_bytes"] = (len(valid_files) - 1) * target_size
+                from media_library.core.state import format_size
+                g["reclaimable_formatted"] = format_size(g["reclaimable_bytes"])
+
+            # Recompute best index
+            best_idx = max(range(len(valid_files)), key=lambda i: valid_files[i].get("score", 0))
+            for i, f in enumerate(valid_files):
+                f["is_recommended"] = (i == best_idx)
+            g["suggested_keep_index"] = best_idx
+            
+            valid_groups.append(g)
+
+    if missing_paths:
+        import threading
+        threading.Thread(target=_prune_missing_files_bg, args=(missing_paths,), daemon=True).start()
+
+    return valid_groups
 
 def get_backup_duplicates(
     mode: str = "content", limit: int = 50, offset: int = 0
@@ -535,6 +583,7 @@ def get_backup_duplicates(
     total_groups = len(all_candidate_groups)
     total_reclaimable = sum(g["reclaimable_bytes"] for g in all_candidate_groups)
     groups = all_candidate_groups[offset : offset + limit]
+    groups = filter_and_prune_groups(groups)
 
     return {
         "success": True,

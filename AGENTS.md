@@ -16,7 +16,8 @@
    - Row-ordered natural-aspect-ratio layout for media files and folder covers: tiles are packed into **justified rows** — every tile in a row shares one row height chosen so the row fills the container width exactly — so reading order runs strictly left to right, then down. Tile widths follow probed `width`/`height` clamped to 2:3–3:2, unknown dimensions fall back to a 1:1 box filled with `object-cover`, and a trailing partial row keeps the target height until more items arrive. A thumbnail-size control in the library toolbar steps through five presets (XS–XL) that scale the row height; the choice is persisted in `localStorage` (`lib_tile_scale`).
    - Proactive background thumbnail/poster frame generation using FFmpeg.
    - Fullscreen lightbox viewer with HTTP 206 byte-range media streaming, scrubbing, loop toggle, inline rename, and deletion.
-   - File management: right-click (desktop) or tap-and-hold (mobile) context menu with Move / Rename / Delete; multi-select (checkbox, Ctrl/Cmd-click, Shift-range, a Select All / Deselect All toolbar button, or Ctrl/Cmd+A) bulk Move / Delete / Rename / WebP; plus folder creation, rename, and recursive delete.
+   - File management: right-click (desktop) or tap-and-hold (mobile) context menu with Move / Rename / Delete; multi-select (checkbox, Ctrl/Cmd-click, Shift-range, a Select All / Deselect All toolbar button, or Ctrl/Cmd+A) bulk Move / Delete / Rename / WebP; plus folder creation, rename, recursive delete, and empty folder cleanup via the "Clean Empty Folders" card in the Background Tasks modal.
+   - Background Tasks & System Status Modal: Centered solid dark dialog (replacing legacy glassmorphic popover) structured into 3 categorized tabs ("Active & Queues", "Background Workers", and "Tools & Maintenance") with live badge counts, smart default tab selection, uncluttered empty states, and responsive 2-column card layouts.
 2. **Incoming Video Sorter Workflow**:
    - High-speed review (<50ms per item) with instant pre-buffering and autoplay.
    - 1-touch keyboard moves (`1`–`6` for recent folders, `/` for category search, `Enter` to commit) plus the "+ Create & Move" button for instant folder creation.
@@ -84,6 +85,18 @@ Before completing any task, execute the test suite:
 ```
 All existing tests must pass, and new features must include unit or integration tests under `tests/`.
 
+### Rule 5: Keep Live Server Running Latest Code
+Because HTML templates are cached in memory for the process lifetime (`media_library.core.templating.load_template`) and Python modules require process reloading, **always restart the systemd service** whenever making code, template, or asset changes so the live server serves the latest code:
+```bash
+systemctl restart media-library && systemctl is-active media-library
+```
+Confirm the service is active and responding after the restart.
+
+### Rule 6: Frontend Cache Busting
+When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember that the application uses hardcoded cache buster strings in the HTML templates to prevent browsers from using stale client code. After running `npm run build`, you **must** manually increment the version string for the modified entrypoint:
+- If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`.
+- If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`.
+
 ---
 
 ## 3. Repository Architecture & Directory Structure
@@ -130,6 +143,7 @@ media-library/
 │   │   ├── library_media.py         # Library file/thumbnail byte-range streaming
 │   │   ├── library_admin.py         # Library rename/delete + thumbnail controls
 │   │   ├── library_manage.py        # Library page file/folder management (move, folders, undo)
+│   │   ├── library_upload.py        # Web browser chunked file and folder uploading
 │   │   ├── sorter_queue.py          # Sorter config, scan, queue, browse, destinations
 │   │   ├── sorter_move.py           # Sorter moves, undo, transfers, rename, delete
 │   │   ├── sorter_media.py          # Sorter video stream + duplicate check
@@ -144,12 +158,18 @@ media-library/
 │   │   ├── __init__.py
 │   │   ├── media_service.py         # Path validation, LAN IP detection, video queue scanner
 │   │   ├── library_manage_service.py# Move/delete/rename/create helpers + index rewrite
+│   │   ├── upload_service.py        # Chunked upload staging and FUSE-safe atomic moves
 │   │   ├── library_query.py         # Index-only row→dict shaping for library browsing
 │   │   ├── status.py                # Shared worker/index/transfer/ZIP status payload builders
 │   │   ├── ffmpeg_service.py        # FFmpeg/FFprobe poster extraction, WebP conversion
 │   │   ├── deduplication_service.py # Quick-hash, pHash/dHash, duplicate resolution
 │   │   ├── backup_service.py        # SQLite live backup, thumbnail tar bundling, auto-restore
-│   │   └── zip_service.py           # ZIP metadata inspection, extraction cache, batch compressor
+│   │   └── zip/                     # ZIP operations package
+│   │       ├── core.py              # ZIP metadata & utilities
+│   │       ├── compress.py          # Folder to ZIP compression
+│   │       ├── extract.py           # ZIP to folder unpacking
+│   │       ├── batch.py             # Batch ZIP processing workers
+│   │       └── optimize.py          # WebP optimization inside ZIPs
 │   │
 │   └── workers/                     # Background asynchronous worker subsystem
 │       ├── __init__.py
@@ -163,15 +183,19 @@ media-library/
 │       ├── library_ops_worker.py    # LibraryOpsWorker for queued moves/deletes/renames + undo
 │       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
 │
-├── static/                          # Frontend client assets
-│   ├── app.js                       # Video Sorter UI logic (keyboard shortcuts, player, queue)
-│   ├── library.js                   # Media Library UI logic (virtual scroll, search, lightbox, duplicates, ZIP)
-│   └── styles.css                   # Shared styles and UI themes
+├── frontend/                        # Vite frontend source code
+│   └── src/                         # ES modules for app and library
+│       ├── app/                     # Video Sorter UI logic
+│       └── library/                 # Media Library UI logic
+│
+├── static/                          # Built frontend client assets
+│   └── dist/                        # Vite build output (app.js, library.js, styles.css)
 │
 ├── templates/                       # Raw HTML templates (served via HTMLResponse)
 │   ├── index.html                   # Video Sorter user interface
 │   ├── login.html                   # Shared-password sign-in page
-│   └── library.html                 # Media Library & Gallery user interface
+│   ├── library.html                 # Media Library & Gallery user interface
+│   └── partials/                    # HTML fragments (modals, sidebar) used via {{include}}
 │
 ├── tests/                           # Automated test suite
 │   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
@@ -220,6 +244,8 @@ All settings can be provided via `.env` file, environment variables, or CLI para
 | `WEBP_WORKER_CONCURRENCY`| N/A | `1` | Concurrency for WebP conversions (recommended `1` on FUSE) |
 | `WEBP_QUALITY` | N/A | `85` | WebP conversion quality factor (1–100) |
 | `WEBP_STAGING_DIR` | N/A | `${DATA_DIR}/webp_staging` | Staging area for WebP conversion temporary files |
+| `UPLOAD_STAGING_DIR` | N/A | `${DATA_DIR}/upload_staging` | Staging area for chunked browser uploads before finalizing |
+| `MAX_UPLOAD_FILE_SIZE_GB`| N/A | `20.0` | Maximum allowed file size for browser uploads in GB |
 | `WEBP_SKIP_LARGER` | N/A | `false` | If `true`, abort conversion if WebP exceeds original file size |
 | `ZIP_STAGING_DIR` | N/A | `${DATA_DIR}/zip_staging` | Local fast-disk staging area for assembling ZIP archives before FUSE transfer |
 | `ZIP_CACHE_DIR` | N/A | `${DATA_DIR}/cache/zips`| Local fast-disk cache for extracted ZIP contents |
@@ -579,7 +605,10 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `GET /api/backup/index/status` — Crawler progress status (`library_browse`)
 - `POST /api/backup/index/prune` — Remove stale deleted folders and orphaned thumbnails (`library_browse`)
 
-### Library File & Folder Management (`media_library.routers.library_manage`)
+### Library File & Folder Management (`media_library.routers.library_manage` + `library_upload`)
+- `POST /api/backup/upload/chunk` — Receive a chunk of a browser upload file (staged locally)
+- `POST /api/backup/upload/finalize` — Assemble, atomically write to target, and index the uploaded file
+- `POST /api/backup/upload/cancel` — Cancel an ongoing upload and discard staging chunk
 - `POST /api/backup/move/check` — Pre-check name conflicts before a move; returns collision list
 - `POST /api/backup/move` — Queue file/folder/ZIP moves (conflict policy: `auto_rename` | `skip` | `error`)
 - `POST /api/backup/undo` — Undo the last queued library move (move-only undo)
@@ -592,6 +621,8 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `POST /api/backup/bulk/rename` — Queue bulk rename operations (base name only, extension preserved)
 - `POST /api/backup/bulk/delete` — Queue deletion of many files/folders/ZIPs
 - `POST /api/backup/bulk/webp-optimize` — Convert selected images, enqueue selected folders for WebP, skip others
+- `GET /api/backup/folders/empty/candidates` — Find all empty folders across the library (zero files and zero non-empty subfolders) with candidate list, leaf status, and count
+- `POST /api/backup/folders/empty/delete` — Delete empty folders bottom-up (cleans benign OS junk like `.DS_Store`/`Thumbs.db` prior to `rmdir`, updates SQLite index, protects against deleting folders with user files)
 
 ### Sorter Workflow (`media_library.routers.sorter_queue` + `sorter_move` + `sorter_media`)
 - `GET /api/config` — App config, queue count, undo availability, LAN IP (`sorter_queue`)
@@ -665,6 +696,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 
 ### Unified System Status (`media_library.routers.system`)
 - `GET /api/system/status` — Consolidated status for all background subsystems
+- `POST /api/system/clean-db` — Trigger background deep database scan and thumbnail cleanup
 
 ---
 

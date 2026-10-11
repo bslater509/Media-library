@@ -14,7 +14,7 @@ from typing import Any
 from media_library.core.constants import INDEX_COUNT_CACHE_TTL_S
 from media_library.db.connection import db_conn
 from media_library.db.indexer import indexer_state
-from media_library.services.zip_service import zip_lock, zip_tasks_state
+from media_library.services.zip import zip_lock, zip_tasks_state
 from media_library.workers import (
     duplicate_hash_worker_instance,
     transcode_worker_instance,
@@ -81,6 +81,7 @@ def index_status_payload() -> dict[str, Any]:
         "scanned_files": indexer_state.get("scanned_files", 0),
         "total_files": total_files,
         "percent": pct,
+        "current_folder": indexer_state.get("current_folder", ""),
     }
 
 

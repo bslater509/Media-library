@@ -58,39 +58,26 @@ def _scan_root_dirs(path: str) -> list[str]:
     return root_dirs
 
 
-def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any]:
-    if not base_dir:
-        base_dir = os.path.realpath(
-            state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+def _index_zip_archive(real_folder: str, base_dir: str) -> dict[str, Any]:
+    try:
+        from media_library.services.zip import (
+            get_zip_metadata,
+            index_zip_archive,
         )
-    real_folder = os.path.realpath(folder_path)
 
-    # Check if this folder is a ZIP archive
-    if os.path.isfile(real_folder) and real_folder.lower().endswith(".zip"):
-        try:
-            from media_library.services.zip_service import (
-                get_zip_metadata,
-                index_zip_archive,
-            )
-
-            parent_p = os.path.dirname(real_folder) if real_folder != base_dir else None
-            index_zip_archive(real_folder, parent_path=parent_p)
-            meta = get_zip_metadata(real_folder)
-            return {
-                "file_count": meta["total_files"],
-                "subfolder_count": 0,
-                "subfolders": [],
-            }
-        except Exception as ze:
-            logger.error(f"Error indexing zip archive {real_folder}: {ze}")
-            return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
-
-    if not os.path.exists(real_folder) or not os.path.isdir(real_folder):
+        parent_p = os.path.dirname(real_folder) if real_folder != base_dir else None
+        index_zip_archive(real_folder, parent_path=parent_p)
+        meta = get_zip_metadata(real_folder)
+        return {
+            "file_count": meta["total_files"],
+            "subfolder_count": 0,
+            "subfolders": [],
+        }
+    except Exception as ze:
+        logger.error(f"Error indexing zip archive {real_folder}: {ze}")
         return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
 
-    folder_name = os.path.basename(real_folder)
-    parent_path = os.path.dirname(real_folder) if real_folder != base_dir else None
-
+def _scan_folder_entries(real_folder: str) -> tuple[list[dict[str, Any]], list[tuple]]:
     subfolders = []
     files = []
     try:
@@ -105,9 +92,7 @@ def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any
                         follow_symlinks=False
                     ) and entry.name.lower().endswith(".zip"):
                         try:
-                            from media_library.services.zip_service import (
-                                index_zip_archive,
-                            )
+                            from media_library.services.zip import index_zip_archive
 
                             index_zip_archive(entry.path, parent_path=real_folder)
                             subfolders.append({"path": entry.path, "name": entry.name})
@@ -148,8 +133,9 @@ def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any
                     continue
     except Exception as e:
         logger.error(f"Error scanning folder for index {real_folder}: {e}")
-        return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
+    return subfolders, files
 
+def _update_folder_in_db(real_folder: str, folder_name: str, parent_path: str | None, subfolders: list[dict[str, Any]], files: list[tuple]) -> None:
     try:
         with db_conn() as conn:
             existing = {}
@@ -215,10 +201,6 @@ def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any
                             fthumb,
                         ) = f
                         prev = existing.get(fpath)
-                        # Only carry over expensive-to-recompute metadata (dedup hashes,
-                        # probe results, webp_optimized flag) when the file on disk is
-                        # byte-for-byte the same as the one we indexed before (same path,
-                        # size and mtime). A replaced-in-place file must be reprocessed.
                         unchanged = (
                             prev is not None
                             and prev["size"] == fsize
@@ -285,6 +267,25 @@ def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any
                     )
     except Exception as e:
         logger.error(f"DB error indexing {real_folder}: {e}")
+
+def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any]:
+    if not base_dir:
+        base_dir = os.path.realpath(
+            state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+        )
+    real_folder = os.path.realpath(folder_path)
+
+    if os.path.isfile(real_folder) and real_folder.lower().endswith(".zip"):
+        return _index_zip_archive(real_folder, base_dir)
+
+    if not os.path.exists(real_folder) or not os.path.isdir(real_folder):
+        return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
+
+    folder_name = os.path.basename(real_folder)
+    parent_path = os.path.dirname(real_folder) if real_folder != base_dir else None
+
+    subfolders, files = _scan_folder_entries(real_folder)
+    _update_folder_in_db(real_folder, folder_name, parent_path, subfolders, files)
 
     return {
         "file_count": len(files),
@@ -376,7 +377,7 @@ def update_file_in_index(
         disk_path = new_path
         if not os.path.exists(disk_path):
             try:
-                from media_library.services.zip_service import resolve_zip_file_path
+                from media_library.services.zip import resolve_zip_file_path
 
                 res = resolve_zip_file_path(new_path)
                 if res and os.path.exists(res):
@@ -599,10 +600,85 @@ def _path_confirmed_gone(path: str, attempts: int = 3, delay: float = 0.15) -> b
     return True
 
 
+def _get_stale_folders(db_folders: list[str], resolved_base: str, visited_folders: set[str] | None) -> tuple[list[str], list[str]]:
+    candidate_stale = []
+    under_base_folders = []
+    for fp in db_folders:
+        is_under_base = fp == resolved_base or fp.startswith(
+            resolved_base + os.sep
+        )
+        if not is_under_base:
+            continue
+        under_base_folders.append(fp)
+        if visited_folders is not None and fp in visited_folders:
+            continue
+        try:
+            appears_gone = not (os.path.isdir(fp) or os.path.isfile(fp))
+        except OSError:
+            appears_gone = True
+        if appears_gone:
+            candidate_stale.append(fp)
+    return candidate_stale, under_base_folders
+
+def _remove_stale_folders(conn: Any, stale_folders: list[str]) -> tuple[int, int]:
+    pruned_folders = 0
+    pruned_files = 0
+    thumb_dir = THUMBNAIL_CACHE_DIR
+    for sf in stale_folders:
+        cur = conn.execute(
+            "SELECT path, mtime, size FROM files WHERE folder_path = ?", (sf,)
+        )
+        rows = cur.fetchall()
+        for r in rows:
+            k1 = f"{r['path']}_{r['mtime']}_{r['size']}"
+            h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
+            try:
+                (thumb_dir / f"thumb_{h1}.jpg").unlink(missing_ok=True)
+            except OSError:
+                pass
+
+            k2 = r["path"]
+            h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
+            try:
+                (thumb_dir / f"thumb_{h2}.jpg").unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        with conn:
+            conn.execute("DELETE FROM files WHERE folder_path = ?", (sf,))
+            conn.execute("DELETE FROM folders WHERE path = ?", (sf,))
+        pruned_folders += 1
+        pruned_files += len(rows)
+    return pruned_folders, pruned_files
+
+def _clean_orphaned_thumbnails(conn: Any, thumb_dir: Any) -> int:
+    pruned_orphaned_thumbs = 0
+    if thumb_dir.exists():
+        cur = conn.execute("SELECT path, mtime, size FROM files")
+        valid_thumb_names = set()
+        for r in cur.fetchall():
+            p, m, s = r["path"], r["mtime"], r["size"]
+            k1 = f"{p}_{m}_{s}"
+            h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
+            valid_thumb_names.add(f"thumb_{h1}.jpg")
+            k2 = p
+            h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
+            valid_thumb_names.add(f"thumb_{h2}.jpg")
+
+        for t_file in thumb_dir.glob("thumb_*.jpg"):
+            if t_file.name not in valid_thumb_names:
+                try:
+                    t_file.unlink(missing_ok=True)
+                    pruned_orphaned_thumbs += 1
+                except OSError:
+                    pass
+    return pruned_orphaned_thumbs
+
 def prune_stale_index_entries(
     base_dir: str | None = None,
     visited_folders: set[str] | None = None,
     clean_orphaned_thumbnails: bool = True,
+    force: bool = False,
 ) -> dict[str, Any]:
     resolved_base = os.path.realpath(
         base_dir or state.get("destination_dir") or DEFAULT_DESTINATION_DIR
@@ -634,32 +710,10 @@ def prune_stale_index_entries(
             cur = conn.execute("SELECT path FROM folders")
             db_folders = [r["path"] for r in cur.fetchall()]
 
-            candidate_stale = []
-            under_base_folders = []
-            for fp in db_folders:
-                is_under_base = fp == resolved_base or fp.startswith(
-                    resolved_base + os.sep
-                )
-                if not is_under_base:
-                    continue
-                under_base_folders.append(fp)
-                # A folder the crawler visited this run is authoritative: never prune it.
-                if visited_folders is not None and fp in visited_folders:
-                    continue
-                try:
-                    appears_gone = not (os.path.isdir(fp) or os.path.isfile(fp))
-                except OSError:
-                    appears_gone = True
-                if appears_gone:
-                    candidate_stale.append(fp)
+            candidate_stale, under_base_folders = _get_stale_folders(db_folders, resolved_base, visited_folders)
 
-            # Safety valve against transient mount/scan failures. A healthy library
-            # does not lose most of its folders at once, so an implausibly large
-            # stale set means the filesystem (or the crawl) was unreliable and the
-            # index must be left intact. Checked before the (slower) confirm pass so
-            # a mass outage aborts immediately.
             max_safe_prune = max(25, int(len(under_base_folders) * 0.10))
-            if len(candidate_stale) > max_safe_prune:
+            if len(candidate_stale) > max_safe_prune and not force:
                 logger.warning(
                     f"[Prune] Aborting: {len(candidate_stale)} of {len(under_base_folders)} folders reported missing "
                     f"(safety limit {max_safe_prune}). Suspected transient mount failure; index left intact."
@@ -675,36 +729,9 @@ def prune_stale_index_entries(
                     "total_folders": len(under_base_folders),
                 }
 
-            # Confirm each candidate with retries before deleting: a single failed
-            # stat on a remote mount must not be mistaken for a deleted folder.
             stale_folders = [fp for fp in candidate_stale if _path_confirmed_gone(fp)]
 
-            thumb_dir = THUMBNAIL_CACHE_DIR
-            for sf in stale_folders:
-                cur = conn.execute(
-                    "SELECT path, mtime, size FROM files WHERE folder_path = ?", (sf,)
-                )
-                rows = cur.fetchall()
-                for r in rows:
-                    k1 = f"{r['path']}_{r['mtime']}_{r['size']}"
-                    h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
-                    try:
-                        (thumb_dir / f"thumb_{h1}.jpg").unlink(missing_ok=True)
-                    except OSError:
-                        pass
-
-                    k2 = r["path"]
-                    h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
-                    try:
-                        (thumb_dir / f"thumb_{h2}.jpg").unlink(missing_ok=True)
-                    except OSError:
-                        pass
-
-                with conn:
-                    conn.execute("DELETE FROM files WHERE folder_path = ?", (sf,))
-                    conn.execute("DELETE FROM folders WHERE path = ?", (sf,))
-                pruned_folders += 1
-                pruned_files += len(rows)
+            pruned_folders, pruned_files = _remove_stale_folders(conn, stale_folders)
 
             with conn:
                 cur = conn.execute("""
@@ -714,32 +741,13 @@ def prune_stale_index_entries(
                 """)
                 pruned_stale_duplicates = cur.rowcount
 
-            if clean_orphaned_thumbnails and thumb_dir.exists():
-                cur = conn.execute("SELECT path, mtime, size FROM files")
-                valid_thumb_names = set()
-                for r in cur.fetchall():
-                    p, m, s = r["path"], r["mtime"], r["size"]
-                    k1 = f"{p}_{m}_{s}"
-                    h1 = hashlib.sha256(k1.encode("utf-8")).hexdigest()[:24]
-                    valid_thumb_names.add(f"thumb_{h1}.jpg")
-                    k2 = p
-                    h2 = hashlib.sha256(k2.encode("utf-8")).hexdigest()[:24]
-                    valid_thumb_names.add(f"thumb_{h2}.jpg")
+            if clean_orphaned_thumbnails:
+                pruned_orphaned_thumbs = _clean_orphaned_thumbnails(conn, THUMBNAIL_CACHE_DIR)
 
-                for t_file in thumb_dir.glob("thumb_*.jpg"):
-                    if t_file.name not in valid_thumb_names:
-                        try:
-                            t_file.unlink(missing_ok=True)
-                            pruned_orphaned_thumbs += 1
-                        except OSError:
-                            pass
-
-            # Invalidate visual duplicates cache if available
             try:
                 from media_library.services.deduplication_service import (
                     invalidate_visual_cache,
                 )
-
                 invalidate_visual_cache()
             except ImportError:
                 pass
@@ -918,3 +926,54 @@ async def run_background_crawler(force_full: bool = False):
         finally:
             indexer_state["status"] = "idle"
             indexer_state["current_folder"] = ""
+
+def deep_clean_database():
+    import os
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from media_library.db.connection import db_conn
+    from media_library.core.config import DEFAULT_DESTINATION_DIR
+    from media_library.core.state import state
+    from media_library.db.indexer import _path_confirmed_gone, remove_file_from_index, prune_stale_index_entries, indexer_state
+    
+    logger.info("[Deep Clean] Starting deep scan of database for missing files...")
+    indexer_state["status"] = "crawling"
+    indexer_state["current_folder"] = "Deep cleaning DB (checking missing files)..."
+    try:
+        with db_conn() as conn:
+            rows = conn.execute("SELECT path FROM files").fetchall()
+            paths = [r["path"] for r in rows]
+
+        logger.info(f"[Deep Clean] Checking existence of {len(paths)} files concurrently...")
+        missing = []
+        checked = 0
+        
+        def _check(p):
+            nonlocal checked
+            if not os.path.exists(p):
+                missing.append(p)
+            checked += 1
+            if checked % 1000 == 0:
+                indexer_state["current_folder"] = f"Deep cleaning DB (checked {checked}/{len(paths)})..."
+                
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            ex.map(_check, paths)
+            
+        logger.info(f"[Deep Clean] Found {len(missing)} potentially missing files.")
+        indexer_state["current_folder"] = f"Deep cleaning DB (verifying {len(missing)} missing files)..."
+        
+        removed = 0
+        for i, p in enumerate(missing):
+            if _path_confirmed_gone(p, attempts=2, delay=0.1):
+                remove_file_from_index(p)
+                removed += 1
+            if i % 50 == 0:
+                indexer_state["current_folder"] = f"Deep cleaning DB (verified {i}/{len(missing)} missing files)..."
+                
+        logger.info(f"[Deep Clean] Removed {removed} confirmed missing files. Running stale index prune...")
+        indexer_state["current_folder"] = "Deep cleaning DB (pruning stale entries)..."
+        prune_stale_index_entries(clean_orphaned_thumbnails=True, force=True)
+        logger.info("[Deep Clean] Deep clean finished.")
+    finally:
+        indexer_state["status"] = "idle"
+        indexer_state["current_folder"] = ""

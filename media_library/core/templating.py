@@ -2,10 +2,11 @@
 
 Deliberately no Jinja2 (per AGENTS.md): pages are static HTML with ``{{TOKEN}}``
 placeholders, assembled with a single escaping helper so double-escaping and
-missing-token bugs stay impossible.
+missing-token bugs stay impossible. Now supports simple includes like ``{{include 'partial.html'}}``.
 """
 
 import html
+import re
 from functools import cache
 
 from media_library.core.config import TEMPLATES_DIR
@@ -13,6 +14,19 @@ from media_library.core.config import TEMPLATES_DIR
 
 class SafeHTML(str):
     """Marker for already-safe HTML: :func:`render` substitutes it verbatim."""
+
+
+def _resolve_includes(template_str: str, current_dir) -> str:
+    def repl(m):
+        inc_file = m.group(1).strip("'\"")
+        inc_path = current_dir / inc_file
+        if inc_path.exists():
+            return _resolve_includes(inc_path.read_text(encoding="utf-8"), inc_path.parent)
+        return ""
+    
+    # Matches {{include 'file.html'}} or {{ include "file.html" }}
+    pattern = r"\{\{\s*include\s+(['\"].*?['\"])\s*\}\}"
+    return re.sub(pattern, repl, template_str)
 
 
 @cache
@@ -25,7 +39,8 @@ def load_template(name: str) -> str | None:
     path = TEMPLATES_DIR / name
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8")
+    raw = path.read_text(encoding="utf-8")
+    return _resolve_includes(raw, path.parent)
 
 
 def render(template: str, /, **tokens: str) -> str:

@@ -324,7 +324,7 @@ async def generate_thumbnail(
         input_path = file_path
         if not os.path.exists(input_path):
             try:
-                from media_library.services.zip_service import (
+                from media_library.services.zip import (
                     extract_zip_to_cache,
                     resolve_zip_file_path,
                     split_zip_path,
