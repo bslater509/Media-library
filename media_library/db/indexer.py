@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from media_library.core.config import (
@@ -928,14 +929,6 @@ async def run_background_crawler(force_full: bool = False):
             indexer_state["current_folder"] = ""
 
 def deep_clean_database():
-    import os
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
-    from media_library.db.connection import db_conn
-    from media_library.core.config import DEFAULT_DESTINATION_DIR
-    from media_library.core.state import state
-    from media_library.db.indexer import _path_confirmed_gone, remove_file_from_index, prune_stale_index_entries, indexer_state
-    
     logger.info("[Deep Clean] Starting deep scan of database for missing files...")
     indexer_state["status"] = "crawling"
     indexer_state["current_folder"] = "Deep cleaning DB (checking missing files)..."

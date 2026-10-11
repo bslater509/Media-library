@@ -4,13 +4,12 @@ import os
 import shutil
 import threading
 import time
-import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
+
 from media_library.core.config import (
     THUMBNAIL_CACHE_DIR,
-    WEBP_SKIP_LARGER,
     ZIP_CACHE_DIR,
     ZIP_CACHE_MAX_SIZE_GB,
     ZIP_STAGING_DIR,
@@ -18,7 +17,6 @@ from media_library.core.config import (
 from media_library.core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from media_library.core.state import format_size
 from media_library.db.connection import db_conn
-
 
 logger = logging.getLogger(__name__)
 

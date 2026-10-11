@@ -17,3 +17,15 @@
 
 [lint]
 ignore = ["BLE001", "S110", "SIM118"]
+
+[lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.params.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Path",
+]

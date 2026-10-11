@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 from media_library.app_factory import create_app
 from media_library.core.state import state
@@ -444,8 +444,8 @@ def test_bulk_webp_optimize(api_client):
 
 
 def test_find_empty_folders_service(api_client):
-    from media_library.services.library_manage_service import find_empty_folders
     from media_library.db.indexer import index_folder
+    from media_library.services.library_manage_service import find_empty_folders
 
     _client, media_dir, _ = api_client
 
@@ -502,11 +502,8 @@ def test_find_empty_folders_service(api_client):
 
 
 def test_delete_empty_folder_service(api_client):
-    from media_library.services.library_manage_service import (
-        delete_empty_folder,
-        delete_empty_folders,
-    )
     from media_library.db.indexer import index_folder
+    from media_library.services.library_manage_service import delete_empty_folder
 
     _client, media_dir, _ = api_client
 
@@ -539,8 +536,8 @@ def test_delete_empty_folder_service(api_client):
 
 
 def test_delete_empty_folders_nested_and_ds_store(api_client):
-    from media_library.services.library_manage_service import delete_empty_folders
     from media_library.db.indexer import index_folder
+    from media_library.services.library_manage_service import delete_empty_folders
 
     _client, media_dir, _ = api_client
 

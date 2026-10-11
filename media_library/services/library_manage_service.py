@@ -15,6 +15,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -370,10 +371,10 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
         rows = cur.fetchall()
 
         cur.execute("SELECT DISTINCT folder_path FROM files")
-        folders_with_files = set(r[0] for r in cur.fetchall() if r[0])
+        folders_with_files = {r[0] for r in cur.fetchall() if r[0]}
 
         cur.execute("SELECT DISTINCT parent_path FROM folders WHERE is_zip = 1")
-        folders_with_zips = set(r[0] for r in cur.fetchall() if r[0])
+        folders_with_zips = {r[0] for r in cur.fetchall() if r[0]}
 
     all_folders: dict[str, dict[str, Any]] = {}
     children_map: dict[str, list[str]] = {}
@@ -423,9 +424,7 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
         info = all_folders.get(p)
         if info and (info["file_count"] > 0):
             return True
-        if p in folders_with_zips:
-            return True
-        return False
+        return p in folders_with_zips
 
     def folder_has_content(p: str) -> bool:
         if p in has_content_map:
@@ -595,7 +594,6 @@ def delete_empty_folders(
     abort_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Deletes multiple empty folders bottom-up and updates the index."""
-    import uuid
     from media_library.workers.library_ops_worker import (
         library_ops_worker_instance,
     )

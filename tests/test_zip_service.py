@@ -5,7 +5,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from starlette.testclient import TestClient
+from fastapi.testclient import TestClient
 
 from media_library.app_factory import create_app
 from media_library.db.connection import get_db
@@ -727,7 +727,6 @@ def test_optimize_zip_images_to_webp_uses_cache(sandbox_env):
 def test_optimize_zip_images_to_webp_skip_larger_marks_member(sandbox_env, monkeypatch):
     """WEBP_SKIP_LARGER should keep the original member and mark it skipped (-1) to avoid retries."""
     import media_library.services.ffmpeg_service as ffmpeg_mod
-    import media_library.services.zip as zip_service_mod
     from media_library.services.zip import (
         index_zip_archive,
         optimize_zip_images_to_webp,

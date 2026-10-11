@@ -8,11 +8,11 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from media_library.core.config import UPLOAD_STAGING_DIR, MAX_UPLOAD_FILE_SIZE_GB
-from media_library.core.constants import VIDEO_EXTENSIONS, IMAGE_EXTENSIONS
-from media_library.services.media_service import validate_backup_path
-from media_library.services.library_manage_service import classify_library_path
+from media_library.core.config import MAX_UPLOAD_FILE_SIZE_GB, UPLOAD_STAGING_DIR
+from media_library.core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from media_library.db.indexer import index_folder
+from media_library.services.library_manage_service import classify_library_path
+from media_library.services.media_service import validate_backup_path
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,12 @@ async def handle_upload_chunk(upload_id: str, chunk_index: int, total_chunks: in
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
     
     # Check size limit
-    if staging_file.exists():
-        if staging_file.stat().st_size + len(chunk_data) > MAX_UPLOAD_FILE_SIZE_GB * 1024 * 1024 * 1024:
-            staging_file.unlink(missing_ok=True)
-            raise HTTPException(status_code=413, detail=f"File exceeds max size limit of {MAX_UPLOAD_FILE_SIZE_GB} GB")
+    if (
+        staging_file.exists()
+        and staging_file.stat().st_size + len(chunk_data) > MAX_UPLOAD_FILE_SIZE_GB * 1024 * 1024 * 1024
+    ):
+        staging_file.unlink(missing_ok=True)
+        raise HTTPException(status_code=413, detail=f"File exceeds max size limit of {MAX_UPLOAD_FILE_SIZE_GB} GB")
     
     mode = "ab" if chunk_index > 0 else "wb"
     

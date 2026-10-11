@@ -1,5 +1,3 @@
-import hashlib
-import logging
 import os
 import shutil
 import threading
@@ -8,18 +6,20 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
-from media_library.core.config import (
-    THUMBNAIL_CACHE_DIR,
-    WEBP_SKIP_LARGER,
-    ZIP_CACHE_DIR,
-    ZIP_CACHE_MAX_SIZE_GB,
-    ZIP_STAGING_DIR,
-)
+
+from media_library.core.config import ZIP_STAGING_DIR
 from media_library.core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from media_library.core.state import format_size
 from media_library.db.connection import db_conn
-from .core import logger, zip_tasks_state, zip_lock, _archive_op_locks, _archive_op_locks_guard, _get_archive_lock, _get_common_root_prefix, split_zip_path, is_zip_file, get_zip_cache_dir, is_zip_extracted, resolve_zip_file_path, get_zip_metadata, index_zip_archive, manage_lru_cache
 
+from .core import (
+    _get_archive_lock,
+    get_zip_cache_dir,
+    index_zip_archive,
+    logger,
+    zip_lock,
+    zip_tasks_state,
+)
 
 
 def check_folder_compressibility(folder_path: str) -> dict[str, Any]:

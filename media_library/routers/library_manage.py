@@ -410,9 +410,11 @@ async def get_empty_folder_candidates():
 
 @router.post("/api/backup/folders/empty/delete")
 async def delete_empty_folders_endpoint(
-    req: DeleteEmptyFoldersRequest = DeleteEmptyFoldersRequest(),
+    req: DeleteEmptyFoldersRequest | None = None,
 ):
     """Deletes empty folders bottom-up and updates the index."""
+    if req is None:
+        req = DeleteEmptyFoldersRequest()
     base_dir = state.get("destination_dir") or DEFAULT_DESTINATION_DIR
     paths = None
     if req and req.folder_paths:

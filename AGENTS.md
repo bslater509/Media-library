@@ -198,10 +198,11 @@ media-library/
 │
 ├── frontend/                        # Vite frontend source code
 │   └── src/                         # ES modules for app and library
-│       ├── app/                     # Video Sorter UI logic
-│       └── library/                 # Media Library UI logic
+│       ├── app/                     # Video Sorter UI logic (index.js)
+│       └── library/                 # Media Library UI logic (index.js, state.js, utils.js)
 │
-├── static/                          # Built frontend client assets
+├── static/                          # Static assets and built bundles
+│   ├── styles.css                   # Main application stylesheet (source)
 │   └── dist/                        # Vite build output (app.js, library.js, styles.css)
 │
 ├── templates/                       # Raw HTML templates (served via HTMLResponse)
@@ -213,12 +214,16 @@ media-library/
 ├── tests/                           # Automated test suite
 │   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
 │   ├── test_api_routes.py           # HTTP endpoints & status verification
+│   ├── test_auth.py                 # Shared-password authentication & session protection
 │   ├── test_backup_service.py       # Backup snapshot & restore tests
 │   ├── test_core_config.py          # Configuration loading & path resolution
 │   ├── test_db_indexer.py           # SQLite indexer & pruning tests
-│   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
+│   ├── test_library_manage.py       # File management, empty folder cleanup & undo operations
 │   ├── test_media_dimensions.py     # Dimension/metadata probing, natural-ratio tile data, folder totals
+│   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
 │   ├── test_performance_features.py# In-memory stat cache, subfolder caching, status API
+│   ├── test_sorter_browse.py        # Video sorter browsing, queue scanning & destination listing
+│   ├── test_webp_memory_guard.py    # WebP conversion memory safeguards and skip logic
 │   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
 │   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
 │

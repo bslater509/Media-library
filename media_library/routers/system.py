@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
-from media_library.db.indexer import indexer_state
+from media_library.db.indexer import deep_clean_database, indexer_state
 from media_library.services.backup_service import library_backup_state
 from media_library.services.status import (
     duplicate_hash_payload,
@@ -122,8 +122,6 @@ async def get_all_system_status() -> dict[str, Any]:
         "library_ops": library_ops_data,
     }
 
-from fastapi import BackgroundTasks
-from media_library.db.indexer import deep_clean_database
 
 @router.post("/api/system/clean-db")
 async def clean_database_and_thumbnails(background_tasks: BackgroundTasks):
