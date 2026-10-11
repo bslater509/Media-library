@@ -490,6 +490,36 @@ header.sticky {
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
 }
 
+/* Mobile Single-Line Header auto-hide transition and safe-area support */
+#mobileHeader {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-left: max(0.75rem, var(--sal, env(safe-area-inset-left, 0px)));
+  padding-right: max(0.75rem, var(--sar, env(safe-area-inset-right, 0px)));
+  padding-top: var(--sat, env(safe-area-inset-top, 0px));
+  height: calc(48px + var(--sat, env(safe-area-inset-top, 0px)));
+}
+
+/* Slide-up bottom sheet animations and scroll containment */
+#mobileControlsModal,
+#mobileBreadcrumbsModal {
+  overscroll-behavior: contain !important;
+}
+
+#mobileControlsSheet {
+  padding-bottom: max(0.75rem, var(--sab, env(safe-area-inset-bottom, 0px)));
+  animation: slideUpSheet 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+
 
 
 

@@ -93,5 +93,23 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('sidebarDrawer');
       expect(els).toHaveProperty('sidebarBackdrop');
     });
+
+    it('verifies mobile single-line header and bottom sheet element keys exist on els', () => {
+      expect(els).toHaveProperty('mobileHeader');
+      expect(els).toHaveProperty('mobileSidebarToggleBtn');
+      expect(els).toHaveProperty('mobileBackBtn');
+      expect(els).toHaveProperty('mobileFolderTitleBtn');
+      expect(els).toHaveProperty('mobileFolderTitleText');
+      expect(els).toHaveProperty('mobileControlsBtn');
+      expect(els).toHaveProperty('mobileControlsBadge');
+      expect(els).toHaveProperty('mobileControlsModal');
+      expect(els).toHaveProperty('mobileControlsSheet');
+      expect(els).toHaveProperty('closeMobileControlsBtn');
+      expect(els).toHaveProperty('doneMobileControlsBtn');
+      expect(els).toHaveProperty('mobileTabSearchBtn');
+      expect(els).toHaveProperty('mobileTabDisplayBtn');
+      expect(els).toHaveProperty('mobileTabActionsBtn');
+      expect(els).toHaveProperty('mobileTabSystemBtn');
+    });
   });
 });

@@ -1,0 +1,327 @@
+<!-- Mobile 4-Tab Slide-Up Bottom Sheet Control Modal -->
+<div id="mobileControlsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[90] hidden flex flex-col justify-end md:hidden" style="touch-action: pan-y;">
+  <div id="mobileControlsSheet" class="bg-slate-900 border-t border-slate-700/80 rounded-t-2xl shadow-2xl w-full max-h-[88dvh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+    
+    <!-- Drag Handle & Sheet Header -->
+    <div class="px-4 pt-2.5 pb-2 flex flex-col gap-1 border-b border-slate-800 shrink-0">
+      <div class="w-10 h-1 bg-slate-700 rounded-full mx-auto my-1"></div>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-base">🎛️</span>
+          <h3 class="text-sm font-bold text-white tracking-tight">Controls & Settings</h3>
+        </div>
+        <button id="closeMobileControlsBtn" type="button" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition active:scale-95" title="Close sheet" aria-label="Close sheet">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 4 Navigation Tabs Header -->
+    <div class="px-3 py-2 bg-slate-950/60 border-b border-slate-800/80 shrink-0 overflow-x-auto no-scrollbar">
+      <div class="flex items-center gap-1.5 min-w-max">
+        <button id="mobileTabSearchBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center gap-1.5">
+          <span>🔍</span><span>Search & Filter</span>
+        </button>
+        <button id="mobileTabDisplayBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center gap-1.5">
+          <span>🎨</span><span>Display & Theme</span>
+        </button>
+        <button id="mobileTabActionsBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center gap-1.5">
+          <span>📁</span><span>Folder Actions</span>
+        </button>
+        <button id="mobileTabSystemBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center gap-1.5">
+          <span>⚙️</span><span>System Status</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab Content Panels Container -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+
+      <!-- Panel 1: Search & Filter -->
+      <div id="mobileTabSearchPanel" class="space-y-4">
+        
+        <!-- Search Input -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold text-slate-300">Filename Search</label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="mobileSearchInput" 
+              placeholder="Search files in library..." 
+              class="w-full bg-slate-950/80 border border-slate-700 focus:border-emerald-500 rounded-xl pl-9 pr-8 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
+            />
+            <svg class="w-4 h-4 absolute left-3 top-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <button id="mobileClearSearchBtn" type="button" class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs p-1">✕</button>
+          </div>
+        </div>
+
+        <!-- Search Scope Toggle -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold text-slate-300">Search Scope</label>
+          <div class="grid grid-cols-2 gap-2 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
+            <button id="mobileScopeCurrentBtn" type="button" class="py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+              <span>📁</span><span>This Folder</span>
+            </button>
+            <button id="mobileScopeGlobalBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5">
+              <span>🌐</span><span>All Folders</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Media Type Filters -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold text-slate-300">Media Type</label>
+          <div class="grid grid-cols-3 gap-2 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
+            <button id="mobileFilterAllBtn" type="button" class="py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1">
+              <span>All</span> <span id="mobileCountAllBadge" class="text-[10px] font-mono opacity-80">0</span>
+            </button>
+            <button id="mobileFilterVideosBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
+              <span>🎬 Videos</span> <span id="mobileCountVideosBadge" class="text-[10px] font-mono opacity-80">0</span>
+            </button>
+            <button id="mobileFilterImagesBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
+              <span>🖼️ Images</span> <span id="mobileCountImagesBadge" class="text-[10px] font-mono opacity-80">0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sort Order -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-semibold text-slate-300">Sort By</label>
+          <div class="relative">
+            <select id="mobileSortSelect" class="w-full bg-slate-950/80 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none transition appearance-none cursor-pointer">
+              <option value="name_asc">Name (A → Z)</option>
+              <option value="name_desc">Name (Z → A)</option>
+              <option value="date_desc">Date (Newest First)</option>
+              <option value="date_asc">Date (Oldest First)</option>
+              <option value="size_desc">File Size (Largest First)</option>
+              <option value="size_asc">File Size (Smallest First)</option>
+            </select>
+            <svg class="w-4 h-4 absolute right-3 top-3 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel 2: Display & Theme -->
+      <div id="mobileTabDisplayPanel" class="hidden space-y-4">
+        
+        <!-- Thumbnail Size -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-slate-300">Thumbnail Size</label>
+            <span id="mobileTileSizeValue" class="text-xs font-mono font-bold text-emerald-400">M</span>
+          </div>
+          <div class="grid grid-cols-5 gap-1.5 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
+            <button id="mobileTileSizeBtnXS" type="button" data-scale="0.6" class="py-2 rounded-lg font-mono font-semibold transition text-slate-400 hover:text-white">XS</button>
+            <button id="mobileTileSizeBtnS" type="button" data-scale="0.8" class="py-2 rounded-lg font-mono font-semibold transition text-slate-400 hover:text-white">S</button>
+            <button id="mobileTileSizeBtnM" type="button" data-scale="1.0" class="py-2 rounded-lg font-mono font-semibold transition bg-emerald-600 text-white shadow-sm">M</button>
+            <button id="mobileTileSizeBtnL" type="button" data-scale="1.25" class="py-2 rounded-lg font-mono font-semibold transition text-slate-400 hover:text-white">L</button>
+            <button id="mobileTileSizeBtnXL" type="button" data-scale="1.5" class="py-2 rounded-lg font-mono font-semibold transition text-slate-400 hover:text-white">XL</button>
+          </div>
+        </div>
+
+        <!-- Accent Color Palette -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-300">Accent Color</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-theme-accent="amber" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Amber</span>
+            </button>
+            <button type="button" data-theme-accent="emerald" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Emerald</span>
+            </button>
+            <button type="button" data-theme-accent="violet" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-violet-500 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Violet</span>
+            </button>
+            <button type="button" data-theme-accent="sky" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-sky-500 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Sky</span>
+            </button>
+            <button type="button" data-theme-accent="rose" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Rose</span>
+            </button>
+            <button type="button" data-theme-accent="yellow" class="mobile-accent-choice flex items-center gap-2 p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition">
+              <span class="w-3.5 h-3.5 rounded-full bg-yellow-400 shadow-sm shrink-0"></span>
+              <span class="text-xs font-medium text-slate-300">Yellow</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dark Background Mode -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-300">Background Contrast</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-theme-base="stone" class="mobile-base-choice p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 text-center transition">
+              <span class="block text-xs font-medium text-slate-200">Midnight</span>
+              <span class="block text-[10px] text-slate-500">Warm dark</span>
+            </button>
+            <button type="button" data-theme-base="oled" class="mobile-base-choice p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 text-center transition">
+              <span class="block text-xs font-medium text-slate-200">Pure OLED</span>
+              <span class="block text-[10px] text-slate-500">True black</span>
+            </button>
+            <button type="button" data-theme-base="navy" class="mobile-base-choice p-2 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 text-center transition">
+              <span class="block text-xs font-medium text-slate-200">Slate Navy</span>
+              <span class="block text-[10px] text-slate-500">Deep cool</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mobile Touch Gestures -->
+        <div class="p-3 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
+          <div class="space-y-0.5">
+            <span class="text-xs font-semibold text-slate-200 block">Double-Tap Video Seek</span>
+            <span class="text-[10px] text-slate-400 block">Tap left/right side of video to jump ±5s</span>
+          </div>
+          <input type="checkbox" id="mobileSheetDoubleTapSeekToggle" class="w-4 h-4 text-emerald-600 rounded bg-slate-800 border-slate-700 focus:ring-emerald-500 cursor-pointer" />
+        </div>
+
+      </div>
+
+      <!-- Panel 3: Folder Actions -->
+      <div id="mobileTabActionsPanel" class="hidden space-y-3">
+        
+        <!-- Upload Buttons -->
+        <div class="grid grid-cols-2 gap-2">
+          <button id="mobileUploadFilesTrigger" type="button" class="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex flex-col items-center gap-1.5 shadow-sm transition active:scale-95">
+            <span class="text-lg">📄</span>
+            <span>Upload Files</span>
+          </button>
+          <button id="mobileUploadFolderTrigger" type="button" class="p-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs flex flex-col items-center gap-1.5 shadow-sm transition active:scale-95">
+            <span class="text-lg">📁</span>
+            <span>Upload Folder</span>
+          </button>
+        </div>
+
+        <!-- Folder Management -->
+        <div class="grid grid-cols-2 gap-2">
+          <button id="mobileNewFolderTrigger" type="button" class="p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-slate-200 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95">
+            <span class="text-emerald-400">＋</span>
+            <span>New Folder</span>
+          </button>
+          <button id="mobileRefreshFolderTrigger" type="button" class="p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-slate-200 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95">
+            <span>🔄</span>
+            <span>Refresh Folder</span>
+          </button>
+        </div>
+
+        <!-- Folder Maintenance & Optimization -->
+        <div class="space-y-1.5 pt-1">
+          <label class="text-xs font-semibold text-slate-400">Folder Batch Tools</label>
+          <div class="space-y-1.5">
+            <button id="mobileCacheThumbsTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>🖼️</span><span>Cache Thumbnails</span></span>
+              <span class="text-[10px] text-emerald-400 font-medium">Pre-generate</span>
+            </button>
+            <button id="mobileConvertMp4Trigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>⚙️</span><span>Convert Non-MP4s</span></span>
+              <span class="text-[10px] text-amber-400 font-medium">Standardize MP4</span>
+            </button>
+            <button id="mobileOptimizeWebpTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>⚡</span><span>Optimize Images</span></span>
+              <span class="text-[10px] text-teal-400 font-medium">Convert WebP</span>
+            </button>
+            <button id="mobileCompressZipTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>📦</span><span>Compress to ZIP</span></span>
+              <span class="text-[10px] text-sky-400 font-medium">Folder Archive</span>
+            </button>
+            <button id="mobileUnpackZipTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
+              <span class="flex items-center gap-2"><span>📦</span><span>Unpack ZIP to Folder</span></span>
+              <span class="text-[10px] text-indigo-400 font-medium">Extract</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel 4: System Status -->
+      <div id="mobileTabSystemPanel" class="hidden space-y-3">
+        
+        <!-- Background Tasks Card -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">⚙️</span>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white">Background Tasks</span>
+                <span id="mobileTasksBadge" class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">0 active</span>
+              </div>
+              <span id="mobileTasksStatusSubtext" class="text-[10px] text-slate-400 block">Workers idle</span>
+            </div>
+          </div>
+          <button id="mobileOpenTasksBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition">Open</button>
+        </div>
+
+        <!-- Duplicates Card -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">🔍</span>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white">Duplicates Finder</span>
+                <span id="mobileDupCountBadge" class="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">0</span>
+              </div>
+              <span class="text-[10px] text-slate-400 block">Exact & visual duplicate review</span>
+            </div>
+          </div>
+          <button id="mobileOpenDupBtn" type="button" class="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold transition">Review</button>
+        </div>
+
+        <!-- SQLite Search Index Card -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span id="mobileIndexDot" class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shrink-0"></span>
+            <div>
+              <span class="text-xs font-bold text-white block">SQLite Search Index</span>
+              <span id="mobileIndexStatusText" class="text-[10px] text-slate-400 font-mono block">Indexed</span>
+            </div>
+          </div>
+          <button id="mobileSyncIndexBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1">
+            <span>↻</span><span>Sync</span>
+          </button>
+        </div>
+
+        <!-- Sorter Navigation Card -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">🎬</span>
+            <div>
+              <span class="text-xs font-bold text-white block">Video Sorter</span>
+              <span class="text-[10px] text-slate-400 block">Rapid keyboard & touch sorting</span>
+            </div>
+          </div>
+          <a href="/sorter" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition">Open Sorter</a>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Sheet Footer Done Action -->
+    <div class="p-3 bg-slate-950/90 border-t border-slate-800 shrink-0">
+      <button id="doneMobileControlsBtn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition active:scale-98">
+        Done
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Mobile Breadcrumb Popover / Sheet -->
+<div id="mobileBreadcrumbsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[95] hidden flex flex-col justify-end md:hidden" style="touch-action: pan-y;">
+  <div class="bg-slate-900 border-t border-slate-700/80 rounded-t-2xl shadow-2xl w-full max-h-[60dvh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+    <div class="px-4 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
+      <div class="flex items-center gap-2">
+        <span>📁</span>
+        <h3 class="text-xs font-bold text-white">Folder Hierarchy</h3>
+      </div>
+      <button id="closeMobileBreadcrumbsBtn" type="button" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition active:scale-95">✕</button>
+    </div>
+    <div id="mobileBreadcrumbsList" class="flex-1 overflow-y-auto p-3 space-y-1 text-xs">
+      <!-- Generated dynamically -->
+    </div>
+  </div>
+</div>

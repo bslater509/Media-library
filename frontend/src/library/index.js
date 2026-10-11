@@ -113,7 +113,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (state.subfolders && state.subfolders.length > 0) renderSubfolders();
   }
 
-  // Reflect the current thumbnail-size preset on the +/- control.
+  // Reflect the current thumbnail-size preset on the +/- control and mobile sheet.
   function syncTileScaleUI() {
     const idx = Math.max(0, TILE_SCALES.indexOf(state.tileScale));
     if (els.tileSizeLabel) els.tileSizeLabel.textContent = TILE_SCALE_LABELS[idx] || 'M';
@@ -127,6 +127,24 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.tileSizeUpBtn.classList.toggle('opacity-30', idx === TILE_SCALES.length - 1);
       els.tileSizeUpBtn.classList.toggle('pointer-events-none', idx === TILE_SCALES.length - 1);
     }
+    if (els.mobileTileSizeValue) {
+      els.mobileTileSizeValue.textContent = TILE_SCALE_LABELS[idx] || 'M';
+    }
+    const mobileScaleBtns = [
+      els.mobileTileSizeBtnXS,
+      els.mobileTileSizeBtnS,
+      els.mobileTileSizeBtnM,
+      els.mobileTileSizeBtnL,
+      els.mobileTileSizeBtnXL
+    ];
+    mobileScaleBtns.forEach((btn, bIdx) => {
+      if (!btn) return;
+      if (bIdx === idx) {
+        btn.className = 'py-2 rounded-lg font-mono font-semibold transition bg-emerald-600 text-white shadow-sm';
+      } else {
+        btn.className = 'py-2 rounded-lg font-mono font-semibold transition text-slate-400 hover:text-white';
+      }
+    });
   }
 
   // Apply a new thumbnail-size preset: persist it and re-flow the current view.
@@ -445,6 +463,29 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
   // Render Breadcrumb Navigation
   function renderBreadcrumbs() {
+    // Sync single-line mobile header title & back button
+    if (els.mobileFolderTitleText) {
+      if (!state.breadcrumbs || state.breadcrumbs.length === 0) {
+        els.mobileFolderTitleText.textContent = 'Media Library';
+        if (els.mobileBackBtn) els.mobileBackBtn.classList.add('hidden');
+      } else {
+        const currentCrumb = state.breadcrumbs[state.breadcrumbs.length - 1];
+        els.mobileFolderTitleText.textContent = currentCrumb.name || 'Media Library';
+        if (els.mobileBackBtn) {
+          if (state.breadcrumbs.length > 1) {
+            els.mobileBackBtn.classList.remove('hidden');
+            const parentCrumb = state.breadcrumbs[state.breadcrumbs.length - 2];
+            els.mobileBackBtn.onclick = (e) => {
+              e.preventDefault();
+              loadFolder(parentCrumb.path);
+            };
+          } else {
+            els.mobileBackBtn.classList.add('hidden');
+          }
+        }
+      }
+    }
+
     if (!state.breadcrumbs || state.breadcrumbs.length === 0) {
       els.breadcrumbNav.innerHTML = `<span class="text-slate-400 font-mono text-xs">/</span>`;
       return;
@@ -603,6 +644,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.countAllBadge.textContent = state.filteredFiles.length;
       els.countVideosBadge.textContent = videoCount;
       els.countImagesBadge.textContent = imageCount;
+      if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = state.filteredFiles.length;
+      if (els.mobileCountVideosBadge) els.mobileCountVideosBadge.textContent = videoCount;
+      if (els.mobileCountImagesBadge) els.mobileCountImagesBadge.textContent = imageCount;
 
       els.mediaGrid.innerHTML = '';
       if (state.filteredFiles.length === 0) {
@@ -724,6 +768,15 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (els.syncIcon) els.syncIcon.classList.remove('animate-spin');
     }
 
+    if (els.mobileIndexDot) {
+      els.mobileIndexDot.className = isCrawling 
+        ? 'w-3 h-3 rounded-full bg-amber-400 animate-pulse shrink-0' 
+        : 'w-3 h-3 rounded-full bg-emerald-500 shadow-sm shrink-0';
+    }
+    if (els.mobileIndexStatusText && els.indexStatusText) {
+      els.mobileIndexStatusText.textContent = els.indexStatusText.textContent;
+    }
+
     updateHeaderTaskBadge();
   }
 
@@ -763,6 +816,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     els.countAllBadge.textContent = state.allFiles.length;
     els.countVideosBadge.textContent = videoCount;
     els.countImagesBadge.textContent = imageCount;
+    if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = state.allFiles.length;
+    if (els.mobileCountVideosBadge) els.mobileCountVideosBadge.textContent = videoCount;
+    if (els.mobileCountImagesBadge) els.mobileCountImagesBadge.textContent = imageCount;
+    updateMobileControlsBadge();
 
     // Check for non-MP4 videos to show Convert Button
     const nonMp4Videos = state.allFiles.filter(f => f.type === 'video' && f.needs_transcode);
@@ -2865,14 +2922,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       const data = await res.json();
       state.duplicates.totalGroups = data.total_groups || 0;
       state.duplicates.reclaimableFormatted = data.reclaimable_formatted || '0 GB';
-      if (els.duplicatesHeaderBadge) {
-        if (data.total_groups > 0) {
-          els.duplicatesHeaderBadge.textContent = data.total_groups;
-          els.duplicatesHeaderBadge.classList.remove('hidden');
-        } else {
-          els.duplicatesHeaderBadge.classList.add('hidden');
-        }
-      }
+      syncDuplicatesCount(data.total_groups || 0);
     } catch (e) {
       console.error('Error fetching duplicate summary:', e);
     }
@@ -3937,6 +3987,19 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.transferBadgeBtn.title = 'View background activity (Idle)';
       // Keep transferDropdown open if the user opened it; do not auto-close
     }
+
+    if (els.mobileTasksBadge) {
+      els.mobileTasksBadge.textContent = isAnyActive ? (els.transferCountText ? els.transferCountText.textContent : 'Active') : '0 active';
+      if (isAnyActive) {
+        els.mobileTasksBadge.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono';
+      } else {
+        els.mobileTasksBadge.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono';
+      }
+    }
+    if (els.mobileTasksStatusSubtext) {
+      els.mobileTasksStatusSubtext.textContent = isAnyActive ? 'Tasks running in background' : 'Workers idle';
+    }
+    updateMobileControlsBadge();
 
     // Update tab badges and empty state in tasks modal
     const activeQueueCount = (trData && trData.active ? 1 : 0) +
@@ -5809,6 +5872,416 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
+  function updateMobileControlsBadge() {
+    if (!els.mobileControlsBadge) return;
+    const hasSearch = !!(state.searchQuery && state.searchQuery.trim().length > 0);
+    const hasFilter = state.activeFilter !== 'all';
+    const hasTasks = els.transferSpinner && !els.transferSpinner.classList.contains('hidden');
+    const hasDups = state.duplicates && state.duplicates.totalGroups > 0;
+
+    const isActive = hasSearch || hasFilter || hasTasks || hasDups;
+    els.mobileControlsBadge.classList.toggle('hidden', !isActive);
+  }
+
+  function syncDuplicatesCount(count) {
+    state.duplicates.totalGroups = count;
+    if (els.duplicatesHeaderBadge) {
+      if (count > 0) {
+        els.duplicatesHeaderBadge.textContent = count;
+        els.duplicatesHeaderBadge.classList.remove('hidden');
+      } else {
+        els.duplicatesHeaderBadge.classList.add('hidden');
+      }
+    }
+    if (els.mobileDupCountBadge) {
+      els.mobileDupCountBadge.textContent = count;
+    }
+    updateMobileControlsBadge();
+  }
+
+  function openMobileBreadcrumbsModal() {
+    if (!els.mobileBreadcrumbsModal || !els.mobileBreadcrumbsList) return;
+    if (!state.breadcrumbs || state.breadcrumbs.length === 0) {
+      els.mobileBreadcrumbsList.innerHTML = `<div class="p-4 text-center text-slate-500">No folder path available</div>`;
+    } else {
+      els.mobileBreadcrumbsList.innerHTML = state.breadcrumbs.map((crumb, idx) => {
+        const isCurrent = idx === state.breadcrumbs.length - 1;
+        const isRoot = idx === 0;
+        const icon = crumb.is_zip || (crumb.path && crumb.path.toLowerCase().endsWith('.zip')) ? '📦' : (isRoot ? '🏠' : '📁');
+        return `
+          <button 
+            type="button" 
+            data-crumb-path="${encodeURIComponent(crumb.path)}"
+            class="w-full flex items-center justify-between p-2.5 rounded-xl transition ${isCurrent ? 'bg-emerald-600/20 text-emerald-300 font-bold border border-emerald-500/30' : 'text-slate-300 hover:bg-slate-800'}"
+          >
+            <span class="flex items-center gap-2 truncate">
+              <span>${icon}</span>
+              <span class="truncate">${crumb.name}</span>
+            </span>
+            ${isCurrent ? '<span class="text-[10px] text-emerald-400 font-mono">Current</span>' : '<span class="text-slate-500 text-xs">›</span>'}
+          </button>
+        `;
+      }).join('');
+
+      els.mobileBreadcrumbsList.querySelectorAll('button[data-crumb-path]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const path = decodeURIComponent(btn.dataset.crumbPath);
+          closeMobileBreadcrumbsModal();
+          loadFolder(path);
+        });
+      });
+    }
+
+    els.mobileBreadcrumbsModal.classList.remove('hidden');
+    els.mobileBreadcrumbsModal.classList.add('flex');
+    document.body.classList.add('modal-scroll-lock');
+  }
+
+  function closeMobileBreadcrumbsModal() {
+    if (!els.mobileBreadcrumbsModal) return;
+    els.mobileBreadcrumbsModal.classList.add('hidden');
+    els.mobileBreadcrumbsModal.classList.remove('flex');
+    document.body.classList.remove('modal-scroll-lock');
+  }
+
+  function syncThemeSheetUI() {
+    if (!window.THEME_MANAGER) return;
+    const cur = window.THEME_MANAGER.getCurrent();
+    const currentAccent = cur.accent || 'amber';
+    const currentBase = cur.base || 'stone';
+
+    document.querySelectorAll('.mobile-accent-choice').forEach(btn => {
+      const isSelected = btn.dataset.themeAccent === currentAccent;
+      btn.classList.toggle('border-emerald-500', isSelected);
+      btn.classList.toggle('bg-slate-900', isSelected);
+      btn.classList.toggle('shadow-sm', isSelected);
+    });
+
+    document.querySelectorAll('.mobile-base-choice').forEach(btn => {
+      const isSelected = btn.dataset.themeBase === currentBase;
+      btn.classList.toggle('border-emerald-500', isSelected);
+      btn.classList.toggle('bg-slate-900', isSelected);
+      btn.classList.toggle('shadow-sm', isSelected);
+    });
+  }
+
+  function openMobileControlsModal(tab = 'search') {
+    if (!els.mobileControlsModal) return;
+    els.mobileControlsModal.classList.remove('hidden');
+    els.mobileControlsModal.classList.add('flex');
+    document.body.classList.add('modal-scroll-lock');
+
+    // Sync input values
+    if (els.mobileSearchInput) els.mobileSearchInput.value = state.searchQuery || '';
+    if (els.mobileClearSearchBtn) {
+      els.mobileClearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+    }
+    if (els.mobileSortSelect) els.mobileSortSelect.value = state.activeSort || 'name_asc';
+
+    // Sync counts
+    if (els.mobileCountAllBadge && els.countAllBadge) els.mobileCountAllBadge.textContent = els.countAllBadge.textContent;
+    if (els.mobileCountVideosBadge && els.countVideosBadge) els.mobileCountVideosBadge.textContent = els.countVideosBadge.textContent;
+    if (els.mobileCountImagesBadge && els.countImagesBadge) els.mobileCountImagesBadge.textContent = els.countImagesBadge.textContent;
+
+    // Sync double-tap seek toggle
+    if (els.mobileSheetDoubleTapSeekToggle) {
+      els.mobileSheetDoubleTapSeekToggle.checked = localStorage.getItem('lib_touch_double_tap_seek') !== 'false';
+    }
+
+    syncTileScaleUI();
+    syncThemeSheetUI();
+    updateMobileControlsBadge();
+
+    // Switch to initial tab
+    if (tab === 'display' && els.mobileTabDisplayBtn) els.mobileTabDisplayBtn.click();
+    else if (tab === 'actions' && els.mobileTabActionsBtn) els.mobileTabActionsBtn.click();
+    else if (tab === 'system' && els.mobileTabSystemBtn) els.mobileTabSystemBtn.click();
+    else if (els.mobileTabSearchBtn) els.mobileTabSearchBtn.click();
+  }
+
+  function closeMobileControlsModal() {
+    if (!els.mobileControlsModal) return;
+    els.mobileControlsModal.classList.add('hidden');
+    els.mobileControlsModal.classList.remove('flex');
+    document.body.classList.remove('modal-scroll-lock');
+  }
+
+  function initMobileControlsSheet() {
+    // Open & Close
+    if (els.mobileControlsBtn) {
+      els.mobileControlsBtn.addEventListener('click', () => openMobileControlsModal('search'));
+    }
+    if (els.closeMobileControlsBtn) {
+      els.closeMobileControlsBtn.addEventListener('click', closeMobileControlsModal);
+    }
+    if (els.doneMobileControlsBtn) {
+      els.doneMobileControlsBtn.addEventListener('click', closeMobileControlsModal);
+    }
+    if (els.mobileControlsModal) {
+      els.mobileControlsModal.addEventListener('click', (e) => {
+        if (e.target === els.mobileControlsModal) closeMobileControlsModal();
+      });
+    }
+
+    // Breadcrumbs Popover
+    if (els.mobileFolderTitleBtn) {
+      els.mobileFolderTitleBtn.addEventListener('click', openMobileBreadcrumbsModal);
+    }
+    if (els.closeMobileBreadcrumbsBtn) {
+      els.closeMobileBreadcrumbsBtn.addEventListener('click', closeMobileBreadcrumbsModal);
+    }
+    if (els.mobileBreadcrumbsModal) {
+      els.mobileBreadcrumbsModal.addEventListener('click', (e) => {
+        if (e.target === els.mobileBreadcrumbsModal) closeMobileBreadcrumbsModal();
+      });
+    }
+
+    // Mobile Sidebar Drawer Toggle
+    if (els.mobileSidebarToggleBtn) {
+      els.mobileSidebarToggleBtn.addEventListener('click', () => {
+        const isOpen = els.sidebarDrawer && !els.sidebarDrawer.classList.contains('-translate-x-full');
+        setSidebarOpen(!isOpen);
+      });
+    }
+
+    // Tab Navigation Switchers
+    const switchMobileTab = (tabName) => {
+      const tabs = [
+        { name: 'search', btn: els.mobileTabSearchBtn, panel: els.mobileTabSearchPanel },
+        { name: 'display', btn: els.mobileTabDisplayBtn, panel: els.mobileTabDisplayPanel },
+        { name: 'actions', btn: els.mobileTabActionsBtn, panel: els.mobileTabActionsPanel },
+        { name: 'system', btn: els.mobileTabSystemBtn, panel: els.mobileTabSystemPanel }
+      ];
+
+      tabs.forEach(t => {
+        const isActive = t.name === tabName;
+        if (t.btn) {
+          if (isActive) {
+            t.btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center gap-1.5';
+          } else {
+            t.btn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center gap-1.5';
+          }
+        }
+        if (t.panel) {
+          if (isActive) {
+            t.panel.classList.remove('hidden');
+          } else {
+            t.panel.classList.add('hidden');
+          }
+        }
+      });
+    };
+
+    if (els.mobileTabSearchBtn) els.mobileTabSearchBtn.addEventListener('click', () => switchMobileTab('search'));
+    if (els.mobileTabDisplayBtn) els.mobileTabDisplayBtn.addEventListener('click', () => switchMobileTab('display'));
+    if (els.mobileTabActionsBtn) els.mobileTabActionsBtn.addEventListener('click', () => switchMobileTab('actions'));
+    if (els.mobileTabSystemBtn) els.mobileTabSystemBtn.addEventListener('click', () => switchMobileTab('system'));
+
+    // Tab 1: Search & Filter Inputs
+    if (els.mobileSearchInput) {
+      els.mobileSearchInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        state.searchQuery = val;
+        if (els.fileSearchInput) els.fileSearchInput.value = e.target.value;
+        if (val) {
+          if (els.mobileClearSearchBtn) els.mobileClearSearchBtn.classList.remove('hidden');
+          if (els.clearFileSearchBtn) els.clearFileSearchBtn.classList.remove('hidden');
+        } else {
+          if (els.mobileClearSearchBtn) els.mobileClearSearchBtn.classList.add('hidden');
+          if (els.clearFileSearchBtn) els.clearFileSearchBtn.classList.add('hidden');
+        }
+
+        if (state.searchScope === 'global') {
+          clearTimeout(globalSearchDebounceTimer);
+          globalSearchDebounceTimer = setTimeout(() => performGlobalSearch(), 250);
+        } else {
+          applyFiltersAndSort();
+        }
+        updateMobileControlsBadge();
+      });
+    }
+
+    if (els.mobileClearSearchBtn) {
+      els.mobileClearSearchBtn.addEventListener('click', () => {
+        if (els.mobileSearchInput) els.mobileSearchInput.value = '';
+        if (els.fileSearchInput) els.fileSearchInput.value = '';
+        state.searchQuery = '';
+        els.mobileClearSearchBtn.classList.add('hidden');
+        if (els.clearFileSearchBtn) els.clearFileSearchBtn.classList.add('hidden');
+        if (state.searchScope === 'global') {
+          performGlobalSearch();
+        } else {
+          applyFiltersAndSort();
+        }
+        updateMobileControlsBadge();
+      });
+    }
+
+    // Search Scope in mobile sheet
+    const setMobileScope = (scope) => {
+      state.searchScope = scope;
+      if (els.mobileScopeCurrentBtn && els.mobileScopeGlobalBtn) {
+        if (scope === 'current') {
+          els.mobileScopeCurrentBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5';
+          els.mobileScopeGlobalBtn.className = 'py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5';
+        } else {
+          els.mobileScopeGlobalBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5';
+          els.mobileScopeCurrentBtn.className = 'py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5';
+        }
+      }
+      if (els.scopeCurrentBtn && els.scopeGlobalBtn) {
+        if (scope === 'current') {
+          els.scopeCurrentBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap';
+          els.scopeGlobalBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap';
+        } else {
+          els.scopeGlobalBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap';
+          els.scopeCurrentBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap';
+        }
+      }
+      if (state.searchQuery) {
+        if (scope === 'global') performGlobalSearch();
+        else applyFiltersAndSort();
+      }
+    };
+
+    if (els.mobileScopeCurrentBtn) els.mobileScopeCurrentBtn.addEventListener('click', () => setMobileScope('current'));
+    if (els.mobileScopeGlobalBtn) els.mobileScopeGlobalBtn.addEventListener('click', () => setMobileScope('global'));
+
+    // Sort Select in mobile sheet
+    if (els.mobileSortSelect) {
+      els.mobileSortSelect.addEventListener('change', (e) => {
+        state.activeSort = e.target.value;
+        if (els.sortSelect) els.sortSelect.value = e.target.value;
+        applyFiltersAndSort();
+      });
+    }
+
+    // Tab 2: Display & Theme
+    const mobileScaleBtns = [
+      { el: els.mobileTileSizeBtnXS, scale: 0.6 },
+      { el: els.mobileTileSizeBtnS, scale: 0.8 },
+      { el: els.mobileTileSizeBtnM, scale: 1.0 },
+      { el: els.mobileTileSizeBtnL, scale: 1.25 },
+      { el: els.mobileTileSizeBtnXL, scale: 1.5 }
+    ];
+    mobileScaleBtns.forEach(item => {
+      if (item.el) {
+        item.el.addEventListener('click', () => {
+          state.tileScale = item.scale;
+          applyTileScale();
+        });
+      }
+    });
+
+    // Theme Accent Choices in Sheet
+    document.querySelectorAll('.mobile-accent-choice').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const accent = btn.dataset.themeAccent;
+        if (window.THEME_MANAGER && accent) {
+          const cur = window.THEME_MANAGER.getCurrent();
+          window.THEME_MANAGER.setTheme(accent, cur.base || 'stone');
+          syncThemeSheetUI();
+        }
+      });
+    });
+
+    // Theme Base Choices in Sheet
+    document.querySelectorAll('.mobile-base-choice').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const base = btn.dataset.themeBase;
+        if (window.THEME_MANAGER && base) {
+          const cur = window.THEME_MANAGER.getCurrent();
+          window.THEME_MANAGER.setTheme(cur.accent || 'amber', base);
+          syncThemeSheetUI();
+        }
+      });
+    });
+
+    // Double-Tap Seek Toggle in Sheet
+    if (els.mobileSheetDoubleTapSeekToggle) {
+      els.mobileSheetDoubleTapSeekToggle.addEventListener('change', (e) => {
+        localStorage.setItem('lib_touch_double_tap_seek', e.target.checked ? 'true' : 'false');
+        if (els.mobileDoubleTapSeekToggle) els.mobileDoubleTapSeekToggle.checked = e.target.checked;
+        showToast(e.target.checked ? 'Double-tap seek enabled (±5s)' : 'Double-tap seek disabled', 'info');
+      });
+    }
+
+    // Tab 3: Folder Actions Triggers
+    if (els.mobileUploadFilesTrigger) {
+      els.mobileUploadFilesTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.hiddenUploadFileInput) els.hiddenUploadFileInput.click();
+      });
+    }
+    if (els.mobileUploadFolderTrigger) {
+      els.mobileUploadFolderTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.hiddenUploadFolderInput) els.hiddenUploadFolderInput.click();
+      });
+    }
+    if (els.mobileNewFolderTrigger) {
+      els.mobileNewFolderTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.newFolderBtn) els.newFolderBtn.click();
+      });
+    }
+    if (els.mobileRefreshFolderTrigger) {
+      els.mobileRefreshFolderTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.refreshFolderBtn) els.refreshFolderBtn.click();
+      });
+    }
+    if (els.mobileCacheThumbsTrigger) {
+      els.mobileCacheThumbsTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.generateFolderThumbsBtn) els.generateFolderThumbsBtn.click();
+      });
+    }
+    if (els.mobileConvertMp4Trigger) {
+      els.mobileConvertMp4Trigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.convertAllNonMp4Btn) els.convertAllNonMp4Btn.click();
+      });
+    }
+    if (els.mobileOptimizeWebpTrigger) {
+      els.mobileOptimizeWebpTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.optimizeFolderWebpBtn) els.optimizeFolderWebpBtn.click();
+      });
+    }
+    if (els.mobileCompressZipTrigger) {
+      els.mobileCompressZipTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.compressFolderZipBtn) els.compressFolderZipBtn.click();
+      });
+    }
+    if (els.mobileUnpackZipTrigger) {
+      els.mobileUnpackZipTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.unpackFolderZipBtn) els.unpackFolderZipBtn.click();
+      });
+    }
+
+    // Tab 4: System Status Triggers
+    if (els.mobileOpenTasksBtn) {
+      els.mobileOpenTasksBtn.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.transferBadgeBtn) els.transferBadgeBtn.click();
+      });
+    }
+    if (els.mobileOpenDupBtn) {
+      els.mobileOpenDupBtn.addEventListener('click', () => {
+        closeMobileControlsModal();
+        if (els.openDuplicatesBtn) els.openDuplicatesBtn.click();
+      });
+    }
+    if (els.mobileSyncIndexBtn) {
+      els.mobileSyncIndexBtn.addEventListener('click', () => {
+        if (els.syncIndexBtn) els.syncIndexBtn.click();
+      });
+    }
+  }
+
   // Event Listeners Initialization
   function initEvents() {
     // Delegated sidebar tree click handler (expand toggle + node navigation)
@@ -6255,18 +6728,25 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const setFilter = (type) => {
       state.activeFilter = type;
       [els.filterAllBtn, els.filterVideosBtn, els.filterImagesBtn].forEach(btn => {
-        btn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap';
+        if (btn) btn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap';
+      });
+      [els.mobileFilterAllBtn, els.mobileFilterVideosBtn, els.mobileFilterImagesBtn].forEach(btn => {
+        if (btn) btn.className = 'py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1';
       });
 
       if (type === 'all') {
-        els.filterAllBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.filterAllBtn) els.filterAllBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.mobileFilterAllBtn) els.mobileFilterAllBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1';
       } else if (type === 'video') {
-        els.filterVideosBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.filterVideosBtn) els.filterVideosBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.mobileFilterVideosBtn) els.mobileFilterVideosBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1';
       } else if (type === 'image') {
-        els.filterImagesBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.filterImagesBtn) els.filterImagesBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
+        if (els.mobileFilterImagesBtn) els.mobileFilterImagesBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1';
       }
 
       applyFiltersAndSort();
+      updateMobileControlsBadge();
     };
 
     els.filterAllBtn.addEventListener('click', () => setFilter('all'));
@@ -6503,25 +6983,49 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       }, 150);
     });
 
-    // Scroll to Top floating button handler
-    if (els.mainStage && els.scrollToTopBtn) {
+    // Scroll to Top floating button handler & Mobile Single-Line Header auto-hide
+    let lastScrollTop = 0;
+    if (els.mainStage) {
       els.mainStage.addEventListener('scroll', () => {
-        if (els.mainStage.scrollTop > 350) {
-          els.scrollToTopBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
-          els.scrollToTopBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
-        } else {
-          els.scrollToTopBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3');
-          els.scrollToTopBtn.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+        const currentScrollTop = els.mainStage.scrollTop;
+
+        if (els.scrollToTopBtn) {
+          if (currentScrollTop > 350) {
+            els.scrollToTopBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+            els.scrollToTopBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+          } else {
+            els.scrollToTopBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3');
+            els.scrollToTopBtn.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+          }
         }
+
+        // Mobile Single-Line Header auto-hide on scroll-down, reveal on scroll-up
+        if (window.innerWidth < 768 && els.mobileHeader) {
+          if (currentScrollTop <= 20) {
+            els.mobileHeader.classList.remove('-translate-y-full');
+          } else {
+            const delta = currentScrollTop - lastScrollTop;
+            if (delta > 8) {
+              els.mobileHeader.classList.add('-translate-y-full');
+            } else if (delta < -8) {
+              els.mobileHeader.classList.remove('-translate-y-full');
+            }
+          }
+        }
+        lastScrollTop = Math.max(0, currentScrollTop);
       }, { passive: true });
 
-      els.scrollToTopBtn.addEventListener('click', () => {
-        els.mainStage.scrollTo({ top: 0, behavior: 'smooth' });
-      });
+      if (els.scrollToTopBtn) {
+        els.scrollToTopBtn.addEventListener('click', () => {
+          if (els.mobileHeader) els.mobileHeader.classList.remove('-translate-y-full');
+          els.mainStage.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
     }
 
     // Theme Customizer & Mobile Gestures
     initThemeCustomizerEvents();
+    initMobileControlsSheet();
   }
 
   // App Initialization

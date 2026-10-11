@@ -12,7 +12,7 @@
   {{include 'partials/theme_head.html'}}
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/dist/styles.css?v=38">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=39">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -46,8 +46,38 @@
 </head>
 <body class="bg-slate-950 text-slate-100 h-screen h-[100dvh] overflow-hidden flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
 
-  <!-- Top Navigation Bar -->
-  <header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] flex items-center shrink-0">
+  <!-- Mobile Single-Line Top Navigation Bar (< 768px) -->
+  <header id="mobileHeader" class="md:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 h-12 flex items-center justify-between transition-transform duration-300">
+    <!-- Left: Hamburger Drawer Button + Subfolder Back Button + Title -->
+    <div class="flex items-center gap-1.5 min-w-0 flex-1">
+      <button id="mobileSidebarToggleBtn" type="button" class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white border border-slate-700 shrink-0" title="Categories & Folders" aria-label="Categories & Folders">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+
+      <button id="mobileBackBtn" type="button" class="hidden p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white border border-slate-700 shrink-0" title="Go up to parent folder" aria-label="Go up to parent folder">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+      </button>
+
+      <button id="mobileFolderTitleBtn" type="button" class="flex items-center gap-1 text-xs font-bold text-white truncate max-w-[210px] xs:max-w-xs text-left group transition py-1 px-1.5 rounded-lg hover:bg-slate-800/60" title="View folder hierarchy">
+        <span class="text-sm shrink-0">📁</span>
+        <span id="mobileFolderTitleText" class="truncate font-bold">Media Library</span>
+        <span class="text-slate-400 text-[10px] group-hover:text-emerald-400 transition">▾</span>
+      </button>
+    </div>
+
+    <!-- Right: Unified Controls Modal Trigger -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <button id="mobileControlsBtn" type="button" class="relative p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shadow-sm" title="Controls, Search, Display & Actions" aria-label="Controls, Search, Display & Actions">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+        </svg>
+        <span id="mobileControlsBadge" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Desktop Top Navigation Bar (>= 768px) -->
+  <header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] hidden md:flex items-center shrink-0">
     <div class="max-w-[1920px] w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
       
       <!-- Brand & Mobile Drawer Trigger -->
@@ -147,7 +177,7 @@
     <main id="mainStage" class="flex-1 flex flex-col min-w-0 h-full overflow-y-auto relative">
       
       <!-- Pinned Sticky Top Bar (Breadcrumbs, Actions, Search & Filters) -->
-      <div id="libraryStickyHeader" class="sticky top-0 z-30 flex flex-col gap-2 bg-slate-950/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 pt-2 sm:pt-3 pb-2.5 sm:pb-3 border-b border-slate-800/80 shrink-0 shadow-md">
+      <div id="libraryStickyHeader" class="hidden md:flex sticky top-0 z-30 flex-col gap-2 bg-slate-950/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 pt-2 sm:pt-3 pb-2.5 sm:pb-3 border-b border-slate-800/80 shrink-0 shadow-md">
 
         <!-- Breadcrumb Bar -->
         <div class="relative z-30 flex items-center justify-between gap-2 bg-slate-900/50 backdrop-blur-md px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/70 shrink-0">
@@ -301,22 +331,22 @@
           </div>
         </div>
 
-        <!-- Selection Toolbar (shown when items are multi-selected) -->
-        <div id="selectionToolbar" class="hidden flex items-center justify-between gap-2 bg-emerald-600/15 border border-emerald-600/30 p-2 sm:p-2.5 rounded-xl shrink-0">
-          <span class="text-xs font-semibold text-emerald-300 shrink-0"><span id="selectionCount">0</span> selected</span>
-          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            <button id="selectionMoveBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0">📁 Move</button>
-            <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
-            <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
-            <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
-            <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
-          </div>
-        </div>
+      </div>
 
+      <!-- Selection Toolbar (responsive: sticky top on desktop, floating bottom on mobile) -->
+      <div id="selectionToolbar" class="hidden items-center justify-between gap-2 bg-slate-900/95 border border-emerald-500/50 p-2 sm:p-2.5 rounded-xl shadow-2xl fixed bottom-4 left-3 right-3 md:sticky md:top-2 md:bottom-auto md:left-auto md:right-auto md:mx-6 md:mb-2 md:bg-emerald-600/15 md:border-emerald-600/30 z-40 backdrop-blur-md shrink-0">
+        <span class="text-xs font-semibold text-emerald-300 shrink-0"><span id="selectionCount">0</span> selected</span>
+        <div class="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <button id="selectionMoveBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0">📁 Move</button>
+          <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
+          <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
+          <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
+          <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
+        </div>
       </div>
 
       <!-- Scrollable Gallery Stage Area -->
-      <div id="galleryContentArea" class="flex-1 flex flex-col min-w-0 p-2.5 sm:p-4 md:p-6 gap-2 sm:gap-3.5">
+      <div id="galleryContentArea" class="flex-1 flex flex-col min-w-0 pt-14 md:pt-4 px-2.5 sm:px-4 md:px-6 pb-4 gap-2 sm:gap-3.5">
 
         <!-- Nested Subfolders Chips Section (if any) -->
         <div id="subfoldersContainer" class="hidden flex flex-col gap-1 bg-slate-900/40 p-2 sm:p-2.5 rounded-xl border border-slate-800/60 shrink-0">
@@ -943,8 +973,9 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=44"></script>
+  <script type="module" src="/static/dist/library.js?v=45"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
+  {{include 'partials/mobile_controls_sheet.html'}}
 </body>
 </html>
