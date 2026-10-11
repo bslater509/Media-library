@@ -1587,18 +1587,50 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     els.thumbChooserGrid.innerHTML = '';
     candidates.forEach((cand) => {
       const tile = document.createElement('div');
-      tile.className = 'thumb-cand-card relative rounded-lg overflow-hidden border-2 cursor-pointer transition select-none aspect-video bg-slate-950 group border-slate-800 hover:border-slate-600';
+      tile.className = 'thumb-cand-card relative rounded-lg overflow-hidden border-2 cursor-pointer transition select-none aspect-video bg-slate-950 group border-slate-800 hover:border-slate-600 active:scale-98';
       tile.dataset.timestamp = String(cand.timestamp);
       tile.dataset.url = cand.url;
-      tile.title = `Frame at ${cand.time_str} (Click to preview, double-click to apply)`;
+      tile.title = `Frame at ${cand.time_str} (Tap to preview, tap again or double-tap to apply)`;
 
       tile.innerHTML = `
-        <img src="${cand.url}" alt="${cand.time_str}" class="w-full h-full object-cover transition group-hover:scale-105" loading="lazy" />
+        <img src="${cand.url}" alt="${cand.time_str}" class="w-full h-full object-cover transition group-hover:scale-105 pointer-events-none" loading="lazy" />
         <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 font-mono text-[10px] text-slate-300 pointer-events-none">${cand.time_str}</span>
+        <span class="cand-apply-badge hidden absolute top-1 right-1 px-1.5 py-0.5 rounded bg-amber-600 font-semibold text-[10px] text-white shadow pointer-events-none animate-in fade-in zoom-in-95">Tap to Apply ✓</span>
       `;
 
+      let lastTapTime = 0;
+      let lastTapX = 0;
+      let lastTapY = 0;
+
+      // Mobile touch double-tap detection
+      tile.addEventListener('touchend', (e) => {
+        const touch = e.changedTouches && e.changedTouches[0];
+        if (!touch) return;
+        const now = Date.now();
+        const timeDiff = now - lastTapTime;
+        const distDiff = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+        lastTapTime = now;
+        lastTapX = touch.clientX;
+        lastTapY = touch.clientY;
+
+        if (timeDiff > 40 && timeDiff < 400 && distDiff < 45) {
+          e.preventDefault();
+          selectThumbChooserCandidate(cand.timestamp, cand.url, tile);
+          applySelectedThumbnail();
+        }
+      });
+
+      // Click / single-tap: selects frame. If already selected, 2nd tap immediately applies!
       tile.addEventListener('click', () => {
+        const isAlreadySelected = state.thumbChooser &&
+          Math.abs(state.thumbChooser.selectedTimestamp - cand.timestamp) < 0.05 &&
+          tile.classList.contains('border-amber-500');
+
         selectThumbChooserCandidate(cand.timestamp, cand.url, tile);
+
+        if (isAlreadySelected) {
+          applySelectedThumbnail();
+        }
       });
 
       tile.addEventListener('dblclick', () => {
@@ -1623,10 +1655,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       els.thumbChooserGrid.querySelectorAll('.thumb-cand-card').forEach((c) => {
         c.classList.remove('border-amber-500', 'ring-2', 'ring-amber-500');
         c.classList.add('border-slate-800');
+        const badge = c.querySelector('.cand-apply-badge');
+        if (badge) badge.classList.add('hidden');
       });
       if (tileEl) {
         tileEl.classList.remove('border-slate-800');
         tileEl.classList.add('border-amber-500', 'ring-2', 'ring-amber-500');
+        const badge = tileEl.querySelector('.cand-apply-badge');
+        if (badge) badge.classList.remove('hidden');
       }
     }
   }
@@ -6369,6 +6405,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (els.closeThumbChooserBtn) els.closeThumbChooserBtn.addEventListener('click', closeThumbnailChooser);
     if (els.thumbChooserCancelBtn) els.thumbChooserCancelBtn.addEventListener('click', closeThumbnailChooser);
     if (els.thumbChooserApplyBtn) els.thumbChooserApplyBtn.addEventListener('click', applySelectedThumbnail);
+    if (els.thumbChooserQuickApplyBtn) els.thumbChooserQuickApplyBtn.addEventListener('click', applySelectedThumbnail);
     if (els.thumbChooserUseCurrentBtn) els.thumbChooserUseCurrentBtn.addEventListener('click', useCurrentThumbChooserPosition);
     if (els.thumbChooserScrubber) {
       els.thumbChooserScrubber.addEventListener('input', onThumbChooserScrub);

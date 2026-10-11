@@ -474,6 +474,7 @@
     closeThumbChooserBtn: document.getElementById('closeThumbChooserBtn'),
     thumbChooserCancelBtn: document.getElementById('thumbChooserCancelBtn'),
     thumbChooserApplyBtn: document.getElementById('thumbChooserApplyBtn'),
+    thumbChooserQuickApplyBtn: document.getElementById('thumbChooserQuickApplyBtn'),
     thumbChooserPreviewImg: document.getElementById('thumbChooserPreviewImg'),
     thumbChooserPreviewVideo: document.getElementById('thumbChooserPreviewVideo'),
     thumbChooserPreviewLoading: document.getElementById('thumbChooserPreviewLoading'),

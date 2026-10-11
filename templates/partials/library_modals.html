@@ -941,6 +941,10 @@
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             <span id="thumbChooserSelectedTime">00:00</span>
           </div>
+          <!-- Quick Apply button on preview -->
+          <button id="thumbChooserQuickApplyBtn" type="button" class="absolute bottom-2 right-2 px-2.5 py-1 rounded-lg bg-amber-600/90 hover:bg-amber-600 text-white font-semibold text-[11px] flex items-center gap-1 shadow-lg backdrop-blur-xs border border-amber-400/30 transition cursor-pointer active:scale-95" title="Set this frame as thumbnail">
+            <span>✓</span> Apply Frame
+          </button>
         </div>
 
         <!-- Scrubber & Timecode Controls -->
@@ -964,7 +968,7 @@
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">Candidate Frames (12)</span>
-            <span class="text-[10px] text-slate-500">Click to preview • Double-click to apply</span>
+            <span class="text-[10px] text-slate-400">Tap to preview • Tap again or double-tap to apply</span>
           </div>
           <div id="thumbChooserGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 min-h-[140px]">
             <!-- Generated dynamically -->
