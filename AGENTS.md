@@ -97,6 +97,19 @@ When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember tha
 - If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`.
 - If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`.
 
+### Rule 7: Always Commit & Push Changes (Zero Personal Data & Secrets)
+Every task involving code, template, configuration, or documentation changes must be committed and pushed to the remote repository (`origin`) upon completion:
+1. **Zero Personal Data & Secret Hygiene**:
+   - Never store, stage, or commit personal identifiers, real names, user profile paths (e.g. `/home/<user>`, `/Users/<user>`), IP addresses, personal email addresses, API tokens, passwords, private keys, or credentials.
+   - Author metadata must remain generic (`Media Library <dev@medialibrary.local>`).
+   - Clean up any ephemeral scratch scripts, test dumps, or temporary files before committing so no personal or temporary artifacts linger on the machine or in git.
+   - Ensure local environment files (`.env`), user configurations (`config.json`), local service files (`media-library.service`), and databases (`*.db`, `data/`) remain ignored in `.gitignore`.
+2. **Commit & Push Flow**:
+   - Ensure all tests pass (`./venv/bin/pytest`) and live server is running updated code (`systemctl restart media-library`).
+   - Stage changes (`git add .`) and create a concise conventional commit (`git commit -m "..."`).
+   - Push immediately to the remote repository (`git push origin <branch>`).
+   - Confirm with `git status` that the working tree is clean and synced with remote.
+
 ---
 
 ## 3. Repository Architecture & Directory Structure
