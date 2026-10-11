@@ -9,6 +9,7 @@ import {
   loadExpandedFolders,
   persistExpandedFolders,
   state,
+  els,
 } from '../src/library/state.js';
 
 describe('library/state.js unit tests', () => {
@@ -75,6 +76,15 @@ describe('library/state.js unit tests', () => {
       expect(state).toHaveProperty('activeFilter');
       expect(state).toHaveProperty('activeSort');
       expect(state.activeFilter).toBe('all');
+    });
+  });
+
+  describe('els DOM object shape', () => {
+    it('verifies stage and sticky navigation element keys exist on els', () => {
+      expect(els).toHaveProperty('mainStage');
+      expect(els).toHaveProperty('libraryStickyHeader');
+      expect(els).toHaveProperty('galleryContentArea');
+      expect(els).toHaveProperty('scrollToTopBtn');
     });
   });
 });

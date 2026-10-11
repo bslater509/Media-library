@@ -167,6 +167,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (pushHistory) {
         state.indexRetryCount = 0;
         clearTimeout(state.indexRetryTimer);
+        if (els.mainStage) {
+          els.mainStage.scrollTop = 0;
+        }
       }
       if (!silent) {
         els.emptyState.classList.add('hidden');
@@ -6480,6 +6483,23 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         relayoutSubfolders();
       }, 150);
     });
+
+    // Scroll to Top floating button handler
+    if (els.mainStage && els.scrollToTopBtn) {
+      els.mainStage.addEventListener('scroll', () => {
+        if (els.mainStage.scrollTop > 350) {
+          els.scrollToTopBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+          els.scrollToTopBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+        } else {
+          els.scrollToTopBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-3');
+          els.scrollToTopBtn.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+        }
+      }, { passive: true });
+
+      els.scrollToTopBtn.addEventListener('click', () => {
+        els.mainStage.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
 
     // Theme Customizer & Mobile Gestures
     initThemeCustomizerEvents();

@@ -452,4 +452,19 @@ header.sticky {
   overscroll-behavior: contain !important;
 }
 
+/* Library sticky top bar guarantee — pins below the navigation header */
+#libraryStickyHeader {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 30 !important;
+}
+
+/* Floating Scroll to Top button with safe-area spacing and smooth spring transition */
+#scrollToTopBtn {
+  bottom: max(1.5rem, calc(var(--sab, 0px) + 1.25rem));
+  right: max(1.5rem, calc(var(--sar, 0px) + 1.25rem));
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
+}
+
+
 

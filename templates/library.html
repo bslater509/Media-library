@@ -12,7 +12,7 @@
   {{include 'partials/theme_head.html'}}
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/dist/styles.css?v=36">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=37">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -145,202 +145,225 @@
     <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden md:hidden"></div>
 
     <!-- Right Main Stage: Media Gallery -->
-    <main class="flex-1 flex flex-col min-w-0 h-full overflow-y-auto p-2.5 sm:p-4 md:p-6 gap-2 sm:gap-3.5">
+    <main id="mainStage" class="flex-1 flex flex-col min-w-0 h-full overflow-y-auto relative">
       
-      <!-- Breadcrumb Bar -->
-      <div class="relative z-30 flex items-center justify-between gap-2 bg-slate-900/50 backdrop-blur-md px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/70 shrink-0">
-        <nav id="breadcrumbNav" class="flex items-center gap-1.5 text-xs sm:text-sm font-medium overflow-x-auto no-scrollbar py-0.5 min-w-0">
-          <span class="text-slate-500">Loading path...</span>
-        </nav>
-        <div class="flex items-center gap-1 shrink-0">
-          <button id="newFolderBtn" title="Create a new folder inside the current folder" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 hover:text-emerald-200 border border-emerald-600/30 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shrink-0">
-            <span>＋</span><span class="hidden sm:inline">New Folder</span>
-          </button>
-          
-          <div class="relative shrink-0 flex items-center">
-            <button id="uploadDropdownBtn" type="button" title="Upload files or folders" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-sm">
-              <span>⬆️</span><span class="hidden sm:inline">Upload</span>
-            </button>
-            <div id="uploadDropdownMenu" class="hidden absolute right-0 top-full mt-1 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-[60] flex flex-col py-1 overflow-hidden">
-              <label id="uploadFilesBtn" class="relative px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2 cursor-pointer select-none">
-                <span>📄 Files</span>
-                <input type="file" id="hiddenUploadFileInput" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/*,video/*,.mp4,.m4v,.mkv,.webm,.avi,.mov,.wmv,.flv,.ts,.m2ts,.mpg,.mpeg,.vob,.3gp,.asf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg,.heic,.heif,.dng,.zip" />
-              </label>
-              <label id="uploadFolderBtn" class="relative px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2 cursor-pointer select-none">
-                <span>📁 Folder</span>
-                <input type="file" id="hiddenUploadFolderInput" webkitdirectory directory multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-              </label>
-            </div>
-          </div>
-          <button id="refreshFolderBtn" title="Refresh folder" class="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border border-slate-700 transition shrink-0">
-            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          </button>
-        </div>
-      </div>
+      <!-- Pinned Sticky Top Bar (Breadcrumbs, Actions, Search & Filters) -->
+      <div id="libraryStickyHeader" class="sticky top-0 z-30 flex flex-col gap-2 bg-slate-950/95 backdrop-blur-md px-2.5 sm:px-4 md:px-6 pt-2 sm:pt-3 pb-2.5 sm:pb-3 border-b border-slate-800/80 shrink-0 shadow-md">
 
-      <!-- Nested Subfolders Chips Section (if any) -->
-      <div id="subfoldersContainer" class="hidden flex flex-col gap-1 bg-slate-900/40 p-2 sm:p-2.5 rounded-xl border border-slate-800/60 shrink-0">
-        <div class="flex items-center gap-2">
-          <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Subfolders</span>
-          <span id="subfolderCountBadge" class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">0</span>
-        </div>
-        <div id="subfolderChips" class="flex flex-col gap-2"></div>
-      </div>
-
-      <!-- Toolbar: Controls & Filters -->
-      <div class="flex flex-col gap-1.5 sm:gap-2 bg-slate-900/50 backdrop-blur-md p-2 sm:p-2.5 rounded-xl border border-slate-800/70 shrink-0">
-        
-        <!-- Row 1: Search Scope + Filename Search + Sort -->
-        <div class="flex items-center gap-1.5 sm:gap-2 w-full">
-          
-          <!-- Search Scope Toggle -->
-          <div class="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 text-[10px] sm:text-[11px] font-medium shrink-0 shadow-inner">
-            <button id="scopeCurrentBtn" title="Search only inside current folder" class="px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap">
-              📁 <span class="hidden sm:inline">This Folder</span><span class="sm:hidden">Folder</span>
-            </button>
-            <button id="scopeGlobalBtn" title="Search all folders across entire Library" class="px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap">
-              🌐 <span class="hidden sm:inline">All Folders</span><span class="sm:hidden">All</span>
-            </button>
-          </div>
-
-          <!-- Search Input -->
-          <div class="relative flex-1 min-w-0">
-            <input 
-              type="text" 
-              id="fileSearchInput" 
-              placeholder="Search filename..." 
-              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-7 sm:pl-8 pr-7 py-1 sm:py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
-            />
-            <svg class="w-3.5 h-3.5 absolute left-2 sm:left-2.5 top-1.5 sm:top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            <button id="clearFileSearchBtn" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-white text-xs">✕</button>
-          </div>
-
-          <!-- Sort Select -->
-          <div class="relative shrink-0">
-            <select id="sortSelect" class="bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-2 pr-5 sm:pr-6 py-1 sm:py-1.5 text-[11px] sm:text-xs text-slate-200 focus:outline-none transition cursor-pointer font-sans appearance-none">
-              <option value="name_asc">A → Z</option>
-              <option value="name_desc">Z → A</option>
-              <option value="date_desc">Newest</option>
-              <option value="date_asc">Oldest</option>
-              <option value="size_desc">Largest</option>
-              <option value="size_asc">Smallest</option>
-            </select>
-            <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 absolute right-1 sm:right-1.5 top-2 sm:top-2.5 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-          </div>
-
-          <!-- Thumbnail Size -->
-          <div class="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 shrink-0 shadow-inner" title="Thumbnail size">
-            <button id="tileSizeDownBtn" class="px-1.5 sm:px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition text-base leading-none disabled:opacity-30 disabled:pointer-events-none" title="Smaller thumbnails" aria-label="Smaller thumbnails">−</button>
-            <span id="tileSizeLabel" class="w-6 text-center text-[10px] sm:text-[11px] font-mono font-semibold text-slate-200 select-none">M</span>
-            <button id="tileSizeUpBtn" class="px-1.5 sm:px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition text-base leading-none disabled:opacity-30 disabled:pointer-events-none" title="Larger thumbnails" aria-label="Larger thumbnails">+</button>
-          </div>
-
-        </div>
-
-        <!-- Row 2: Filter Tabs & Action Buttons (Horizontally scrollable if needed) -->
-        <div class="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-          
-          <!-- Media Type Filters -->
-          <div class="flex items-center gap-1 bg-slate-950/70 p-0.5 rounded-lg border border-slate-800 text-[11px] sm:text-xs shrink-0">
-            <button id="filterAllBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap">
-              All <span id="countAllBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
-            </button>
-            <button id="filterVideosBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
-              🎬 Videos <span id="countVideosBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
-            </button>
-            <button id="filterImagesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
-              🖼️ Images <span id="countImagesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
-            </button>
-          </div>
-
-          <!-- Action Buttons (Convert Non-MP4s & Cache Thumbs) -->
+        <!-- Breadcrumb Bar -->
+        <div class="relative z-30 flex items-center justify-between gap-2 bg-slate-900/50 backdrop-blur-md px-3 py-1.5 sm:py-2 rounded-xl border border-slate-800/70 shrink-0">
+          <nav id="breadcrumbNav" class="flex items-center gap-1.5 text-xs sm:text-sm font-medium overflow-x-auto no-scrollbar py-0.5 min-w-0">
+            <span class="text-slate-500">Loading path...</span>
+          </nav>
           <div class="flex items-center gap-1 shrink-0">
-            <!-- Select All / Deselect All -->
-            <button id="selectAllBtn" title="Select every item in the current view" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition flex items-center gap-1 shadow-sm whitespace-nowrap">☑️ Select All</button>
-            <!-- Convert Non-MP4s Button -->
-            <button id="convertAllNonMp4Btn" title="Convert all non-MP4 videos in this folder to standard MP4" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
-              <span>⚙️</span>
-              <span id="convertBtnText">Convert to MP4</span>
+            <button id="newFolderBtn" title="Create a new folder inside the current folder" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 hover:text-emerald-200 border border-emerald-600/30 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shrink-0">
+              <span>＋</span><span class="hidden sm:inline">New Folder</span>
             </button>
+            
+            <div class="relative shrink-0 flex items-center">
+              <button id="uploadDropdownBtn" type="button" title="Upload files or folders" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-sm">
+                <span>⬆️</span><span class="hidden sm:inline">Upload</span>
+              </button>
+              <div id="uploadDropdownMenu" class="hidden absolute right-0 top-full mt-1 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-[60] flex flex-col py-1 overflow-hidden">
+                <label id="uploadFilesBtn" class="relative px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2 cursor-pointer select-none">
+                  <span>📄 Files</span>
+                  <input type="file" id="hiddenUploadFileInput" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/*,video/*,.mp4,.m4v,.mkv,.webm,.avi,.mov,.wmv,.flv,.ts,.m2ts,.mpg,.mpeg,.vob,.3gp,.asf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg,.heic,.heif,.dng,.zip" />
+                </label>
+                <label id="uploadFolderBtn" class="relative px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2 cursor-pointer select-none">
+                  <span>📁 Folder</span>
+                  <input type="file" id="hiddenUploadFolderInput" webkitdirectory directory multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                </label>
+              </div>
+            </div>
+            <button id="refreshFolderBtn" title="Refresh folder" class="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border border-slate-700 transition shrink-0">
+              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+          </div>
+        </div>
 
-            <!-- Pre-generate Folder Thumbs Button -->
-            <button id="generateFolderThumbsBtn" title="Pre-generate thumbnails for all items in this folder" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
-              <span>🖼️</span>
-              <span id="thumbBtnText">Cache Thumbs</span>
-            </button>
+        <!-- Toolbar: Controls & Filters -->
+        <div class="flex flex-col gap-1.5 sm:gap-2 bg-slate-900/50 backdrop-blur-md p-2 sm:p-2.5 rounded-xl border border-slate-800/70 shrink-0">
+          
+          <!-- Row 1: Search Scope + Filename Search + Sort -->
+          <div class="flex items-center gap-1.5 sm:gap-2 w-full">
+            
+            <!-- Search Scope Toggle -->
+            <div class="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 text-[10px] sm:text-[11px] font-medium shrink-0 shadow-inner">
+              <button id="scopeCurrentBtn" title="Search only inside current folder" class="px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap">
+                📁 <span class="hidden sm:inline">This Folder</span><span class="sm:hidden">Folder</span>
+              </button>
+              <button id="scopeGlobalBtn" title="Search all folders across entire Library" class="px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap">
+                🌐 <span class="hidden sm:inline">All Folders</span><span class="sm:hidden">All</span>
+              </button>
+            </div>
 
-            <!-- Optimize Folder WebP Button -->
-            <button id="optimizeFolderWebpBtn" title="Convert and optimize all images in this folder to WebP" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
-              <span>⚡</span>
-              <span id="webpBtnText">Optimize WebP</span>
-            </button>
+            <!-- Search Input -->
+            <div class="relative flex-1 min-w-0">
+              <input 
+                type="text" 
+                id="fileSearchInput" 
+                placeholder="Search filename..." 
+                class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-7 sm:pl-8 pr-7 py-1 sm:py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none transition font-sans"
+              />
+              <svg class="w-3.5 h-3.5 absolute left-2 sm:left-2.5 top-1.5 sm:top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              <button id="clearFileSearchBtn" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
 
-            <!-- Compress Image Folder to ZIP Button -->
-            <button id="compressFolderZipBtn" title="Compress this image folder into a ZIP archive and delete original folder to reduce IO latency" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
-              <span>📦</span>
-              <span id="zipBtnText">Compress to ZIP</span>
-            </button>
+            <!-- Sort Select -->
+            <div class="relative shrink-0">
+              <select id="sortSelect" class="bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-2 pr-5 sm:pr-6 py-1 sm:py-1.5 text-[11px] sm:text-xs text-slate-200 focus:outline-none transition cursor-pointer font-sans appearance-none">
+                <option value="name_asc">A → Z</option>
+                <option value="name_desc">Z → A</option>
+                <option value="date_desc">Newest</option>
+                <option value="date_asc">Oldest</option>
+                <option value="size_desc">Largest</option>
+                <option value="size_asc">Smallest</option>
+              </select>
+              <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 absolute right-1 sm:right-1.5 top-2 sm:top-2.5 pointer-events-none text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
 
-            <!-- Unpack ZIP to Folder Button -->
-            <button id="unpackFolderZipBtn" title="Unpack this ZIP archive back into a regular folder" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-indigo-300 hover:text-white bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
-              <span>📦</span>
-              <span id="unpackBtnText">Unpack to Folder</span>
-            </button>
+            <!-- Thumbnail Size -->
+            <div class="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 shrink-0 shadow-inner" title="Thumbnail size">
+              <button id="tileSizeDownBtn" class="px-1.5 sm:px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition text-base leading-none disabled:opacity-30 disabled:pointer-events-none" title="Smaller thumbnails" aria-label="Smaller thumbnails">−</button>
+              <span id="tileSizeLabel" class="w-6 text-center text-[10px] sm:text-[11px] font-mono font-semibold text-slate-200 select-none">M</span>
+              <button id="tileSizeUpBtn" class="px-1.5 sm:px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition text-base leading-none disabled:opacity-30 disabled:pointer-events-none" title="Larger thumbnails" aria-label="Larger thumbnails">+</button>
+            </div>
+
+          </div>
+
+          <!-- Row 2: Filter Tabs & Action Buttons (Horizontally scrollable if needed) -->
+          <div class="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            
+            <!-- Media Type Filters -->
+            <div class="flex items-center gap-1 bg-slate-950/70 p-0.5 rounded-lg border border-slate-800 text-[11px] sm:text-xs shrink-0">
+              <button id="filterAllBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap">
+                All <span id="countAllBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+              </button>
+              <button id="filterVideosBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
+                🎬 Videos <span id="countVideosBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+              </button>
+              <button id="filterImagesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
+                🖼️ Images <span id="countImagesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+              </button>
+            </div>
+
+            <!-- Action Buttons (Convert Non-MP4s & Cache Thumbs) -->
+            <div class="flex items-center gap-1 shrink-0">
+              <!-- Select All / Deselect All -->
+              <button id="selectAllBtn" title="Select every item in the current view" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition flex items-center gap-1 shadow-sm whitespace-nowrap">☑️ Select All</button>
+              <!-- Convert Non-MP4s Button -->
+              <button id="convertAllNonMp4Btn" title="Convert all non-MP4 videos in this folder to standard MP4" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+                <span>⚙️</span>
+                <span id="convertBtnText">Convert to MP4</span>
+              </button>
+
+              <!-- Pre-generate Folder Thumbs Button -->
+              <button id="generateFolderThumbsBtn" title="Pre-generate thumbnails for all items in this folder" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+                <span>🖼️</span>
+                <span id="thumbBtnText">Cache Thumbs</span>
+              </button>
+
+              <!-- Optimize Folder WebP Button -->
+              <button id="optimizeFolderWebpBtn" title="Convert and optimize all images in this folder to WebP" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+                <span>⚡</span>
+                <span id="webpBtnText">Optimize WebP</span>
+              </button>
+
+              <!-- Compress Image Folder to ZIP Button -->
+              <button id="compressFolderZipBtn" title="Compress this image folder into a ZIP archive and delete original folder to reduce IO latency" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+                <span>📦</span>
+                <span id="zipBtnText">Compress to ZIP</span>
+              </button>
+
+              <!-- Unpack ZIP to Folder Button -->
+              <button id="unpackFolderZipBtn" title="Unpack this ZIP archive back into a regular folder" class="hidden px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-semibold text-[11px] sm:text-xs text-indigo-300 hover:text-white bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+                <span>📦</span>
+                <span id="unpackBtnText">Unpack to Folder</span>
+              </button>
+            </div>
+
           </div>
 
         </div>
 
-      </div>
-
-      <!-- ZIP Extraction Progress Banner -->
-      <div id="zipExtractBanner" class="hidden flex items-center justify-between gap-3 bg-sky-950/60 border border-sky-700/60 p-2.5 sm:p-3 rounded-xl backdrop-blur shrink-0 animate-in fade-in duration-200">
-        <div class="flex items-center gap-2.5 min-w-0 flex-1">
-          <span class="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center justify-between text-xs mb-1">
-              <span class="text-sky-200 font-semibold truncate" id="zipExtractMsg">Unpacking archive to local cache for fast viewing...</span>
-              <span class="text-sky-300 font-mono font-bold text-[11px] shrink-0" id="zipExtractPercent">0%</span>
-            </div>
-            <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-              <div id="zipExtractProgressBar" class="bg-gradient-to-r from-sky-500 to-teal-400 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        <!-- ZIP Extraction Progress Banner -->
+        <div id="zipExtractBanner" class="hidden flex items-center justify-between gap-3 bg-sky-950/60 border border-sky-700/60 p-2.5 sm:p-3 rounded-xl backdrop-blur shrink-0 animate-in fade-in duration-200">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <span class="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="text-sky-200 font-semibold truncate" id="zipExtractMsg">Unpacking archive to local cache for fast viewing...</span>
+                <span class="text-sky-300 font-mono font-bold text-[11px] shrink-0" id="zipExtractPercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="zipExtractProgressBar" class="bg-gradient-to-r from-sky-500 to-teal-400 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Selection Toolbar (shown when items are multi-selected) -->
-      <div id="selectionToolbar" class="hidden flex items-center justify-between gap-2 bg-emerald-600/15 border border-emerald-600/30 p-2 sm:p-2.5 rounded-xl shrink-0">
-        <span class="text-xs font-semibold text-emerald-300 shrink-0"><span id="selectionCount">0</span> selected</span>
-        <div class="flex items-center gap-1 overflow-x-auto no-scrollbar">
-          <button id="selectionMoveBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0">📁 Move</button>
-          <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
-          <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
-          <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
-          <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
+        <!-- Selection Toolbar (shown when items are multi-selected) -->
+        <div id="selectionToolbar" class="hidden flex items-center justify-between gap-2 bg-emerald-600/15 border border-emerald-600/30 p-2 sm:p-2.5 rounded-xl shrink-0">
+          <span class="text-xs font-semibold text-emerald-300 shrink-0"><span id="selectionCount">0</span> selected</span>
+          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar">
+            <button id="selectionMoveBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0">📁 Move</button>
+            <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
+            <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
+            <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
+            <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
+          </div>
         </div>
+
       </div>
 
-      <!-- Media Grid -->
-      <div id="mediaGrid" class="flex flex-col gap-2.5 sm:gap-4">
-        <!-- Rendered dynamically -->
-      </div>
+      <!-- Scrollable Gallery Stage Area -->
+      <div id="galleryContentArea" class="flex-1 flex flex-col min-w-0 p-2.5 sm:p-4 md:p-6 gap-2 sm:gap-3.5">
 
-      <!-- Loading / Infinite Scroll Sentinel -->
-      <div id="infiniteScrollSentinel" class="py-6 flex flex-col items-center justify-center text-slate-500 text-xs">
-        <div id="loadingMoreSpinner" class="hidden flex items-center gap-2 text-emerald-400">
-          <span class="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
-          <span>Loading more items...</span>
+        <!-- Nested Subfolders Chips Section (if any) -->
+        <div id="subfoldersContainer" class="hidden flex flex-col gap-1 bg-slate-900/40 p-2 sm:p-2.5 rounded-xl border border-slate-800/60 shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">Subfolders</span>
+            <span id="subfolderCountBadge" class="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono">0</span>
+          </div>
+          <div id="subfolderChips" class="flex flex-col gap-2"></div>
         </div>
+
+        <!-- Media Grid -->
+        <div id="mediaGrid" class="flex flex-col gap-2.5 sm:gap-4">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Loading / Infinite Scroll Sentinel -->
+        <div id="infiniteScrollSentinel" class="py-6 flex flex-col items-center justify-center text-slate-500 text-xs">
+          <div id="loadingMoreSpinner" class="hidden flex items-center gap-2 text-emerald-400">
+            <span class="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
+            <span>Loading more items...</span>
+          </div>
+        </div>
+
+        <!-- Empty State View -->
+        <div id="emptyState" class="hidden flex flex-col items-center justify-center py-20 text-center gap-3">
+          <div class="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl">
+            📂
+          </div>
+          <h3 class="text-base font-semibold text-white">No Media Found</h3>
+          <p id="emptyStateMsg" class="text-xs text-slate-400 max-w-sm">There are no video or image files in this folder.</p>
+        </div>
+
       </div>
 
-      <!-- Empty State View -->
-      <div id="emptyState" class="hidden flex flex-col items-center justify-center py-20 text-center gap-3">
-        <div class="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-2xl">
-          📂
-        </div>
-        <h3 class="text-base font-semibold text-white">No Media Found</h3>
-        <p id="emptyStateMsg" class="text-xs text-slate-400 max-w-sm">There are no video or image files in this folder.</p>
-      </div>
+      <!-- Floating Scroll to Top Button -->
+      <button 
+        id="scrollToTopBtn" 
+        type="button"
+        title="Scroll to top" 
+        aria-label="Scroll to top"
+        class="fixed bottom-6 right-6 z-40 p-2.5 sm:p-3 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-xl border border-emerald-400/40 backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 transform translate-y-3 hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer group"
+      >
+        <svg class="w-4 h-4 sm:w-5 sm:h-5 transition-transform group-hover:-translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+        </svg>
+      </button>
 
     </main>
 
@@ -921,7 +944,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=42"></script>
+  <script type="module" src="/static/dist/library.js?v=43"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>

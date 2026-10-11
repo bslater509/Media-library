@@ -143,6 +143,11 @@
     duplicatesTotalSets: document.getElementById('duplicatesTotalSets'),
     refreshDuplicatesBtn: document.getElementById('refreshDuplicatesBtn'),
 
+    mainStage: document.getElementById('mainStage'),
+    libraryStickyHeader: document.getElementById('libraryStickyHeader'),
+    galleryContentArea: document.getElementById('galleryContentArea'),
+    scrollToTopBtn: document.getElementById('scrollToTopBtn'),
+
     headerPathSubtitle: document.getElementById('headerPathSubtitle'),
     folderCountBadge: document.getElementById('folderCountBadge'),
     folderSearchInput: document.getElementById('folderSearchInput'),
