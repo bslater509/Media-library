@@ -1,5 +1,5 @@
 import "../../../static/styles.css";
-import { showToast, escapeHtml, safeAttrEscape, formatBytes } from './utils.js';
+import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, state, els } from './state.js';
 
 
@@ -924,6 +924,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
       const isVid = file.type === 'video';
       const extLabel = file.ext.toUpperCase().replace('.', '');
+      const resLabel = getResolutionLabel(file.width, file.height);
+      const durLabel = isVid && file.duration ? formatDuration(file.duration) : '';
+      const dimsLabel = (file.width && file.height) ? `${file.width}×${file.height}` : '';
 
       card.innerHTML = `
         <!-- Thumbnail / Player Trigger Area -->
@@ -943,14 +946,31 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
                 <svg class="w-4 h-4 sm:w-5 sm:h-5 ml-0.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               </div>
             </div>
-            <span class="card-ext-badge absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-md text-[9px] font-mono font-bold ${file.needs_transcode ? 'text-amber-400 border-amber-500/30' : 'text-emerald-400 border-emerald-500/30'} border">
+          ` : ''}
+
+          <!-- Top-Left Badges (Extension, Resolution, FPS) -->
+          <div class="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
+            <span class="card-ext-badge px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold ${file.needs_transcode ? 'text-amber-400 border-amber-500/30' : (isVid ? 'text-emerald-400 border-emerald-500/30' : 'text-slate-300 border-slate-700')} border">
               ${extLabel}
             </span>
-          ` : `
-            <span class="card-ext-badge absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-md text-[9px] font-mono font-bold text-slate-300 border border-slate-700">
-              ${extLabel}
+            ${resLabel ? `
+              <span class="card-res-badge px-1.5 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[9px] font-mono font-bold text-sky-300 border border-sky-500/30 shadow">
+                ${resLabel}
+              </span>
+            ` : ''}
+            ${isVid && file.fps && file.fps >= 50 ? `
+              <span class="card-fps-badge px-1 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[8px] font-mono font-semibold text-slate-300 border border-slate-700 shadow hidden xs:inline">
+                ${Math.round(file.fps)}fps
+              </span>
+            ` : ''}
+          </div>
+
+          <!-- Bottom-Right Video Duration Badge -->
+          ${durLabel ? `
+            <span class="card-duration-badge absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-md text-[10px] font-mono font-bold text-white shadow pointer-events-none z-10 border border-white/10">
+              ${durLabel}
             </span>
-          `}
+          ` : ''}
 
           <!-- Live Transcode Overlay (shown when active) -->
           <div class="transcode-overlay hidden absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-3 text-center gap-1.5 z-10">
@@ -974,6 +994,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
           <!-- Quick Action Buttons on Hover -->
           <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+            <button 
+              data-action="info" 
+              data-idx="${globalIdx}" 
+              title="Media details & info" 
+              class="p-1 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
+            >
+              ℹ️
+            </button>
             <button 
               data-action="rename" 
               data-idx="${globalIdx}" 
@@ -1018,8 +1046,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
               ${file.name}
             </span>
           </div>
-          <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+          <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono gap-1">
             <span class="card-filesize truncate whitespace-nowrap min-w-0">${file.size_formatted}</span>
+            ${dimsLabel ? `
+              <span class="text-slate-400 text-[9px] truncate" title="${dimsLabel} px">
+                ${dimsLabel}
+              </span>
+            ` : ''}
             <span class="shrink-0 text-[9px] uppercase px-1 rounded ${isVid ? 'text-emerald-400 bg-emerald-950/60' : 'text-slate-400 bg-slate-800'}">
               ${file.type}
             </span>
@@ -1077,7 +1110,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
           const f = state.filteredFiles[idx];
           if (!f) return;
 
-          if (action === 'rename') {
+          if (action === 'info') {
+            openMediaInfoModal(f);
+          } else if (action === 'rename') {
             openRenameModal(f.path, f.name);
           } else if (action === 'delete') {
             openDeleteModal(f.path, f.name, f.size_formatted);
@@ -1106,22 +1141,55 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
     const items = state.filteredFiles.map((f, idx) => {
       const isVid = f.type === 'video';
+      const resLabel = getResolutionLabel(f.width, f.height);
+      const durLabel = isVid && f.duration ? formatDuration(f.duration) : '';
       return {
         src: f.media_url,
         thumb: f.thumb_url,
         type: isVid ? 'html5video' : 'image',
         caption: `
-          <div class="flex items-center justify-between gap-4 w-full max-w-4xl mx-auto">
-            <div class="flex items-center gap-2 truncate">
-              <span class="font-mono text-xs sm:text-sm text-white truncate">${f.name}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">${f.size_formatted}</span>
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 w-full max-w-5xl mx-auto py-1">
+            <div class="flex items-center gap-2 min-w-0 flex-1 truncate">
+              <span class="font-mono text-xs sm:text-sm text-white font-medium truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono shrink-0">${f.size_formatted}</span>
+              ${resLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/50 font-mono shrink-0 font-bold">${resLabel}</span>` : ''}
+              ${durLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono shrink-0">${durLabel}</span>` : ''}
             </div>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <button onclick="window.libraryApp.openRenameModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-600 text-slate-200 transition">
-                ✏️ Rename
+            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto flex-wrap">
+              ${isVid ? `
+                <div class="flex items-center bg-slate-800 hover:bg-slate-750 px-2 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 gap-1" title="Playback Speed ([ and ])">
+                  <span class="text-[10px] text-slate-400 font-mono hidden xs:inline">Speed:</span>
+                  <select onchange="window.libraryApp.setLightboxVideoSpeed(this.value)" class="lightbox-speed-select bg-transparent text-white font-mono text-xs focus:outline-none cursor-pointer">
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1" selected>1.0x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2.0x</option>
+                  </select>
+                </div>
+                <button onclick="window.libraryApp.toggleLightboxVideoLoop()" class="lightbox-loop-btn px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Toggle Loop (L)">
+                  <span>🔁</span>
+                  <span class="hidden sm:inline">Loop</span>
+                </button>
+              ` : ''}
+              <button onclick="window.libraryApp.openMediaInfoModalByPath('${safeAttrEscape(f.path)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Media Details (I)">
+                <span>ℹ️</span>
+                <span class="hidden md:inline">Info</span>
               </button>
-              <button onclick="window.libraryApp.openDeleteModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}', '${safeAttrEscape(f.size_formatted)}')" class="px-2.5 py-1 bg-red-600/80 hover:bg-red-600 text-xs font-semibold rounded-lg text-white transition">
-                🗑️ Delete
+              <a href="${f.media_url}" download="${safeAttrEscape(f.name)}" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1" title="Download File">
+                <span>⬇️</span>
+                <span class="hidden md:inline">Download</span>
+              </a>
+              <button onclick="window.libraryApp.openMoveModalFromLightbox('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Move File">
+                <span>📁</span>
+                <span class="hidden md:inline">Move</span>
+              </button>
+              <button onclick="window.libraryApp.openRenameModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition cursor-pointer" title="Rename (R)">
+                ✏️
+              </button>
+              <button onclick="window.libraryApp.openDeleteModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}', '${safeAttrEscape(f.size_formatted)}')" class="px-2.5 py-1 bg-red-600/80 hover:bg-red-600 text-xs font-semibold rounded-lg text-white transition cursor-pointer" title="Delete (D)">
+                🗑️
               </button>
             </div>
           </div>
@@ -1131,6 +1199,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
           name: f.name,
           size_formatted: f.size_formatted,
           index: idx,
+          file: f,
         }
       };
     });
@@ -1151,6 +1220,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         init: (fancybox) => {
           state.fancyboxInstance = fancybox;
         },
+        'Carousel.change': () => {
+          setTimeout(syncActiveLightboxVideo, 50);
+        },
+        'Carousel.ready': () => {
+          setTimeout(syncActiveLightboxVideo, 50);
+        },
         destroy: () => {
           state.fancyboxInstance = null;
         }
@@ -1158,9 +1233,232 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     });
   }
 
+  function syncActiveLightboxVideo() {
+    const video = document.querySelector('.fancybox__slide.is-selected video') ||
+                  document.querySelector('.fancybox__container video');
+    if (!video) return;
+
+    try {
+      const savedVol = localStorage.getItem('lib_player_volume');
+      if (savedVol !== null) video.volume = parseFloat(savedVol);
+      const savedMuted = localStorage.getItem('lib_player_muted');
+      if (savedMuted === 'true') video.muted = true;
+    } catch (e) {}
+
+    const savedSpeed = state.lightboxPlaybackSpeed || 1.0;
+    video.playbackRate = savedSpeed;
+    const speedSelect = document.querySelector('.lightbox-speed-select');
+    if (speedSelect) speedSelect.value = String(savedSpeed);
+
+    video.loop = Boolean(state.lightboxVideoLoop);
+    const loopBtns = document.querySelectorAll('.lightbox-loop-btn');
+    loopBtns.forEach(btn => {
+      btn.classList.toggle('text-emerald-300', video.loop);
+      btn.classList.toggle('border-emerald-500/50', video.loop);
+      btn.classList.toggle('bg-emerald-950/40', video.loop);
+    });
+
+    video.onvolumechange = () => {
+      try {
+        localStorage.setItem('lib_player_volume', String(video.volume));
+        localStorage.setItem('lib_player_muted', String(video.muted));
+      } catch (e) {}
+    };
+  }
+
+  function setLightboxVideoSpeed(speed) {
+    const val = parseFloat(speed) || 1.0;
+    state.lightboxPlaybackSpeed = val;
+    const video = document.querySelector('.fancybox__slide.is-selected video') ||
+                  document.querySelector('.fancybox__container video');
+    if (video) {
+      video.playbackRate = val;
+      showToast(`Speed: ${val}x`, 'info');
+    }
+    const speedSelect = document.querySelector('.lightbox-speed-select');
+    if (speedSelect) speedSelect.value = String(val);
+  }
+
+  function toggleLightboxVideoLoop() {
+    state.lightboxVideoLoop = !state.lightboxVideoLoop;
+    const video = document.querySelector('.fancybox__slide.is-selected video') ||
+                  document.querySelector('.fancybox__container video');
+    if (video) {
+      video.loop = state.lightboxVideoLoop;
+    }
+    const loopBtns = document.querySelectorAll('.lightbox-loop-btn');
+    loopBtns.forEach(btn => {
+      btn.classList.toggle('text-emerald-300', state.lightboxVideoLoop);
+      btn.classList.toggle('border-emerald-500/50', state.lightboxVideoLoop);
+      btn.classList.toggle('bg-emerald-950/40', state.lightboxVideoLoop);
+    });
+    showToast(state.lightboxVideoLoop ? 'Video loop enabled' : 'Video loop disabled', 'info');
+  }
+
+  function openMoveModalFromLightbox(path, name) {
+    const decodedPath = decodeURIComponent(path);
+    const decodedName = decodeURIComponent(name);
+    openMoveModal({ path: decodedPath, name: decodedName, kind: 'file' });
+  }
+
+  function openMediaInfoModalByPath(path) {
+    const decodedPath = decodeURIComponent(path);
+    const file = (state.allFiles && state.allFiles.find(f => f.path === decodedPath)) ||
+                 (state.filteredFiles && state.filteredFiles.find(f => f.path === decodedPath));
+    if (file) {
+      openMediaInfoModal(file);
+    } else {
+      showToast('Could not load file metadata', 'error');
+    }
+  }
+
+  function openMediaInfoModal(fileOrTarget) {
+    if (!fileOrTarget) return;
+    const path = fileOrTarget.path;
+    const file = (state.allFiles && state.allFiles.find(f => f.path === path)) ||
+                 (state.filteredFiles && state.filteredFiles.find(f => f.path === path)) ||
+                 fileOrTarget;
+
+    state.currentInfoFile = file;
+
+    const isVid = file.type === 'video';
+    const isImg = file.type === 'image';
+    const resLabel = getResolutionLabel(file.width, file.height);
+    const aspect = getAspectRatio(file.width, file.height);
+
+    if (els.infoModalIcon) {
+      els.infoModalIcon.textContent = isVid ? '🎬' : (isImg ? '🖼️' : '📄');
+    }
+    if (els.infoModalTitle) {
+      els.infoModalTitle.textContent = isVid ? 'Video Details' : (isImg ? 'Image Details' : 'File Details');
+    }
+    if (els.infoModalThumb) {
+      els.infoModalThumb.src = file.thumb_url || '';
+    }
+    if (els.infoModalFileName) {
+      els.infoModalFileName.textContent = file.name || 'Unknown';
+      els.infoModalFileName.title = file.name || '';
+    }
+    if (els.infoModalSizeBadge) {
+      els.infoModalSizeBadge.textContent = file.size_formatted || (file.size ? formatBytes(file.size) : '0 B');
+    }
+    if (els.infoModalTypeBadge) {
+      els.infoModalTypeBadge.textContent = (file.type || 'FILE').toUpperCase();
+    }
+    if (els.infoModalResBadge) {
+      if (resLabel) {
+        els.infoModalResBadge.textContent = resLabel;
+        els.infoModalResBadge.classList.remove('hidden');
+      } else {
+        els.infoModalResBadge.classList.add('hidden');
+      }
+    }
+
+    if (els.infoModalResolution) {
+      if (file.width && file.height) {
+        els.infoModalResolution.textContent = `${file.width} × ${file.height} px`;
+      } else {
+        els.infoModalResolution.textContent = 'Not probed';
+      }
+    }
+    if (els.infoModalAspectRatio) {
+      if (aspect) {
+        els.infoModalAspectRatio.textContent = `Aspect Ratio: ${aspect}`;
+      } else {
+        els.infoModalAspectRatio.textContent = '';
+      }
+    }
+
+    if (els.infoModalDuration) {
+      if (file.duration) {
+        els.infoModalDuration.textContent = `${formatDuration(file.duration)} (${Math.round(file.duration)}s)`;
+      } else {
+        els.infoModalDuration.textContent = isVid ? 'Unknown' : 'N/A';
+      }
+    }
+    if (els.infoModalBitrate) {
+      if (file.duration && file.size) {
+        els.infoModalBitrate.textContent = `Bitrate: ${formatBitrate(file.size, file.duration)}`;
+      } else {
+        els.infoModalBitrate.textContent = '';
+      }
+    }
+
+    if (els.infoModalVideoCodec) {
+      if (file.video_codec) {
+        els.infoModalVideoCodec.textContent = file.video_codec.toUpperCase();
+      } else {
+        els.infoModalVideoCodec.textContent = isVid ? 'Unknown' : 'N/A';
+      }
+    }
+    if (els.infoModalFps) {
+      if (file.fps) {
+        els.infoModalFps.textContent = `${Number(file.fps).toFixed(file.fps % 1 === 0 ? 0 : 2)} fps`;
+      } else {
+        els.infoModalFps.textContent = '';
+      }
+    }
+
+    if (els.infoModalAudioCodec) {
+      if (file.audio_codec) {
+        els.infoModalAudioCodec.textContent = file.audio_codec.toUpperCase();
+      } else {
+        els.infoModalAudioCodec.textContent = isVid ? 'None / Unknown' : 'N/A';
+      }
+    }
+    if (els.infoModalContainer) {
+      if (file.ext) {
+        els.infoModalContainer.textContent = `${file.ext.toUpperCase()} container`;
+      } else {
+        els.infoModalContainer.textContent = '';
+      }
+    }
+
+    if (els.infoModalCaptureTime) {
+      els.infoModalCaptureTime.textContent = file.capture_time ? formatTimestamp(file.capture_time) : 'Not in EXIF / Metadata';
+    }
+    if (els.infoModalModifiedTime) {
+      els.infoModalModifiedTime.textContent = file.mtime ? formatTimestamp(file.mtime) : 'Unknown';
+    }
+    if (els.infoModalPath) {
+      els.infoModalPath.textContent = file.path || '';
+    }
+
+    if (els.mediaInfoModal) {
+      els.mediaInfoModal.classList.remove('hidden');
+    }
+  }
+
+  function closeMediaInfoModal() {
+    if (els.mediaInfoModal) {
+      els.mediaInfoModal.classList.add('hidden');
+    }
+    state.currentInfoFile = null;
+  }
+
+  function downloadMediaFile(target) {
+    if (!target) return;
+    const mediaUrl = target.media_url || `/api/backup/media?path=${encodeURIComponent(target.path)}`;
+    const link = document.createElement('a');
+    link.href = mediaUrl;
+    link.download = target.name || 'media';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Downloading "${target.name || 'file'}"...`, 'info');
+  }
+
   // Keyboard Shortcuts Handler
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    if (els.mediaInfoModal && !els.mediaInfoModal.classList.contains('hidden')) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMediaInfoModal();
+        return;
+      }
+    }
 
     // Ctrl/Cmd+A selects (or deselects) every item in the current filtered view.
     if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')
@@ -1199,7 +1497,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       const activeSlide = state.fancyboxInstance.getSlide();
       if (!activeSlide || !activeSlide.customData) return;
 
-      const { path, name, size_formatted } = activeSlide.customData;
+      const { path, name, size_formatted, file } = activeSlide.customData;
+      const activeVideo = document.querySelector('.fancybox__slide.is-selected video') ||
+                          document.querySelector('.fancybox__container video');
 
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
@@ -1207,6 +1507,44 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       } else if (e.key === 'd' || e.key === 'D') {
         e.preventDefault();
         openDeleteModal(path, name, size_formatted);
+      } else if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        if (file) openMediaInfoModal(file);
+        else openMediaInfoModalByPath(path);
+      } else if (e.key === ' ' && activeVideo) {
+        e.preventDefault();
+        if (activeVideo.paused) activeVideo.play().catch(() => {});
+        else activeVideo.pause();
+      } else if ((e.key === 'm' || e.key === 'M') && activeVideo) {
+        e.preventDefault();
+        activeVideo.muted = !activeVideo.muted;
+        try {
+          localStorage.setItem('lib_player_muted', String(activeVideo.muted));
+        } catch (err) {}
+        showToast(activeVideo.muted ? 'Muted' : 'Unmuted', 'info');
+      } else if ((e.key === 'l' || e.key === 'L') && activeVideo) {
+        e.preventDefault();
+        toggleLightboxVideoLoop();
+      } else if (e.key === '[' && activeVideo) {
+        e.preventDefault();
+        const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+        const cur = activeVideo.playbackRate || 1.0;
+        const prev = speeds.slice().reverse().find(s => s < cur - 0.01) || speeds[0];
+        setLightboxVideoSpeed(prev);
+      } else if (e.key === ']' && activeVideo) {
+        e.preventDefault();
+        const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+        const cur = activeVideo.playbackRate || 1.0;
+        const next = speeds.find(s => s > cur + 0.01) || speeds[speeds.length - 1];
+        setLightboxVideoSpeed(next);
+      } else if (e.key === ',' && activeVideo) {
+        e.preventDefault();
+        const step = activeVideo.paused ? 0.05 : 5.0;
+        activeVideo.currentTime = Math.max(0, activeVideo.currentTime - step);
+      } else if (e.key === '.' && activeVideo) {
+        e.preventDefault();
+        const step = activeVideo.paused ? 0.05 : 5.0;
+        activeVideo.currentTime = Math.min(activeVideo.duration || 999999, activeVideo.currentTime + step);
       }
     }
   });
@@ -1481,6 +1819,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (action === 'move') openMoveModal(target);
     else if (action === 'rename') openRenameModal(target.path, target.name, target.kind);
     else if (action === 'delete') openDeleteModal(target.path, target.name, target.size_formatted || '', target.kind);
+    else if (action === 'info') openMediaInfoModal(target);
+    else if (action === 'download') downloadMediaFile(target);
   }
 
   // Tap-and-hold (touch) support: opens the same context menu as right-click.
@@ -1630,6 +1970,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       showToast(`Queued ${data.queued} move(s)`, 'success');
       els.moveConflictModal.classList.add('hidden');
       closeMoveModal();
+      if (state.fancyboxInstance) {
+        Fancybox.close();
+      }
       awaitLibraryOpsAndRefresh((data.tasks || []).map(t => t.task_id), state.currentPath);
     } catch (err) {
       showToast(err.message || 'Error moving', 'error');
@@ -5279,6 +5622,42 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (els.confirmConvertAllModalBtn) els.confirmConvertAllModalBtn.addEventListener('click', submitConvertAll);
     if (els.cancelAllTranscodesBtn) els.cancelAllTranscodesBtn.addEventListener('click', cancelAllTranscodes);
 
+    // Media Info Modal Events
+    if (els.closeInfoModalBtn) els.closeInfoModalBtn.addEventListener('click', closeMediaInfoModal);
+    if (els.infoModalCloseBtn) els.infoModalCloseBtn.addEventListener('click', closeMediaInfoModal);
+    if (els.mediaInfoModal) {
+      els.mediaInfoModal.addEventListener('click', (e) => {
+        if (e.target === els.mediaInfoModal) closeMediaInfoModal();
+      });
+    }
+    if (els.infoModalCopyPathBtn) {
+      els.infoModalCopyPathBtn.addEventListener('click', () => {
+        if (state.currentInfoFile && state.currentInfoFile.path) {
+          navigator.clipboard.writeText(state.currentInfoFile.path).then(() => {
+            showToast('Path copied to clipboard', 'success');
+          }).catch(() => {
+            showToast('Failed to copy path', 'error');
+          });
+        }
+      });
+    }
+    if (els.infoModalDownloadBtn) {
+      els.infoModalDownloadBtn.addEventListener('click', () => {
+        if (state.currentInfoFile) {
+          downloadMediaFile(state.currentInfoFile);
+        }
+      });
+    }
+    if (els.infoModalMoveBtn) {
+      els.infoModalMoveBtn.addEventListener('click', () => {
+        if (state.currentInfoFile) {
+          const file = state.currentInfoFile;
+          closeMediaInfoModal();
+          openMoveModal({ path: file.path, name: file.name, kind: 'file' });
+        }
+      });
+    }
+
     // Duplicates Review Modal Events
     if (els.openDuplicatesBtn) els.openDuplicatesBtn.addEventListener('click', openDuplicatesModal);
     if (els.closeDuplicatesModalBtn) els.closeDuplicatesModalBtn.addEventListener('click', closeDuplicatesModal);
@@ -5792,6 +6171,13 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     closeBatchZipModal,
     toggleBatchZipPause,
     cancelBatchZip,
+    openMediaInfoModal,
+    closeMediaInfoModal,
+    openMediaInfoModalByPath,
+    downloadMediaFile,
+    setLightboxVideoSpeed,
+    toggleLightboxVideoLoop,
+    openMoveModalFromLightbox,
   };
 
   // Start app when DOM is ready

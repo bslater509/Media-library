@@ -932,6 +932,8 @@
 
   <!-- Right-click Context Menu -->
   <div id="contextMenu" class="hidden fixed z-[60] min-w-[160px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5">
+    <button data-cm="info" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">ℹ️ Media Info</button>
+    <button data-cm="download" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">⬇️ Download</button>
     <button data-cm="move" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">📁 Move to…</button>
     <button data-cm="rename" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">✏️ Rename</button>
     <button data-cm="delete" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-red-300 hover:bg-red-900/40 text-left transition">🗑️ Delete</button>
@@ -964,7 +966,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=31"></script>
+  <script type="module" src="/static/dist/library.js?v=32"></script>
   {{include 'partials/library_modals.html'}}
 </body>
 </html>

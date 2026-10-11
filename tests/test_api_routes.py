@@ -11,6 +11,10 @@ def test_html_views(api_client):
     assert "tasksTabBtnWorkers" in res_root.text
     assert "tasksTabBtnTools" in res_root.text
     assert "activeQueuesEmptyState" in res_root.text
+    assert "mediaInfoModal" in res_root.text
+    assert 'data-cm="info"' in res_root.text
+    assert 'data-cm="download"' in res_root.text
+    assert "library.js?v=32" in res_root.text
 
     res_sorter = api_client.get("/sorter")
     assert res_sorter.status_code == 200

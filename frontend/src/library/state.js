@@ -102,6 +102,9 @@
       verifiedReclaimableFormatted: '0 B',
       autoDeleteOnMatch: (localStorage.getItem('lib_auto_delete_duplicates') === 'true'),
     },
+    currentInfoFile: null,
+    lightboxPlaybackSpeed: 1.0,
+    lightboxVideoLoop: false,
   };
 
   // DOM Elements
@@ -428,4 +431,30 @@
     bulkRenamePreviewList: document.getElementById('bulkRenamePreviewList'),
     cancelBulkRenameBtn: document.getElementById('cancelBulkRenameBtn'),
     applyBulkRenameBtn: document.getElementById('applyBulkRenameBtn'),
+
+    // Media Info Modal Elements
+    mediaInfoModal: document.getElementById('mediaInfoModal'),
+    closeInfoModalBtn: document.getElementById('closeInfoModalBtn'),
+    infoModalCloseBtn: document.getElementById('infoModalCloseBtn'),
+    infoModalIcon: document.getElementById('infoModalIcon'),
+    infoModalTitle: document.getElementById('infoModalTitle'),
+    infoModalThumb: document.getElementById('infoModalThumb'),
+    infoModalFileName: document.getElementById('infoModalFileName'),
+    infoModalSizeBadge: document.getElementById('infoModalSizeBadge'),
+    infoModalTypeBadge: document.getElementById('infoModalTypeBadge'),
+    infoModalResBadge: document.getElementById('infoModalResBadge'),
+    infoModalResolution: document.getElementById('infoModalResolution'),
+    infoModalAspectRatio: document.getElementById('infoModalAspectRatio'),
+    infoModalDuration: document.getElementById('infoModalDuration'),
+    infoModalBitrate: document.getElementById('infoModalBitrate'),
+    infoModalVideoCodec: document.getElementById('infoModalVideoCodec'),
+    infoModalFps: document.getElementById('infoModalFps'),
+    infoModalAudioCodec: document.getElementById('infoModalAudioCodec'),
+    infoModalContainer: document.getElementById('infoModalContainer'),
+    infoModalCaptureTime: document.getElementById('infoModalCaptureTime'),
+    infoModalModifiedTime: document.getElementById('infoModalModifiedTime'),
+    infoModalPath: document.getElementById('infoModalPath'),
+    infoModalCopyPathBtn: document.getElementById('infoModalCopyPathBtn'),
+    infoModalDownloadBtn: document.getElementById('infoModalDownloadBtn'),
+    infoModalMoveBtn: document.getElementById('infoModalMoveBtn'),
   };

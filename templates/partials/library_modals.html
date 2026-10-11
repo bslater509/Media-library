@@ -29,7 +29,7 @@
     </div>
   </div>
 
-<div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+<div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
@@ -190,7 +190,7 @@
     </div>
   </div>
 
-<div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+<div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-red-900/50 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 text-lg">
@@ -232,7 +232,7 @@
     </div>
   </div>
 
-<div id="moveModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+<div id="moveModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
@@ -817,5 +817,97 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Media Info Inspector Modal -->
+  <div id="mediaInfoModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 max-h-[90vh]" onclick="event.stopPropagation()">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950/70 shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <span id="infoModalIcon" class="text-base sm:text-lg">🎬</span>
+          <h3 id="infoModalTitle" class="text-xs sm:text-sm font-bold text-white truncate">Media Details</h3>
+        </div>
+        <button id="closeInfoModalBtn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition text-base" title="Close">✕</button>
+      </div>
+
+      <!-- Scrollable Body -->
+      <div class="p-4 sm:p-5 overflow-y-auto flex flex-col gap-4 text-xs">
+        <!-- Media Quick Banner / Preview Card -->
+        <div class="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+          <div class="w-16 h-16 rounded-lg bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 border border-slate-800">
+            <img id="infoModalThumb" src="" alt="Thumbnail" class="w-full h-full object-cover" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\'><rect width=\'18\' height=\'18\' x=\'3\' y=\'3\' rx=\'2\'/><circle cx=\'8.5\' cy=\'8.5\' r=\'1.5\'/><path d=\'m21 15-5-5L5 21\'/></svg>';" />
+          </div>
+          <div class="flex flex-col min-w-0 flex-1 gap-1">
+            <span id="infoModalFileName" class="text-xs sm:text-sm font-semibold text-white font-mono truncate" title="">filename.mp4</span>
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-slate-400">
+              <span id="infoModalSizeBadge" class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">0 MB</span>
+              <span id="infoModalTypeBadge" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/50 uppercase">VIDEO</span>
+              <span id="infoModalResBadge" class="hidden px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/50 font-bold">1080p</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Specs Grid -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-0.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Resolution</span>
+            <span id="infoModalResolution" class="text-xs font-mono text-slate-200 font-semibold truncate">--</span>
+            <span id="infoModalAspectRatio" class="text-[10px] text-slate-400 font-mono truncate">--</span>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-0.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Duration</span>
+            <span id="infoModalDuration" class="text-xs font-mono text-slate-200 font-semibold truncate">--</span>
+            <span id="infoModalBitrate" class="text-[10px] text-slate-400 font-mono truncate">--</span>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-0.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Video Codec</span>
+            <span id="infoModalVideoCodec" class="text-xs font-mono text-slate-200 font-semibold truncate">--</span>
+            <span id="infoModalFps" class="text-[10px] text-slate-400 font-mono truncate">--</span>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 flex flex-col gap-0.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Audio Codec</span>
+            <span id="infoModalAudioCodec" class="text-xs font-mono text-slate-200 font-semibold truncate">--</span>
+            <span id="infoModalContainer" class="text-[10px] text-slate-400 font-mono truncate">--</span>
+          </div>
+        </div>
+
+        <!-- Dates & Paths Section -->
+        <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="text-slate-400">Date Captured / EXIF:</span>
+            <span id="infoModalCaptureTime" class="font-mono text-slate-300">--</span>
+          </div>
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="text-slate-400">Last Modified:</span>
+            <span id="infoModalModifiedTime" class="font-mono text-slate-300">--</span>
+          </div>
+          <div class="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400 text-[11px]">File Location:</span>
+              <button id="infoModalCopyPathBtn" class="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-sans cursor-pointer">
+                <span>📋</span> Copy Path
+              </button>
+            </div>
+            <span id="infoModalPath" class="font-mono text-[11px] text-slate-300 break-all select-all bg-slate-900 p-1.5 rounded border border-slate-800">/path/to/file.mp4</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons Footer -->
+      <div class="px-4 sm:px-5 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between gap-2 shrink-0">
+        <div class="flex items-center gap-1.5">
+          <button id="infoModalDownloadBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1 cursor-pointer">
+            <span>⬇️</span> Download
+          </button>
+          <button id="infoModalMoveBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1 cursor-pointer">
+            <span>📁</span> Move
+          </button>
+        </div>
+        <button id="infoModalCloseBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm cursor-pointer">
+          Close
+        </button>
+      </div>
     </div>
   </div>
