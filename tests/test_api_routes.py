@@ -15,7 +15,7 @@ def test_html_views(api_client):
     assert "mediaInfoModal" in res_root.text
     assert 'data-cm="info"' in res_root.text
     assert 'data-cm="download"' in res_root.text
-    assert "library.js?v=41" in res_root.text
+    assert "library.js?v=42" in res_root.text
     assert "thumbnailChooserModal" in res_root.text
     assert "sticky top-0 z-50" in res_root.text
     assert "h-[100dvh] overflow-hidden" in res_root.text

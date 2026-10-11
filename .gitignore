@@ -23,6 +23,8 @@ __pycache__/
 *.so
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 
 # Node.js dependencies
 node_modules/

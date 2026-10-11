@@ -61,7 +61,7 @@
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
 - **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
 - **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video
-- **Testing**: Pytest (v8.0+) with `conftest.py` sandboxing fixtures
+- **Testing**: Backend: Pytest (v8.0+) with `pytest-cov` and `conftest.py` sandboxing fixtures; Frontend: Vitest (v1.6+) with `happy-dom` DOM simulation under `frontend/tests/`.
 
 ---
 
@@ -93,11 +93,12 @@ The target media collection may reside on a remote FUSE filesystem (such as pClo
 - Schema migrations must be idempotent: modify `init_backup_db()` in `media_library/db/schema.py` using `ALTER TABLE ... ADD COLUMN ...` wrapped in `try...except sqlite3.OperationalError: pass`.
 
 ### Rule 4: Test Suite Verification
-Before completing any task, execute the test suite:
+Before completing any task, execute the backend and frontend test suites:
 ```bash
 ./venv/bin/pytest
+npm test
 ```
-All existing tests must pass, and new features must include unit or integration tests under `tests/`.
+All existing tests must pass, and new features must include unit or integration tests under `tests/` or `frontend/tests/`.
 
 ### Rule 5: Keep Live Server Running Latest Code
 Because HTML templates are cached in memory for the process lifetime (`media_library.core.templating.load_template`) and Python modules require process reloading, **always restart the systemd service** whenever making code, template, or asset changes so the live server serves the latest code:
@@ -210,11 +211,13 @@ media-library/
 │       ├── library_ops_worker.py    # LibraryOpsWorker for queued moves/deletes/renames + undo
 │       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
 │
-├── frontend/                        # Vite frontend source code
-│   └── src/                         # ES modules for app and library
-│       ├── app/                     # Video Sorter UI logic (index.js)
-│       └── library/                 # Media Library UI logic (index.js, state.js, utils.js)
+├── frontend/                        # Vite frontend source code & Vitest test suite
+│   ├── src/                         # ES modules for app and library
+│   │   ├── app/                     # Video Sorter UI logic (index.js)
+│   │   └── library/                 # Media Library UI logic (index.js, state.js, utils.js)
+│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, library_utils, library_state)
 │
+├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
 ├── static/                          # Static assets and built bundles
 │   ├── styles.css                   # Main application stylesheet (source)
 │   └── dist/                        # Vite build output (app.js, library.js, styles.css)
