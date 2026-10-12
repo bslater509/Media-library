@@ -23,7 +23,7 @@ router = APIRouter()
 LOGIN_PATH = "/login"
 
 # Paths that must stay reachable without a password so the login page can render.
-_PUBLIC_PATHS = {LOGIN_PATH, "/favicon.ico"}
+_PUBLIC_PATHS = {LOGIN_PATH, "/favicon.ico", "/sw.js"}
 _PUBLIC_PREFIXES = ("/static/",)
 
 _FALLBACK_LOGIN_HTML = (

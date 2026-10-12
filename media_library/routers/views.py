@@ -1,8 +1,9 @@
 """HTML Page Routes for Media Library and Sorter."""
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from media_library.core.config import STATIC_DIR
 from media_library.core.templating import load_template
 
 router = APIRouter()
@@ -32,3 +33,18 @@ async def redirect_library(request: Request):
     qs = request.url.query
     target = "/" + (f"?{qs}" if qs else "")
     return RedirectResponse(url=target, status_code=302)
+
+
+@router.api_route("/sw.js", methods=["GET", "HEAD"])
+async def serve_service_worker():
+    sw_file = STATIC_DIR / "sw.js"
+    if not sw_file.exists():
+        raise HTTPException(status_code=404, detail="Service worker not found")
+    return FileResponse(
+        str(sw_file),
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        },
+    )

@@ -518,3 +518,22 @@ def test_set_poster_frame(api_client):
     assert res_thumb.status_code == 200
     assert res_thumb.headers["content-type"] == "image/jpeg"
 
+
+def test_service_worker_route(api_client, tmp_path, monkeypatch):
+    res = api_client.get("/sw.js")
+    assert res.status_code == 200
+    assert "application/javascript" in res.headers.get("content-type", "")
+    assert res.headers.get("service-worker-allowed") == "/"
+    assert "media-library-anim-v1" in res.text
+
+    # HEAD request
+    res_head = api_client.head("/sw.js")
+    assert res_head.status_code == 200
+    assert "application/javascript" in res_head.headers.get("content-type", "")
+
+    # 404 when file does not exist
+    with monkeypatch.context() as m:
+        m.setattr("media_library.routers.views.STATIC_DIR", tmp_path / "empty_dir")
+        res_404 = api_client.get("/sw.js")
+        assert res_404.status_code == 404
+

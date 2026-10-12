@@ -1,6 +1,7 @@
 import "../../../static/styles.css";
 import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
+import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
 
 
   // Toast Notifications
@@ -4185,6 +4186,26 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
+  // Browser Animated Preview Cache Badge
+  async function updateBrowserCacheBadge() {
+    if (!els.browserCacheBadge) return;
+    try {
+      const stats = await getBrowserAnimCacheStats();
+      if (!stats.supported) {
+        els.browserCacheBadge.textContent = 'Not supported';
+        return;
+      }
+      const countStr = `${stats.count} cached`;
+      if (stats.usage && stats.usage > 0) {
+        els.browserCacheBadge.textContent = `${countStr} (${formatBytes(stats.usage)})`;
+      } else {
+        els.browserCacheBadge.textContent = countStr;
+      }
+    } catch (_) {
+      els.browserCacheBadge.textContent = '0 cached';
+    }
+  }
+
   // Cancel Transcode Task
   async function cancelTranscode(taskId) {
     try {
@@ -7100,6 +7121,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (paneActive) paneActive.classList.toggle('hidden', target !== 'active');
       if (paneWorkers) paneWorkers.classList.toggle('hidden', target !== 'workers');
       if (paneTools) paneTools.classList.toggle('hidden', target !== 'tools');
+      if (target === 'tools') updateBrowserCacheBadge();
     };
     window.switchTasksTab = switchTasksTab;
 
@@ -7108,6 +7130,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (open) {
         els.transferDropdown.classList.remove('hidden');
         if (els.transferBackdrop) els.transferBackdrop.classList.remove('hidden');
+        updateBrowserCacheBadge();
 
         // Smart tab selection: default to 'active' if tasks are queued/active, else last saved or 'workers'
         const trData = state.latestTransferData;
@@ -7411,6 +7434,64 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
           state.emptyFoldersSelectedPaths.clear();
         }
         renderEmptyFoldersCandidates();
+      });
+    }
+
+    // Browser Animated Previews Cache Controls
+    if (els.clearBrowserCacheBtn) {
+      els.clearBrowserCacheBtn.addEventListener('click', async () => {
+        try {
+          els.clearBrowserCacheBtn.disabled = true;
+          const res = await clearBrowserAnimCache();
+          if (res.success) {
+            showToast('Browser animated preview cache cleared.', 'success');
+          } else {
+            showToast('Browser cache is not supported or already empty.', 'info');
+          }
+          await updateBrowserCacheBadge();
+        } catch (e) {
+          console.error(e);
+          showToast('Failed to clear browser cache', 'error');
+        } finally {
+          els.clearBrowserCacheBtn.disabled = false;
+        }
+      });
+    }
+
+    if (els.precacheFolderAnimBtn) {
+      els.precacheFolderAnimBtn.addEventListener('click', async () => {
+        if (!state.allFiles || state.allFiles.length === 0) {
+          showToast('No media in current folder to cache', 'info');
+          return;
+        }
+        try {
+          els.precacheFolderAnimBtn.disabled = true;
+          if (els.precacheFolderAnimBtnText) {
+            els.precacheFolderAnimBtnText.textContent = 'Caching...';
+          }
+          showToast('Pre-caching animated previews for current folder...', 'info');
+
+          const result = await precacheFolderAnimatedPreviews(state.allFiles, (progress) => {
+            if (els.precacheFolderAnimBtnText) {
+              els.precacheFolderAnimBtnText.textContent = `${progress.current}/${progress.total}`;
+            }
+          });
+
+          if (result.total === 0) {
+            showToast('No videos found in current folder', 'info');
+          } else {
+            showToast(`Pre-cached ${result.added} animated preview(s) (${result.total} video(s)) in browser storage.`, 'success');
+          }
+          await updateBrowserCacheBadge();
+        } catch (e) {
+          console.error(e);
+          showToast('Pre-caching encountered an error', 'error');
+        } finally {
+          els.precacheFolderAnimBtn.disabled = false;
+          if (els.precacheFolderAnimBtnText) {
+            els.precacheFolderAnimBtnText.textContent = 'Pre-cache Folder';
+          }
+        }
       });
     }
 
@@ -7845,6 +7926,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   async function init() {
     initEvents();
     setupInfiniteScroll();
+    initServiceWorker();
+    updateBrowserCacheBadge();
 
     // Check if URL has ?folder=...
     const urlParams = new URLSearchParams(window.location.search);
@@ -8472,6 +8555,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     closeThemeModal,
     toggleAnimPause,
     cancelAllAnimPreviews,
+    updateBrowserCacheBadge,
+    clearBrowserAnimCache,
+    precacheFolderAnimatedPreviews,
   };
 
   // Start app when DOM is ready

@@ -32,8 +32,9 @@ def test_login_page_and_static_are_public(api_client, monkeypatch):
         "/login" in api_client.get("/login").text
         or "password" in api_client.get("/login").text
     )
-    # Static assets must load so the login page can render.
+    # Static assets and service worker must stay public.
     assert api_client.get("/static/styles.css").status_code in (200, 304)
+    assert api_client.get("/sw.js").status_code == 200
 
 
 def test_wrong_password_is_rejected(api_client, monkeypatch):

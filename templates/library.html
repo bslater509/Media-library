@@ -900,6 +900,30 @@
               </div>
             </div>
 
+            <!-- Tool Card: Browser Storage Animated Cache -->
+            <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-base">💾</span>
+                    <h4 class="text-xs font-bold text-white">Browser Animated Cache</h4>
+                  </div>
+                  <span id="browserCacheBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">0 cached</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Service Worker stores animated WebPs in browser CacheStorage for instant 0ms recall. Pre-cache current folder or clear client storage.</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button id="precacheFolderAnimBtn" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer" title="Pre-download animated previews for videos in current folder into browser storage">
+                  <span>⚡</span>
+                  <span id="precacheFolderAnimBtnText">Pre-cache Folder</span>
+                </button>
+                <button id="clearBrowserCacheBtn" class="py-1.5 px-2.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white border border-rose-800/40 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer" title="Clear animated WebP previews from browser storage">
+                  <span>🧹</span>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+
             <!-- Tool Card 4: Batch Compress Image Folders -->
             <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
               <div class="flex flex-col gap-1">
@@ -1101,7 +1125,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=53"></script>
+  <script type="module" src="/static/dist/library.js?v=54"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

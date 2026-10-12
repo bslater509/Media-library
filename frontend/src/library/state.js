@@ -346,6 +346,11 @@
     emptyFoldersSelectedBadge: document.getElementById('emptyFoldersSelectedBadge'),
     emptyFoldersFilterInput: document.getElementById('emptyFoldersFilterInput'),
     emptyFoldersCandidatesList: document.getElementById('emptyFoldersCandidatesList'),
+    // Browser Storage Animated Cache Controls
+    browserCacheBadge: document.getElementById('browserCacheBadge'),
+    precacheFolderAnimBtn: document.getElementById('precacheFolderAnimBtn'),
+    precacheFolderAnimBtnText: document.getElementById('precacheFolderAnimBtnText'),
+    clearBrowserCacheBtn: document.getElementById('clearBrowserCacheBtn'),
     countAllBadge: document.getElementById('countAllBadge'),
     countVideosBadge: document.getElementById('countVideosBadge'),
     countImagesBadge: document.getElementById('countImagesBadge'),
