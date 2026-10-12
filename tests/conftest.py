@@ -53,6 +53,9 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     upload_service_mod = importlib.import_module("media_library.services.upload_service")
     monkeypatch.setattr(upload_service_mod, "UPLOAD_STAGING_DIR", upload_staging)
 
+    url_dl_mod = importlib.import_module("media_library.workers.url_download_worker")
+    monkeypatch.setattr(url_dl_mod, "UPLOAD_STAGING_DIR", upload_staging)
+
     monkeypatch.setattr(state_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     monkeypatch.setattr(indexer_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     monkeypatch.setattr(zip_mod.core, "ZIP_CACHE_DIR", zip_cache)

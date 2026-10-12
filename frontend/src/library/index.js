@@ -4335,6 +4335,10 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
           state.latestBatchUnpackData = data.batch_unzip;
           renderBatchUnpackStatus(data.batch_unzip);
         }
+        if (data.url_downloads) {
+          state.latestUrlDownloadsData = data.url_downloads;
+          renderUrlDownloadsStatus(data.url_downloads);
+        }
 
         updateHeaderTaskBadge();
 
@@ -4378,6 +4382,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const batchZipData = state.latestBatchZipData;
     const batchUnpackData = state.latestBatchUnpackData;
     const libOpsData = state.latestLibraryOpsData;
+    const urlDlData = state.latestUrlDownloadsData;
 
     const trActive = trData && (trData.active || (trData.queued && trData.queued.length > 0));
     const libOpsActive = libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0));
@@ -4390,8 +4395,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     const zipActive = zipData && zipData.is_active;
     const batchZipActive = batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'processing');
     const batchUnpackActive = batchUnpackData && (batchUnpackData.status === 'running' || batchUnpackData.status === 'processing');
+    const urlDlActive = urlDlData && ((urlDlData.active_count || 0) > 0 || (urlDlData.queued_count || 0) > 0);
 
-    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || animActive || wActive || zipActive || batchZipActive || batchUnpackActive;
+    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || animActive || wActive || zipActive || batchZipActive || batchUnpackActive || urlDlActive;
 
     // Always keep button visible so the background tasks modal can be opened anytime
     els.transferBadgeBtn.classList.remove('hidden');
@@ -4442,6 +4448,17 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       } else if (batchUnpackActive) {
         const pct = Math.round(batchUnpackData.overall_percent || 0);
         els.transferCountText.textContent = `Extract ${pct}%`;
+      } else if (urlDlActive) {
+        const dlActive = urlDlData.active || [];
+        const qDl = urlDlData.queued_count || 0;
+        if (dlActive.length) {
+          const pct = Math.round(dlActive[0].percent || 0);
+          els.transferCountText.textContent = dlActive.length > 1
+            ? `DL ${pct}% (${dlActive.length})`
+            : `DL ${pct}%${qDl ? ` +${qDl}` : ''}`;
+        } else {
+          els.transferCountText.textContent = `${qDl} dl queued`;
+        }
       } else if (zipActive) {
         const runningTask = (zipData.tasks || []).find(t => t.status === 'running');
         const actionName = runningTask ? (runningTask.type === 'compress' ? 'Zipping' : (runningTask.type === 'unpack' ? 'Unpack' : 'Archive')) : 'ZIP';
@@ -4610,6 +4627,107 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     } else {
       els.queuedLibraryOpsContainer.classList.add('hidden');
       if (els.queuedLibraryOpsList) els.queuedLibraryOpsList.innerHTML = '';
+    }
+  }
+
+  function renderUrlDownloadsStatus(data) {
+    const section = document.getElementById('urlDownloadsSection');
+    const summary = document.getElementById('urlDownloadsSummary');
+    const listEl = document.getElementById('urlDownloadsList');
+    if (!section || !listEl) return;
+    const active = data.active || [];
+    const queued = data.queued || [];
+    const history = data.history || [];
+    const hasAny = active.length > 0 || queued.length > 0 || history.length > 0;
+    section.classList.toggle('hidden', !hasAny);
+    if (!hasAny) return;
+
+    if (summary) {
+      if (active.length) {
+        const pct = Math.round(active[0].percent || 0);
+        summary.textContent = active.length > 1
+          ? `DL ${active.length} active`
+          : `DL ${pct}%`;
+      } else if (queued.length) {
+        summary.textContent = `${queued.length} queued`;
+      } else {
+        summary.textContent = 'Idle';
+      }
+    }
+
+    const recentHistory = history.slice(-8).reverse();
+    const rows = [...active, ...queued, ...recentHistory];
+    listEl.innerHTML = rows.map(item => {
+      const isActive = item.status === 'downloading';
+      const isQueued = item.status === 'queued';
+      const isCompleted = item.status === 'completed';
+      const isFailed = item.status === 'failed';
+      const cancellable = isActive || isQueued;
+      const title = item.current_title
+        || String(item.url || '').replace(/^https?:\/\//, '').slice(0, 60)
+        || item.id;
+      const pct = Math.round(item.percent || 0);
+      const pos = item.playlist_index && item.playlist_count
+        ? `${item.playlist_index}/${item.playlist_count}`
+        : '';
+      const detailParts = [];
+      if (isActive) {
+        if (pos) detailParts.push(pos);
+        if (item.speed) detailParts.push(item.speed);
+        if (item.eta) detailParts.push(`ETA ${item.eta}`);
+      } else if (isCompleted && item.imported_count) {
+        detailParts.push(`${item.imported_count} file${item.imported_count > 1 ? 's' : ''}`);
+      } else if (isFailed && item.error) {
+        detailParts.push(String(item.error).slice(0, 80));
+      }
+      let badgeCls = 'bg-slate-800 text-slate-400';
+      if (isActive) badgeCls = 'bg-emerald-900/60 text-emerald-300';
+      else if (isQueued) badgeCls = 'bg-slate-800 text-slate-300';
+      else if (isCompleted) badgeCls = 'bg-emerald-900/60 text-emerald-400';
+      else if (isFailed) badgeCls = 'bg-red-900/50 text-red-400';
+      else if (item.status === 'cancelled') badgeCls = 'bg-slate-800 text-slate-500';
+      const cancelBtn = cancellable
+        ? `<button data-urldl-cancel="${escapeHtml(item.id)}" class="text-[10px] px-2 py-0.5 bg-red-900/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 rounded border border-red-900/50 transition shrink-0" title="Cancel">✕</button>`
+        : '';
+      return `
+        <div class="bg-slate-900 rounded-lg border border-slate-800/80 p-2 flex flex-col gap-1.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-[9px] uppercase px-1.5 py-0.5 rounded ${badgeCls} font-mono shrink-0">${escapeHtml(item.status)}</span>
+            <span class="truncate text-[11px] text-slate-300 flex-1 min-w-0" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+            ${cancelBtn}
+          </div>
+          ${(isActive || isQueued) ? `
+          <div class="flex items-center gap-2">
+            <div class="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-500 transition-all duration-300" style="width:${isActive ? pct : 0}%"></div>
+            </div>
+            <span class="text-[10px] text-emerald-400 font-mono shrink-0">${isActive ? pct + '%' : 'queued'}</span>
+          </div>` : ''}
+          ${detailParts.length ? `<div class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(detailParts.join(' · '))}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('[data-urldl-cancel]').forEach(btn => {
+      btn.addEventListener('click', () => cancelUrlDownloadJob(btn.dataset.urldlCancel));
+    });
+  }
+
+  async function cancelUrlDownloadJob(jobId) {
+    try {
+      const res = await fetch('/api/backup/upload/url/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId })
+      });
+      if (res.ok) {
+        showToast('Download cancelled', 'info');
+        pollSystemStatus(true);
+      } else {
+        const j = await res.json().catch(() => ({}));
+        showToast('Cancel failed: ' + (j.detail || res.status), 'error');
+      }
+    } catch (err) {
+      showToast('Cancel failed: ' + (err.message || 'Error'), 'error');
     }
   }
 
@@ -6819,6 +6937,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         if (els.hiddenUploadFolderInput) els.hiddenUploadFolderInput.click();
       });
     }
+    if (els.mobileUrlDownloadTrigger) {
+      els.mobileUrlDownloadTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        openUrlDownloadModal();
+      });
+    }
     if (els.mobileNewFolderTrigger) {
       els.mobileNewFolderTrigger.addEventListener('click', () => {
         closeMobileControlsModal();
@@ -6961,6 +7085,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         // Smart tab selection: default to 'active' if tasks are queued/active, else last saved or 'workers'
         const trData = state.latestTransferData;
         const libOpsData = state.latestLibraryOpsData;
+    const urlDlData = state.latestUrlDownloadsData;
         const tData = state.latestTranscodeData;
         const hasActiveQueues = (trData && (trData.active || (trData.queued && trData.queued.length > 0))) ||
           (libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0))) ||
@@ -7805,6 +7930,30 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (cancelAllUploadsBtn) cancelAllUploadsBtn.addEventListener('click', cancelAllUploads);
   }
 
+    // Download from URL (desktop dropdown)
+    const urlDownloadBtn = document.getElementById('urlDownloadBtn');
+    const startUrlDownloadBtn = document.getElementById('startUrlDownloadBtn');
+    const cancelUrlDownloadBtn = document.getElementById('cancelUrlDownloadBtn');
+    const cancelUrlDownloadBtnTop = document.getElementById('cancelUrlDownloadBtnTop');
+    if (urlDownloadBtn) {
+      urlDownloadBtn.addEventListener('click', () => {
+        uploadDropdownMenu.classList.add('hidden');
+        openUrlDownloadModal();
+      });
+    }
+    if (startUrlDownloadBtn) startUrlDownloadBtn.addEventListener('click', submitUrlDownload);
+    if (cancelUrlDownloadBtn) cancelUrlDownloadBtn.addEventListener('click', closeUrlDownloadModal);
+    if (cancelUrlDownloadBtnTop) cancelUrlDownloadBtnTop.addEventListener('click', closeUrlDownloadModal);
+    const urlDlInput = document.getElementById('urlDownloadInput');
+    if (urlDlInput) {
+      urlDlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitUrlDownload();
+        }
+      });
+    }
+
   function handleFileInput(e) {
     const rawFiles = e.target.files;
     if (!rawFiles || rawFiles.length === 0) {
@@ -7903,6 +8052,74 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     if (fi) fi.value = '';
     const fo = document.getElementById('hiddenUploadFolderInput');
     if (fo) fo.value = '';
+  }
+
+  function openUrlDownloadModal() {
+    const modal = document.getElementById('urlDownloadModal');
+    const label = document.getElementById('urlDownloadTargetLabel');
+    const warningEl = document.getElementById('urlDownloadWarningText');
+    const startBtn = document.getElementById('startUrlDownloadBtn');
+    const input = document.getElementById('urlDownloadInput');
+    if (label) label.textContent = state.currentPath || state.basePath || '/';
+    if (state.isZip) {
+      if (warningEl) {
+        warningEl.textContent = 'Cannot download into a virtual ZIP archive. Navigate to a folder first.';
+        warningEl.classList.remove('hidden');
+      }
+      if (startBtn) startBtn.disabled = true;
+    } else {
+      if (warningEl) warningEl.classList.add('hidden');
+      if (startBtn) startBtn.disabled = false;
+    }
+    if (input) input.value = '';
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+
+  function closeUrlDownloadModal() {
+    const modal = document.getElementById('urlDownloadModal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  }
+
+  async function submitUrlDownload() {
+    const input = document.getElementById('urlDownloadInput');
+    const url = input ? input.value.trim() : '';
+    if (!url) {
+      showToast('Enter a video or playlist URL', 'error');
+      return;
+    }
+    if (state.isZip) {
+      showToast('Navigate to a real folder first', 'error');
+      return;
+    }
+    const target = state.currentPath || state.basePath || '/';
+    const startBtn = document.getElementById('startUrlDownloadBtn');
+    if (startBtn) startBtn.disabled = true;
+    try {
+      const res = await fetch('/api/backup/upload/url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, destination_dir: target })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast('Could not queue download: ' + (j.detail || res.status), 'error');
+        return;
+      }
+      closeUrlDownloadModal();
+      showToast('Download queued in background', 'success');
+      pollSystemStatus(true);
+    } catch (err) {
+      showToast('Failed to queue download: ' + (err.message || 'Error'), 'error');
+    } finally {
+      if (startBtn) startBtn.disabled = false;
+    }
   }
 
   async function startUploadBatch() {

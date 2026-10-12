@@ -23,6 +23,7 @@ from media_library.services.backup_service import (
 )
 from media_library.workers import (
     animated_thumb_worker_instance,
+    url_download_worker_instance,
     backup_watcher_instance,
     duplicate_hash_worker_instance,
     enqueue_pretranscode_for_source,
@@ -91,6 +92,7 @@ def create_app(
             await backup_watcher_instance.start()
             await library_ops_worker_instance.start()
             await animated_thumb_worker_instance.start()
+            await url_download_worker_instance.start()
 
             # Auto-enqueue pre-transcoding for configured source directory
             if state.get("source_dir") and os.path.isdir(state["source_dir"]):
@@ -119,6 +121,7 @@ def create_app(
             await backup_watcher_instance.stop()
             await library_ops_worker_instance.stop()
             await animated_thumb_worker_instance.stop()
+            await url_download_worker_instance.stop()
 
         # Perform clean snapshot backup to library folder on clean shutdown
         try:

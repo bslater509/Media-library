@@ -164,3 +164,7 @@ def save_config_data(current_state: dict[str, Any]):
     except Exception as e:
         logger.error(f"Error saving config.json: {e}")
 
+
+# URL playlist downloading (yt-dlp)
+DOWNLOAD_WORKER_CONCURRENCY = max(1, int(os.environ.get("DOWNLOAD_WORKER_CONCURRENCY", "2")))
+DOWNLOAD_COOKIES_FILE = os.environ.get("DOWNLOAD_COOKIES_FILE", "").strip()

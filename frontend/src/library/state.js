@@ -214,6 +214,7 @@
 
     mobileUploadFilesTrigger: document.getElementById('mobileUploadFilesTrigger'),
     mobileUploadFolderTrigger: document.getElementById('mobileUploadFolderTrigger'),
+    mobileUrlDownloadTrigger: document.getElementById('mobileUrlDownloadTrigger'),
     mobileNewFolderTrigger: document.getElementById('mobileNewFolderTrigger'),
     mobileRefreshFolderTrigger: document.getElementById('mobileRefreshFolderTrigger'),
     mobileCacheThumbsTrigger: document.getElementById('mobileCacheThumbsTrigger'),

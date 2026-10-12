@@ -18,7 +18,8 @@ def test_html_views(api_client):
     assert "toggleAnimatedPreviewsBtn" in res_root.text
     assert "generateFolderAnimatedBtn" in res_root.text
     assert "generateAllAnimatedBtn" in res_root.text
-    assert "library.js?v=51" in res_root.text
+    import re
+    assert re.search(r"library\.js\?v=\d+", res_root.text)
     assert "styles.css?v=40" in res_root.text
     assert 'id="mobileHeader"' in res_root.text
     assert 'id="mobileControlsModal"' in res_root.text

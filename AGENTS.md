@@ -69,6 +69,7 @@
 - **Concurrency & Threads**: AnyIO (expanded threadpool tokens to 100), asyncio, Python `threading`
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
 - **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
+- **URL Playlist Downloading**: yt-dlp (run as an isolated subprocess: `python -m yt_dlp`, never imported in-process)
 - **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video
 - **Testing**: Backend: Pytest (v8.0+) with `pytest-cov` and `conftest.py` sandboxing fixtures; Frontend: Vitest (v1.6+) with `happy-dom` DOM simulation under `frontend/tests/`.
 
@@ -181,6 +182,7 @@ media-library/
 │   │   ├── library_admin.py         # Library rename/delete + thumbnail controls
 │   │   ├── library_manage.py        # Library page file/folder management (move, folders, undo)
 │   │   ├── library_upload.py        # Web browser chunked file and folder uploading
+│   │   ├── url_download.py           # URL/playlist video download endpoints (yt-dlp)
 │   │   ├── sorter_queue.py          # Sorter config, scan, queue, browse, destinations
 │   │   ├── sorter_move.py           # Sorter moves, undo, transfers, rename, delete
 │   │   ├── sorter_media.py          # Sorter video stream + duplicate check
@@ -219,6 +221,7 @@ media-library/
 │       ├── duplicate_hash_worker.py # DuplicateHashWorker (quick) & ThumbHashWorker (visual)
 │       ├── webp_worker.py           # WebPOptimizerWorker for background image conversion
 │       ├── library_ops_worker.py    # LibraryOpsWorker for queued moves/deletes/renames + undo
+│       ├── url_download_worker.py   # URLDownloadWorker: queued yt-dlp playlist downloads
 │       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
 │
 ├── frontend/                        # Vite frontend source code & Vitest test suite
@@ -271,6 +274,7 @@ media-library/
 │   ├── test_transcode_comprehensive.py # Transcoding pause/resume, cancel, queue, and worker execution
 │   ├── test_webp_memory_guard.py    # WebP conversion memory safeguards and skip logic
 │   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
+│   ├── test_url_download.py         # URL download worker (mocked subprocess), router validations, status
 │   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
 │
 └── data/                            # Runtime data directory (git-ignored)
@@ -311,6 +315,8 @@ All settings can be provided via `.env` file, environment variables, or CLI para
 | `UPLOAD_STAGING_DIR` | N/A | `${DATA_DIR}/upload_staging` | Staging area for chunked browser uploads before finalizing |
 | `MAX_UPLOAD_FILE_SIZE_GB`| N/A | `20.0` | Maximum allowed file size for browser uploads in GB |
 | `WEBP_SKIP_LARGER` | N/A | `false` | If `true`, abort conversion if WebP exceeds original file size |
+| `DOWNLOAD_WORKER_CONCURRENCY` | N/A | `2` | Max parallel URL/playlist downloads (yt-dlp) |
+| `DOWNLOAD_COOKIES_FILE` | N/A | *(empty)* | Optional Netscape cookies file path passed to yt-dlp (`--cookies`) for auth-walled/private videos and playlists |
 | `ZIP_STAGING_DIR` | N/A | `${DATA_DIR}/zip_staging` | Local fast-disk staging area for assembling ZIP archives before FUSE transfer |
 | `ZIP_CACHE_DIR` | N/A | `${DATA_DIR}/cache/zips`| Local fast-disk cache for extracted ZIP contents |
 | `ZIP_CACHE_MAX_SIZE_GB`| N/A | `5.0` | Maximum disk size in GB for extracted ZIP cache before LRU eviction |
@@ -453,6 +459,7 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
 | `duplicate_hash_worker_instance` | `DuplicateHashWorker` | `workers.duplicate_hash_worker` | Computes 128 KB head SHA-256 (+ size) for files with identical sizes. |
 | `thumb_hash_worker_instance` | `ThumbHashWorker` | `workers.duplicate_hash_worker` | Computes perceptual `pHash` from video posters & images. |
 | `webp_worker_instance` | `WebPOptimizerWorker` | `workers.webp_worker` | Background conversion of loose (non-ZIP) images to WebP. ZIP archives are excluded from the automatic sweep and are optimized on demand only — as a single archive-level unit when browsed or via the Optimize WebP button. Backs off when memory is low (measured against the tighter of host RAM and the service cgroup cap) and returns freed heap between conversions. |
+| `url_download_worker_instance` | `URLDownloadWorker` | `workers.url_download_worker` | Queued yt-dlp URL/playlist downloads into `UPLOAD_STAGING_DIR` then the library folder; up to 2 parallel slots, skip-and-continue per playlist item, live/premiere filtering, per-job cancel. |
 | `library_ops_worker_instance` | `LibraryOpsWorker` | `workers.library_ops_worker` | Sequentially executes queued Library page operations — moves (file/folder/ZIP), recursive deletes, and renames — off the request thread, with per-item cancel and a move-only undo stack. |
 | `backup_watcher_instance` | `BackupWatcherWorker` | `workers.backup_watcher` | Manages scheduled and shutdown snapshot backups to library folder. |
 | *Batch ZIP Runner* | *Thread-based* | `services.zip_service` | Sequential batch compression of leaf image folders into ZIPs. |
@@ -518,6 +525,12 @@ Implemented in `media_library.routers.library_media.stream_backup_media` and `me
 - `width IS NULL` marks a file as not-yet-probed; the worker fills all probe columns together and writes `0 x 0` on failure so the file is not retried until the indexer sees it change (carry-over in `index_folder`/`update_file_in_index` keeps results across crawls).
 - ZIP members are probed separately: rather than force archive extraction over FUSE, the worker reads their dimensions from the cached local thumbnail (`_backfill_zip_batch`, one batch per loop alongside loose probing, with a 60s sweep cooldown). Members without a thumbnail yet fall back to a 1:1 box filled with `object-cover` (the justified grid no longer re-flows on image load).
 - Progress is exposed under `metadata` in `/api/system/status`.
+
+### URL Playlist Downloading (yt-dlp)
+1. **Queueing**: `POST /api/backup/upload/url` validates the http(s) URL and the target folder (must exist, not a virtual ZIP), verifies `python -m yt_dlp` availability, and enqueues a job on `URLDownloadWorker`.
+2. **Execution**: each job downloads into a per-job staging directory `UPLOAD_STAGING_DIR / dl_<job_id>` (local disk). The yt-dlp subprocess uses `--ignore-errors` (skip-and-continue per playlist item), `--match-filter "!is_live & !is_upcoming"` (skip live streams & premieres), `-f bv*+ba/b --merge-output-format mp4` (best quality with ffmpeg merge), and an optional `--cookies DOWNLOAD_COOKIES_FILE`. Up to `DOWNLOAD_WORKER_CONCURRENCY` (default 2) jobs run in parallel via a shared slot loop.
+3. **Progress**: parsed from `--newline --progress-template` JSON lines (`percent`, `downloaded_bytes`, `speed`, `eta`, `playlist_index/count`, `title`), exposed through `/api/system/status#url_downloads` for the Library's URL Downloads section in the Background Tasks modal.
+4. **Finalization**: completed files are moved one by one into the target folder with auto-rename collisions (`file (1).ext`) and atomic `.tmp_*` -> `os.replace` (FUSE-safe). Only video/image/audio extensions are imported; subtitle/sidecar outputs (`.vtt`, `.json`, etc.) are dropped. The target folder is re-indexed afterwards. Jobs are individually cancellable (SIGKILL of the subprocess + staging cleanup).
 
 ### WebP Image Optimization Pipeline
 1. `convert_image_file_to_webp(input_path, quality=85)`:
@@ -659,10 +672,12 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
   "zip": { "is_active": false, "tasks": [] },
   "batch_zip": { "status": "idle", "succeeded": 12, "overall_percent": 100.0 },
   "batch_unzip": { "status": "idle", "succeeded": 0, "failed": 0, "errors": [], "overall_percent": 0.0 },
-  "library_ops": { "status": "idle", "active": null, "queued": [], "undo_count": 0 }
+  "library_ops": { "status": "idle", "active": null, "queued": [], "undo_count": 0 },
+  "url_downloads": { "status": "idle", "concurrency": 2, "active": [], "queued": [], "history": [] }
 }
 ```
 - The frontend uses `is_active` to adjust polling frequency: **2000 ms** when active background work is in flight, **6000 ms** when idle, **8000 ms** on error.
+- `url_downloads.active_count > 0` or `queued_count > 0` also sets `is_active`.
 
 ---
 
@@ -704,6 +719,9 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `POST /api/backup/upload/chunk` — Receive a chunk of a browser upload file (staged locally)
 - `POST /api/backup/upload/finalize` — Assemble, atomically write to target, and index the uploaded file
 - `POST /api/backup/upload/cancel` — Cancel an ongoing upload and discard staging chunk
+- `POST /api/backup/upload/url` — Queue a URL/playlist video download (yt-dlp) into `destination_dir` (`url` + `destination_dir`); returns `{job_id}`; 503 when yt-dlp is unavailable (Library "Download from URL")
+- `GET /api/backup/upload/url/status` — Active, queued, and recent URL download jobs (`url_download_worker_instance.get_status()`)
+- `POST /api/backup/upload/url/cancel` — Cancel a queued or running URL download job by `job_id`
 - `POST /api/backup/move/check` — Pre-check name conflicts before a move; returns collision list
 - `POST /api/backup/move` — Queue file/folder/ZIP moves (conflict policy: `auto_rename` | `skip` | `error`)
 - `POST /api/backup/undo` — Undo the last queued library move (move-only undo)

@@ -193,7 +193,7 @@
               <button id="uploadDropdownBtn" type="button" title="Upload files or folders" class="p-1 sm:px-2 sm:py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition shadow-sm">
                 <span>⬆️</span><span class="hidden sm:inline">Upload</span>
               </button>
-              <div id="uploadDropdownMenu" class="hidden absolute right-0 top-full mt-1 w-36 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-[60] flex flex-col py-1 overflow-hidden">
+              <div id="uploadDropdownMenu" class="hidden absolute right-0 top-full mt-1 w-44 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-[60] flex flex-col py-1 overflow-hidden">
                 <label id="uploadFilesBtn" class="relative px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2 cursor-pointer select-none">
                   <span>📄 Files</span>
                   <input type="file" id="hiddenUploadFileInput" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/*,video/*,.mp4,.m4v,.mkv,.webm,.avi,.mov,.wmv,.flv,.ts,.m2ts,.mpg,.mpeg,.vob,.3gp,.asf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg,.heic,.heif,.dng,.zip" />
@@ -202,6 +202,9 @@
                   <span>📁 Folder</span>
                   <input type="file" id="hiddenUploadFolderInput" webkitdirectory directory multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                 </label>
+                <button id="urlDownloadBtn" type="button" title="Download a video or playlist from a URL into this folder" class="px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2">
+                  <span>🔗 URL</span>
+                </button>
               </div>
             </div>
             <button id="refreshFolderBtn" title="Refresh folder" class="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border border-slate-700 transition shrink-0">
@@ -476,6 +479,17 @@
 
             <!-- Active Uploads List -->
             <div id="activeUploadsList" class="flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"></div>
+          </div>
+
+            <!-- Section: URL Downloads -->
+          <div id="urlDownloadsSection" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <span>🔗</span> URL Downloads
+              </h4>
+              <span id="urlDownloadsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+            </div>
+            <div id="urlDownloadsList" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto no-scrollbar"></div>
           </div>
 
           <!-- Section 0: File Transfers -->
@@ -1078,7 +1092,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=51"></script>
+  <script type="module" src="/static/dist/library.js?v=52"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

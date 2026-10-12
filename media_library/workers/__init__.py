@@ -38,6 +38,11 @@ from media_library.workers.transfer_worker import (
     TransferWorker,
     transfer_worker_instance,
 )
+from media_library.workers.url_download_worker import (
+    URLDownloadWorker,
+    is_ytdlp_available,
+    url_download_worker_instance,
+)
 from media_library.workers.webp_worker import WebPOptimizerWorker, webp_worker_instance
 
 __all__ = [
@@ -51,6 +56,7 @@ __all__ = [
     "ThumbnailWorker",
     "TranscodeWorker",
     "TransferWorker",
+    "URLDownloadWorker",
     "WebPOptimizerWorker",
     "animated_thumb_worker_instance",
     "backup_watcher_instance",
@@ -62,7 +68,9 @@ __all__ = [
     "run_library_restore_async",
     "thumb_hash_worker_instance",
     "thumbnail_worker_instance",
+    "is_ytdlp_available",
     "transcode_worker_instance",
     "transfer_worker_instance",
+    "url_download_worker_instance",
     "webp_worker_instance",
 ]

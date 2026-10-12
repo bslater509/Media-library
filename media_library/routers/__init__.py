@@ -13,6 +13,7 @@ from media_library.routers.sorter_move import router as sorter_move_router
 from media_library.routers.sorter_queue import router as sorter_queue_router
 from media_library.routers.system import router as system_router
 from media_library.routers.transcode import router as transcode_router
+from media_library.routers.url_download import router as url_download_router
 from media_library.routers.views import router as views_router
 from media_library.routers.webp import router as webp_router
 from media_library.routers.zip_router import router as zip_router
@@ -30,6 +31,7 @@ all_routers = [
     library_upload_router,
     duplicates_router,
     transcode_router,
+    url_download_router,
     webp_router,
     backup_router,
     zip_router,
@@ -51,6 +53,7 @@ __all__ = [
     "sorter_queue_router",
     "system_router",
     "transcode_router",
+    "url_download_router",
     "views_router",
     "webp_router",
     "zip_router",
