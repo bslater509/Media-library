@@ -66,6 +66,9 @@ WEBP_AUTO_OPTIMIZE = os.environ.get("WEBP_AUTO_OPTIMIZE", "true").lower() in (
     "yes",
 )
 
+# Search configuration (maximum files returned in a single global search query)
+SEARCH_LIMIT = max(1, int(os.environ.get("SEARCH_LIMIT", "1000")))
+
 # Library folder backup configuration
 LIBRARY_BACKUP_SUBDIR = (
     os.environ.get("LIBRARY_BACKUP_SUBDIR", ".media_library_backup").strip()

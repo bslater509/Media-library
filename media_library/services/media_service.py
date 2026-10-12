@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from media_library.core.config import DEFAULT_DESTINATION_DIR
+from media_library.core.config import DEFAULT_DESTINATION_DIR, SEARCH_LIMIT
 from media_library.core.constants import NATIVE_EXTENSIONS, VIDEO_EXTENSIONS
 from media_library.core.state import format_size, state
 from media_library.db.connection import db_conn
@@ -162,14 +162,16 @@ def search_backup_index(
     query: str,
     type_filter: str | None = None,
     sort_by: str = "name_asc",
-    limit: int = 150,
-) -> list[dict[str, Any]]:
+    limit: int | None = None,
+    return_meta: bool = False,
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], bool]:
     """Performs multi-token search in indexed SQLite library."""
+    effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
     with db_conn() as conn:
         try:
             words = query.strip().lower().split()
             if not words:
-                return []
+                return ([], False) if return_meta else []
 
             where_clauses = ["LOWER(name) LIKE ?" for _ in words]
             sql = f"SELECT * FROM files WHERE {' AND '.join(where_clauses)}"
@@ -191,11 +193,16 @@ def search_backup_index(
             elif sort_by == "size_asc":
                 sort_sql = "size ASC"
 
+            # Query limit + 1 rows to detect truncation without an extra COUNT(*) query
             sql += f" ORDER BY {sort_sql} LIMIT ?"
-            params.append(limit)
+            params.append(effective_limit + 1)
 
             cur = conn.execute(sql, params)
             rows = cur.fetchall()
+
+            truncated = len(rows) > effective_limit
+            if truncated:
+                rows = rows[:effective_limit]
 
             results = []
             base_dir = os.path.realpath(
@@ -254,10 +261,12 @@ def search_backup_index(
                         "media_url": media_url,
                     }
                 )
+            if return_meta:
+                return results, truncated
             return results
         except Exception as e:
             logger.error(f"Error querying backup search: {e}")
-            return []
+            return ([], False) if return_meta else []
 
 
 def do_transfer(

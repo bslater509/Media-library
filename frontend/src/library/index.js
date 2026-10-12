@@ -440,6 +440,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   // Load Folder Contents
   async function loadFolder(targetPath, pushHistory = true, forceRefresh = false, silent = false) {
     try {
+      state.searchTruncated = false;
+      if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
       if (pushHistory) {
         state.indexRetryCount = 0;
         clearTimeout(state.indexRetryTimer);
@@ -874,11 +876,14 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
   async function performGlobalSearch() {
     const q = state.searchQuery.trim();
     if (!q) {
+      state.searchTruncated = false;
+      if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
       applyFiltersAndSort();
       return;
     }
 
     els.emptyState.classList.add('hidden');
+    if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
     els.mediaGrid.innerHTML = `
       <div class="w-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
         <span class="w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
@@ -888,22 +893,37 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
 
     try {
       const typeParam = state.activeFilter === 'all' ? '' : `&type=${state.activeFilter}`;
-      const url = `/api/backup/search?q=${encodeURIComponent(q)}${typeParam}&sort=${state.activeSort}&limit=300`;
+      const url = `/api/backup/search?q=${encodeURIComponent(q)}${typeParam}&sort=${state.activeSort}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Search failed (${res.status})`);
       const data = await res.json();
 
       state.filteredFiles = data.results || [];
+      state.searchTruncated = Boolean(data.truncated);
+      state.searchLimit = data.limit || 1000;
       state.displayedCount = 50;
 
       const videoCount = state.filteredFiles.filter(f => f.type === 'video').length;
       const imageCount = state.filteredFiles.filter(f => f.type === 'image').length;
-      els.countAllBadge.textContent = state.filteredFiles.length;
-      els.countVideosBadge.textContent = videoCount;
-      els.countImagesBadge.textContent = imageCount;
-      if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = state.filteredFiles.length;
-      if (els.mobileCountVideosBadge) els.mobileCountVideosBadge.textContent = videoCount;
-      if (els.mobileCountImagesBadge) els.mobileCountImagesBadge.textContent = imageCount;
+      const plusSuffix = state.searchTruncated ? '+' : '';
+
+      els.countAllBadge.textContent = `${state.filteredFiles.length}${plusSuffix}`;
+      els.countVideosBadge.textContent = `${videoCount}${plusSuffix && state.filteredFiles.length === videoCount ? plusSuffix : ''}`;
+      els.countImagesBadge.textContent = `${imageCount}${plusSuffix && state.filteredFiles.length === imageCount ? plusSuffix : ''}`;
+      if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = `${state.filteredFiles.length}${plusSuffix}`;
+      if (els.mobileCountVideosBadge) els.mobileCountVideosBadge.textContent = `${videoCount}${plusSuffix && state.filteredFiles.length === videoCount ? plusSuffix : ''}`;
+      if (els.mobileCountImagesBadge) els.mobileCountImagesBadge.textContent = `${imageCount}${plusSuffix && state.filteredFiles.length === imageCount ? plusSuffix : ''}`;
+
+      if (els.searchTruncationBanner) {
+        if (state.searchTruncated && state.filteredFiles.length > 0) {
+          if (els.searchTruncationText) {
+            els.searchTruncationText.textContent = `Search results capped at ${state.searchLimit.toLocaleString()} matches. Refine your query to see more specific results.`;
+          }
+          els.searchTruncationBanner.classList.remove('hidden');
+        } else {
+          els.searchTruncationBanner.classList.add('hidden');
+        }
+      }
 
       els.mediaGrid.innerHTML = '';
       if (state.filteredFiles.length === 0) {
@@ -933,6 +953,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         performGlobalSearch();
       }
     } else {
+      state.searchTruncated = false;
+      if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
       els.scopeCurrentBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition bg-emerald-600 text-white font-semibold shadow-sm whitespace-nowrap';
       els.scopeGlobalBtn.className = 'px-2 sm:px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white whitespace-nowrap';
       els.fileSearchInput.placeholder = 'Search filename...';
@@ -1066,6 +1088,9 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       performGlobalSearch();
       return;
     }
+
+    state.searchTruncated = false;
+    if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
 
     const videoCount = state.allFiles.filter(f => f.type === 'video').length;
     const imageCount = state.allFiles.filter(f => f.type === 'image').length;
@@ -6817,6 +6842,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         if (els.mobileSearchInput) els.mobileSearchInput.value = '';
         if (els.fileSearchInput) els.fileSearchInput.value = '';
         state.searchQuery = '';
+        state.searchTruncated = false;
+        if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
         els.mobileClearSearchBtn.classList.add('hidden');
         if (els.clearFileSearchBtn) els.clearFileSearchBtn.classList.add('hidden');
         if (state.searchScope === 'global') {
@@ -7465,6 +7492,8 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     els.clearFileSearchBtn.addEventListener('click', () => {
       els.fileSearchInput.value = '';
       state.searchQuery = '';
+      state.searchTruncated = false;
+      if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
       els.clearFileSearchBtn.classList.add('hidden');
       if (state.searchScope === 'global') {
         performGlobalSearch();
@@ -7472,6 +7501,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         applyFiltersAndSort();
       }
     });
+
+    if (els.dismissSearchTruncationBtn) {
+      els.dismissSearchTruncationBtn.addEventListener('click', () => {
+        if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
+      });
+    }
 
     // Sort Dropdown
     els.sortSelect.addEventListener('change', (e) => {

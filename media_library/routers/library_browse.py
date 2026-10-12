@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from media_library.core.config import DEFAULT_DESTINATION_DIR
+from media_library.core.config import DEFAULT_DESTINATION_DIR, SEARCH_LIMIT
 from media_library.core.constants import (
     INDEX_INFLIGHT_CAP,
     INDEX_INFLIGHT_PRUNE_S,
@@ -445,12 +445,17 @@ def search_backup(
     q: str = Query(..., min_length=1),
     type: str | None = Query(None),
     sort: str | None = Query("name_asc"),
-    limit: int | None = Query(150),
+    limit: int | None = Query(None),
 ):
-    results = search_backup_index(query=q, type_filter=type, sort_by=sort, limit=limit)
+    effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
+    results, truncated = search_backup_index(
+        query=q, type_filter=type, sort_by=sort, limit=effective_limit, return_meta=True
+    )
     return {
         "query": q,
         "total": len(results),
+        "limit": effective_limit,
+        "truncated": truncated,
         "results": results,
     }
 

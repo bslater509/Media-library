@@ -69,6 +69,8 @@
     activeSort: 'name_asc',
     searchScope: 'current', // 'current' | 'global'
     searchQuery: '',
+    searchTruncated: false,
+    searchLimit: 1000,
     folderSearchQuery: '',
     folderChildren: {}, // path -> { children: [], loaded: bool, loading: bool, retries: int }
     expandedFolders: loadExpandedFolders(),
@@ -356,6 +358,9 @@
     tileSizeDownBtn: document.getElementById('tileSizeDownBtn'),
     tileSizeUpBtn: document.getElementById('tileSizeUpBtn'),
     tileSizeLabel: document.getElementById('tileSizeLabel'),
+    searchTruncationBanner: document.getElementById('searchTruncationBanner'),
+    searchTruncationText: document.getElementById('searchTruncationText'),
+    dismissSearchTruncationBtn: document.getElementById('dismissSearchTruncationBtn'),
     mediaGrid: document.getElementById('mediaGrid'),
     infiniteScrollSentinel: document.getElementById('infiniteScrollSentinel'),
     loadingMoreSpinner: document.getElementById('loadingMoreSpinner'),

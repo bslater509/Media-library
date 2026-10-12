@@ -364,6 +364,15 @@
           <div id="subfolderChips" class="flex flex-col gap-2"></div>
         </div>
 
+        <!-- Search Truncation Notice Banner (shown when global search hits limit) -->
+        <div id="searchTruncationBanner" class="hidden flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-base shrink-0">⚠️</span>
+            <span id="searchTruncationText" class="truncate font-medium">Search results capped at 1,000 matches. Refine your search query to see more specific results.</span>
+          </div>
+          <button id="dismissSearchTruncationBtn" type="button" class="text-amber-300/80 hover:text-amber-100 text-xs px-2 py-0.5 rounded hover:bg-amber-500/20 transition shrink-0 cursor-pointer" title="Dismiss notice">✕</button>
+        </div>
+
         <!-- Media Grid -->
         <div id="mediaGrid" class="flex flex-col gap-2.5 sm:gap-4">
           <!-- Rendered dynamically -->
@@ -1092,7 +1101,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=52"></script>
+  <script type="module" src="/static/dist/library.js?v=53"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

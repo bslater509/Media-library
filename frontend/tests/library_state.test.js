@@ -136,6 +136,16 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('triggerQueueAllAnimBtn');
       expect(els).toHaveProperty('mobileGenerateAllAnimatedTrigger');
       expect(els).toHaveProperty('selectionAnimBtn');
+      expect(els).toHaveProperty('searchTruncationBanner');
+      expect(els).toHaveProperty('searchTruncationText');
+      expect(els).toHaveProperty('dismissSearchTruncationBtn');
+    });
+
+    it('exposes search truncation state properties', () => {
+      expect(state).toHaveProperty('searchTruncated');
+      expect(state.searchTruncated).toBe(false);
+      expect(state).toHaveProperty('searchLimit');
+      expect(state.searchLimit).toBe(1000);
     });
   });
 

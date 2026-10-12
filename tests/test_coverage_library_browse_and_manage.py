@@ -344,3 +344,55 @@ def test_library_bulk_operations(api_client, tmp_path):
 
     res_empty_del = api_client.post("/api/backup/folders/empty/delete", json={})
     assert res_empty_del.status_code == 200
+
+
+def test_search_limit_and_truncation_behavior(api_client, sandbox_env):
+    from media_library.services.media_service import search_backup_index
+    from media_library.core.config import SEARCH_LIMIT
+
+    # Default query without limit parameter uses SEARCH_LIMIT
+    res = api_client.get("/api/backup/search", params={"q": "clip"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["limit"] == SEARCH_LIMIT
+    assert "truncated" in data
+    assert isinstance(data["truncated"], bool)
+
+    # Insert 6 test files matching 'searchlimit_test'
+    with db_conn() as conn:
+        with conn:
+            for i in range(6):
+                conn.execute(
+                    """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, mtime)
+                       VALUES (?, ?, ?, 'video', '.mp4', 1024, 100.0)""",
+                    (f"/dest/searchlimit_test_{i}.mp4", f"searchlimit_test_{i}.mp4", "/dest"),
+                )
+
+    # Test direct service call with limit=3 (truncation expected: 6 items in DB, limit 3)
+    results, truncated = search_backup_index("searchlimit_test", limit=3, return_meta=True)
+    assert len(results) == 3
+    assert truncated is True
+
+    # Test direct service call without return_meta (backwards compatibility returns list)
+    plain_results = search_backup_index("searchlimit_test", limit=3)
+    assert isinstance(plain_results, list)
+    assert len(plain_results) == 3
+
+    # Test API endpoint with limit=3
+    res_lim3 = api_client.get("/api/backup/search", params={"q": "searchlimit_test", "limit": 3})
+    assert res_lim3.status_code == 200
+    data3 = res_lim3.json()
+    assert data3["total"] == 3
+    assert data3["limit"] == 3
+    assert data3["truncated"] is True
+    assert len(data3["results"]) == 3
+
+    # Test API endpoint with limit=10 (no truncation: 6 items in DB, limit 10)
+    res_lim10 = api_client.get("/api/backup/search", params={"q": "searchlimit_test", "limit": 10})
+    assert res_lim10.status_code == 200
+    data10 = res_lim10.json()
+    assert data10["total"] == 6
+    assert data10["limit"] == 10
+    assert data10["truncated"] is False
+    assert len(data10["results"]) == 6
+
