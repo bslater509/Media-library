@@ -494,7 +494,7 @@ header.sticky {
   #sidebarDrawer {
     top: 48px;
     bottom: 0;
-    padding-bottom: max(1rem, var(--sab, env(safe-area-inset-bottom, 0px)));
+    padding-bottom: max(4.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 3.5rem));
   }
 }
 
@@ -507,9 +507,16 @@ header.sticky {
 /* Floating Scroll to Top button with safe-area spacing and smooth spring transition */
 #scrollToTopBtn {
   z-index: 30 !important;
-  bottom: max(1.5rem, calc(var(--sab, 0px) + 1.25rem));
-  right: max(1.5rem, calc(var(--sar, 0px) + 1.25rem));
+  bottom: max(1.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem));
+  right: max(1.5rem, calc(var(--sar, env(safe-area-inset-right, 0px)) + 1.25rem));
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease;
+}
+
+@media (max-width: 767px) {
+  #scrollToTopBtn {
+    bottom: max(5.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 4.5rem)) !important;
+    right: max(1rem, calc(var(--sar, env(safe-area-inset-right, 0px)) + 0.75rem)) !important;
+  }
 }
 
 /* Mobile Single-Line Header auto-hide transition and safe-area support */
@@ -542,8 +549,21 @@ header.sticky {
 }
 
 /* --------------------------------------------------------------------------
-   iOS safe-area clearance for mobile floating bars
+   iOS safe-area & mobile browser chrome clearance
    -------------------------------------------------------------------------- */
+
+/* Gallery Content Area bottom clearance for mobile browsers (addresses floating address bar, bottom toolbar, and safe-area insets) */
+@media (max-width: 767px) {
+  #galleryContentArea {
+    padding-bottom: max(8.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 7.5rem)) !important;
+  }
+}
+
+@media screen and (orientation: landscape) and (max-height: 550px) {
+  #galleryContentArea {
+    padding-bottom: max(4.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 3.5rem)) !important;
+  }
+}
 
 /* Sorter fixed bottom action bar — clear the home-indicator inset so the
    buttons don't sit under the gesture area (iOS standalone/PWA). */
@@ -551,14 +571,20 @@ header.sticky {
   padding-bottom: max(0.375rem, var(--sab, env(safe-area-inset-bottom, 0px))) !important;
 }
 
-/* Library selection toolbar — floats as a bottom bar on mobile; keep it above
-   the home indicator (at least 1rem from the viewport bottom, and >= 12px
-   above the safe-area inset when present). */
 @media (max-width: 767px) {
-  #selectionToolbar {
-    bottom: max(1rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem)) !important;
+  body:has(.mobile-bottom-bar) {
+    padding-bottom: max(6.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 5.5rem)) !important;
   }
 }
+
+/* Library selection toolbar — floats as a bottom bar on mobile; keep it above
+   the browser bottom address bar and home indicator. */
+@media (max-width: 767px) {
+  #selectionToolbar {
+    bottom: max(4.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 3.75rem)) !important;
+  }
+}
+
 
 
 
