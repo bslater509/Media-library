@@ -273,3 +273,63 @@ async def test_animated_thumb_worker_and_system_status(sandbox_env, api_client):
     res_fast = api_client.get(f"/api/backup/thumbnails/animated?path={vid_uncompiled}&wait=0")
     assert res_fast.status_code in (200, 202)
     assert res_fast.headers.get("x-thumbnail-status") == "generating"
+
+
+@pytest.mark.anyio
+async def test_batch_animated_all_videos(sandbox_env, api_client):
+    from media_library.core.state import state
+    from media_library.db.connection import db_conn
+    from media_library.workers.animated_thumb_worker import animated_thumb_worker_instance
+
+    dest = str(sandbox_env["media_dir"])
+    state["destination_dir"] = dest
+
+    # Insert mock videos in different folders
+    sub1 = os.path.join(dest, "sub1")
+    os.makedirs(sub1, exist_ok=True)
+    v1 = os.path.join(dest, "vid_all_1.mp4")
+    v2 = os.path.join(sub1, "vid_all_2.mp4")
+    _create_mock_video_image(v1)
+    _create_mock_video_image(v2)
+
+    with db_conn() as conn, conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, has_animated)
+               VALUES (?, 'vid_all_1.mp4', ?, 'video', '.mp4', 2048, '2 KB', 1234.0, 0)""",
+            (v1, dest),
+        )
+        conn.execute(
+            """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, has_animated)
+               VALUES (?, 'vid_all_2.mp4', ?, 'video', '.mp4', 2048, '2 KB', 1234.0, 0)""",
+            (v2, sub1),
+        )
+
+    # Test worker enqueue_all
+    animated_thumb_worker_instance.cancel_all()
+    count = animated_thumb_worker_instance.enqueue_all(force=False)
+    assert count >= 2
+
+    # Test worker enqueue_folder with force
+    animated_thumb_worker_instance.cancel_all()
+    count_sub = animated_thumb_worker_instance.enqueue_folder(sub1, force=True)
+    assert count_sub >= 1
+
+    # Test batch-animated endpoint with all_videos=True
+    animated_thumb_worker_instance.cancel_all()
+    res_all = api_client.post(
+        "/api/backup/thumbnails/batch-animated",
+        json={"all_videos": True},
+    )
+    assert res_all.status_code == 200
+    adata = res_all.json()
+    assert adata["success"] is True
+    assert adata["queued"] >= 2
+    assert "across library" in adata["message"]
+
+    # When all videos are queued / already cached, message indicates up-to-date
+    res_again = api_client.post(
+        "/api/backup/thumbnails/batch-animated",
+        json={"all_videos": True},
+    )
+    assert res_again.status_code == 200
+    assert res_again.json()["success"] is True

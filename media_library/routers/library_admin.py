@@ -322,6 +322,9 @@ class BatchAnimatedPreviewRequest(BaseModel):
     folder: str | None = None
     paths: list[str] | None = None
     priority: bool = False
+    all_videos: bool = False
+    all: bool = False
+    force: bool = False
 
 
 @router.post("/api/backup/thumbnails/generate-animated")
@@ -355,6 +358,7 @@ async def trigger_animated_thumbnail_generate(req: AnimatedPreviewRequest):
 @router.post("/api/backup/thumbnails/batch-animated")
 async def trigger_batch_animated_preview_generate(req: BatchAnimatedPreviewRequest):
     videos_to_process: list[str] = []
+    is_all = bool(req.all_videos or req.all)
     if req.paths:
         for p in req.paths:
             try:
@@ -362,20 +366,45 @@ async def trigger_batch_animated_preview_generate(req: BatchAnimatedPreviewReque
                 videos_to_process.append(rp)
             except Exception:
                 pass
+    elif is_all:
+        with db_conn() as conn:
+            if req.force:
+                rows = conn.execute(
+                    "SELECT path FROM files WHERE type = 'video'"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT path FROM files WHERE type = 'video' AND (has_animated IS NULL OR has_animated = 0)"
+                ).fetchall()
+            videos_to_process = [r["path"] for r in rows]
     else:
         target_folder = req.folder_path or req.folder
         with db_conn() as conn:
             if target_folder:
                 real_folder = validate_backup_path(target_folder)
-                rows = conn.execute(
-                    "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
-                    (real_folder,),
-                ).fetchall()
+                if req.force:
+                    rows = conn.execute(
+                        "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
+                        (real_folder,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT path FROM files WHERE folder_path = ? AND type = 'video' AND (has_animated IS NULL OR has_animated = 0)",
+                        (real_folder,),
+                    ).fetchall()
             else:
-                rows = conn.execute(
-                    "SELECT path FROM files WHERE type = 'video' LIMIT 500"
-                ).fetchall()
+                if req.force:
+                    rows = conn.execute(
+                        "SELECT path FROM files WHERE type = 'video' LIMIT 500"
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT path FROM files WHERE type = 'video' AND (has_animated IS NULL OR has_animated = 0) LIMIT 500"
+                    ).fetchall()
             videos_to_process = [r["path"] for r in rows]
+
+    if animated_thumb_worker_instance.is_paused():
+        animated_thumb_worker_instance.resume()
 
     if req.priority:
         queued_count = 0
@@ -385,11 +414,19 @@ async def trigger_batch_animated_preview_generate(req: BatchAnimatedPreviewReque
     else:
         queued_count = animated_thumb_worker_instance.enqueue_batch(videos_to_process)
 
+    if is_all:
+        if queued_count == 0:
+            msg = "All videos already have animated previews"
+        else:
+            msg = f"Queued {queued_count} video(s) across library for animated preview generation"
+    else:
+        msg = f"Queued {queued_count} video(s) for animated preview generation"
+
     return {
         "success": True,
         "count": len(videos_to_process),
         "queued": queued_count,
-        "message": f"Queued {queued_count} video(s) for animated preview generation",
+        "message": msg,
     }
 
 

@@ -172,7 +172,24 @@ class AnimatedThumbWorker(BaseWorker):
                 count += 1
         return count
 
-    def enqueue_folder(self, folder_path: str) -> int:
+    def enqueue_all(self, force: bool = False) -> int:
+        """Enqueues all videos across the library that do not yet have animated previews."""
+        videos: list[str] = []
+        try:
+            with db_conn() as conn:
+                if force:
+                    cur = conn.execute("SELECT path FROM files WHERE type = 'video'")
+                else:
+                    cur = conn.execute(
+                        "SELECT path FROM files WHERE type = 'video' AND (has_animated IS NULL OR has_animated = 0)"
+                    )
+                videos = [r["path"] for r in cur.fetchall()]
+        except Exception as e:
+            logger.error(f"Error querying all videos for animated previews: {e}")
+
+        return self.enqueue_batch(videos)
+
+    def enqueue_folder(self, folder_path: str, force: bool = False) -> int:
         """Enqueues all videos in a folder that do not yet have animated previews."""
         from media_library.services.media_service import validate_backup_path
 
@@ -180,10 +197,16 @@ class AnimatedThumbWorker(BaseWorker):
         videos: list[str] = []
         try:
             with db_conn() as conn:
-                cur = conn.execute(
-                    "SELECT path FROM files WHERE folder_path = ? AND type = 'video' AND (has_animated IS NULL OR has_animated = 0)",
-                    (real_folder,),
-                )
+                if force:
+                    cur = conn.execute(
+                        "SELECT path FROM files WHERE folder_path = ? AND type = 'video'",
+                        (real_folder,),
+                    )
+                else:
+                    cur = conn.execute(
+                        "SELECT path FROM files WHERE folder_path = ? AND type = 'video' AND (has_animated IS NULL OR has_animated = 0)",
+                        (real_folder,),
+                    )
                 videos = [r["path"] for r in cur.fetchall()]
         except Exception as e:
             logger.error(f"Error querying folder for animated previews: {e}")

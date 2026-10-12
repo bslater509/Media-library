@@ -2823,6 +2823,78 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     }
   }
 
+  // Trigger Animated Preview Generation for All Videos in Library
+  async function triggerAllAnimatedPreviews() {
+    const btns = [
+      els.generateAllAnimatedBtn,
+      els.triggerAllAnimWorkerBtn,
+      els.triggerQueueAllAnimBtn,
+      els.mobileGenerateAllAnimatedTrigger,
+    ].filter(Boolean);
+    try {
+      btns.forEach(b => { b.disabled = true; });
+      if (els.generateAllAnimatedBtnText) {
+        els.generateAllAnimatedBtnText.textContent = 'Queueing...';
+      }
+      showToast('Scanning library and queuing videos for animated previews...', 'info');
+      const res = await fetch('/api/backup/thumbnails/batch-animated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all_videos: true }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || `Queued ${data.queued} video(s) for animated preview generation`, 'success');
+        pollSystemStatus(true);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Failed to queue animated preview generation', 'error');
+      }
+    } catch (err) {
+      console.error('Error triggering all animated previews:', err);
+      showToast('Failed to queue animated preview generation', 'error');
+    } finally {
+      btns.forEach(b => { b.disabled = false; });
+      if (els.generateAllAnimatedBtnText) {
+        els.generateAllAnimatedBtnText.textContent = 'All Videos';
+      }
+    }
+  }
+
+  // Trigger Animated Preview Generation for Selected Videos
+  async function triggerSelectedAnimatedPreviews() {
+    if (!state.selectedPaths || state.selectedPaths.size === 0) return;
+    const selectedVideoPaths = Array.from(state.selectedPaths).filter(p => {
+      const f = state.allFiles ? state.allFiles.find(item => item.path === p) : null;
+      return f ? f.type === 'video' : /\.(mp4|mkv|mov|avi|webm|flv|wmv|m4v|3gp|ts)$/i.test(p);
+    });
+    if (selectedVideoPaths.length === 0) {
+      showToast('No video files selected', 'info');
+      return;
+    }
+    try {
+      if (els.selectionAnimBtn) els.selectionAnimBtn.disabled = true;
+      const res = await fetch('/api/backup/thumbnails/batch-animated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: selectedVideoPaths, priority: true }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message || `Queued ${data.queued} video(s) for animated previews`, 'success');
+        pollSystemStatus(true);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Failed to queue animated previews', 'error');
+      }
+    } catch (err) {
+      console.error('Error triggering selected animated previews:', err);
+      showToast('Failed to queue animated previews', 'error');
+    } finally {
+      if (els.selectionAnimBtn) els.selectionAnimBtn.disabled = false;
+    }
+  }
+
   // Trigger Animated Preview Generation for Current Folder
   async function triggerFolderAnimatedPreviews() {
     try {
@@ -6765,6 +6837,12 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
         if (els.generateFolderThumbsBtn) els.generateFolderThumbsBtn.click();
       });
     }
+    if (els.mobileGenerateAllAnimatedTrigger) {
+      els.mobileGenerateAllAnimatedTrigger.addEventListener('click', () => {
+        closeMobileControlsModal();
+        triggerAllAnimatedPreviews();
+      });
+    }
     if (els.mobileConvertMp4Trigger) {
       els.mobileConvertMp4Trigger.addEventListener('click', () => {
         closeMobileControlsModal();
@@ -6971,6 +7049,17 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
     // Generate Current Folder Animated Previews Button
     if (els.generateFolderAnimatedBtn) {
       els.generateFolderAnimatedBtn.addEventListener('click', triggerFolderAnimatedPreviews);
+    }
+
+    // Generate All Animated Previews Buttons
+    if (els.generateAllAnimatedBtn) {
+      els.generateAllAnimatedBtn.addEventListener('click', triggerAllAnimatedPreviews);
+    }
+    if (els.triggerAllAnimWorkerBtn) {
+      els.triggerAllAnimWorkerBtn.addEventListener('click', triggerAllAnimatedPreviews);
+    }
+    if (els.triggerQueueAllAnimBtn) {
+      els.triggerQueueAllAnimBtn.addEventListener('click', triggerAllAnimatedPreviews);
     }
 
     // Pause / Resume Animated Preview Generator
@@ -7384,6 +7473,7 @@ import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileS
       if (items.length) openBulkMove(items);
     });
     if (els.selectionRenameBtn) els.selectionRenameBtn.addEventListener('click', openBulkRenameModal);
+    if (els.selectionAnimBtn) els.selectionAnimBtn.addEventListener('click', triggerSelectedAnimatedPreviews);
     if (els.selectionWebpBtn) els.selectionWebpBtn.addEventListener('click', bulkWebpOptimize);
     if (els.selectionDeleteBtn) els.selectionDeleteBtn.addEventListener('click', openBulkDeleteModal);
 

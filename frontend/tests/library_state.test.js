@@ -129,6 +129,13 @@ describe('library/state.js unit tests', () => {
       expect(els).toHaveProperty('toggleAnimatedPreviewsBtn');
       expect(els).toHaveProperty('mobileSheetAnimatedPreviewsToggle');
       expect(els).toHaveProperty('generateFolderAnimatedBtn');
+      expect(els).toHaveProperty('generateFolderAnimatedBtnText');
+      expect(els).toHaveProperty('generateAllAnimatedBtn');
+      expect(els).toHaveProperty('generateAllAnimatedBtnText');
+      expect(els).toHaveProperty('triggerAllAnimWorkerBtn');
+      expect(els).toHaveProperty('triggerQueueAllAnimBtn');
+      expect(els).toHaveProperty('mobileGenerateAllAnimatedTrigger');
+      expect(els).toHaveProperty('selectionAnimBtn');
     });
   });
 

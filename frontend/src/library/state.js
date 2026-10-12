@@ -421,6 +421,7 @@
     // Animated Preview Queue Controls
     activeAnimatedSection: document.getElementById('activeAnimatedSection'),
     animSummaryText: document.getElementById('animSummaryText'),
+    triggerQueueAllAnimBtn: document.getElementById('triggerQueueAllAnimBtn'),
     toggleAnimPauseBtn: document.getElementById('toggleAnimPauseBtn'),
     activeAnimBox: document.getElementById('activeAnimBox'),
     activeAnimFilename: document.getElementById('activeAnimFilename'),
@@ -443,6 +444,7 @@
     thumbStatusLabel: document.getElementById('thumbStatusLabel'),
     // Animated Preview Generator Worker Controls
     animWorkerSummaryText: document.getElementById('animWorkerSummaryText'),
+    triggerAllAnimWorkerBtn: document.getElementById('triggerAllAnimWorkerBtn'),
     toggleAnimWorkerPauseBtn: document.getElementById('toggleAnimWorkerPauseBtn'),
     animWorkerProgressBox: document.getElementById('animWorkerProgressBox'),
     animWorkerCurrentFile: document.getElementById('animWorkerCurrentFile'),
@@ -538,6 +540,7 @@
     selectAllBtn: document.getElementById('selectAllBtn'),
     selectionMoveBtn: document.getElementById('selectionMoveBtn'),
     selectionRenameBtn: document.getElementById('selectionRenameBtn'),
+    selectionAnimBtn: document.getElementById('selectionAnimBtn'),
     selectionWebpBtn: document.getElementById('selectionWebpBtn'),
     selectionDeleteBtn: document.getElementById('selectionDeleteBtn'),
     selectionClearBtn: document.getElementById('selectionClearBtn'),
@@ -606,5 +609,9 @@
     // Animated WebP Previews
     toggleAnimatedPreviewsBtn: document.getElementById('toggleAnimatedPreviewsBtn'),
     mobileSheetAnimatedPreviewsToggle: document.getElementById('mobileSheetAnimatedPreviewsToggle'),
+    mobileGenerateAllAnimatedTrigger: document.getElementById('mobileGenerateAllAnimatedTrigger'),
     generateFolderAnimatedBtn: document.getElementById('generateFolderAnimatedBtn'),
+    generateFolderAnimatedBtnText: document.getElementById('generateFolderAnimatedBtnText'),
+    generateAllAnimatedBtn: document.getElementById('generateAllAnimatedBtn'),
+    generateAllAnimatedBtnText: document.getElementById('generateAllAnimatedBtnText'),
   };

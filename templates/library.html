@@ -342,6 +342,7 @@
         <div class="flex items-center gap-1 overflow-x-auto no-scrollbar">
           <button id="selectionMoveBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-emerald-300 hover:text-white bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0">📁 Move</button>
           <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
+          <button id="selectionAnimBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-violet-300 hover:text-white bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 transition flex items-center gap-1 shrink-0" title="Generate animated WebP previews for selected videos">🎞️ Animated</button>
           <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
           <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
           <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
@@ -586,6 +587,9 @@
               </h4>
               <div class="flex items-center gap-1.5 shrink-0">
                 <span id="animSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                <button id="triggerQueueAllAnimBtn" title="Queue all library videos for animated previews" class="px-2 py-1 bg-violet-950/50 hover:bg-violet-900/60 text-violet-300 hover:text-white border border-violet-800/40 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                  Generate All
+                </button>
                 <button id="toggleAnimPauseBtn" title="Pause or resume background animated preview generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer">
                   Pause
                 </button>
@@ -673,9 +677,14 @@
                     <span id="animWorkerSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
                   </div>
                 </div>
-                <button id="toggleAnimWorkerPauseBtn" title="Pause or resume animated preview generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
-                  Pause
-                </button>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button id="triggerAllAnimWorkerBtn" title="Queue all videos in library for animated previews" class="px-2 py-1 bg-violet-950/50 hover:bg-violet-900/60 text-violet-300 hover:text-white border border-violet-800/40 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                    Generate All
+                  </button>
+                  <button id="toggleAnimWorkerPauseBtn" title="Pause or resume animated preview generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                    Pause
+                  </button>
+                </div>
               </div>
               <div id="animWorkerProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
                 <div class="flex items-center justify-between text-[11px] gap-2">
@@ -854,12 +863,18 @@
                   <span class="text-base">🎞️</span>
                   <h4 class="text-xs font-bold text-white">Generate Animated Previews</h4>
                 </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed">Sample candidate frames and compile looping animated WebPs (480px, 2 fps) for videos in current folder.</p>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Sample candidate frames and compile looping animated WebPs (480px, 2 fps) across all library videos or current folder.</p>
               </div>
-              <button id="generateFolderAnimatedBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Generate animated WebP previews for videos in current folder">
-                <span>🎞️</span>
-                <span id="generateFolderAnimatedBtnText">Generate Animated Previews</span>
-              </button>
+              <div class="flex items-center gap-1.5">
+                <button id="generateAllAnimatedBtn" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-violet-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Generate animated WebP previews for all videos across the library">
+                  <span>🎞️</span>
+                  <span id="generateAllAnimatedBtnText">All Videos</span>
+                </button>
+                <button id="generateFolderAnimatedBtn" class="py-1.5 px-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer" title="Generate animated WebP previews for videos in current folder">
+                  <span>📁</span>
+                  <span id="generateFolderAnimatedBtnText">Current Folder</span>
+                </button>
+              </div>
             </div>
 
             <!-- Tool Card 4: Batch Compress Image Folders -->
@@ -1063,7 +1078,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=50"></script>
+  <script type="module" src="/static/dist/library.js?v=51"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}
