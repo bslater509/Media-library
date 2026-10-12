@@ -4713,18 +4713,24 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
         || String(item.url || '').replace(/^https?:\/\//, '').slice(0, 60)
         || item.id;
       const pct = Math.round(item.percent || 0);
+      const dl = item.downloader ? String(item.downloader) : '';
       const pos = item.playlist_index && item.playlist_count
         ? `${item.playlist_index}/${item.playlist_count}`
         : '';
+      const activeLabel = pct > 0 ? pct + '%' : (item.playlist_index ? item.playlist_index + ' done' : '…');
       const detailParts = [];
       if (isActive) {
         if (pos) detailParts.push(pos);
+        else if (item.playlist_index) detailParts.push(`${item.playlist_index} done`);
         if (item.speed) detailParts.push(item.speed);
         if (item.eta) detailParts.push(`ETA ${item.eta}`);
+        if (dl) detailParts.push(dl);
       } else if (isCompleted && item.imported_count) {
         detailParts.push(`${item.imported_count} file${item.imported_count > 1 ? 's' : ''}`);
+        if (dl) detailParts.push(dl);
       } else if (isFailed && item.error) {
         detailParts.push(String(item.error).slice(0, 80));
+        if (dl) detailParts.push(dl);
       }
       let badgeCls = 'bg-slate-800 text-slate-400';
       if (isActive) badgeCls = 'bg-emerald-900/60 text-emerald-300';
@@ -4745,9 +4751,9 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
           ${(isActive || isQueued) ? `
           <div class="flex items-center gap-2">
             <div class="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
-              <div class="h-full bg-emerald-500 transition-all duration-300" style="width:${isActive ? pct : 0}%"></div>
+              <div class="h-full bg-emerald-500 transition-all duration-300${isActive && pct <= 0 ? ' animate-pulse opacity-60' : ''}" style="width:${isActive ? (pct > 0 ? pct : 100) : 0}%"></div>
             </div>
-            <span class="text-[10px] text-emerald-400 font-mono shrink-0">${isActive ? pct + '%' : 'queued'}</span>
+            <span class="text-[10px] text-emerald-400 font-mono shrink-0">${isActive ? activeLabel : 'queued'}</span>
           </div>` : ''}
           ${detailParts.length ? `<div class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(detailParts.join(' · '))}</div>` : ''}
         </div>`;

@@ -1,22 +1,28 @@
-"""Background worker for URL/playlist video downloads via yt-dlp.
+"""Background worker for URL/playlist video downloads via yt-dlp + gallery-dl.
 
 Jobs are queued from the Library page ("Download from URL"). Up to
 ``DOWNLOAD_WORKER_CONCURRENCY`` (default 2) downloads run in parallel; further
-jobs wait in the queue. yt-dlp runs as an isolated subprocess (``python -m
-yt_dlp``) so a site-breakage crash terminates a single job, never the worker,
-and upgrades/cookies stay decoupled from the app's Python environment.
+jobs wait in the queue. Downloaders run as isolated subprocesses (``python -m
+yt_dlp`` / ``python -m gallery_dl``) so a site-breakage crash terminates a single
+job, never the worker, and upgrades/cookies stay decoupled from the app's
+Python environment.
 
 Pipeline per job:
-1. yt-dlp downloads the URL/playlist into a per-job staging directory under
+1. **yt-dlp first**. If it reports an unsupported URL (or finds nothing
+   importable), and gallery-dl is installed, the job **automatically falls back
+   to gallery-dl** for sites yt-dlp cannot handle (image boards / file hosts
+   such as bunkr album links). yt-dlp is still preferred for streaming sites
+   where it gives richer format selection and progress reporting.
+2. The downloader writes into a per-job staging directory under
    ``UPLOAD_STAGING_DIR`` (local disk; never touches the remote library).
-2. Completed files are moved one by one into the user-chosen library folder
+3. Completed files are moved one by one into the user-chosen library folder
    with auto-rename collision handling and an atomic ``.tmp_*`` ->
    ``os.replace`` pattern (FUSE-safe), then the target folder is re-indexed.
 
 Queue semantics: playlist items that fail are skipped and the job continues
-(``--ignore-errors``); live streams and upcoming premieres are filtered out
-(``--match-filter "!is_live & !is_upcoming"``). Jobs are individually
-cancellable.
+(yt-dlp ``--ignore-errors``); live streams and upcoming premieres are filtered
+out for yt-dlp (``--match-filter "!is_live & !is_upcoming"``). Jobs are
+individually cancellable.
 """
 
 import asyncio
@@ -62,6 +68,14 @@ _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 # Replace "NA" (yt-dlp's missing-value marker) with 0 so the JSON line stays parseable.
 _NA_FIX = re.compile(r'"NA"')
 
+# Media extensions importable from a downloader staging directory.
+_MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
+
+# Substrings in yt-dlp output that mean "this extractor does not handle the URL";
+# these trigger the gallery-dl fallback instead of a hard failure.
+_UNSUPPORTED_HINTS = ("Unsupported URL", "No video formats found")
+
+
 
 class DownloadCancelled(Exception):
     pass
@@ -106,6 +120,30 @@ def _build_ytdlp_command(url: str, out_dir: Path) -> list[str]:
         cmd += ["--cookies", DOWNLOAD_COOKIES_FILE]
     cmd.append(url)
     return cmd
+
+
+def _build_gallerydl_command(url: str, out_dir: Path) -> list[str]:
+    """Assemble the ``python -m gallery_dl`` subprocess command for one job.
+
+    ``directory=[]`` forces a flat layout (gallery-dl otherwise nests files under
+    a per-extractor subfolder) so finalization sees every downloaded file in one
+    place. gallery-dl prints the completed path of each file on its own line,
+    which is parsed for lightweight progress.
+    """
+    cmd = [
+        sys.executable,
+        "-m",
+        "gallery_dl",
+        "--dest",
+        str(out_dir),
+        "-o",
+        "directory=[]",
+    ]
+    if DOWNLOAD_COOKIES_FILE and os.path.isfile(DOWNLOAD_COOKIES_FILE):
+        cmd += ["--cookies", DOWNLOAD_COOKIES_FILE]
+    cmd.append(url)
+    return cmd
+
 
 
 def _coerce_num(value: Any, default: float = 0.0) -> float:
@@ -187,9 +225,9 @@ def _finalize_job_files(item: dict[str, Any], job_dir: Path) -> int:
     if not target_dir.is_dir():
         raise RuntimeError(f"Destination folder no longer exists: {target_dir}")
     imported = 0
-    for src_file in sorted(job_dir.iterdir()):
-        if not src_file.is_file():
-            continue
+    # Recurse: gallery-dl can nest files under subfolders (mitigated by
+    # ``directory=[]`` but not guaranteed for every extractor).
+    for src_file in sorted(p for p in job_dir.rglob("*") if p.is_file()):
         try:
             dest = _finalize_downloaded_file(src_file, target_dir, item["id"])
             if dest:
@@ -200,46 +238,149 @@ def _finalize_job_files(item: dict[str, Any], job_dir: Path) -> int:
     return imported
 
 
-def _run_ytdlp_job(item: dict[str, Any]) -> None:
-    """Synchronous (thread) execution of one download job."""
-    job_dir = UPLOAD_STAGING_DIR / f"dl_{item['id']}"
+def _reset_job_dir(job_dir: Path) -> None:
+    """Clear a staging dir before a fallback downloader reuses it."""
+    shutil.rmtree(job_dir, ignore_errors=True)
     job_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _apply_ytdlp_line(item: dict[str, Any], line: str) -> None:
+    """Fold one yt-dlp ``--progress-template`` JSON line into job status."""
+    if not line.startswith("{"):
+        return
     try:
-        cmd = _build_ytdlp_command(item["url"], job_dir)
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-        )
-        item["proc"] = proc
-        assert proc.stdout is not None
+        data = json.loads(_NA_FIX.sub("0", line))
+    except (ValueError, TypeError):
+        return
+    if isinstance(data, dict):
+        _apply_progress(item, data)
+
+
+def _apply_gallerydl_line(item: dict[str, Any], line: str, out_dir: Path) -> None:
+    """Track gallery-dl progress from the per-file path it prints on completion."""
+    path = Path(line)
+    if path.suffix.lower() not in _MEDIA_EXTENSIONS:
+        return
+    if not path.is_absolute():
+        return
+    if out_dir != path.parent and out_dir not in path.parents:
+        return
+    item["current_title"] = path.name
+    try:
+        item["playlist_index"] = int(item.get("playlist_index", 0)) + 1
+    except (TypeError, ValueError):
+        item["playlist_index"] = 1
+
+
+def _stream_process(item: dict[str, Any], cmd: list[str], on_line=None) -> tuple[int, list[str]]:
+    """Run a downloader subprocess, streaming stdout lines through ``on_line``.
+
+    Returns ``(returncode, lines)``. Raises ``DownloadCancelled`` when the job's
+    abort event is set (killing the process first).
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    item["proc"] = proc
+    assert proc.stdout is not None
+    lines: list[str] = []
+    try:
         for raw_line in proc.stdout:
             if item.get("abort_event", threading.Event()).is_set():
                 proc.kill()
                 proc.wait()
                 raise DownloadCancelled()
             line = raw_line.strip()
-            if not line.startswith("{"):
+            if not line:
                 continue
-            try:
-                data = json.loads(_NA_FIX.sub("0", line))
-            except (ValueError, TypeError):
-                continue
-            if isinstance(data, dict):
-                _apply_progress(item, data)
+            lines.append(line)
+            if on_line is not None:
+                on_line(line)
         proc.wait()
+    finally:
         item["proc"] = None
 
-        if item.get("abort_event", threading.Event()).is_set():
-            raise DownloadCancelled()
-        if proc.returncode != 0:
-            raise RuntimeError(f"yt-dlp exited with code {proc.returncode}")
+    if item.get("abort_event", threading.Event()).is_set():
+        raise DownloadCancelled()
+    return proc.returncode, lines
 
-        imported = _finalize_job_files(item, job_dir)
+
+def _looks_unsupported(lines: list[str]) -> bool:
+    """True when yt-dlp output indicates its extractors do not handle the URL."""
+    joined = "\n".join(lines)
+    return any(hint in joined for hint in _UNSUPPORTED_HINTS)
+
+
+def _attempt_downloads(item: dict[str, Any], job_dir: Path) -> tuple[int, Exception | None]:
+    """Try yt-dlp, then fall back to gallery-dl for sites yt-dlp cannot handle.
+
+    Returns ``(imported_count, last_error)``; ``last_error`` is None on success.
+    ``DownloadCancelled`` propagates to the caller.
+    """
+    last_error: Exception | None = None
+
+    if is_ytdlp_available():
+        item["downloader"] = "yt-dlp"
+        try:
+            code, lines = _stream_process(
+                item,
+                _build_ytdlp_command(item["url"], job_dir),
+                lambda line: _apply_ytdlp_line(item, line),
+            )
+            if code == 0:
+                imported = _finalize_job_files(item, job_dir)
+                if imported:
+                    return imported, None
+                last_error = RuntimeError(
+                    "No downloadable media found in URL (live streams / premieres skipped?)"
+                )
+            else:
+                last_error = RuntimeError(f"yt-dlp exited with code {code}")
+                if not _looks_unsupported(lines):
+                    return 0, last_error
+        except DownloadCancelled:
+            raise
+        except Exception as e:
+            last_error = e
+            return 0, last_error
+
+    if is_gallery_dl_available():
+        item["downloader"] = "gallery-dl"
+        _reset_job_dir(job_dir)
+        try:
+            code, _ = _stream_process(
+                item,
+                _build_gallerydl_command(item["url"], job_dir),
+                lambda line: _apply_gallerydl_line(item, line, job_dir),
+            )
+            if code != 0:
+                return 0, RuntimeError(f"gallery-dl exited with code {code}")
+            imported = _finalize_job_files(item, job_dir)
+            if imported:
+                return imported, None
+            return 0, last_error or RuntimeError("No downloadable media found in URL")
+        except DownloadCancelled:
+            raise
+        except Exception as e:
+            return 0, e
+
+    return 0, last_error
+
+
+def _run_ytdlp_job(item: dict[str, Any]) -> None:
+    """Synchronous (thread) execution of one download job (yt-dlp -> gallery-dl)."""
+    job_dir = UPLOAD_STAGING_DIR / f"dl_{item['id']}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        imported, error = _attempt_downloads(item, job_dir)
+        if error is not None:
+            raise error
         item["imported_count"] = imported
         if not imported:
             raise RuntimeError("No downloadable media found in URL (live streams / premieres skipped?)")
@@ -259,7 +400,7 @@ def _run_ytdlp_job(item: dict[str, Any]) -> None:
 
 
 class URLDownloadWorker(BaseWorker):
-    """Queued yt-dlp downloader with up to ``DOWNLOAD_WORKER_CONCURRENCY`` slots."""
+    """Queued yt-dlp/gallery-dl downloader with up to ``DOWNLOAD_WORKER_CONCURRENCY`` slots."""
 
     def __init__(self):
         super().__init__("url_download_worker")
@@ -291,6 +432,7 @@ class URLDownloadWorker(BaseWorker):
             "playlist_index": 0,
             "playlist_count": 0,
             "imported_count": 0,
+            "downloader": None,
             "error": None,
         }
         self.jobs_map[job_id] = item
@@ -346,6 +488,7 @@ class URLDownloadWorker(BaseWorker):
             "playlist_index": item.get("playlist_index", 0),
             "playlist_count": item.get("playlist_count", 0),
             "imported_count": item.get("imported_count", 0),
+            "downloader": item.get("downloader"),
             "error": item.get("error"),
             "created_at": item.get("created_at"),
             "started_at": item.get("started_at"),
@@ -419,6 +562,25 @@ def is_ytdlp_available() -> bool:
     except Exception:
         ok = False
     is_ytdlp_available._cached = (ok, time.time())
+    return ok
+
+
+def is_gallery_dl_available() -> bool:
+    """True when ``python -m gallery_dl`` runs on this host (cached 60s)."""
+    cached = getattr(is_gallery_dl_available, "_cached", None)
+    if cached and time.time() - cached[1] < 60:
+        return cached[0]
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "gallery_dl", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        ok = proc.returncode == 0
+    except Exception:
+        ok = False
+    is_gallery_dl_available._cached = (ok, time.time())
     return ok
 
 

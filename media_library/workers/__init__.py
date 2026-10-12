@@ -40,6 +40,7 @@ from media_library.workers.transfer_worker import (
 )
 from media_library.workers.url_download_worker import (
     URLDownloadWorker,
+    is_gallery_dl_available,
     is_ytdlp_available,
     url_download_worker_instance,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "thumb_hash_worker_instance",
     "thumbnail_worker_instance",
     "is_ytdlp_available",
+    "is_gallery_dl_available",
     "transcode_worker_instance",
     "transfer_worker_instance",
     "url_download_worker_instance",

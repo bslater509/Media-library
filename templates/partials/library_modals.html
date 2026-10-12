@@ -44,7 +44,7 @@
           <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Video or playlist URL</label>
           <input id="urlDownloadInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition" />
         </div>
-        <p class="text-[11px] text-slate-500 leading-relaxed">Downloads best available quality. Playlists are supported; live streams and upcoming premieres are skipped, and failed items are skipped without stopping the rest.</p>
+        <p class="text-[11px] text-slate-500 leading-relaxed">Uses yt-dlp, with an automatic gallery-dl fallback for sites yt-dlp can't handle (e.g. bunkr albums). Downloads best available quality; playlists are supported; live streams and upcoming premieres are skipped, and failed items are skipped without stopping the rest.</p>
         <div id="urlDownloadWarningText" class="text-xs text-amber-400 hidden p-2 bg-amber-500/10 rounded-lg border border-amber-500/20"></div>
       </div>
       <div class="px-5 py-3 border-t border-slate-800 bg-slate-950 flex justify-end gap-2">

@@ -15,7 +15,11 @@ from pydantic import BaseModel
 
 from media_library.services.media_service import validate_backup_path
 from media_library.services.library_manage_service import classify_library_path
-from media_library.workers import is_ytdlp_available, url_download_worker_instance
+from media_library.workers import (
+    is_gallery_dl_available,
+    is_ytdlp_available,
+    url_download_worker_instance,
+)
 from media_library.workers.url_download_worker import _URL_RE
 
 logger = logging.getLogger(__name__)
@@ -62,10 +66,10 @@ def enqueue_url_download(req: UrlDownloadRequest) -> dict[str, Any]:
         )
     destination = _validate_destination(req.destination_dir)
 
-    if not is_ytdlp_available():
+    if not is_ytdlp_available() and not is_gallery_dl_available():
         raise HTTPException(
             status_code=503,
-            detail="yt-dlp is not available on this server (python -m yt_dlp failed). Install it via requirements.txt.",
+            detail="Neither yt-dlp nor gallery-dl is available on this server. Install them via requirements.txt.",
         )
 
     job_id = url_download_worker_instance.enqueue(url, destination)

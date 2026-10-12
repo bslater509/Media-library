@@ -16,3 +16,6 @@ pillow-heif>=0.18.0
 
 # URL playlist downloading (yt-dlp runs as an isolated subprocess via "python -m yt_dlp")
 yt-dlp>=2025.1.15
+# Fallback downloader for sites yt-dlp does not support (image boards / file hosts
+# such as bunkr); runs as an isolated subprocess via "python -m gallery_dl"
+gallery-dl>=1.28.0
