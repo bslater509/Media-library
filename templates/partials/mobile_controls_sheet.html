@@ -1,10 +1,10 @@
 <!-- Mobile 4-Tab Slide-Up Bottom Sheet Control Modal -->
-<div id="mobileControlsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[90] hidden flex flex-col justify-end md:hidden" style="touch-action: pan-y;">
-  <div id="mobileControlsSheet" class="bg-slate-900 border-t border-slate-700/80 rounded-t-2xl shadow-2xl w-full max-h-[88dvh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+<div id="mobileControlsModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[90] hidden flex flex-col justify-end md:hidden" style="touch-action: pan-y;">
+  <div id="mobileControlsSheet" class="ml-sheet-card bg-slate-900 border-t border-slate-700/80 rounded-t-2xl shadow-2xl w-full max-h-[88dvh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
     
     <!-- Drag Handle & Sheet Header -->
     <div class="px-4 pt-2.5 pb-2 flex flex-col gap-1 border-b border-slate-800 shrink-0">
-      <div class="w-10 h-1 bg-slate-700 rounded-full mx-auto my-1"></div>
+      <div class="w-10 h-1 bg-slate-700 rounded-full mx-auto my-1" data-sheet-grabber></div>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-base">🎛️</span>

@@ -26,6 +26,25 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     return ratio;
   }
 
+  // “Show all N” expanders for capped queue lists (used by the tasks sheet).
+  // Each render function slices its list to `sliceCount` rows and appends a
+  // toggle button; expanding keeps the full list flowing in the single scroll
+  // region. Expansion state lives in-session so re-renders (polling) keep it.
+  const expandedSheetLists = new Set();
+  function sheetListSlice(listKey, total, sliceCount) {
+    return expandedSheetLists.has(listKey) ? total : Math.min(total, sliceCount);
+  }
+  function renderListExpander(listKey, total, sliceCount) {
+    if (total <= sliceCount) return '';
+    const expanded = expandedSheetLists.has(listKey);
+    return `<button type="button" class="ml-list-expander" data-expand-list="${listKey}" data-total="${total}" data-slice="${sliceCount}" aria-expanded="${expanded}">${expanded ? 'Show fewer ↑' : `Show all ${total} ↓`}</button>`;
+  }
+  function toggleSheetList(listKey, total, sliceCount) {
+    if (expandedSheetLists.has(listKey)) expandedSheetLists.delete(listKey);
+    else expandedSheetLists.add(listKey);
+    pollSystemStatus(true);
+  }
+
   // Responsive density used only to derive the justified target row height.
   function mediaColumnCount() {
     const w = window.innerWidth;
@@ -4610,12 +4629,12 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     if (queued.length > 0) {
       els.queuedTransfersContainer.classList.remove('hidden');
       if (els.queuedTransfersCount) els.queuedTransfersCount.textContent = queued.length;
-      els.queuedTransfersList.innerHTML = queued.slice(0, 10).map(q => `
+      els.queuedTransfersList.innerHTML = queued.slice(0, sheetListSlice('queuedTransfers', queued.length, 10)).map(q => `
         <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
           <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${q.filename}</span>
           <span class="text-[10px] text-emerald-400 font-mono shrink-0">→ /${q.destination_folder}</span>
         </div>
-      `).join('') + (queued.length > 10 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${queued.length - 10} more in queue...</div>` : '');
+      `).join('') + renderListExpander('queuedTransfers', queued.length, 10);
     } else {
       els.queuedTransfersContainer.classList.add('hidden');
       els.queuedTransfersList.innerHTML = '';
@@ -4663,12 +4682,12 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
       els.queuedLibraryOpsContainer.classList.remove('hidden');
       if (els.queuedLibraryOpsCount) els.queuedLibraryOpsCount.textContent = queued.length;
       if (els.queuedLibraryOpsList) {
-        els.queuedLibraryOpsList.innerHTML = queued.slice(0, 10).map(q => `
+        els.queuedLibraryOpsList.innerHTML = queued.slice(0, sheetListSlice('queuedLibraryOps', queued.length, 10)).map(q => `
           <div class="flex items-center gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
             <span class="text-[9px] uppercase px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-mono shrink-0">${LIBOP_BADGES[q.op] || 'Op'}</span>
             <span class="truncate text-slate-400 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(String(q.id || '').slice(0, 8))}</span>
           </div>
-        `).join('') + (queued.length > 10 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${queued.length - 10} more in queue...</div>` : '');
+        `).join('') + renderListExpander('queuedLibraryOps', queued.length, 10);
       }
     } else {
       els.queuedLibraryOpsContainer.classList.add('hidden');
@@ -4702,7 +4721,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     }
 
     const recentHistory = history.slice(-8).reverse();
-    const rows = [...active, ...queued, ...recentHistory];
+    const rows = [...active, ...queued.slice(0, sheetListSlice('urlDownloads', queued.length, 8)), ...recentHistory];
     listEl.innerHTML = rows.map(item => {
       const isActive = item.status === 'downloading';
       const isQueued = item.status === 'queued';
@@ -4757,7 +4776,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
           </div>` : ''}
           ${detailParts.length ? `<div class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(detailParts.join(' · '))}</div>` : ''}
         </div>`;
-    }).join('');
+    }).join('') + renderListExpander('urlDownloads', queued.length, 8);
 
     listEl.querySelectorAll('[data-urldl-cancel]').forEach(btn => {
       btn.addEventListener('click', () => cancelUrlDownloadJob(btn.dataset.urldlCancel));
@@ -4815,14 +4834,13 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     if (queued.length > 0) {
       els.queuedTranscodesContainer.classList.remove('hidden');
       if (els.queuedTranscodesCount) els.queuedTranscodesCount.textContent = queued.length;
-      const displayQueue = queued.slice(0, 15);
-      const remainingCount = queued.length - displayQueue.length;
+      const displayQueue = queued.slice(0, sheetListSlice('queuedTranscodes', queued.length, 15));
       els.queuedTranscodesList.innerHTML = displayQueue.map(q => `
         <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
           <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${q.filename}</span>
           <button onclick="window.libraryApp.cancelTranscode('${q.id}')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 bg-red-950/40 hover:bg-red-900/60 rounded border border-red-800/50 shrink-0">Cancel</button>
         </div>
-      `).join('') + (remainingCount > 0 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${remainingCount} more in queue...</div>` : '');
+      `).join('') + renderListExpander('queuedTranscodes', queued.length, 15);
     } else {
       els.queuedTranscodesContainer.classList.add('hidden');
       els.queuedTranscodesList.innerHTML = '';
@@ -4831,7 +4849,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
 
     // Recent history
     if (history.length > 0) {
-      els.transcodeHistoryList.innerHTML = history.slice(0, 8).map(h => {
+      els.transcodeHistoryList.innerHTML = history.slice(0, sheetListSlice('transcodeHistory', history.length, 8)).map(h => {
         const isSuccess = h.status === 'completed';
         const icon = isSuccess ? '✓' : '✕';
         const color = isSuccess ? 'text-emerald-400' : 'text-red-400';
@@ -4841,7 +4859,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
             <span class="${color} shrink-0">${icon} ${h.status}</span>
           </div>
         `;
-      }).join('');
+      }).join('') + renderListExpander('transcodeHistory', history.length, 8);
     } else {
       els.transcodeHistoryList.innerHTML = `<span class="text-slate-600 italic">No conversions yet</span>`;
     }
@@ -4960,14 +4978,14 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
       if (els.queuedAnimContainer) els.queuedAnimContainer.classList.remove('hidden');
       if (els.queuedAnimCount) els.queuedAnimCount.textContent = data.queue_length || queued.length;
       if (els.queuedAnimList) {
-        const displayQueue = queued.slice(0, 15);
-        const remaining = (data.queue_length || queued.length) - displayQueue.length;
+        const animTotal = data.queue_length || queued.length;
+        const displayQueue = queued.slice(0, sheetListSlice('queuedAnim', animTotal, 15));
         els.queuedAnimList.innerHTML = displayQueue.map(q => `
           <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
             <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(q.name)}</span>
             <span class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-violet-950/60 text-violet-300 border border-violet-500/30 font-mono shrink-0">Queued</span>
           </div>
-        `).join('') + (remaining > 0 ? `<div class="text-[10px] text-slate-500 text-center py-1 font-mono font-medium">+${remaining} more in queue...</div>` : '');
+        `).join('') + renderListExpander('queuedAnim', animTotal, 15);
       }
     } else {
       if (els.queuedAnimContainer) els.queuedAnimContainer.classList.add('hidden');
@@ -7066,6 +7084,85 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     }
   }
 
+  // Swipe-to-dismiss for mobile full-height sheets. Drag is only initiated
+  // from the grabber handle or the card header background (never from buttons,
+  // inputs, or other interactive controls inside the sheet), so timeline
+  // scrubbers, sliders, and list scrolling keep working untouched.
+  function initSheetDrag() {
+    if (!window.matchMedia('(max-width: 767px)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const closeFns = {
+      transferDropdown: () => setTransferDropdownOpen(false),
+      mobileControlsModal: closeMobileControlsModal,
+      themeCustomizerModal: closeThemeModal,
+      duplicatesModal: closeDuplicatesModal,
+      ignoredDuplicatesModal: closeIgnoredDuplicatesModal,
+      batchZipModal: closeBatchZipModal,
+      batchUnpackModal: closeBatchUnpackModal,
+      emptyFoldersModal: closeEmptyFoldersModal,
+      mediaInfoModal: closeMediaInfoModal,
+      thumbnailChooserModal: closeThumbnailChooser,
+    };
+
+    const DISMISS_THRESHOLD = 120;
+    document.querySelectorAll('.ml-sheet').forEach((wrap) => {
+      const card = wrap.querySelector('.ml-sheet-card');
+      const close = closeFns[wrap.id];
+      if (!card || !close) return;
+
+      const grabber = card.querySelector('[data-sheet-grabber]');
+      const header = grabber ? grabber.nextElementSibling : null;
+      let startY = 0;
+      let dragging = false;
+
+      const onPointerDown = (e) => {
+        if (dragging) return;
+        const el = e.target;
+        const isInteractive = el.closest && el.closest('button, input, select, textarea, a, label, [role="button"]');
+        const inHeader = header && !isInteractive && (el === header || (header.contains && header.contains(el)));
+        if (!(grabber && el.closest('[data-sheet-grabber]')) && !inHeader) return;
+        startY = e.clientY;
+        dragging = true;
+        card.classList.add('ml-dragging');
+        try { card.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      };
+
+      const onPointerMove = (e) => {
+        if (!dragging) return;
+        const dy = Math.max(0, e.clientY - startY);
+        card.style.transform = `translateY(${dy}px)`;
+      };
+
+      const onPointerUp = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        const dy = Math.max(0, (e.clientY || 0) - startY);
+        card.classList.remove('ml-dragging');
+        card.classList.add('ml-snap-back');
+        if (dy > DISMISS_THRESHOLD) {
+          card.style.transform = 'translateY(105%)';
+          setTimeout(() => {
+            card.classList.remove('ml-snap-back');
+            card.style.transform = '';
+            close();
+          }, 240);
+        } else {
+          card.style.transform = 'translateY(0)';
+          setTimeout(() => {
+            card.classList.remove('ml-snap-back');
+            card.style.transform = '';
+          }, 280);
+        }
+      };
+
+      card.addEventListener('pointerdown', onPointerDown);
+      card.addEventListener('pointermove', onPointerMove);
+      card.addEventListener('pointerup', onPointerUp);
+      card.addEventListener('pointercancel', onPointerUp);
+    });
+  }
+
   // Event Listeners Initialization
   function initEvents() {
     // Delegated sidebar tree click handler (expand toggle + node navigation)
@@ -7926,6 +8023,16 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     // Theme Customizer & Mobile Gestures
     initThemeCustomizerEvents();
     initMobileControlsSheet();
+
+    // Delegated “Show all N” expanders (tasks sheet queue lists)
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-expand-list]');
+      if (!btn || !btn.dataset.total) return;
+      toggleSheetList(btn.dataset.expandList, Number(btn.dataset.total), Number(btn.dataset.slice || 10));
+    });
+
+    // Swipe-to-dismiss drag handles for mobile full-height sheets
+    initSheetDrag();
   }
 
   // App Initialization

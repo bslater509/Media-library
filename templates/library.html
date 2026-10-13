@@ -416,9 +416,12 @@
   <div id="transferBackdrop" class="hidden fixed inset-0 bg-slate-950/80 z-[60]"></div>
 
   <!-- Background Tasks Centered Modal Dialog -->
-  <div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
-    <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
-      
+  <div id="transferDropdown" class="ml-sheet hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+    <div id="tasksModalCard" class="tasks-modal-panel ml-sheet-card bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Modal Header -->
       <div class="flex items-center justify-between px-3.5 py-2.5 sm:px-5 sm:py-3.5 bg-slate-900 border-b border-slate-800 shrink-0">
         <div class="flex items-center gap-2 min-w-0">
@@ -487,7 +490,7 @@
             </div>
 
             <!-- Active Uploads List -->
-            <div id="activeUploadsList" class="flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"></div>
+            <div id="activeUploadsList" class="ml-flatten flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"></div>
           </div>
 
             <!-- Section: URL Downloads -->
@@ -498,7 +501,7 @@
               </h4>
               <span id="urlDownloadsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
             </div>
-            <div id="urlDownloadsList" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto no-scrollbar"></div>
+            <div id="urlDownloadsList" class="ml-flatten flex flex-col gap-1.5 max-h-64 overflow-y-auto no-scrollbar"></div>
           </div>
 
           <!-- Section 0: File Transfers -->
@@ -528,7 +531,7 @@
             <!-- Queued Transfers List -->
             <div id="queuedTransfersContainer" class="hidden flex flex-col gap-1.5">
               <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Transfers (<span id="queuedTransfersCount">0</span>):</span>
-              <div id="queuedTransfersList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+              <div id="queuedTransfersList" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
             </div>
           </div>
 
@@ -556,7 +559,7 @@
             <!-- Queued Operations List -->
             <div id="queuedLibraryOpsContainer" class="hidden flex flex-col gap-1.5">
               <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Operations (<span id="queuedLibraryOpsCount">0</span>):</span>
-              <div id="queuedLibraryOpsList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+              <div id="queuedLibraryOpsList" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
             </div>
           </div>
 
@@ -598,7 +601,7 @@
                 <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Conversions (<span id="queuedTranscodesCount">0</span>):</span>
                 <button id="cancelAllTranscodesBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition cursor-pointer">Cancel All</button>
               </div>
-              <div id="queuedTranscodesList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+              <div id="queuedTranscodesList" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
             </div>
           </div>
 
@@ -643,14 +646,14 @@
                 <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Previews (<span id="queuedAnimCount">0</span>):</span>
                 <button id="cancelAllAnimBtn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition cursor-pointer">Cancel All</button>
               </div>
-              <div id="queuedAnimList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+              <div id="queuedAnimList" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
             </div>
           </div>
 
           <!-- Section: Completed Activity -->
           <div class="flex flex-col gap-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
             <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed Activity</span>
-            <div id="transcodeHistoryList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
+            <div id="transcodeHistoryList" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
               <span class="text-slate-600 italic">No activity yet</span>
             </div>
           </div>
@@ -1125,7 +1128,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=55"></script>
+  <script type="module" src="/static/dist/library.js?v=56"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

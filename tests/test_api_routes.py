@@ -62,10 +62,10 @@ def test_html_views(api_client):
     assert "tasksTabBtnTools" in res_lib.text
     assert "activeQueuesEmptyState" in res_lib.text
     assert "duplicatesModal" in res_lib.text
-    assert 'id="duplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
+    assert 'id="duplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
     assert 'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto' in res_lib.text
     assert "ignoredDuplicatesModal" in res_lib.text
-    assert 'id="ignoredDuplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
+    assert 'id="ignoredDuplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
     assert "styles.css?v=41" in res_lib.text
     assert 'id="libraryStickyHeader"' in res_lib.text
     assert 'id="scrollToTopBtn"' in res_lib.text

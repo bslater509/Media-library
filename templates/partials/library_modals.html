@@ -347,9 +347,12 @@
     </div>
   </div>
 
-<div id="duplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]">
-    <div class="bg-slate-900 border border-amber-500/30 rounded-2xl w-full max-w-6xl h-full max-h-full sm:h-auto sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<div id="duplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]">
+    <div class="ml-sheet-card bg-slate-900 border border-amber-500/30 rounded-2xl w-full max-w-6xl h-full max-h-full sm:h-auto sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Modal Header -->
       <div class="px-3.5 py-2.5 sm:px-6 sm:py-3.5 bg-slate-950/80 border-b border-slate-800 grid grid-cols-[1fr_auto] md:flex md:items-center md:justify-between gap-2.5 sm:gap-3 shrink-0">
         
@@ -479,9 +482,12 @@
     </div>
   </div>
 
-<div id="ignoredDuplicatesModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]">
-    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-3xl h-full max-h-full sm:h-auto sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<div id="ignoredDuplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]">
+    <div class="ml-sheet-card bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-3xl h-full max-h-full sm:h-auto sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Header -->
       <div class="px-5 py-4 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -609,9 +615,12 @@
     </div>
   </div>
 
-<div id="batchZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
-    <div class="bg-slate-900 border border-sky-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<div id="batchZipModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-sky-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Modal Header -->
       <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -665,7 +674,7 @@
       </div>
 
       <!-- Candidate Folders Scrollable List -->
-      <div id="batchZipCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+      <div id="batchZipCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
         <div class="text-center py-10 text-xs text-slate-500">Scanning library for candidate folders...</div>
       </div>
 
@@ -689,9 +698,12 @@
     </div>
   </div>
 
-<div id="batchUnpackModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
-    <div class="bg-slate-900 border border-emerald-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<div id="batchUnpackModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-emerald-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Modal Header -->
       <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -745,7 +757,7 @@
       </div>
 
       <!-- Candidate ZIP Archives Scrollable List -->
-      <div id="batchUnpackCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+      <div id="batchUnpackCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
         <div class="text-center py-10 text-xs text-slate-500">Scanning library for ZIP archives...</div>
       </div>
 
@@ -769,9 +781,12 @@
     </div>
   </div>
 
-<div id="emptyFoldersModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
-    <div class="bg-slate-900 border border-rose-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<div id="emptyFoldersModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-rose-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Modal Header -->
       <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
@@ -821,7 +836,7 @@
       </div>
 
       <!-- Candidate Folders Scrollable List -->
-      <div id="emptyFoldersCandidatesList" class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+      <div id="emptyFoldersCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
         <div class="text-center py-10 text-xs text-slate-500">Scanning library for empty folders...</div>
       </div>
 
@@ -846,8 +861,11 @@
   </div>
 
   <!-- Media Info Inspector Modal -->
-  <div id="mediaInfoModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-3 sm:p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 max-h-[90vh]" onclick="event.stopPropagation()">
+  <div id="mediaInfoModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="ml-sheet-card bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 max-h-[90vh]" onclick="event.stopPropagation()">
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Header -->
       <div class="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950/70 shrink-0">
         <div class="flex items-center gap-2 min-w-0">
@@ -941,8 +959,11 @@
   </div>
 
   <!-- Video Thumbnail Chooser Modal -->
-  <div id="thumbnailChooserModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-3 sm:p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 max-h-[92vh]" onclick="event.stopPropagation()">
+  <div id="thumbnailChooserModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="ml-sheet-card bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-200 max-h-[92vh]" onclick="event.stopPropagation()">
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
       <!-- Header -->
       <div class="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b border-slate-800 bg-slate-950/70 shrink-0">
         <div class="flex items-center gap-2 min-w-0">
