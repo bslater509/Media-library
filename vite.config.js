@@ -8,7 +8,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         library: resolve(__dirname, 'frontend/src/library/index.js'),
-        app: resolve(__dirname, 'frontend/src/app/index.js')
+        app: resolve(__dirname, 'frontend/src/app/index.js'),
+        downloads: resolve(__dirname, 'frontend/src/downloads/index.js')
       },
       output: {
         entryFileNames: '[name].js',

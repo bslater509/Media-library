@@ -9,6 +9,7 @@ import {
   showToast,
   formatTimestamp,
   formatBitrate,
+  shouldPlayAnimatedThumb,
 } from '../src/library/utils.js';
 
 describe('library/utils.js unit tests', () => {
@@ -118,6 +119,34 @@ describe('library/utils.js unit tests', () => {
 
       // 50,000 bytes over 10s = 40,000 bps = 40 kbps
       expect(formatBitrate(50000, 10)).toBe('40 kbps');
+    });
+  });
+
+  describe('shouldPlayAnimatedThumb', () => {
+    it('never animates non-video tiles', () => {
+      expect(shouldPlayAnimatedThumb({ isVideo: false, hasHoverPointer: true, isHovered: true })).toBe(false);
+      expect(shouldPlayAnimatedThumb({ isVideo: false, isVisible: true, animatedThumbs: true })).toBe(false);
+    });
+
+    it('on desktop, plays only while the tile is hovered (toggle independent)', () => {
+      const base = { isVideo: true, hasHoverPointer: true };
+      expect(shouldPlayAnimatedThumb({ ...base, isHovered: true, animatedThumbs: false })).toBe(true);
+      expect(shouldPlayAnimatedThumb({ ...base, isHovered: true, animatedThumbs: true })).toBe(true);
+      expect(shouldPlayAnimatedThumb({ ...base, isHovered: false, animatedThumbs: true })).toBe(false);
+      expect(shouldPlayAnimatedThumb({ ...base, isHovered: false, isVisible: true, animatedThumbs: true })).toBe(false);
+    });
+
+    it('on touch, keeps scroll-into-view behaviour gated by the toggle', () => {
+      const base = { isVideo: true, hasHoverPointer: false };
+      expect(shouldPlayAnimatedThumb({ ...base, isVisible: true, animatedThumbs: true })).toBe(true);
+      expect(shouldPlayAnimatedThumb({ ...base, isVisible: false, animatedThumbs: true })).toBe(false);
+      expect(shouldPlayAnimatedThumb({ ...base, isVisible: true, animatedThumbs: false })).toBe(false);
+      // Hover is ignored without a hover-capable pointer.
+      expect(shouldPlayAnimatedThumb({ ...base, isVisible: false, isHovered: true, animatedThumbs: true })).toBe(false);
+    });
+
+    it('defaults to not playing with no arguments', () => {
+      expect(shouldPlayAnimatedThumb()).toBe(false);
     });
   });
 });

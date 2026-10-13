@@ -4,7 +4,7 @@
   // Thumbnail size presets. Each level scales the justified row height, so
   // larger presets yield fewer, bigger tiles and smaller presets more, smaller
   // ones. Persisted per browser.
-  export const TILE_SCALES = [0.6, 0.8, 1.0, 1.25, 1.5];
+  export const TILE_SCALES = [0.6, 0.8, 1.0, 1.25, 2.0];
   export const TILE_SCALE_LABELS = ['XS', 'S', 'M', 'L', 'XL'];
   export const TILE_SCALE_KEY = 'lib_tile_scale';
   export function loadTileScale() {

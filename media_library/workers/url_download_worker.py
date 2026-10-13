@@ -470,6 +470,67 @@ class URLDownloadWorker(BaseWorker):
             "queued": queued,
             "queued_count": len(queued),
             "history": [self._entry(h) for h in self.history[-20:]],
+            # Downloader availability rides along so every surface (library
+            # tasks modal, mobile tab, /downloads page) can show whether yt-dlp
+            # and gallery-dl are installed. Checks are cached for 60s.
+            "tools": {
+                "ytdlp": is_ytdlp_available(),
+                "gallery_dl": is_gallery_dl_available(),
+            },
+        }
+
+    def find_finished(self, job_id: str) -> dict[str, Any] | None:
+        """Return the public entry for a terminal job, or None if unknown."""
+        for item in self.history:
+            if item.get("id") == job_id:
+                return self._entry(item)
+        return None
+
+    def retry(self, job_id: str) -> str | None:
+        """Clone a failed or cancelled job as a new queue entry.
+
+        Returns the new job id, or None when the original job is unknown or not
+        retryable (completed jobs are never re-downloaded).
+        """
+        entry = self.find_finished(job_id)
+        if not entry:
+            return None
+        if entry.get("status") not in ("failed", "cancelled"):
+            return None
+        url = entry.get("url")
+        destination = entry.get("destination_dir")
+        if not url or not destination:
+            return None
+        return self.enqueue(url, destination)
+
+    def clear_history(self) -> int:
+        """Remove all finished jobs from the retained history.
+
+        Active and queued jobs are never stored in ``self.history`` (they live
+        in ``active_jobs`` / ``jobs_map``), so this only touches terminal rows.
+        Returns the number of entries cleared.
+        """
+        terminal = {"completed", "failed", "cancelled"}
+        before = len(self.history)
+        self.history = [h for h in self.history if h.get("status") not in terminal]
+        return before - len(self.history)
+
+    def get_history(self, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        """Paginated finished-history listing, newest first.
+
+        ``self.history`` is retained oldest -> newest (capped at 500), so the
+        newest-first window is ``reversed(history)[offset:offset+limit]``.
+        """
+        limit = 50 if limit is None else int(limit)
+        limit = max(1, min(limit, 500))
+        offset = max(0, int(offset or 0))
+        newest = list(reversed(self.history))
+        page = [self._entry(h) for h in newest[offset:offset + limit]]
+        return {
+            "history": page,
+            "total": len(self.history),
+            "limit": limit,
+            "offset": offset,
         }
 
     @staticmethod

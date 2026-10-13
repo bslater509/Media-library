@@ -93,6 +93,23 @@ export function getAspectRatio(w, h) {
     return `${rw}:${rh}`;
 }
 
+// Decide whether a video tile should currently show its looping animated
+// preview. Desktop pointers (hover-capable + fine) surface the animation only
+// while the tile is hovered, independent of the global animated-previews
+// toggle, so a hover always previews. Touch devices keep the scroll-into-view
+// behaviour, which the toggle still gates to save battery and bandwidth.
+export function shouldPlayAnimatedThumb({
+    isVideo = false,
+    hasHoverPointer = false,
+    isHovered = false,
+    isVisible = false,
+    animatedThumbs = false,
+} = {}) {
+    if (!isVideo) return false;
+    if (hasHoverPointer) return Boolean(isHovered);
+    return Boolean(animatedThumbs && isVisible);
+}
+
 export function formatTimestamp(timestamp) {
     if (!timestamp) return 'Unknown';
     try {

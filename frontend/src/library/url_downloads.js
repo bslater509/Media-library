@@ -43,16 +43,20 @@ export function urlDownloadTitle(item) {
 }
 
 /**
- * One job row, shared by the Background Tasks modal and the mobile tab.
- * `data-urldl-cancel` marks the cancel control so callers can bind it.
+ * One job row, shared by the Background Tasks modal, the mobile tab, and the
+ * /downloads page. `data-urldl-cancel` marks the cancel control so callers can
+ * bind it; when `retryable` is true, failed/cancelled rows also render a
+ * `data-urldl-retry` control (the /downloads page uses it).
  */
-export function urlDownloadRowHtml(item) {
+export function urlDownloadRowHtml(item, { retryable = false } = {}) {
   if (!item) return '';
   const isActive = item.status === 'downloading';
   const isQueued = item.status === 'queued';
   const isCompleted = item.status === 'completed';
   const isFailed = item.status === 'failed';
+  const isCancelled = item.status === 'cancelled';
   const cancellable = isActive || isQueued;
+  const retryableRow = retryable && (isFailed || isCancelled);
   const title = urlDownloadTitle(item);
   const pct = Math.round(item.percent || 0);
   const dl = item.downloader ? String(item.downloader) : '';
@@ -74,11 +78,16 @@ export function urlDownloadRowHtml(item) {
   } else if (isFailed && item.error) {
     detailParts.push(String(item.error).slice(0, 80));
     if (dl) detailParts.push(dl);
+  } else if (isCancelled) {
+    if (dl) detailParts.push(dl);
   }
 
   const badgeCls = BADGE_CLASSES[item.status] || 'bg-slate-800 text-slate-400';
   const cancelBtn = cancellable
     ? `<button data-urldl-cancel="${escapeHtml(item.id)}" class="text-[10px] px-2 py-0.5 bg-red-900/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 rounded border border-red-900/50 transition shrink-0" title="Cancel">✕</button>`
+    : '';
+  const retryBtn = retryableRow
+    ? `<button data-urldl-retry="${escapeHtml(item.id)}" class="text-[10px] px-2 py-0.5 bg-emerald-900/30 text-emerald-300 hover:bg-emerald-900/50 hover:text-emerald-200 rounded border border-emerald-800/50 transition shrink-0" title="Retry download">↻</button>`
     : '';
 
   return `
@@ -86,6 +95,7 @@ export function urlDownloadRowHtml(item) {
           <div class="flex items-center gap-2 min-w-0">
             <span class="text-[9px] uppercase px-1.5 py-0.5 rounded ${badgeCls} font-mono shrink-0">${escapeHtml(item.status)}</span>
             <span class="truncate text-[11px] text-slate-300 flex-1 min-w-0" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+            ${retryBtn}
             ${cancelBtn}
           </div>
           ${(isActive || isQueued) ? `
@@ -102,14 +112,15 @@ export function urlDownloadRowHtml(item) {
 /**
  * Ordered rows for a container. Active jobs first, then queued, then the most
  * recent finished jobs (newest first). `historyLimit` caps only the history
- * tail, so active/queued jobs are always shown in full.
+ * tail, so active/queued jobs are always shown in full. `retryable` adds the
+ * retry control to failed/cancelled rows.
  */
-export function urlDownloadRowsHtml(data, { historyLimit = 20 } = {}) {
+export function urlDownloadRowsHtml(data, { historyLimit = 20, retryable = false } = {}) {
   const active = (data && data.active) || [];
   const queued = (data && data.queued) || [];
   const history = (data && data.history) || [];
   const recent = historyLimit > 0 ? history.slice(-historyLimit) : history;
   return [...active, ...queued, ...recent.slice().reverse()]
-    .map(urlDownloadRowHtml)
+    .map(item => urlDownloadRowHtml(item, { retryable }))
     .join('');
 }

@@ -12,7 +12,7 @@
   {{include 'partials/theme_head.html'}}
   <!-- Fancybox 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
-  <link rel="stylesheet" href="/static/dist/styles.css?v=41">
+  <link rel="stylesheet" href="/static/dist/styles.css?v=42">
   <style>
     /* Custom scrollbars and Fancybox tweaks */
     .f-button[data-fancybox-close] {
@@ -83,7 +83,7 @@
 
   <!-- Desktop Top Navigation Bar (>= 768px) -->
   <header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] hidden md:flex items-center shrink-0">
-    <div class="max-w-[1920px] w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
+    <div class="w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
       
       <!-- Brand & Mobile Drawer Trigger -->
       <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
@@ -111,6 +111,10 @@
         <a href="/sorter" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
           <span>🎬</span>
           <span class="hidden xs:inline sm:inline">Sorter</span>
+        </a>
+        <a href="/downloads" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>🔗</span>
+          <span class="hidden xs:inline sm:inline">Downloads</span>
         </a>
       </nav>
 
@@ -170,7 +174,7 @@
     </div>
   </div>
 
-  <div class="flex-1 min-h-0 flex max-w-[1920px] w-full mx-auto relative overflow-hidden">
+  <div class="flex-1 min-h-0 flex w-full mx-auto relative overflow-hidden">
     
     <!-- Mobile Sidebar Backdrop Overlay -->
     <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden md:hidden" style="touch-action: none;"></div>
@@ -207,7 +211,7 @@
                   <span>📁 Folder</span>
                   <input type="file" id="hiddenUploadFolderInput" webkitdirectory directory multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                 </label>
-                <button id="urlDownloadBtn" type="button" title="Download a video or playlist from a URL into this folder" class="px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2">
+                <button id="urlDownloadBtn" type="button" title="Download videos or playlists from URLs into this folder" class="px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-700 hover:text-white transition w-full flex items-center gap-2">
                   <span>🔗 URL</span>
                 </button>
               </div>
@@ -498,18 +502,7 @@
             <div id="activeUploadsList" class="ml-flatten flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"></div>
           </div>
 
-            <!-- Section: URL Downloads -->
-          <div id="urlDownloadsSection" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-            <div class="flex items-center justify-between">
-              <h4 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <span>🔗</span> URL Downloads
-              </h4>
-              <span id="urlDownloadsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
-            </div>
-            <div id="urlDownloadsList" class="ml-flatten flex flex-col gap-1.5 max-h-64 overflow-y-auto no-scrollbar"></div>
-          </div>
-
-          <!-- Section 0: File Transfers -->
+            <!-- Section: File Transfers -->
           <div id="cloudTransfersSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
             <div class="flex items-center justify-between gap-2">
               <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
@@ -1133,7 +1126,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=59"></script>
+  <script type="module" src="/static/dist/library.js?v=61"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

@@ -29,32 +29,7 @@
     </div>
   </div>
 
-  <!-- Download from URL Modal -->
-  <div id="urlDownloadModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden text-slate-200 flex flex-col">
-      <div class="px-5 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2"><span>🔗</span> Download from URL</h3>
-        <button type="button" id="cancelUrlDownloadBtnTop" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">✕</button>
-      </div>
-      <div class="px-5 py-4 flex flex-col gap-4">
-        <div class="flex flex-col gap-1 text-sm">
-          <div class="flex justify-between items-center"><span class="text-slate-400">Target Folder:</span> <span id="urlDownloadTargetLabel" class="font-mono text-emerald-400 truncate max-w-[200px]">/</span></div>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Video or playlist URL</label>
-          <input id="urlDownloadInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition" />
-        </div>
-        <p class="text-[11px] text-slate-500 leading-relaxed">Uses yt-dlp, with an automatic gallery-dl fallback for sites yt-dlp can't handle (e.g. bunkr albums). Downloads best available quality; playlists are supported; live streams and upcoming premieres are skipped, and failed items are skipped without stopping the rest.</p>
-        <div id="urlDownloadWarningText" class="text-xs text-amber-400 hidden p-2 bg-amber-500/10 rounded-lg border border-amber-500/20"></div>
-      </div>
-      <div class="px-5 py-3 border-t border-slate-800 bg-slate-950 flex justify-end gap-2">
-        <button type="button" id="cancelUrlDownloadBtn" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition font-medium">Cancel</button>
-        <button type="button" id="startUrlDownloadBtn" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-lg transition shadow-sm font-semibold flex items-center gap-2">Start Download</button>
-      </div>
-    </div>
-  </div>
-
-<div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
+  <div id="renameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">

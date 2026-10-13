@@ -34,8 +34,8 @@ describe('library/state.js unit tests', () => {
     });
 
     it('loads stored valid scale from localStorage', () => {
-      localStorage.setItem(TILE_SCALE_KEY, '1.5');
-      expect(loadTileScale()).toBe(1.5);
+      localStorage.setItem(TILE_SCALE_KEY, '2.0');
+      expect(loadTileScale()).toBe(2.0);
     });
 
     it('falls back to 1.0 on invalid or out-of-range scale value', () => {

@@ -481,6 +481,16 @@ header.sticky {
   z-index: 30 !important;
 }
 
+/* The desktop toolbar's 🎞️ Animated toggle is hidden on hover-capable
+   desktops: there, previews are driven by pointer hover (independent of the
+   toggle), so the auto-play preference only makes sense on touch devices,
+   which keep it via the mobile control sheet toggle. */
+@media (hover: hover) and (pointer: fine) {
+  #toggleAnimatedPreviewsBtn {
+    display: none !important;
+  }
+}
+
 /* Mobile Sidebar Drawer and Backdrop stacking order guarantee */
 #sidebarBackdrop {
   z-index: 40 !important;
@@ -636,13 +646,6 @@ header.sticky {
      but with backwards fill so drag transforms are not overridden. */
   #mobileControlsSheet {
     animation: mlSheetUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
-  }
-
-  /* URL downloads are surfaced by the mobile Controls & Settings sheet's
-     Downloads tab, so hide the Background Tasks modal's copy of the list here
-     (`!important` because the section also toggles Tailwind's `hidden` class). */
-  #urlDownloadsSection {
-    display: none !important;
   }
 
   /* Drag interaction states (JS sets these on the card) */

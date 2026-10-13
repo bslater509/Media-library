@@ -107,6 +107,23 @@ describe('library/url_downloads.js unit tests', () => {
       expect(html).not.toContain('<script>x</script>');
       expect(html).not.toContain('bg-emerald-500 transition-all');
     });
+
+    it('omits the retry control unless retryable is requested', () => {
+      const failed = job({ status: 'failed', error: 'boom' });
+      expect(urlDownloadRowHtml(failed)).not.toContain('data-urldl-retry');
+      expect(urlDownloadRowHtml(failed, { retryable: true })).toContain('data-urldl-retry="dl_abc"');
+    });
+
+    it('offers retry for failed and cancelled rows only', () => {
+      expect(urlDownloadRowHtml(job({ status: 'cancelled' }), { retryable: true }))
+        .toContain('data-urldl-retry');
+      expect(urlDownloadRowHtml(job({ status: 'completed', imported_count: 1 }), { retryable: true }))
+        .not.toContain('data-urldl-retry');
+      expect(urlDownloadRowHtml(job({ status: 'downloading' }), { retryable: true }))
+        .not.toContain('data-urldl-retry');
+      expect(urlDownloadRowHtml(job({ status: 'queued' }), { retryable: true }))
+        .not.toContain('data-urldl-retry');
+    });
   });
 
   describe('urlDownloadRowsHtml', () => {
@@ -140,6 +157,14 @@ describe('library/url_downloads.js unit tests', () => {
     it('returns an empty string when there is nothing to show', () => {
       expect(urlDownloadRowsHtml({ active: [], queued: [], history: [] })).toBe('');
       expect(urlDownloadRowsHtml(null)).toBe('');
+    });
+
+    it('threads the retryable option through to failed history rows', () => {
+      const html = urlDownloadRowsHtml(
+        { active: [], queued: [], history: [job({ id: 'dl_f', status: 'failed', error: 'x' })] },
+        { retryable: true },
+      );
+      expect(html).toContain('data-urldl-retry="dl_f"');
     });
   });
 });

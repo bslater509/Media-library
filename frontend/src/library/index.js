@@ -1,8 +1,8 @@
 import "../../../static/styles.css";
-import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate } from './utils.js';
+import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate, shouldPlayAnimatedThumb } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
-import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
+import { urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../shared/tasks_badge.js';
 
 
@@ -75,7 +75,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
   }
 
   const MIN_ROW_HEIGHT = 96;
-  const MAX_ROW_HEIGHT = 520;
+  const MAX_ROW_HEIGHT = 640;
   function targetRowHeight(width, gap, columns, scale) {
     const base = (width - gap * (columns - 1)) / columns;
     const h = base * (scale || 1);
@@ -287,6 +287,17 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     }
   }
 
+  // Desktop (hover-capable + fine pointer) previews animate on hover; touch
+  // devices keep scroll-into-view. Capability is a pointer trait rather than a
+  // width breakpoint, so a narrow desktop window still previews on hover.
+  function hasHoverPointer() {
+    try {
+      return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function syncCardAnimationState(card) {
     if (!card || card.dataset.fileType !== 'video') return;
     const img = card.querySelector('.card-thumb');
@@ -294,26 +305,37 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     const path = card.dataset.path;
     if (!path) return;
 
-    // Pause animations when lightbox is open or tab is hidden
-    if (state.fancyboxInstance || (typeof document !== 'undefined' && document.hidden)) {
+    const badge = card.querySelector('.card-anim-badge');
+    const spinner = card.querySelector('.card-anim-spinner');
+
+    const revertToStatic = () => {
       if (img.dataset.playingAnim === 'true') {
         const fallback = img.dataset.fallbackThumb || '';
         if (fallback) img.src = fallback;
         img.dataset.playingAnim = 'false';
       }
+    };
+
+    // Pause animations when lightbox is open or tab is hidden
+    if (state.fancyboxInstance || (typeof document !== 'undefined' && document.hidden)) {
+      revertToStatic();
       return;
     }
 
-    const badge = card.querySelector('.card-anim-badge');
-    const spinner = card.querySelector('.card-anim-spinner');
+    const isVisible = card.dataset.isVisible === 'true' ||
+      (card.dataset.isVisible === undefined && isElementInViewport(card));
 
-    if (!state.animatedThumbs) {
-      // Animated mode is OFF: ensure static thumbnail and hide badges
-      const fallback = img.dataset.fallbackThumb || img.src;
-      if (fallback && img.src !== fallback && img.dataset.playingAnim === 'true') {
-        img.src = fallback;
-      }
-      img.dataset.playingAnim = 'false';
+    const shouldPlay = shouldPlayAnimatedThumb({
+      isVideo: true,
+      hasHoverPointer: hasHoverPointer(),
+      isHovered: card.dataset.isHovered === 'true',
+      isVisible,
+      animatedThumbs: state.animatedThumbs,
+    });
+
+    if (!shouldPlay) {
+      // Idle: static thumbnail, no badges.
+      revertToStatic();
       if (badge) badge.classList.add('hidden');
       if (spinner) {
         spinner.classList.add('hidden');
@@ -323,61 +345,44 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       return;
     }
 
-    // Animated mode is ON:
-    const isVisible = card.dataset.isVisible === 'true' ||
-      (card.dataset.isVisible === undefined && isElementInViewport(card));
-
     const file = state.allFiles ? state.allFiles.find((f) => f.path === path) : null;
     const hasAnimated = file ? Boolean(file.has_animated) : (card.dataset.hasAnimated === 'true');
 
-    if (isVisible) {
-      // ON SCREEN:
-      if (hasAnimated) {
-        const animUrl = file && file.animated_url
-          ? file.animated_url
-          : (card.dataset.animatedUrl || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`);
+    if (hasAnimated) {
+      const animUrl = file && file.animated_url
+        ? file.animated_url
+        : (card.dataset.animatedUrl || `/api/backup/thumbnails/animated?path=${encodeURIComponent(path)}`);
 
-        if (img.dataset.playingAnim !== 'true' || img.src !== animUrl) {
-          img.src = animUrl;
-          img.dataset.playingAnim = 'true';
-        }
-        if (badge) {
-          badge.classList.remove('hidden');
-          badge.title = 'Looping animated preview';
-        }
-        if (spinner) {
-          spinner.classList.add('hidden');
-          spinner.classList.remove('animate-spin');
-        }
-        card.removeAttribute('data-anim-pending');
-      } else {
-        // Not yet generated: show static fallback with spinning indicator and enqueue
-        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : img.src);
-        if (fallback && img.dataset.playingAnim === 'true') {
-          img.src = fallback;
-        }
-        img.dataset.playingAnim = 'false';
-        if (badge) {
-          badge.classList.remove('hidden');
-          badge.title = 'Generating animated preview...';
-        }
-        if (spinner) {
-          spinner.classList.remove('hidden');
-          spinner.classList.add('animate-spin');
-        }
-        card.dataset.animPending = 'true';
-        enqueueAnimatedThumbnail(path);
+      if (img.dataset.playingAnim !== 'true' || img.src !== animUrl) {
+        img.src = animUrl;
+        img.dataset.playingAnim = 'true';
       }
+      if (badge) {
+        badge.classList.remove('hidden');
+        badge.title = 'Looping animated preview';
+      }
+      if (spinner) {
+        spinner.classList.add('hidden');
+        spinner.classList.remove('animate-spin');
+      }
+      card.removeAttribute('data-anim-pending');
     } else {
-      // OFF SCREEN:
-      // Pause animation if it was playing by reverting to static thumbnail
-      if (img.dataset.playingAnim === 'true') {
-        const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : '');
-        if (fallback) {
-          img.src = fallback;
-        }
-        img.dataset.playingAnim = 'false';
+      // Not yet generated: show static fallback with spinning indicator and enqueue
+      const fallback = img.dataset.fallbackThumb || (file ? file.thumb_url : img.src);
+      if (fallback && img.dataset.playingAnim === 'true') {
+        img.src = fallback;
       }
+      img.dataset.playingAnim = 'false';
+      if (badge) {
+        badge.classList.remove('hidden');
+        badge.title = 'Generating animated preview...';
+      }
+      if (spinner) {
+        spinner.classList.remove('hidden');
+        spinner.classList.add('animate-spin');
+      }
+      card.dataset.animPending = 'true';
+      enqueueAnimatedThumbnail(path);
     }
   }
 
@@ -394,7 +399,6 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
   }
 
   function resumeVisibleGalleryAnimations() {
-    if (!state.animatedThumbs) return;
     const cards = els.mediaGrid ? els.mediaGrid.querySelectorAll('.media-card[data-file-type="video"]') : [];
     cards.forEach((card) => {
       syncCardAnimationState(card);
@@ -1256,6 +1260,11 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     const slice = state.filteredFiles.slice(sliceStart, end);
     if (slice.length === 0) return;
 
+    // Hover-capable desktops preview a video tile on hover, so tiles start on
+    // the static poster regardless of the auto-play toggle; touch devices start
+    // in whatever state the toggle requests.
+    const hoverCapable = hasHoverPointer();
+
     const gap = gridGapPx();
     const width = gridWidth();
     const targetHeight = targetRowHeight(width, gap, mediaColumnCount(), state.tileScale);
@@ -1292,11 +1301,12 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       attachLongPress(card, () => ({ path: file.path, name: file.name, kind: 'file' }));
 
       const isVid = file.type === 'video';
-      const isAnimActive = isVid && state.animatedThumbs;
+      const isAnimActive = isVid && (hoverCapable ? false : state.animatedThumbs);
       const hasAnimated = Boolean(file.has_animated);
 
-      // Start all cards with lightweight static poster thumbnail;
-      // animObserver promotes cards currently on screen to animated WebP.
+      // Start all cards with lightweight static poster thumbnail; on touch the
+      // animObserver promotes cards currently on screen to animated WebP, while
+      // desktops promote a card only while it is hovered.
       const thumbSrc = file.thumb_url;
       const animUrl = file.animated_url || `/api/backup/thumbnails/animated?path=${encodeURIComponent(file.path)}`;
 
@@ -1516,6 +1526,19 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         rowEl.appendChild(card);
         if (isVid) {
           observeAnimatedCard(card);
+          if (hoverCapable) {
+            // Only genuine mouse pointers drive hover previews; a finger tap on
+            // a touch-capable laptop fires pointerenter with pointerType 'touch'.
+            card.addEventListener('pointerenter', (e) => {
+              if (e.pointerType && e.pointerType !== 'mouse') return;
+              card.dataset.isHovered = 'true';
+              syncCardAnimationState(card);
+            });
+            card.addEventListener('pointerleave', () => {
+              card.dataset.isHovered = 'false';
+              syncCardAnimationState(card);
+            });
+          }
         }
       });
 
@@ -4686,35 +4709,14 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     });
   }
 
-  // Desktop Background Tasks modal section. The section is hidden on phones
-  // (CSS) because the mobile Controls & Settings sheet has its own Downloads tab.
+  // Mobile Controls & Settings sheet "Downloads" tab: form + full live job list.
+  // The desktop Background Tasks modal URL Downloads section was removed when
+  // the /downloads page became the canonical downloader surface, so this is the
+  // only in-library render left.
   function renderUrlDownloadsStatus(data) {
-    const section = document.getElementById('urlDownloadsSection');
-    const summary = document.getElementById('urlDownloadsSummary');
-    const listEl = document.getElementById('urlDownloadsList');
-    const active = data.active || [];
-    const queued = data.queued || [];
-    const history = data.history || [];
-    const hasAny = active.length > 0 || queued.length > 0 || history.length > 0;
-
-    if (section && listEl) {
-      section.classList.toggle('hidden', !hasAny);
-      if (summary) summary.textContent = urlDownloadsSummaryText(data);
-      if (hasAny) {
-        const recentHistory = history.slice(-8).reverse();
-        const rows = [...active, ...queued.slice(0, sheetListSlice('urlDownloads', queued.length, 8)), ...recentHistory];
-        listEl.innerHTML = rows.map(urlDownloadRowHtml).join('')
-          + renderListExpander('urlDownloads', queued.length, 8);
-        bindUrlDownloadCancelButtons(listEl);
-      } else {
-        listEl.innerHTML = '';
-      }
-    }
-
     renderMobileUrlDownloadsStatus(data);
   }
 
-  // Mobile Controls & Settings sheet "Downloads" tab: form + full live job list.
   function renderMobileUrlDownloadsStatus(data) {
     const badge = els.mobileTabDownloadsBadge;
     if (badge) {
@@ -7214,7 +7216,6 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         // Smart tab selection: default to 'active' if tasks are queued/active, else last saved or 'workers'
         const trData = state.latestTransferData;
         const libOpsData = state.latestLibraryOpsData;
-    const urlDlData = state.latestUrlDownloadsData;
         const tData = state.latestTranscodeData;
         const hasActiveQueues = (trData && (trData.active || (trData.queued && trData.queued.length > 0))) ||
           (libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0))) ||
@@ -8137,27 +8138,16 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (cancelAllUploadsBtn) cancelAllUploadsBtn.addEventListener('click', cancelAllUploads);
   }
 
-    // Download from URL (desktop dropdown)
+    // Download from URL (desktop Upload dropdown) now opens the dedicated
+    // /downloads page, prefilled with the folder currently being browsed.
     const urlDownloadBtn = document.getElementById('urlDownloadBtn');
-    const startUrlDownloadBtn = document.getElementById('startUrlDownloadBtn');
-    const cancelUrlDownloadBtn = document.getElementById('cancelUrlDownloadBtn');
-    const cancelUrlDownloadBtnTop = document.getElementById('cancelUrlDownloadBtnTop');
     if (urlDownloadBtn) {
       urlDownloadBtn.addEventListener('click', () => {
         uploadDropdownMenu.classList.add('hidden');
-        openUrlDownloadModal();
-      });
-    }
-    if (startUrlDownloadBtn) startUrlDownloadBtn.addEventListener('click', submitUrlDownload);
-    if (cancelUrlDownloadBtn) cancelUrlDownloadBtn.addEventListener('click', closeUrlDownloadModal);
-    if (cancelUrlDownloadBtnTop) cancelUrlDownloadBtnTop.addEventListener('click', closeUrlDownloadModal);
-    const urlDlInput = document.getElementById('urlDownloadInput');
-    if (urlDlInput) {
-      urlDlInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submitUrlDownload();
-        }
+        const folder = state.currentPath || state.basePath || '';
+        window.location.href = folder
+          ? `/downloads?folder=${encodeURIComponent(folder)}`
+          : '/downloads';
       });
     }
 
@@ -8261,75 +8251,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (fo) fo.value = '';
   }
 
-  function openUrlDownloadModal() {
-    const modal = document.getElementById('urlDownloadModal');
-    const label = document.getElementById('urlDownloadTargetLabel');
-    const warningEl = document.getElementById('urlDownloadWarningText');
-    const startBtn = document.getElementById('startUrlDownloadBtn');
-    const input = document.getElementById('urlDownloadInput');
-    if (label) label.textContent = state.currentPath || state.basePath || '/';
-    if (state.isZip) {
-      if (warningEl) {
-        warningEl.textContent = 'Cannot download into a virtual ZIP archive. Navigate to a folder first.';
-        warningEl.classList.remove('hidden');
-      }
-      if (startBtn) startBtn.disabled = true;
-    } else {
-      if (warningEl) warningEl.classList.add('hidden');
-      if (startBtn) startBtn.disabled = false;
-    }
-    if (input) input.value = '';
-    if (modal) {
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-    }
-    if (input) setTimeout(() => input.focus(), 50);
-  }
-
-  function closeUrlDownloadModal() {
-    const modal = document.getElementById('urlDownloadModal');
-    if (modal) {
-      modal.classList.add('hidden');
-      modal.classList.remove('flex');
-    }
-  }
-
-  async function submitUrlDownload() {
-    const input = document.getElementById('urlDownloadInput');
-    const url = input ? input.value.trim() : '';
-    if (!url) {
-      showToast('Enter a video or playlist URL', 'error');
-      return;
-    }
-    if (state.isZip) {
-      showToast('Navigate to a real folder first', 'error');
-      return;
-    }
-    const target = state.currentPath || state.basePath || '/';
-    const startBtn = document.getElementById('startUrlDownloadBtn');
-    if (startBtn) startBtn.disabled = true;
-    try {
-      const res = await fetch('/api/backup/upload/url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, destination_dir: target })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast('Could not queue download: ' + (j.detail || res.status), 'error');
-        return;
-      }
-      closeUrlDownloadModal();
-      showToast('Download queued in background', 'success');
-      pollSystemStatus(true);
-    } catch (err) {
-      showToast('Failed to queue download: ' + (err.message || 'Error'), 'error');
-    } finally {
-      if (startBtn) startBtn.disabled = false;
-    }
-  }
-
-  // Mobile Downloads tab: mirror the dialog's target-folder warning state and
+  // Mobile Downloads tab: mirror the target-folder warning state and
   // disable Downloads when the current folder is a virtual ZIP archive.
   function syncMobileDownloadsUI() {
     const label = els.mobileDlTargetLabel;

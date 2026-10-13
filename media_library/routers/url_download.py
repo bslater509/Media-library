@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from media_library.services.media_service import validate_backup_path
@@ -35,6 +35,10 @@ class UrlDownloadRequest(BaseModel):
 
 
 class UrlCancelRequest(BaseModel):
+    job_id: str
+
+
+class UrlRetryRequest(BaseModel):
     job_id: str
 
 
@@ -92,3 +96,45 @@ def cancel_url_download(req: UrlCancelRequest) -> dict[str, Any]:
     if not cancelled:
         raise HTTPException(status_code=404, detail="Download job not found")
     return {"status": "cancelled", "job_id": req.job_id}
+
+
+@router.post("/api/backup/upload/url/retry")
+def retry_url_download(req: UrlRetryRequest) -> dict[str, Any]:
+    """Clone a failed or cancelled download as a new queued job."""
+    if not req.job_id or not req.job_id.startswith("dl_"):
+        raise HTTPException(status_code=400, detail="Invalid job_id")
+    entry = url_download_worker_instance.find_finished(req.job_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Download job not found")
+    if entry.get("status") not in ("failed", "cancelled"):
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed or cancelled downloads can be retried",
+        )
+    # Re-validate the original destination before cloning: it may have been
+    # deleted or turned into a ZIP archive since the job first ran.
+    _validate_destination(entry.get("destination_dir") or "")
+    new_job_id = url_download_worker_instance.retry(req.job_id)
+    if not new_job_id:
+        raise HTTPException(status_code=409, detail="Could not retry this download")
+    return {
+        "status": "queued",
+        "job_id": new_job_id,
+        "retried_from": req.job_id,
+    }
+
+
+@router.post("/api/backup/upload/url/clear-history")
+def clear_url_download_history() -> dict[str, Any]:
+    """Remove all finished URL download jobs from the worker's history."""
+    cleared = url_download_worker_instance.clear_history()
+    return {"status": "ok", "cleared": cleared}
+
+
+@router.get("/api/backup/upload/url/history")
+def url_download_history(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """Paginated finished-history listing for the /downloads page, newest first."""
+    return url_download_worker_instance.get_history(limit=limit, offset=offset)

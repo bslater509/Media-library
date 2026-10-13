@@ -14,6 +14,13 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 - **Batch Management**: Context menus and multi-select toolbar for batch moves, deletes, renames, and WebP optimization.
 - **Multi-Word Search**: Filter by multi-word queries with category and folder badge navigation.
 
+### 🔗 URL & Playlist Downloads
+- **Dedicated Downloads Page** (`/downloads`): a first-class downloader reached from the Library/Sorter nav tabs and the mobile drawer.
+- **Batch Queueing**: Paste several URLs at once; each valid http(s) link is queued into the chosen folder (invalid/duplicate lines are reported and skipped).
+- **yt-dlp + gallery-dl**: Best-quality video/playlist downloads with an automatic gallery-dl fallback for image boards and file hosts.
+- **Recent Folders & Picker**: Quick chips of folders you last downloaded into, plus a library folder-tree picker.
+- **Live Jobs List**: Active/queued progress with speed/ETA, paginated history, per-job cancel, retry of failed/cancelled jobs, and clear-history.
+
 ### 🎬 Incoming Video Sorter
 - **Rapid Keyboard Workflow (<50ms per move)**: Review incoming downloads with autoplay and instant pre-buffering.
 - **1-Touch Destination Sorting**:
@@ -95,6 +102,7 @@ Run the launch script (it will create the virtual environment and install depend
 Now open your browser:
 - **Media Library**: `http://localhost:8888`
 - **Incoming Sorter**: `http://localhost:8888/sorter`
+- **Downloads**: `http://localhost:8888/downloads`
 
 ---
 
