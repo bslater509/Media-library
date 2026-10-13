@@ -6838,9 +6838,9 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
         const isActive = t.name === tabName;
         if (t.btn) {
           if (isActive) {
-            t.btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center gap-1.5';
+            t.btn.className = 'w-full min-w-0 px-1 py-2 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1 leading-tight';
           } else {
-            t.btn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center gap-1.5';
+            t.btn.className = 'w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight';
           }
         }
         if (t.panel) {
