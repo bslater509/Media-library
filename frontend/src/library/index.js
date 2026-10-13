@@ -2,6 +2,7 @@ import "../../../static/styles.css";
 import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
+import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 
 
   // Toast Notifications
@@ -4560,7 +4561,8 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
       (tData && tData.active ? 1 : 0) +
       (tData && tData.queued ? tData.queued.length : 0) +
       (animData && animData.active ? 1 : 0) +
-      (animData && animData.queued ? animData.queued.length : 0);
+      (animData && animData.queued ? animData.queued.length : 0) +
+      urlDownloadsActivityCount(urlDlData);
 
     const tabBadgeActive = document.getElementById('tabBadgeActive');
     const activeQueuesEmptyState = document.getElementById('activeQueuesEmptyState');
@@ -4695,92 +4697,61 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     }
   }
 
+  function bindUrlDownloadCancelButtons(container) {
+    if (!container) return;
+    container.querySelectorAll('[data-urldl-cancel]').forEach(btn => {
+      btn.addEventListener('click', () => cancelUrlDownloadJob(btn.dataset.urldlCancel));
+    });
+  }
+
+  // Desktop Background Tasks modal section. The section is hidden on phones
+  // (CSS) because the mobile Controls & Settings sheet has its own Downloads tab.
   function renderUrlDownloadsStatus(data) {
     const section = document.getElementById('urlDownloadsSection');
     const summary = document.getElementById('urlDownloadsSummary');
     const listEl = document.getElementById('urlDownloadsList');
-    if (!section || !listEl) return;
     const active = data.active || [];
     const queued = data.queued || [];
     const history = data.history || [];
     const hasAny = active.length > 0 || queued.length > 0 || history.length > 0;
-    section.classList.toggle('hidden', !hasAny);
-    if (!hasAny) return;
 
-    if (summary) {
-      if (active.length) {
-        const pct = Math.round(active[0].percent || 0);
-        summary.textContent = active.length > 1
-          ? `DL ${active.length} active`
-          : `DL ${pct}%`;
-      } else if (queued.length) {
-        summary.textContent = `${queued.length} queued`;
+    if (section && listEl) {
+      section.classList.toggle('hidden', !hasAny);
+      if (summary) summary.textContent = urlDownloadsSummaryText(data);
+      if (hasAny) {
+        const recentHistory = history.slice(-8).reverse();
+        const rows = [...active, ...queued.slice(0, sheetListSlice('urlDownloads', queued.length, 8)), ...recentHistory];
+        listEl.innerHTML = rows.map(urlDownloadRowHtml).join('')
+          + renderListExpander('urlDownloads', queued.length, 8);
+        bindUrlDownloadCancelButtons(listEl);
       } else {
-        summary.textContent = 'Idle';
+        listEl.innerHTML = '';
       }
     }
 
-    const recentHistory = history.slice(-8).reverse();
-    const rows = [...active, ...queued.slice(0, sheetListSlice('urlDownloads', queued.length, 8)), ...recentHistory];
-    listEl.innerHTML = rows.map(item => {
-      const isActive = item.status === 'downloading';
-      const isQueued = item.status === 'queued';
-      const isCompleted = item.status === 'completed';
-      const isFailed = item.status === 'failed';
-      const cancellable = isActive || isQueued;
-      const title = item.current_title
-        || String(item.url || '').replace(/^https?:\/\//, '').slice(0, 60)
-        || item.id;
-      const pct = Math.round(item.percent || 0);
-      const dl = item.downloader ? String(item.downloader) : '';
-      const pos = item.playlist_index && item.playlist_count
-        ? `${item.playlist_index}/${item.playlist_count}`
-        : '';
-      const activeLabel = pct > 0 ? pct + '%' : (item.playlist_index ? item.playlist_index + ' done' : '…');
-      const detailParts = [];
-      if (isActive) {
-        if (pos) detailParts.push(pos);
-        else if (item.playlist_index) detailParts.push(`${item.playlist_index} done`);
-        if (item.speed) detailParts.push(item.speed);
-        if (item.eta) detailParts.push(`ETA ${item.eta}`);
-        if (dl) detailParts.push(dl);
-      } else if (isCompleted && item.imported_count) {
-        detailParts.push(`${item.imported_count} file${item.imported_count > 1 ? 's' : ''}`);
-        if (dl) detailParts.push(dl);
-      } else if (isFailed && item.error) {
-        detailParts.push(String(item.error).slice(0, 80));
-        if (dl) detailParts.push(dl);
-      }
-      let badgeCls = 'bg-slate-800 text-slate-400';
-      if (isActive) badgeCls = 'bg-emerald-900/60 text-emerald-300';
-      else if (isQueued) badgeCls = 'bg-slate-800 text-slate-300';
-      else if (isCompleted) badgeCls = 'bg-emerald-900/60 text-emerald-400';
-      else if (isFailed) badgeCls = 'bg-red-900/50 text-red-400';
-      else if (item.status === 'cancelled') badgeCls = 'bg-slate-800 text-slate-500';
-      const cancelBtn = cancellable
-        ? `<button data-urldl-cancel="${escapeHtml(item.id)}" class="text-[10px] px-2 py-0.5 bg-red-900/30 text-red-400 hover:bg-red-900/50 hover:text-red-300 rounded border border-red-900/50 transition shrink-0" title="Cancel">✕</button>`
-        : '';
-      return `
-        <div class="bg-slate-900 rounded-lg border border-slate-800/80 p-2 flex flex-col gap-1.5">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="text-[9px] uppercase px-1.5 py-0.5 rounded ${badgeCls} font-mono shrink-0">${escapeHtml(item.status)}</span>
-            <span class="truncate text-[11px] text-slate-300 flex-1 min-w-0" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-            ${cancelBtn}
-          </div>
-          ${(isActive || isQueued) ? `
-          <div class="flex items-center gap-2">
-            <div class="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
-              <div class="h-full bg-emerald-500 transition-all duration-300${isActive && pct <= 0 ? ' animate-pulse opacity-60' : ''}" style="width:${isActive ? (pct > 0 ? pct : 100) : 0}%"></div>
-            </div>
-            <span class="text-[10px] text-emerald-400 font-mono shrink-0">${isActive ? activeLabel : 'queued'}</span>
-          </div>` : ''}
-          ${detailParts.length ? `<div class="text-[10px] text-slate-500 font-mono truncate">${escapeHtml(detailParts.join(' · '))}</div>` : ''}
-        </div>`;
-    }).join('') + renderListExpander('urlDownloads', queued.length, 8);
+    renderMobileUrlDownloadsStatus(data);
+  }
 
-    listEl.querySelectorAll('[data-urldl-cancel]').forEach(btn => {
-      btn.addEventListener('click', () => cancelUrlDownloadJob(btn.dataset.urldlCancel));
-    });
+  // Mobile Controls & Settings sheet "Downloads" tab: form + full live job list.
+  function renderMobileUrlDownloadsStatus(data) {
+    const badge = els.mobileTabDownloadsBadge;
+    if (badge) {
+      const count = urlDownloadsActivityCount(data);
+      badge.textContent = count;
+      badge.classList.toggle('hidden', count === 0);
+    }
+
+    const listEl = els.mobileDlList;
+    if (!listEl) return;
+    if (els.mobileDlSummary) els.mobileDlSummary.textContent = urlDownloadsSummaryText(data);
+
+    const html = urlDownloadRowsHtml(data, { historyLimit: 20 });
+    if (!html) {
+      listEl.innerHTML = `<div class="p-3 text-center text-[11px] text-slate-500 bg-slate-950/60 border border-slate-800 rounded-xl">No downloads yet</div>`;
+      return;
+    }
+    listEl.innerHTML = html;
+    bindUrlDownloadCancelButtons(listEl);
   }
 
   async function cancelUrlDownloadJob(jobId) {
@@ -6776,6 +6747,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     // Switch to initial tab
     if (tab === 'display' && els.mobileTabDisplayBtn) els.mobileTabDisplayBtn.click();
     else if (tab === 'actions' && els.mobileTabActionsBtn) els.mobileTabActionsBtn.click();
+    else if (tab === 'downloads' && els.mobileTabDownloadsBtn) els.mobileTabDownloadsBtn.click();
     else if (tab === 'system' && els.mobileTabSystemBtn) els.mobileTabSystemBtn.click();
     else if (els.mobileTabSearchBtn) els.mobileTabSearchBtn.click();
   }
@@ -6831,6 +6803,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
         { name: 'search', btn: els.mobileTabSearchBtn, panel: els.mobileTabSearchPanel },
         { name: 'display', btn: els.mobileTabDisplayBtn, panel: els.mobileTabDisplayPanel },
         { name: 'actions', btn: els.mobileTabActionsBtn, panel: els.mobileTabActionsPanel },
+        { name: 'downloads', btn: els.mobileTabDownloadsBtn, panel: els.mobileTabDownloadsPanel },
         { name: 'system', btn: els.mobileTabSystemBtn, panel: els.mobileTabSystemPanel }
       ];
 
@@ -6851,12 +6824,34 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
           }
         }
       });
+
+      // The Downloads tab always reflects the current folder and the latest
+      // job payload, so it is ready the moment it becomes visible.
+      if (tabName === 'downloads') {
+        syncMobileDownloadsUI();
+        if (state.latestUrlDownloadsData) renderMobileUrlDownloadsStatus(state.latestUrlDownloadsData);
+        pollSystemStatus(true);
+      }
     };
 
     if (els.mobileTabSearchBtn) els.mobileTabSearchBtn.addEventListener('click', () => switchMobileTab('search'));
     if (els.mobileTabDisplayBtn) els.mobileTabDisplayBtn.addEventListener('click', () => switchMobileTab('display'));
     if (els.mobileTabActionsBtn) els.mobileTabActionsBtn.addEventListener('click', () => switchMobileTab('actions'));
+    if (els.mobileTabDownloadsBtn) els.mobileTabDownloadsBtn.addEventListener('click', () => switchMobileTab('downloads'));
     if (els.mobileTabSystemBtn) els.mobileTabSystemBtn.addEventListener('click', () => switchMobileTab('system'));
+
+    // Tab 4: Downloads (inline URL form; status list renders from polling)
+    if (els.mobileDlStartBtn) {
+      els.mobileDlStartBtn.addEventListener('click', submitMobileUrlDownload);
+    }
+    if (els.mobileDlUrlInput) {
+      els.mobileDlUrlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitMobileUrlDownload();
+        }
+      });
+    }
 
     // Tab 1: Search & Filter Inputs
     if (els.mobileSearchInput) {
@@ -7011,8 +7006,7 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
     }
     if (els.mobileUrlDownloadTrigger) {
       els.mobileUrlDownloadTrigger.addEventListener('click', () => {
-        closeMobileControlsModal();
-        openUrlDownloadModal();
+        switchMobileTab('downloads');
       });
     }
     if (els.mobileNewFolderTrigger) {
@@ -8344,6 +8338,62 @@ import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, pre
         return;
       }
       closeUrlDownloadModal();
+      showToast('Download queued in background', 'success');
+      pollSystemStatus(true);
+    } catch (err) {
+      showToast('Failed to queue download: ' + (err.message || 'Error'), 'error');
+    } finally {
+      if (startBtn) startBtn.disabled = false;
+    }
+  }
+
+  // Mobile Downloads tab: mirror the dialog's target-folder warning state and
+  // disable Downloads when the current folder is a virtual ZIP archive.
+  function syncMobileDownloadsUI() {
+    const label = els.mobileDlTargetLabel;
+    if (label) label.textContent = state.currentPath || state.basePath || '/';
+    const warningEl = els.mobileDlWarningText;
+    const startBtn = els.mobileDlStartBtn;
+    if (state.isZip) {
+      if (warningEl) {
+        warningEl.textContent = 'Cannot download into a virtual ZIP archive. Navigate to a folder first.';
+        warningEl.classList.remove('hidden');
+      }
+      if (startBtn) startBtn.disabled = true;
+    } else {
+      if (warningEl) warningEl.classList.add('hidden');
+      if (startBtn) startBtn.disabled = false;
+    }
+  }
+
+  // Same endpoint as the desktop dialog; the sheet stays open so the queued job
+  // shows up in the list below with live progress.
+  async function submitMobileUrlDownload() {
+    const input = els.mobileDlUrlInput;
+    const url = input ? input.value.trim() : '';
+    if (!url) {
+      showToast('Enter a video or playlist URL', 'error');
+      return;
+    }
+    if (state.isZip) {
+      showToast('Navigate to a real folder first', 'error');
+      return;
+    }
+    const target = state.currentPath || state.basePath || '/';
+    const startBtn = els.mobileDlStartBtn;
+    if (startBtn) startBtn.disabled = true;
+    try {
+      const res = await fetch('/api/backup/upload/url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, destination_dir: target })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast('Could not queue download: ' + (j.detail || res.status), 'error');
+        return;
+      }
+      if (input) input.value = '';
       showToast('Download queued in background', 'success');
       pollSystemStatus(true);
     } catch (err) {

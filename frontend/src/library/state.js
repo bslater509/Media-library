@@ -187,11 +187,14 @@
     mobileTabSearchBtn: document.getElementById('mobileTabSearchBtn'),
     mobileTabDisplayBtn: document.getElementById('mobileTabDisplayBtn'),
     mobileTabActionsBtn: document.getElementById('mobileTabActionsBtn'),
+    mobileTabDownloadsBtn: document.getElementById('mobileTabDownloadsBtn'),
     mobileTabSystemBtn: document.getElementById('mobileTabSystemBtn'),
+    mobileTabDownloadsBadge: document.getElementById('mobileTabDownloadsBadge'),
 
     mobileTabSearchPanel: document.getElementById('mobileTabSearchPanel'),
     mobileTabDisplayPanel: document.getElementById('mobileTabDisplayPanel'),
     mobileTabActionsPanel: document.getElementById('mobileTabActionsPanel'),
+    mobileTabDownloadsPanel: document.getElementById('mobileTabDownloadsPanel'),
     mobileTabSystemPanel: document.getElementById('mobileTabSystemPanel'),
 
     mobileSearchInput: document.getElementById('mobileSearchInput'),
@@ -217,6 +220,14 @@
     mobileUploadFilesTrigger: document.getElementById('mobileUploadFilesTrigger'),
     mobileUploadFolderTrigger: document.getElementById('mobileUploadFolderTrigger'),
     mobileUrlDownloadTrigger: document.getElementById('mobileUrlDownloadTrigger'),
+
+    // Mobile Downloads tab (inline URL form + live job list)
+    mobileDlTargetLabel: document.getElementById('mobileDlTargetLabel'),
+    mobileDlUrlInput: document.getElementById('mobileDlUrlInput'),
+    mobileDlWarningText: document.getElementById('mobileDlWarningText'),
+    mobileDlStartBtn: document.getElementById('mobileDlStartBtn'),
+    mobileDlSummary: document.getElementById('mobileDlSummary'),
+    mobileDlList: document.getElementById('mobileDlList'),
     mobileNewFolderTrigger: document.getElementById('mobileNewFolderTrigger'),
     mobileRefreshFolderTrigger: document.getElementById('mobileRefreshFolderTrigger'),
     mobileCacheThumbsTrigger: document.getElementById('mobileCacheThumbsTrigger'),

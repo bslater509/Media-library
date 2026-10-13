@@ -638,6 +638,13 @@ header.sticky {
     animation: mlSheetUp 0.26s cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
   }
 
+  /* URL downloads are surfaced by the mobile Controls & Settings sheet's
+     Downloads tab, so hide the Background Tasks modal's copy of the list here
+     (`!important` because the section also toggles Tailwind's `hidden` class). */
+  #urlDownloadsSection {
+    display: none !important;
+  }
+
   /* Drag interaction states (JS sets these on the card) */
   .ml-sheet-card.ml-dragging {
     animation: none !important;

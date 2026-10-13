@@ -16,20 +16,24 @@
       </div>
     </div>
 
-    <!-- 4 Navigation Tabs Header (4 equal columns — never scrolls sideways) -->
+    <!-- 5 Navigation Tabs Header (5 equal columns, icon-only — never scrolls sideways) -->
     <div class="px-2 py-2 bg-slate-950/60 border-b border-slate-800/80 shrink-0">
-      <div class="grid grid-cols-4 gap-1">
-        <button id="mobileTabSearchBtn" type="button" aria-label="Search &amp; Filter" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1 leading-tight">
-          <span>🔍</span><span class="truncate">Search</span>
+      <div class="grid grid-cols-5 gap-1">
+        <button id="mobileTabSearchBtn" type="button" aria-label="Search &amp; Filter" title="Search &amp; Filter" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1 leading-tight">
+          <span class="text-base leading-none">🔍</span>
         </button>
-        <button id="mobileTabDisplayBtn" type="button" aria-label="Display &amp; Theme" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span>🎨</span><span class="truncate">Display</span>
+        <button id="mobileTabDisplayBtn" type="button" aria-label="Display &amp; Theme" title="Display &amp; Theme" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
+          <span class="text-base leading-none">🎨</span>
         </button>
-        <button id="mobileTabActionsBtn" type="button" aria-label="Folder Actions" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span>📁</span><span class="truncate">Actions</span>
+        <button id="mobileTabActionsBtn" type="button" aria-label="Folder Actions" title="Folder Actions" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
+          <span class="text-base leading-none">📁</span>
         </button>
-        <button id="mobileTabSystemBtn" type="button" aria-label="System Status" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span>⚙️</span><span class="truncate">System</span>
+        <button id="mobileTabDownloadsBtn" type="button" aria-label="Downloads" title="Downloads" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
+          <span class="text-base leading-none">🔗</span>
+          <span id="mobileTabDownloadsBadge" class="hidden text-[9px] font-mono font-bold px-1 rounded-full bg-emerald-500 text-slate-950 leading-tight">0</span>
+        </button>
+        <button id="mobileTabSystemBtn" type="button" aria-label="System Status" title="System Status" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
+          <span class="text-base leading-none">⚙️</span>
         </button>
       </div>
     </div>
@@ -254,7 +258,38 @@
 
       </div>
 
-      <!-- Panel 4: System Status -->
+      <!-- Panel 4: Downloads (inline URL form + live URL download jobs) -->
+      <div id="mobileTabDownloadsPanel" class="hidden space-y-3">
+
+        <!-- Inline URL Download Form -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between gap-2 text-xs">
+            <span class="text-slate-400">Target Folder:</span>
+            <span id="mobileDlTargetLabel" class="font-mono text-emerald-400 truncate">/</span>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold text-slate-300" for="mobileDlUrlInput">Video or playlist URL</label>
+            <input id="mobileDlUrlInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition" />
+          </div>
+          <p class="text-[10px] text-slate-500 leading-relaxed">Uses yt-dlp, with an automatic gallery-dl fallback for sites yt-dlp can't handle (e.g. bunkr albums). Downloads best available quality; playlists are supported; live streams and upcoming premieres are skipped, and failed items are skipped without stopping the rest.</p>
+          <div id="mobileDlWarningText" class="hidden text-[11px] text-amber-400 p-2 bg-amber-500/10 rounded-lg border border-amber-500/20"></div>
+          <button id="mobileDlStartBtn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-semibold text-xs shadow-sm transition flex items-center justify-center gap-1.5">
+            <span>⬇️</span><span>Start Download</span>
+          </button>
+        </div>
+
+        <!-- Live Download Jobs -->
+        <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-white flex items-center gap-1.5"><span>🔗</span> Downloads</span>
+            <span id="mobileDlSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+          </div>
+          <div id="mobileDlList" class="flex flex-col gap-1.5"></div>
+        </div>
+
+      </div>
+
+      <!-- Panel 5: System Status -->
       <div id="mobileTabSystemPanel" class="hidden space-y-3">
         
         <!-- Background Tasks Card -->
