@@ -13,7 +13,13 @@ export default defineConfig({
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: '[name]-[hash].js',
-        assetFileNames: '[name][extname]'
+        // The app links /static/dist/styles.css directly, so every extracted
+        // CSS chunk (which Vite may attribute to a shared JS chunk) must keep
+        // that stable filename regardless of where it lands in the graph.
+        assetFileNames: (assetInfo) =>
+          assetInfo.name && assetInfo.name.endsWith('.css')
+            ? 'styles.css'
+            : '[name][extname]',
       }
     }
   }

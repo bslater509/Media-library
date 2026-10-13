@@ -68,10 +68,10 @@
 
         <!-- Background Tasks Status Badge -->
         <div class="relative shrink-0">
-          <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+          <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
             <span id="transferIcon" class="text-xs leading-none">⚙️</span>
             <span id="transferSpinner" class="hidden w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
-            <span id="transferCountText" class="whitespace-nowrap">Tasks</span>
+            <span id="transferCountText" class="hidden min-w-[1.15rem] px-1 py-[1px] rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono text-center leading-none">0</span>
           </button>
         </div>
 
@@ -701,7 +701,7 @@
   <!-- Delete Empty Folders Modal -->
   
 
-  <script type="module" src="/static/dist/app.js?v=16"></script>
+  <script type="module" src="/static/dist/app.js?v=17"></script>
   {{include 'partials/index_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>

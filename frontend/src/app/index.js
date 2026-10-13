@@ -1,4 +1,5 @@
 import "../../../static/styles.css";
+import { computeTaskSummary, formatTaskCount, describePrimaryTask } from "../shared/tasks_badge.js";
 // Video Sorter Frontend Application - v2.1
 let state = {
   queue: [],
@@ -1132,57 +1133,41 @@ function updateHeaderTaskBadge() {
   // Always keep button visible so the background tasks modal can be opened anytime
   transferBadgeBtn.classList.remove("hidden");
 
-  const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
-  const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
-  const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
-  const isBackingUp = state.latestLibBackupData && (state.latestLibBackupData.status === "backing_up" || state.latestLibBackupData.status === "restoring");
-  const isMoving = (state.totalPendingTransfers || 0) > 0 || !!state.activeTransfer;
-  const isConverting = (state.totalPendingTranscodes || 0) > 0 || !!state.activeTranscode;
+  const taskSources = {
+    transfers: { active: state.activeTransfer, queued: state.queuedTransfers || [] },
+    transcode: {
+      active: state.activeTranscode,
+      queue_length: (state.queuedTranscodes || []).length,
+    },
+    thumbnails: state.latestThumbData,
+    webp: state.latestWebpData,
+    index: state.latestIndexData,
+    backup: state.latestLibBackupData,
+  };
+  const tasksSummary = computeTaskSummary(taskSources);
+  const tasksLabel = describePrimaryTask(taskSources);
+  const badgeText = formatTaskCount(tasksSummary.count);
+  const badgeStatus = tasksSummary.active ? "Active" : "Idle";
 
-  const totalTasks = (state.totalPendingTransfers || 0) + (state.totalPendingTranscodes || 0) + (isThumbGenerating ? 1 : 0) + (isWebpConverting ? 1 : 0) + (isIndexing ? 1 : 0) + (isBackingUp ? 1 : 0);
-
-  if (totalTasks > 0 || isMoving || isConverting) {
+  if (tasksSummary.active) {
     if (transferSpinner) transferSpinner.classList.remove("hidden");
     if (transferIcon) transferIcon.classList.add("hidden");
     transferBadgeBtn.classList.add("text-emerald-300", "border-emerald-500/40");
     transferBadgeBtn.classList.remove("text-slate-300");
-    transferBadgeBtn.title = "View background activity (Active)";
-
-    if (isConverting && isMoving) {
-      transferCountText.textContent = `${state.totalPendingTransfers} moving, ${state.totalPendingTranscodes} converting`;
-    } else if (isMoving) {
-      if (state.activeTransfer) {
-        transferCountText.textContent = `Moving ${Math.round(state.activeTransfer.percent || 0)}%`;
-      } else {
-        transferCountText.textContent = `${state.totalPendingTransfers} transferring`;
-      }
-    } else if (isIndexing) {
-      const pct = typeof state.latestIndexData.percent === "number" ? Math.round(state.latestIndexData.percent) : 0;
-      transferCountText.textContent = `Indexing ${pct}%`;
-    } else if (isBackingUp) {
-      const pct = Math.round(state.latestLibBackupData.progress_percent || 0);
-      transferCountText.textContent = `Backup ${pct}%`;
-    } else if (isConverting) {
-      if (state.activeTranscode) {
-        transferCountText.textContent = `${Math.round(state.activeTranscode.percent || 0)}% (${(state.queuedTranscodes || []).length + 1})`;
-      } else {
-        transferCountText.textContent = `${state.totalPendingTranscodes} converting`;
-      }
-    } else if (isThumbGenerating) {
-      transferCountText.textContent = `Thumbs ${Math.round(state.latestThumbData.percent || 0)}%`;
-    } else if (isWebpConverting) {
-      transferCountText.textContent = `WebP ${Math.round(state.latestWebpData.percent || 0)}%`;
-    }
   } else {
     if (transferSpinner) transferSpinner.classList.add("hidden");
     if (transferIcon) transferIcon.classList.remove("hidden");
     transferBadgeBtn.classList.remove("text-emerald-300", "border-emerald-500/40");
     transferBadgeBtn.classList.add("text-slate-300");
-    transferCountText.textContent = "Tasks";
+  }
+  transferBadgeBtn.title = `View background activity (${badgeStatus})${tasksLabel ? ` - ${tasksLabel}` : ''}`;
+  if (transferCountText) {
+    transferCountText.textContent = badgeText;
+    transferCountText.classList.toggle("hidden", !badgeText);
   }
 
   // Update tab badges and empty state in tasks modal
-  const activeQueueCount = (state.totalPendingTransfers || 0) + (state.totalPendingTranscodes || 0) + (state.activeTransfer ? 1 : 0) + (state.activeTranscode ? 1 : 0);
+  const activeQueueCount = tasksSummary.count;
   const tabBadgeActive = document.getElementById("tabBadgeActive");
   const activeQueuesEmptyState = document.getElementById("activeQueuesEmptyState");
   if (tabBadgeActive) {
@@ -1199,6 +1184,9 @@ function updateHeaderTaskBadge() {
 
   const tabBadgeWorkers = document.getElementById("tabBadgeWorkers");
   if (tabBadgeWorkers) {
+    const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
+    const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
+    const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
     const isAnyWorkerActive = isThumbGenerating || isWebpConverting || isIndexing || (state.latestHashData && (state.latestHashData.status === "checking" || state.latestHashData.pending_count > 0));
     if (isAnyWorkerActive) {
       tabBadgeWorkers.textContent = "Active";

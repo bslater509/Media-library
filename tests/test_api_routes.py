@@ -49,7 +49,7 @@ def test_html_views(api_client):
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
-    assert "app.js?v=16" in res_sorter.text
+    assert "app.js?v=17" in res_sorter.text
     assert "styles.css?v=41" in res_sorter.text
     assert "sticky top-0 z-50" in res_sorter.text
     assert "themeCustomizerModal" in res_sorter.text
@@ -370,6 +370,11 @@ def test_background_tasks_modal_button_always_visible(api_client):
     assert 'id="transferIcon"' in root_html
     assert 'id="transferDropdown"' in root_html
     assert 'id="closeTransferDropdownBtn"' in root_html
+    # Mobile header has a one-tap tasks button; the Controls sheet no longer
+    # carries the redundant Background Tasks "Open" card.
+    assert 'id="mobileTasksBtn"' in root_html
+    assert 'id="mobileTasksCountBadge"' in root_html
+    assert 'id="mobileOpenTasksBtn"' not in root_html
 
     res_sorter = api_client.get("/sorter")
     assert res_sorter.status_code == 200
@@ -383,6 +388,9 @@ def test_background_tasks_modal_button_always_visible(api_client):
     assert 'id="transferIcon"' in sorter_html
     assert 'id="transferDropdown"' in sorter_html
     assert 'id="closeTransferDropdownBtn"' in sorter_html
+    # Sorter header adopts the unified icon + count-badge tasks button design.
+    assert 'id="transferCountText"' in sorter_html
+    assert 'rounded-full' in sorter_html
 
 
 def test_range_byte_streaming_media_and_sorter(api_client):

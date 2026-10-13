@@ -65,8 +65,13 @@
       </button>
     </div>
 
-    <!-- Right: Unified Controls Modal Trigger -->
+    <!-- Right: Background Tasks + Unified Controls Modal Triggers -->
     <div class="flex items-center gap-1.5 shrink-0">
+      <button id="mobileTasksBtn" type="button" class="relative p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shadow-sm" title="Background tasks & system status" aria-label="Background tasks & system status">
+        <span id="mobileTasksIcon" class="text-sm leading-none">⚙️</span>
+        <span id="mobileTasksSpinner" class="hidden w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></span>
+        <span id="mobileTasksCountBadge" class="hidden absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-bold font-mono text-center leading-4">0</span>
+      </button>
       <button id="mobileControlsBtn" type="button" class="relative p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shadow-sm" title="Controls, Search, Display & Actions" aria-label="Controls, Search, Display & Actions">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
@@ -142,7 +147,7 @@
           <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
             <span id="transferIcon" class="text-xs leading-none">⚙️</span>
             <span id="transferSpinner" class="hidden w-2.5 h-2.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
-            <span id="transferCountText" class="whitespace-nowrap">Tasks</span>
+            <span id="transferCountText" class="hidden min-w-[1.15rem] px-1 py-[1px] rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono text-center leading-none">0</span>
           </button>
         </div>
 
@@ -1128,7 +1133,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=58"></script>
+  <script type="module" src="/static/dist/library.js?v=59"></script>
   {{include 'partials/library_modals.html'}}
   {{include 'partials/theme_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}

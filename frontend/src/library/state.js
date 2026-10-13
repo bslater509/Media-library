@@ -236,9 +236,10 @@
     mobileCompressZipTrigger: document.getElementById('mobileCompressZipTrigger'),
     mobileUnpackZipTrigger: document.getElementById('mobileUnpackZipTrigger'),
 
-    mobileTasksBadge: document.getElementById('mobileTasksBadge'),
-    mobileTasksStatusSubtext: document.getElementById('mobileTasksStatusSubtext'),
-    mobileOpenTasksBtn: document.getElementById('mobileOpenTasksBtn'),
+    mobileTasksBtn: document.getElementById('mobileTasksBtn'),
+    mobileTasksIcon: document.getElementById('mobileTasksIcon'),
+    mobileTasksSpinner: document.getElementById('mobileTasksSpinner'),
+    mobileTasksCountBadge: document.getElementById('mobileTasksCountBadge'),
     mobileDupCountBadge: document.getElementById('mobileDupCountBadge'),
     mobileOpenDupBtn: document.getElementById('mobileOpenDupBtn'),
     mobileIndexDot: document.getElementById('mobileIndexDot'),

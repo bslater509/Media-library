@@ -3,6 +3,7 @@ import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, get
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
 import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
+import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../shared/tasks_badge.js';
 
 
   // Toast Notifications
@@ -4465,92 +4466,73 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
 
     const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || animActive || wActive || zipActive || batchZipActive || batchUnpackActive || urlDlActive;
 
-    // Always keep button visible so the background tasks modal can be opened anytime
+    // Unified badge state shared by the desktop pill and the mobile header
+    // one-tap tasks button (active+queued item count + descriptive tooltip).
+    const taskSources = {
+      transfers: trData,
+      libraryOps: libOpsData,
+      transcode: tData,
+      animated: animData,
+      thumbnails: thData,
+      webp: wData,
+      index: idxData,
+      backup: bkData,
+      zip: zipData,
+      batchZip: batchZipData,
+      batchUnpack: batchUnpackData,
+      urlDownloads: urlDlData,
+      uploads: {
+        active: uploadState.activeUploads || 0,
+        queued: uploadState.queue.filter((f) => f.status === 'pending').length,
+        percent: uploadState.totalBytes
+          ? Math.min(100, Math.round((uploadState.uploadedBytes / uploadState.totalBytes) * 100))
+          : 0,
+      },
+    };
+    const tasksSummary = computeTaskSummary(taskSources);
+    const tasksLabel = describePrimaryTask(taskSources);
+    const badgeText = formatTaskCount(tasksSummary.count);
+    const badgeStatus = tasksSummary.active ? 'Active' : 'Idle';
+
+    // Always keep the desktop button visible so the background tasks modal can
+    // be opened anytime
     els.transferBadgeBtn.classList.remove('hidden');
 
-    if (isAnyActive) {
+    if (tasksSummary.active) {
       if (els.transferIcon) els.transferIcon.classList.add('hidden');
       if (els.transferSpinner) els.transferSpinner.classList.remove('hidden');
       els.transferBadgeBtn.classList.add('text-emerald-300', 'border-emerald-500/40');
       els.transferBadgeBtn.classList.remove('text-slate-300');
-      els.transferBadgeBtn.title = 'View background activity (Active)';
-
-      if (trActive) {
-        const active = trData.active;
-        const queued = trData.queued || [];
-        els.transferCountText.textContent = active 
-          ? `Moving ${Math.round(active.percent || 0)}%`
-          : `${queued.length} transfer${queued.length > 1 ? 's' : ''}`;
-      } else if (libOpsActive) {
-        const a = libOpsData.active;
-        const q = (libOpsData.queued || []).length;
-        const verb = a ? (LIBOP_LABELS[a.op] || 'Working') : 'Queued';
-        els.transferCountText.textContent = a ? `${verb}${q ? ` +${q}` : ''}` : `${q} op${q > 1 ? 's' : ''}`;
-      } else if (idxActive) {
-        const pct = typeof idxData.percent === 'number' ? Math.round(idxData.percent) : 0;
-        els.transferCountText.textContent = `Indexing ${pct}%`;
-      } else if (bkActive) {
-        const actionName = bkData.status === 'backing_up' ? 'Backup' : 'Restore';
-        const pct = Math.round(bkData.progress_percent || 0);
-        els.transferCountText.textContent = `${actionName} ${pct}%`;
-      } else if (tActive) {
-        const active = tData.active;
-        const queued = tData.queued || [];
-        els.transferCountText.textContent = active 
-          ? `${Math.round(active.percent || 0)}% (${queued.length + 1})`
-          : `${queued.length} queued`;
-      } else if (animActive) {
-        const pct = Math.round(animData.percent || 0);
-        els.transferCountText.textContent = animData.active
-          ? `Anim ${pct}%`
-          : `${animData.queue_length || 0} anim`;
-      } else if (thActive) {
-        els.transferCountText.textContent = `Thumbs ${Math.round(thData.percent || 0)}%`;
-      } else if (wActive) {
-        els.transferCountText.textContent = `WebP ${Math.round(wData.percent || 0)}%`;
-      } else if (batchZipActive) {
-        const pct = Math.round(batchZipData.percent || 0);
-        els.transferCountText.textContent = `Batch Zip ${pct}%`;
-      } else if (batchUnpackActive) {
-        const pct = Math.round(batchUnpackData.overall_percent || 0);
-        els.transferCountText.textContent = `Extract ${pct}%`;
-      } else if (urlDlActive) {
-        const dlActive = urlDlData.active || [];
-        const qDl = urlDlData.queued_count || 0;
-        if (dlActive.length) {
-          const pct = Math.round(dlActive[0].percent || 0);
-          els.transferCountText.textContent = dlActive.length > 1
-            ? `DL ${pct}% (${dlActive.length})`
-            : `DL ${pct}%${qDl ? ` +${qDl}` : ''}`;
-        } else {
-          els.transferCountText.textContent = `${qDl} dl queued`;
-        }
-      } else if (zipActive) {
-        const runningTask = (zipData.tasks || []).find(t => t.status === 'running');
-        const actionName = runningTask ? (runningTask.type === 'compress' ? 'Zipping' : (runningTask.type === 'unpack' ? 'Unpack' : 'Archive')) : 'ZIP';
-        const pct = runningTask ? Math.round(runningTask.percent || 0) : 0;
-        els.transferCountText.textContent = `${actionName} ${pct}%`;
-      }
+      els.transferBadgeBtn.title = `View background activity (${badgeStatus})${tasksLabel ? ` - ${tasksLabel}` : ''}`;
     } else {
       if (els.transferIcon) els.transferIcon.classList.remove('hidden');
       if (els.transferSpinner) els.transferSpinner.classList.add('hidden');
       els.transferBadgeBtn.classList.remove('text-emerald-300', 'border-emerald-500/40');
       els.transferBadgeBtn.classList.add('text-slate-300');
-      els.transferBadgeBtn.title = 'View background activity (Idle)';
+      els.transferBadgeBtn.title = `View background activity (${badgeStatus})${tasksLabel ? ` - ${tasksLabel}` : ''}`;
       // Keep transferDropdown open if the user opened it; do not auto-close
     }
+    if (els.transferCountText) {
+      els.transferCountText.textContent = badgeText;
+      els.transferCountText.classList.toggle('hidden', !badgeText);
+    }
 
-    if (els.mobileTasksBadge) {
-      els.mobileTasksBadge.textContent = isAnyActive ? (els.transferCountText ? els.transferCountText.textContent : 'Active') : '0 active';
-      if (isAnyActive) {
-        els.mobileTasksBadge.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono';
+    // Mobile header one-tap tasks button mirrors the same state.
+    if (els.mobileTasksBtn) {
+      if (tasksSummary.active) {
+        if (els.mobileTasksIcon) els.mobileTasksIcon.classList.add('hidden');
+        if (els.mobileTasksSpinner) els.mobileTasksSpinner.classList.remove('hidden');
       } else {
-        els.mobileTasksBadge.className = 'text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono';
+        if (els.mobileTasksIcon) els.mobileTasksIcon.classList.remove('hidden');
+        if (els.mobileTasksSpinner) els.mobileTasksSpinner.classList.add('hidden');
+      }
+      els.mobileTasksBtn.title = `Background tasks & system status (${badgeStatus})${tasksLabel ? ` - ${tasksLabel}` : ''}`;
+      if (els.mobileTasksCountBadge) {
+        els.mobileTasksCountBadge.textContent = badgeText;
+        els.mobileTasksCountBadge.classList.toggle('hidden', !badgeText);
       }
     }
-    if (els.mobileTasksStatusSubtext) {
-      els.mobileTasksStatusSubtext.textContent = isAnyActive ? 'Tasks running in background' : 'Workers idle';
-    }
+
     updateMobileControlsBadge();
 
     // Update tab badges and empty state in tasks modal
@@ -6628,10 +6610,9 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
     if (!els.mobileControlsBadge) return;
     const hasSearch = !!(state.searchQuery && state.searchQuery.trim().length > 0);
     const hasFilter = state.activeFilter !== 'all';
-    const hasTasks = els.transferSpinner && !els.transferSpinner.classList.contains('hidden');
     const hasDups = state.duplicates && state.duplicates.totalGroups > 0;
 
-    const isActive = hasSearch || hasFilter || hasTasks || hasDups;
+    const isActive = hasSearch || hasFilter || hasDups;
     els.mobileControlsBadge.classList.toggle('hidden', !isActive);
   }
 
@@ -7059,9 +7040,10 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
     }
 
     // Tab 4: System Status Triggers
-    if (els.mobileOpenTasksBtn) {
-      els.mobileOpenTasksBtn.addEventListener('click', () => {
-        closeMobileControlsModal();
+    // Mobile header one-tap tasks button opens the shared background tasks
+    // modal directly (reuses the desktop pill's toggle handler).
+    if (els.mobileTasksBtn) {
+      els.mobileTasksBtn.addEventListener('click', () => {
         if (els.transferBadgeBtn) els.transferBadgeBtn.click();
       });
     }
@@ -8426,15 +8408,8 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
     
     updateUploadsUI();
     
-    // Switch to active uploads icon in header
-    const transferBadgeBtn = document.getElementById('transferBadgeBtn');
-    const transferIcon = document.getElementById('transferIcon');
-    const transferSpinner = document.getElementById('transferSpinner');
-    const transferCountText = document.getElementById('transferCountText');
-    if (transferBadgeBtn) transferBadgeBtn.classList.add('bg-emerald-600/20', 'border-emerald-500/50', 'text-emerald-300');
-    if (transferIcon) transferIcon.classList.add('hidden');
-    if (transferSpinner) transferSpinner.classList.remove('hidden');
-    if (transferCountText) transferCountText.textContent = 'Uploading...';
+    // Reflect the active upload in the header tasks badge.
+    updateHeaderTaskBadge();
     
     processUploadQueue();
   }
@@ -8615,10 +8590,7 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
     if (statusEl) statusEl.textContent = `${doneCount} of ${uploadState.queue.length} files`;
     
     // Update header badge dynamically
-    const transferCountText = document.getElementById('transferCountText');
-    if (transferCountText && uploadState.activeUploads > 0) {
-      transferCountText.textContent = `Upload ${percent}%`;
-    }
+    updateHeaderTaskBadge();
 
     // Render list
     listEl.innerHTML = uploadState.queue.slice().sort((a,b) => {
@@ -8655,14 +8627,7 @@ import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, url
       const section = document.getElementById('browserUploadsSection');
       if (section) section.classList.add('hidden');
       
-      const transferBadgeBtn = document.getElementById('transferBadgeBtn');
-      const transferIcon = document.getElementById('transferIcon');
-      const transferSpinner = document.getElementById('transferSpinner');
-      const transferCountText = document.getElementById('transferCountText');
-      if (transferBadgeBtn) transferBadgeBtn.classList.remove('bg-emerald-600/20', 'border-emerald-500/50', 'text-emerald-300');
-      if (transferIcon) transferIcon.classList.remove('hidden');
-      if (transferSpinner) transferSpinner.classList.add('hidden');
-      if (transferCountText) transferCountText.textContent = 'Tasks';
+      updateHeaderTaskBadge();
       
       const successCount = uploadState.queue.filter(f => f.status === 'done').length;
       if (successCount > 0) {
