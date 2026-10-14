@@ -5,9 +5,7 @@ import { ICONS, icon, hydrateIcons, DEFAULT_ICON_CLASS } from '../src/shared/ico
 import sheetHtml from '../../templates/partials/mobile_controls_sheet.html?raw';
 import tasksModalHtml from '../../templates/partials/tasks_modal.html?raw';
 import sorterTasksModalHtml from '../../templates/partials/sorter_tasks_modal.html?raw';
-import librarySource from '../src/library/index.js?raw';
-import sorterSource from '../src/app/index.js?raw';
-
+import { librarySource, sorterSource } from './sources.js';
 // Every icon the lightbox overlay bar renders.
 const LIGHTBOX_ICONS = [
   'gauge', 'repeat-2', 'camera', 'film', 'info', 'download',

@@ -121,7 +121,7 @@ Confirm the service is active and responding after the restart.
 
 ### Rule 6: Frontend Cache Busting
 When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember that the application uses hardcoded cache buster strings in the HTML templates to prevent browsers from using stale client code. After running `npm run build`, you **must** manually increment the version string for the modified entrypoint:
-- If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`.
+- If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`. The sorter UI is split into feature modules under `frontend/src/app/` (entrypoint `index.js` plus `elements`, `state`, `config`, `folders`, `video`, `duplicates`, `moves`, `polling`, `empty_folders`, `browser`, `modals`, `events`); editing any of them still needs only the single `app.js` bump.
 - If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`. The Library UI is split into feature modules under `frontend/src/library/` (entrypoint `index.js` plus `layout`, `folders`, `search`, `gallery`, `lightbox`, `thumbnail_chooser`, `management`, `duplicates`, `tasks`, `workers`, `zip`, `animations`, `theme`, `sheet`, `uploads`); editing any of them still needs only the single `library.js` bump.
 - If you modify Downloads JS (`frontend/src/downloads/*`), increment `src="/static/dist/downloads.js?v=XX"` in `templates/downloads.html`. (Modules under `frontend/src/library/` are shared: `url_downloads.js` and `recent_targets.js` feed both `library.js` and `downloads.js`, and `frontend/src/shared/tasks_badge.js` plus `frontend/src/shared/icons.js` feed both `library.js` and `app.js` — touching either shared module means bumping **both** entrypoint versions. `templates/partials/tasks_modal.html` / `sorter_tasks_modal.html` edits land in `library.js` / `app.js` respectively.)
 
@@ -229,7 +229,11 @@ media-library/
 │
 ├── frontend/                        # Vite frontend source code & Vitest test suite
 │   ├── src/                         # ES modules for app and library
-│   │   ├── app/                     # Video Sorter UI logic (index.js)
+│   │   ├── app/                     # Video Sorter UI logic, split into feature modules:
+│   │   │                            #   index.js (entrypoint: DOMContentLoaded bootstrap)
+│   │   │                            #   elements.js (cached DOM refs), state.js (app state + helpers),
+│   │   │                            #   config.js, folders.js, video.js, duplicates.js, moves.js,
+│   │   │                            #   polling.js, empty_folders.js, browser.js, modals.js, events.js
 │   │   ├── downloads/               # Downloads page UI logic (index.js)
 │   │   ├── library/                 # Media Library UI logic, split into feature modules:
 │   │   │                            #   index.js (entrypoint: shortcuts, initEvents, bootstrap, window.libraryApp)
@@ -238,7 +242,7 @@ media-library/
 │   │   │                            #   zip.js, animations.js, theme.js, sheet.js, uploads.js
 │   │   │                            #   plus shared state.js, utils.js, url_downloads.js, recent_targets.js, service_worker.js
 │   │   └── shared/                  # Cross-page modules (icons.js, tasks_badge.js)
-│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, icons, library_utils, library_state, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_smoke)
+│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_smoke, sorter_smoke)
 │
 ├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
 ├── static/                          # Static assets and built bundles

@@ -1,4 +1,4 @@
-const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running","processing"]);function Hn(t){const e=Number(t)||0;return e<=0?"":e>99?"99+":String(e)}function l(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Ln(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,M=e?(e.active?1:0)+l(e):0,n=s?(s.active?1:0)+l(s):0,r=c?(c.active?1:0)+l(c):0,d=o?Number(o.total_queued)||0||(o.active?1:0)+l(o):0,C=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,S=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,y=p&&p.status==="crawling"?1:0,I=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,B=g&&g.is_active?1:0,A=k&&m.has(k.status)?1:0,j=x&&m.has(x.status)?1:0,b=f&&f.status==="probing"?1:0,$=w&&(w.status==="hashing"||w.status==="migrating")?1:0,H=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,L=v?(v.active||0)+(v.queued||0):0;return{count:M+n+r+d+C+S+y+I+B+A+j+b+$+H+L,active:M+n+r+d+C+S+y+I+B+A+j+b+$+H+L>0}}function _n(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,M=n=>n&&(n.active||l(n)>0);if(M(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${l(e)} transfer${l(e)>1?"s":""}`}if(M(s)){const n=s.active,r=l(s),d=n?z[n.op]||"Working":"Queued";return n?`${d}${r?` +${r}`:""}`:`${r} op${r>1?"s":""}`}if(p&&p.status==="crawling")return`Indexing ${typeof p.percent=="number"?Math.round(p.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(M(c)){const n=c.active,r=l(c);return n?`${Math.round(n.percent||0)}% (${r+1})`:`${r} queued`}if(o&&(o.active||(o.total_queued||0)>0)){const n=Math.round(o.percent||0);return o.active?`Anim ${n}%`:`${o.total_queued||l(o)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(f&&f.status==="probing")return`Probing ${Math.round(f.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(k&&m.has(k.status))return`Batch Zip ${Math.round(k.percent||0)}%`;if(x&&m.has(x.status))return`Extract ${Math.round(x.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,r=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${r?` +${r}`:""}`}if(g&&g.is_active){const n=(g.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:v&&(v.active||0)>0?`Uploading ${Math.round(v.percent||0)}%`:""}const V=`<!-- @license lucide-static v1.57.0 - ISC -->
+const q=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-archive"
   xmlns="http://www.w3.org/2000/svg"
@@ -15,7 +15,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
   <path d="M10 12h4" />
 </svg>
-`,q=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,_=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-arrow-right-left"
   xmlns="http://www.w3.org/2000/svg"
@@ -49,7 +49,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <circle cx="12" cy="12" r="10" />
   <path d="M4.929 4.929 19.07 19.071" />
 </svg>
-`,D=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Z=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-camera"
   xmlns="http://www.w3.org/2000/svg"
@@ -65,7 +65,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
   <circle cx="12" cy="13" r="3" />
 </svg>
-`,Z=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,D=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-check"
   xmlns="http://www.w3.org/2000/svg"
@@ -80,7 +80,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
 >
   <path d="M20 6 9 17l-5-5" />
 </svg>
-`,E=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,N=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-circle-check"
   xmlns="http://www.w3.org/2000/svg"
@@ -96,7 +96,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <circle cx="12" cy="12" r="10" />
   <path d="m16 9-5.5 5.5L8 12" />
 </svg>
-`,N=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,U=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-circle-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -113,7 +113,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="m15 9-6 6" />
   <path d="m9 9 6 6" />
 </svg>
-`,U=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,E=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-clapperboard"
   xmlns="http://www.w3.org/2000/svg"
@@ -175,7 +175,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <circle cx="12" cy="12" r="2" />
   <circle cx="12" cy="12" r="8" />
 </svg>
-`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,R=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-copy"
   xmlns="http://www.w3.org/2000/svg"
@@ -191,7 +191,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
 </svg>
-`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-database"
   xmlns="http://www.w3.org/2000/svg"
@@ -208,7 +208,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M3 5V19A9 3 0 0 0 21 19V5" />
   <path d="M3 12A9 3 0 0 0 21 12" />
 </svg>
-`,K=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-download"
   xmlns="http://www.w3.org/2000/svg"
@@ -225,7 +225,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
   <path d="m7 10 5 5 5-5" />
 </svg>
-`,R=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-archive"
   xmlns="http://www.w3.org/2000/svg"
@@ -245,7 +245,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M8 7V6" />
   <circle cx="8" cy="20" r="2" />
 </svg>
-`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-up"
   xmlns="http://www.w3.org/2000/svg"
@@ -263,7 +263,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M12 12v6" />
   <path d="m15 15-3-3-3 3" />
 </svg>
-`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-video"
   xmlns="http://www.w3.org/2000/svg"
@@ -280,7 +280,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M14 2v5a1 1 0 0 0 1 1h5" />
   <path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z" />
 </svg>
-`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,K=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-film"
   xmlns="http://www.w3.org/2000/svg"
@@ -660,7 +660,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="m21 21-4.34-4.34" />
   <circle cx="11" cy="11" r="8" />
 </svg>
-`,Mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,mn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-settings"
   xmlns="http://www.w3.org/2000/svg"
@@ -676,7 +676,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
   <circle cx="12" cy="12" r="3" />
 </svg>
-`,mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Mn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-sliders-horizontal"
   xmlns="http://www.w3.org/2000/svg"
@@ -717,7 +717,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M22 4h-4" />
   <circle cx="4" cy="20" r="2" />
 </svg>
-`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-trash-2"
   xmlns="http://www.w3.org/2000/svg"
@@ -736,7 +736,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M3 6h18" />
   <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 </svg>
-`,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-upload"
   xmlns="http://www.w3.org/2000/svg"
@@ -784,7 +784,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
 >
   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
 </svg>
-`,An=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -800,7 +800,7 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
   <path d="M18 6 6 18" />
   <path d="m6 6 12 12" />
 </svg>
-`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-zap"
   xmlns="http://www.w3.org/2000/svg"
@@ -815,4 +815,4 @@ const z={move:"Moving",delete:"Deleting",rename:"Renaming"},m=new Set(["running"
 >
   <path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z" />
 </svg>
-`,bn=Object.freeze({archive:V,"arrow-right-left":q,ban:T,camera:D,check:Z,"circle-check":E,"circle-x":N,clapperboard:U,clock:O,cog:P,copy:X,database:G,download:K,"file-archive":R,"file-up":Q,"file-video":W,film:F,folder:J,"folder-input":Y,"folder-plus":nn,"folder-tree":en,"folder-up":tn,gauge:sn,globe:rn,"hard-drive":on,image:cn,images:ln,info:an,link:dn,"loader-circle":hn,monitor:un,"package-open":wn,palette:pn,pencil:vn,"refresh-cw":gn,"repeat-2":kn,rocket:xn,search:fn,settings:Mn,"sliders-horizontal":mn,sparkles:Cn,"trash-2":Sn,upload:yn,video:In,wrench:Bn,x:An,zap:jn}),_="lb-icon";function $n(t,e=_){const s=bn[t];return s?s.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function zn(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(s=>{const c=$n(s.dataset.lbIcon,s.dataset.lbIconClass||_);c&&(s.innerHTML=c,e+=1)}),e}export{Ln as c,_n as d,Hn as f,zn as h,$n as i};
+`,An=Object.freeze({archive:q,"arrow-right-left":_,ban:T,camera:Z,check:D,"circle-check":N,"circle-x":U,clapperboard:E,clock:O,cog:P,copy:R,database:Q,download:W,"file-archive":X,"file-up":F,"file-video":G,film:K,folder:J,"folder-input":Y,"folder-plus":nn,"folder-tree":en,"folder-up":tn,gauge:sn,globe:rn,"hard-drive":on,image:cn,images:ln,info:an,link:dn,"loader-circle":hn,monitor:un,"package-open":wn,palette:pn,pencil:vn,"refresh-cw":gn,"repeat-2":kn,rocket:xn,search:fn,settings:mn,"sliders-horizontal":Mn,sparkles:Cn,"trash-2":yn,upload:Sn,video:In,wrench:Bn,x:jn,zap:bn}),V="lb-icon";function $n(t,e=V){const s=An[t];return s?s.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function Ln(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(s=>{const c=$n(s.dataset.lbIcon,s.dataset.lbIconClass||V);c&&(s.innerHTML=c,e+=1)}),e}const z=99,Hn={move:"Moving",delete:"Deleting",rename:"Renaming"},M=new Set(["running","processing"]);function zn(t){const e=Number(t)||0;return e<=0?"":e>z?`${z}+`:String(e)}function l(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Vn(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,m=e?(e.active?1:0)+l(e):0,n=s?(s.active?1:0)+l(s):0,r=c?(c.active?1:0)+l(c):0,d=o?Number(o.total_queued)||0||(o.active?1:0)+l(o):0,C=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,y=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,S=p&&p.status==="crawling"?1:0,I=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,B=g&&g.is_active?1:0,j=k&&M.has(k.status)?1:0,b=x&&M.has(x.status)?1:0,A=f&&f.status==="probing"?1:0,$=w&&(w.status==="hashing"||w.status==="migrating")?1:0,H=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,L=v?(v.active||0)+(v.queued||0):0;return{count:m+n+r+d+C+y+S+I+B+j+b+A+$+H+L,active:m+n+r+d+C+y+S+I+B+j+b+A+$+H+L>0}}function qn(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,m=n=>n&&(n.active||l(n)>0);if(m(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${l(e)} transfer${l(e)>1?"s":""}`}if(m(s)){const n=s.active,r=l(s),d=n?Hn[n.op]||"Working":"Queued";return n?`${d}${r?` +${r}`:""}`:`${r} op${r>1?"s":""}`}if(p&&p.status==="crawling")return`Indexing ${typeof p.percent=="number"?Math.round(p.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(m(c)){const n=c.active,r=l(c);return n?`${Math.round(n.percent||0)}% (${r+1})`:`${r} queued`}if(o&&(o.active||(o.total_queued||0)>0)){const n=Math.round(o.percent||0);return o.active?`Anim ${n}%`:`${o.total_queued||l(o)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(f&&f.status==="probing")return`Probing ${Math.round(f.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(k&&M.has(k.status))return`Batch Zip ${Math.round(k.percent||0)}%`;if(x&&M.has(x.status))return`Extract ${Math.round(x.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,r=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${r?` +${r}`:""}`}if(g&&g.is_active){const n=(g.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:v&&(v.active||0)>0?`Uploading ${Math.round(v.percent||0)}%`:""}export{Vn as c,qn as d,zn as f,Ln as h,$n as i};
