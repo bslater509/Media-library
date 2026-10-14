@@ -14,7 +14,7 @@
 <body class="bg-slate-950 text-slate-100 h-screen h-[100dvh] overflow-hidden flex flex-col font-sans antialiased selection:bg-emerald-600 selection:text-white">
 
   <!-- Mobile Top Bar -->
-  <header class="md:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 h-12 flex items-center justify-between">
+  <header class="md:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 h-12 flex items-center justify-between transition-transform duration-300" style="padding-top: var(--sat, env(safe-area-inset-top, 0px)); height: calc(3rem + var(--sat, env(safe-area-inset-top, 0px)));">
     <div class="flex items-center gap-2 min-w-0 flex-1">
       <a href="/" class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white border border-slate-700 shrink-0" title="Back to Library" aria-label="Back to Library">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
@@ -25,7 +25,7 @@
         <p class="text-[10px] text-slate-400 font-mono truncate">Video & playlist URL downloader</p>
       </div>
     </div>
-    <button id="themeModalBtn" type="button" title="Appearance & Mobile Settings" class="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shrink-0">
+    <button id="themeModalBtnMobile" data-theme-modal-btn type="button" title="Appearance & Mobile Settings" class="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shrink-0">
       <span class="text-sm leading-none">🎨</span>
     </button>
   </header>
@@ -69,7 +69,7 @@
           <span class="text-xs leading-none">⚙️</span>
           <span class="hidden xl:inline">Background Tasks</span>
         </a>
-        <button id="themeModalBtn" title="Appearance & Mobile Settings (T)" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+        <button id="themeModalBtn" data-theme-modal-btn title="Appearance & Mobile Settings (T)" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
           <span class="text-xs leading-none">🎨</span>
           <span class="hidden xl:inline">Theme</span>
         </button>
@@ -78,12 +78,15 @@
     </div>
   </header>
 
+  <!-- Mobile Spacer: keeps the scrollable content clear of the fixed mobile top bar -->
+  <div class="md:hidden shrink-0" aria-hidden="true" style="height: calc(3rem + var(--sat, env(safe-area-inset-top, 0px)));"></div>
+
   <!-- Notification Banner / Toaster -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 max-w-sm pointer-events-none"></div>
 
   <!-- Main Content -->
   <main class="flex-1 min-h-0 overflow-y-auto relative">
-    <div class="max-w-6xl w-full mx-auto p-3.5 sm:p-5 md:p-6 flex flex-col gap-4 pb-16 md:pb-8">
+    <div class="max-w-6xl w-full mx-auto px-3.5 sm:px-5 md:px-6 pt-2 sm:pt-2.5 md:pt-6 pb-16 md:pb-8 flex flex-col gap-4">
 
       <!-- Downloads intro -->
       <div class="flex flex-col gap-1">
@@ -206,6 +209,6 @@
   {{include 'partials/theme_modal.html'}}
 
   <!-- Downloads Script -->
-  <script type="module" src="/static/dist/downloads.js?v=1"></script>
+  <script type="module" src="/static/dist/downloads.js?v=2"></script>
 </body>
 </html>

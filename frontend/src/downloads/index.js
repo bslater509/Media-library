@@ -442,7 +442,7 @@ function closePicker() {
 // global THEME_MANAGER bootstrapped in theme_head.html.
 function initThemeCustomizer() {
   const themeModal = document.getElementById('themeCustomizerModal');
-  const themeModalBtn = document.getElementById('themeModalBtn');
+  const themeModalBtns = Array.from(document.querySelectorAll('[data-theme-modal-btn]'));
   const closeBtn = document.getElementById('closeThemeModalBtn');
   const applyBtn = document.getElementById('applyThemeModalCloseBtn');
   const resetBtn = document.getElementById('resetThemeDefaultsBtn');
@@ -508,7 +508,8 @@ function initThemeCustomizer() {
     themeModal.classList.remove('flex');
   }
 
-  if (themeModalBtn) themeModalBtn.addEventListener('click', openModal);
+  // Both the mobile and desktop header carry a trigger; bind every one.
+  themeModalBtns.forEach(btn => btn.addEventListener('click', openModal));
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
   if (applyBtn) applyBtn.addEventListener('click', closeModal);
   themeModal.addEventListener('click', (e) => { if (e.target === themeModal) closeModal(); });
@@ -553,7 +554,8 @@ async function init() {
       }
     }
     if (e.key === 't' && !e.ctrlKey && !e.metaKey) {
-      const btn = document.getElementById('themeModalBtn');
+      // Click the trigger that is actually visible for this viewport.
+      const btn = themeModalBtns.find(b => b.offsetParent !== null);
       if (btn && document.activeElement && document.activeElement.tagName !== 'TEXTAREA') btn.click();
     }
   });

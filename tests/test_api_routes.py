@@ -58,13 +58,18 @@ def test_html_views(api_client):
     res_dl = api_client.get("/downloads")
     assert res_dl.status_code == 200
     assert "text/html" in res_dl.headers.get("content-type", "")
-    assert "downloads.js?v=1" in res_dl.text
+    assert "downloads.js?v=2" in res_dl.text
     assert 'id="dlUrlsInput"' in res_dl.text
     assert 'id="dlPickerModal"' in res_dl.text
     assert 'id="dlBrowseBtn"' in res_dl.text
     assert 'id="dlClearBtn"' in res_dl.text
     assert "themeCustomizerModal" in res_dl.text
     assert 'href="/downloads"' in res_dl.text
+    # Both header triggers must carry the shared attribute (no duplicate ids),
+    # and a mobile spacer keeps content clear of the fixed top bar.
+    assert res_dl.text.count("data-theme-modal-btn") == 2
+    assert "themeModalBtnMobile" in res_dl.text
+    assert "safe-area-inset-top, 0px))" in res_dl.text
 
     res_lib = api_client.get("/library", follow_redirects=True)
     assert res_lib.status_code == 200
