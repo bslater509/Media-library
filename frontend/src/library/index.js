@@ -2,6 +2,7 @@ import "../../../static/styles.css";
 import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate, shouldPlayAnimatedThumb } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
+import { icon, hydrateIcons } from './icons.js';
 import { urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../shared/tasks_badge.js';
 
@@ -1551,6 +1552,82 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     });
   }
 
+  // Parent folder of a media path (the lightbox shows it as the file's location).
+  function parentDirectoryOf(path) {
+    if (!path) return '';
+    const idx = String(path).lastIndexOf('/');
+    return idx > 0 ? String(path).slice(0, idx) : '/';
+  }
+
+  // ==========================================
+  // LIGHTBOX OVERLAY BAR (reveal on activity, fade when idle)
+  // ==========================================
+  const LIGHTBOX_BAR_IDLE_MS = 3500;
+  let lightboxBarIdleTimer = null;
+  let lightboxBarHovered = false;
+
+  function stopLightboxBarIdle() {
+    if (lightboxBarIdleTimer) {
+      clearTimeout(lightboxBarIdleTimer);
+      lightboxBarIdleTimer = null;
+    }
+    lightboxBarHovered = false;
+  }
+
+  function revealLightboxBar(container) {
+    if (!container) return;
+    container.classList.remove('lb-bar-idle');
+    if (lightboxBarIdleTimer) clearTimeout(lightboxBarIdleTimer);
+    lightboxBarIdleTimer = setTimeout(() => {
+      lightboxBarIdleTimer = null;
+      if (lightboxBarHovered) return;
+      container.classList.add('lb-bar-idle');
+    }, LIGHTBOX_BAR_IDLE_MS);
+  }
+
+  function initLightboxBarIdle(container) {
+    if (!container || container.dataset.lbBarIdleBound === 'true') return;
+    container.dataset.lbBarIdleBound = 'true';
+
+    const onActivity = () => revealLightboxBar(container);
+    ['pointermove', 'pointerdown', 'touchstart', 'wheel'].forEach((evt) =>
+      container.addEventListener(evt, onActivity, { passive: true }));
+    container.addEventListener('keydown', onActivity);
+
+    // Parked pointer on the bar keeps it up; only real mouse pointers count so a
+    // finger tap never leaves the bar stuck visible.
+    const onBar = (e) => Boolean(e.target && e.target.closest && e.target.closest('.lb-meta'));
+    container.addEventListener('pointerover', (e) => {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      if (!onBar(e)) return;
+      lightboxBarHovered = true;
+      revealLightboxBar(container);
+    });
+    container.addEventListener('pointerout', (e) => {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      if (!onBar(e)) return;
+      lightboxBarHovered = false;
+      revealLightboxBar(container);
+    });
+
+    revealLightboxBar(container);
+  }
+
+  // Video slides float the bar above the browser's native control strip; image
+  // slides rest on the bottom edge. Desktop captions are per slide (the markup
+  // already carries the right class), phones reuse one shared caption, so only
+  // that case has to follow the selected slide.
+  function syncLightboxBar() {
+    const container = document.querySelector('.fancybox__container');
+    if (!container) return;
+    // Fancybox's `init` event fires before the container is in the DOM, so the
+    // idle wiring is (re)established from here as well.
+    initLightboxBarIdle(container);
+    if (!container.classList.contains('is-compact')) return;
+    const isVideo = Boolean(document.querySelector('.fancybox__slide.is-selected.has-html5video'));
+    container.querySelectorAll('.lb-meta').forEach((bar) => bar.classList.toggle('is-video', isVideo));
+  }
+
   // Open Fancybox 5 Gallery
   function openFancybox(startIndex) {
     if (!window.Fancybox) {
@@ -1562,23 +1639,27 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       const isVid = f.type === 'video';
       const resLabel = getResolutionLabel(f.width, f.height);
       const durLabel = isVid && f.duration ? formatDuration(f.duration) : '';
+      const dirLabel = parentDirectoryOf(f.path);
+      const dirName = dirLabel.split('/').filter(Boolean).pop() || dirLabel;
       return {
         src: f.media_url,
         thumb: f.thumb_url,
         type: isVid ? 'html5video' : 'image',
         caption: `
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 w-full max-w-5xl mx-auto py-1">
-            <div class="flex items-center gap-2 min-w-0 flex-1 truncate">
-              <span class="font-mono text-xs sm:text-sm text-white font-medium truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono shrink-0">${f.size_formatted}</span>
-              ${resLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800/50 font-mono shrink-0 font-bold">${resLabel}</span>` : ''}
-              ${durLabel ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono shrink-0">${durLabel}</span>` : ''}
+          <div class="lb-meta${isVid ? ' is-video' : ''}">
+            <div class="lb-meta__info">
+              <span class="lb-meta__name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+              ${dirLabel ? `<span class="lb-meta__path" title="${escapeHtml(dirLabel)}">${escapeHtml(dirLabel)}</span>` : ''}
+              ${dirLabel ? `<span class="lb-meta__dirname" title="${escapeHtml(dirLabel)}">${escapeHtml(dirName)}</span>` : ''}
+              <span class="lb-chip">${icon('hard-drive', 'lb-chip__icon')}<span>${escapeHtml(f.size_formatted || '')}</span></span>
+              ${resLabel ? `<span class="lb-chip lb-chip--accent">${icon('monitor', 'lb-chip__icon')}<span>${resLabel}</span></span>` : ''}
+              ${durLabel ? `<span class="lb-chip lb-chip--dur">${icon('clock', 'lb-chip__icon')}<span>${durLabel}</span></span>` : ''}
             </div>
-            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto flex-wrap">
+            <div class="lb-actions">
               ${isVid ? `
-                <div class="flex items-center bg-slate-800 hover:bg-slate-750 px-2 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 gap-1" title="Playback Speed ([ and ])">
-                  <span class="text-[10px] text-slate-400 font-mono hidden xs:inline">Speed:</span>
-                  <select onchange="window.libraryApp.setLightboxVideoSpeed(this.value)" class="lightbox-speed-select bg-transparent text-white font-mono text-xs focus:outline-none cursor-pointer">
+                <label class="lb-speed" title="Playback speed ([ / ])">
+                  ${icon('gauge')}
+                  <select onchange="window.libraryApp.setLightboxVideoSpeed(this.value)" aria-label="Playback speed" class="lightbox-speed-select lb-speed__select">
                     <option value="0.5">0.5x</option>
                     <option value="0.75">0.75x</option>
                     <option value="1" selected>1.0x</option>
@@ -1586,37 +1667,31 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
                     <option value="1.5">1.5x</option>
                     <option value="2">2.0x</option>
                   </select>
-                </div>
-                <button onclick="window.libraryApp.toggleLightboxVideoLoop()" class="lightbox-loop-btn px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Toggle Loop (L)">
-                  <span>🔁</span>
-                  <span class="hidden sm:inline">Loop</span>
+                </label>
+                <button type="button" onclick="window.libraryApp.toggleLightboxVideoLoop()" class="lb-btn lightbox-loop-btn" title="Toggle Loop (L)" aria-label="Toggle loop">
+                  ${icon('repeat-2')}
                 </button>
-                <button onclick="window.libraryApp.captureCurrentFrameAsPoster()" class="lightbox-poster-btn px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Set current frame as thumbnail poster (P)">
-                  <span>📷</span>
-                  <span class="hidden sm:inline">Set Poster</span>
+                <button type="button" onclick="window.libraryApp.captureCurrentFrameAsPoster()" class="lb-btn lightbox-poster-btn" title="Set current frame as thumbnail poster (P)" aria-label="Set poster frame">
+                  ${icon('camera')}
                 </button>
-                <button onclick="window.libraryApp.openThumbnailChooser()" class="lightbox-thumb-chooser-btn px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Choose Video Thumbnail (12 Frames)">
-                  <span>🎞️</span>
-                  <span class="hidden sm:inline">Thumbnail</span>
+                <button type="button" onclick="window.libraryApp.openThumbnailChooser()" class="lb-btn lightbox-thumb-chooser-btn" title="Choose Video Thumbnail" aria-label="Choose video thumbnail">
+                  ${icon('film')}
                 </button>
               ` : ''}
-              <button onclick="window.libraryApp.openMediaInfoModalByPath('${safeAttrEscape(f.path)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Media Details (I)">
-                <span>ℹ️</span>
-                <span class="hidden md:inline">Info</span>
+              <button type="button" onclick="window.libraryApp.openMediaInfoModalByPath('${safeAttrEscape(f.path)}')" class="lb-btn" title="Media Details (I)" aria-label="Media details">
+                ${icon('info')}
               </button>
-              <a href="${f.media_url}" download="${safeAttrEscape(f.name)}" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1" title="Download File">
-                <span>⬇️</span>
-                <span class="hidden md:inline">Download</span>
+              <a href="${f.media_url}" download="${safeAttrEscape(f.name)}" class="lb-btn" title="Download File" aria-label="Download file">
+                ${icon('download')}
               </a>
-              <button onclick="window.libraryApp.openMoveModalFromLightbox('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Move File">
-                <span>📁</span>
-                <span class="hidden md:inline">Move</span>
+              <button type="button" onclick="window.libraryApp.openMoveModalFromLightbox('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="lb-btn" title="Move File" aria-label="Move file">
+                ${icon('folder-input')}
               </button>
-              <button onclick="window.libraryApp.openRenameModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg border border-slate-700 text-slate-200 hover:text-white transition cursor-pointer" title="Rename (R)">
-                ✏️
+              <button type="button" onclick="window.libraryApp.openRenameModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}')" class="lb-btn" title="Rename (R)" aria-label="Rename file">
+                ${icon('pencil')}
               </button>
-              <button onclick="window.libraryApp.openDeleteModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}', '${safeAttrEscape(f.size_formatted)}')" class="px-2.5 py-1 bg-red-600/80 hover:bg-red-600 text-xs font-semibold rounded-lg text-white transition cursor-pointer" title="Delete (D)">
-                🗑️
+              <button type="button" onclick="window.libraryApp.openDeleteModal('${safeAttrEscape(f.path)}', '${safeAttrEscape(f.name)}', '${safeAttrEscape(f.size_formatted)}')" class="lb-btn lb-btn--danger" title="Delete (D)" aria-label="Delete file">
+                ${icon('trash-2')}
               </button>
             </div>
           </div>
@@ -1647,15 +1722,19 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         init: (fancybox) => {
           state.fancyboxInstance = fancybox;
           pauseAllGalleryAnimations();
+          initLightboxBarIdle(fancybox.container);
         },
         'Carousel.change': () => {
           setTimeout(syncActiveLightboxVideo, 50);
+          setTimeout(syncLightboxBar, 50);
         },
         'Carousel.ready': () => {
           setTimeout(syncActiveLightboxVideo, 50);
+          setTimeout(syncLightboxBar, 50);
         },
         destroy: () => {
           state.fancyboxInstance = null;
+          stopLightboxBarIdle();
           resumeVisibleGalleryAnimations();
         }
       }
@@ -1680,11 +1759,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (speedSelect) speedSelect.value = String(savedSpeed);
 
     video.loop = Boolean(state.lightboxVideoLoop);
-    const loopBtns = document.querySelectorAll('.lightbox-loop-btn');
-    loopBtns.forEach(btn => {
-      btn.classList.toggle('text-emerald-300', video.loop);
-      btn.classList.toggle('border-emerald-500/50', video.loop);
-      btn.classList.toggle('bg-emerald-950/40', video.loop);
+    document.querySelectorAll('.lightbox-loop-btn').forEach(btn => {
+      btn.classList.toggle('is-active', video.loop);
     });
 
     video.onvolumechange = () => {
@@ -1789,9 +1865,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     }
     const loopBtns = document.querySelectorAll('.lightbox-loop-btn');
     loopBtns.forEach(btn => {
-      btn.classList.toggle('text-emerald-300', state.lightboxVideoLoop);
-      btn.classList.toggle('border-emerald-500/50', state.lightboxVideoLoop);
-      btn.classList.toggle('bg-emerald-950/40', state.lightboxVideoLoop);
+      btn.classList.toggle('is-active', state.lightboxVideoLoop);
     });
     showToast(state.lightboxVideoLoop ? 'Video loop enabled' : 'Video loop disabled', 'info');
   }
@@ -8018,6 +8092,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
 
   // App Initialization
   async function init() {
+    // Static template markup carries emoji placeholders for its icons; swap in
+    // the shared inline SVG set before anything renders.
+    hydrateIcons(document);
     initEvents();
     setupInfiniteScroll();
     initServiceWorker();

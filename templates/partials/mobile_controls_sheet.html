@@ -7,7 +7,7 @@
       <div class="w-10 h-1 bg-slate-700 rounded-full mx-auto my-1" data-sheet-grabber></div>
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <span class="text-base">🎛️</span>
+          <span data-lb-icon="sliders-horizontal" data-lb-icon-class="w-4 h-4 text-slate-300" class="text-base">🎛️</span>
           <h3 class="text-sm font-bold text-white tracking-tight">Controls & Settings</h3>
         </div>
         <button id="closeMobileControlsBtn" type="button" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition active:scale-95" title="Close sheet" aria-label="Close sheet">
@@ -20,20 +20,20 @@
     <div class="px-2 py-2 bg-slate-950/60 border-b border-slate-800/80 shrink-0">
       <div class="grid grid-cols-5 gap-1">
         <button id="mobileTabSearchBtn" type="button" aria-label="Search &amp; Filter" title="Search &amp; Filter" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1 leading-tight">
-          <span class="text-base leading-none">🔍</span>
+          <span data-lb-icon="search" data-lb-icon-class="w-4 h-4" class="text-base leading-none">🔍</span>
         </button>
         <button id="mobileTabDisplayBtn" type="button" aria-label="Display &amp; Theme" title="Display &amp; Theme" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span class="text-base leading-none">🎨</span>
+          <span data-lb-icon="palette" data-lb-icon-class="w-4 h-4" class="text-base leading-none">🎨</span>
         </button>
         <button id="mobileTabActionsBtn" type="button" aria-label="Folder Actions" title="Folder Actions" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span class="text-base leading-none">📁</span>
+          <span data-lb-icon="folder" data-lb-icon-class="w-4 h-4" class="text-base leading-none">📁</span>
         </button>
         <button id="mobileTabDownloadsBtn" type="button" aria-label="Downloads" title="Downloads" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span class="text-base leading-none">🔗</span>
+          <span data-lb-icon="link" data-lb-icon-class="w-4 h-4" class="text-base leading-none">🔗</span>
           <span id="mobileTabDownloadsBadge" class="hidden text-[9px] font-mono font-bold px-1 rounded-full bg-emerald-500 text-slate-950 leading-tight">0</span>
         </button>
         <button id="mobileTabSystemBtn" type="button" aria-label="System Status" title="System Status" class="w-full min-w-0 px-1 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition flex items-center justify-center gap-1 leading-tight">
-          <span class="text-base leading-none">⚙️</span>
+          <span data-lb-icon="settings" data-lb-icon-class="w-4 h-4" class="text-base leading-none">⚙️</span>
         </button>
       </div>
     </div>
@@ -64,10 +64,10 @@
           <label class="text-xs font-semibold text-slate-300">Search Scope</label>
           <div class="grid grid-cols-2 gap-2 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
             <button id="mobileScopeCurrentBtn" type="button" class="py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5">
-              <span>📁</span><span>This Folder</span>
+              <span data-lb-icon="folder" data-lb-icon-class="w-3.5 h-3.5"></span><span>This Folder</span>
             </button>
             <button id="mobileScopeGlobalBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5">
-              <span>🌐</span><span>All Folders</span>
+              <span data-lb-icon="globe" data-lb-icon-class="w-3.5 h-3.5"></span><span>All Folders</span>
             </button>
           </div>
         </div>
@@ -80,10 +80,10 @@
               <span>All</span> <span id="mobileCountAllBadge" class="text-[10px] font-mono opacity-80">0</span>
             </button>
             <button id="mobileFilterVideosBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
-              <span>🎬 Videos</span> <span id="mobileCountVideosBadge" class="text-[10px] font-mono opacity-80">0</span>
+              <span data-lb-icon="video" data-lb-icon-class="w-3.5 h-3.5"></span><span>Videos</span> <span id="mobileCountVideosBadge" class="text-[10px] font-mono opacity-80">0</span>
             </button>
             <button id="mobileFilterImagesBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
-              <span>🖼️ Images</span> <span id="mobileCountImagesBadge" class="text-[10px] font-mono opacity-80">0</span>
+              <span data-lb-icon="image" data-lb-icon-class="w-3.5 h-3.5"></span><span>Images</span> <span id="mobileCountImagesBadge" class="text-[10px] font-mono opacity-80">0</span>
             </button>
           </div>
         </div>
@@ -186,7 +186,7 @@
         <!-- Animated Previews Toggle -->
         <div class="p-3 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
           <div class="space-y-0.5">
-            <span class="text-xs font-semibold text-slate-200 block">🎞️ Animated Previews</span>
+            <span class="text-xs font-semibold text-slate-200 flex items-center gap-1.5"><span data-lb-icon="film" data-lb-icon-class="w-3.5 h-3.5 text-slate-400"></span>Animated Previews</span>
             <span class="text-[10px] text-slate-400 block">Show looping animated WebPs on video tiles</span>
           </div>
           <input type="checkbox" id="mobileSheetAnimatedPreviewsToggle" class="w-4 h-4 text-emerald-600 rounded bg-slate-800 border-slate-700 focus:ring-emerald-500 cursor-pointer" />
@@ -200,15 +200,15 @@
         <!-- Upload Buttons -->
         <div class="grid grid-cols-3 gap-2">
           <button id="mobileUploadFilesTrigger" type="button" class="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex flex-col items-center gap-1.5 shadow-sm transition active:scale-95">
-            <span class="text-lg">📄</span>
+            <span data-lb-icon="file-up" data-lb-icon-class="w-5 h-5" class="text-lg">📄</span>
             <span>Upload Files</span>
           </button>
           <button id="mobileUploadFolderTrigger" type="button" class="p-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs flex flex-col items-center gap-1.5 shadow-sm transition active:scale-95">
-            <span class="text-lg">📁</span>
+            <span data-lb-icon="folder-up" data-lb-icon-class="w-5 h-5" class="text-lg">📁</span>
             <span>Folder</span>
           </button>
           <button id="mobileUrlDownloadTrigger" type="button" class="p-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white font-semibold text-xs flex flex-col items-center gap-1.5 shadow-sm transition active:scale-95">
-            <span class="text-lg">🔗</span>
+            <span data-lb-icon="link" data-lb-icon-class="w-5 h-5" class="text-lg">🔗</span>
             <span>URL</span>
           </button>
         </div>
@@ -216,11 +216,11 @@
         <!-- Folder Management -->
         <div class="grid grid-cols-2 gap-2">
           <button id="mobileNewFolderTrigger" type="button" class="p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-slate-200 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95">
-            <span class="text-emerald-400">＋</span>
+            <span data-lb-icon="folder-plus" data-lb-icon-class="w-4 h-4 text-emerald-400" class="text-emerald-400">＋</span>
             <span>New Folder</span>
           </button>
           <button id="mobileRefreshFolderTrigger" type="button" class="p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-slate-200 font-medium text-xs flex items-center justify-center gap-1.5 transition active:scale-95">
-            <span>🔄</span>
+            <span data-lb-icon="refresh-cw" data-lb-icon-class="w-4 h-4" class="text-base leading-none">🔄</span>
             <span>Refresh Folder</span>
           </button>
         </div>
@@ -230,27 +230,27 @@
           <label class="text-xs font-semibold text-slate-400">Folder Batch Tools</label>
           <div class="space-y-1.5">
             <button id="mobileCacheThumbsTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>🖼️</span><span>Cache Thumbnails</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="images" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">🖼️</span><span>Cache Thumbnails</span></span>
               <span class="text-[10px] text-emerald-400 font-medium">Pre-generate</span>
             </button>
             <button id="mobileGenerateAllAnimatedTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>🎞️</span><span>Generate Animated Previews</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="clapperboard" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">🎞️</span><span>Generate Animated Previews</span></span>
               <span class="text-[10px] text-violet-400 font-medium">All Videos</span>
             </button>
             <button id="mobileConvertMp4Trigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>⚙️</span><span>Convert Non-MP4s</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="file-video" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">⚙️</span><span>Convert Non-MP4s</span></span>
               <span class="text-[10px] text-amber-400 font-medium">Standardize MP4</span>
             </button>
             <button id="mobileOptimizeWebpTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>⚡</span><span>Optimize Images</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="zap" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">⚡</span><span>Optimize Images</span></span>
               <span class="text-[10px] text-teal-400 font-medium">Convert WebP</span>
             </button>
             <button id="mobileCompressZipTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>📦</span><span>Compress to ZIP</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="file-archive" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">📦</span><span>Compress to ZIP</span></span>
               <span class="text-[10px] text-sky-400 font-medium">Folder Archive</span>
             </button>
             <button id="mobileUnpackZipTrigger" type="button" class="w-full p-2.5 rounded-xl bg-slate-950/60 hover:bg-slate-800 border border-slate-800 text-left text-xs text-slate-200 flex items-center justify-between transition">
-              <span class="flex items-center gap-2"><span>📦</span><span>Unpack ZIP to Folder</span></span>
+              <span class="flex items-center gap-2"><span data-lb-icon="package-open" data-lb-icon-class="w-4 h-4 text-slate-400" class="text-base leading-none">📦</span><span>Unpack ZIP to Folder</span></span>
               <span class="text-[10px] text-indigo-400 font-medium">Extract</span>
             </button>
           </div>
@@ -274,14 +274,14 @@
           <p class="text-[10px] text-slate-500 leading-relaxed">Uses yt-dlp, with an automatic gallery-dl fallback for sites yt-dlp can't handle (e.g. bunkr albums). Downloads best available quality; playlists are supported; live streams and upcoming premieres are skipped, and failed items are skipped without stopping the rest.</p>
           <div id="mobileDlWarningText" class="hidden text-[11px] text-amber-400 p-2 bg-amber-500/10 rounded-lg border border-amber-500/20"></div>
           <button id="mobileDlStartBtn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-semibold text-xs shadow-sm transition flex items-center justify-center gap-1.5">
-            <span>⬇️</span><span>Start Download</span>
+            <span data-lb-icon="download" data-lb-icon-class="w-4 h-4"></span><span>Start Download</span>
           </button>
         </div>
 
         <!-- Live Download Jobs -->
         <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
           <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-bold text-white flex items-center gap-1.5"><span>🔗</span> Downloads</span>
+            <span class="text-xs font-bold text-white flex items-center gap-1.5"><span data-lb-icon="link" data-lb-icon-class="w-3.5 h-3.5 text-slate-400"></span> Downloads</span>
             <span id="mobileDlSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
           </div>
           <div id="mobileDlList" class="flex flex-col gap-1.5"></div>
@@ -295,7 +295,7 @@
         <!-- Duplicates Card -->
         <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
           <div class="flex items-center gap-2.5">
-            <span class="text-xl">🔍</span>
+            <span data-lb-icon="copy" data-lb-icon-class="w-5 h-5 text-slate-400"></span>
             <div>
               <div class="flex items-center gap-2">
                 <span class="text-xs font-bold text-white">Duplicates Finder</span>
@@ -317,14 +317,14 @@
             </div>
           </div>
           <button id="mobileSyncIndexBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1">
-            <span>↻</span><span>Sync</span>
+            <span data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span><span>Sync</span>
           </button>
         </div>
 
         <!-- Sorter Navigation Card -->
         <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
           <div class="flex items-center gap-2.5">
-            <span class="text-xl">🎬</span>
+            <span data-lb-icon="clapperboard" data-lb-icon-class="w-5 h-5 text-slate-400"></span>
             <div>
               <span class="text-xs font-bold text-white block">Video Sorter</span>
               <span class="text-[10px] text-slate-400 block">Rapid keyboard & touch sorting</span>
@@ -352,7 +352,7 @@
   <div class="bg-slate-900 border-t border-slate-700/80 rounded-t-2xl shadow-2xl w-full max-h-[60dvh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
     <div class="px-4 py-3 flex items-center justify-between border-b border-slate-800 shrink-0">
       <div class="flex items-center gap-2">
-        <span>📁</span>
+        <span data-lb-icon="folder" data-lb-icon-class="w-4 h-4 text-slate-300"></span>
         <h3 class="text-xs font-bold text-white">Folder Hierarchy</h3>
       </div>
       <button id="closeMobileBreadcrumbsBtn" type="button" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition active:scale-95">✕</button>
