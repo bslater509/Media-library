@@ -400,3 +400,66 @@ def test_system_status_includes_metadata(api_client):
     assert "metadata" in data
     assert "status" in data["metadata"]
     assert "pending_count" in data["metadata"]
+
+
+def test_system_status_metadata_reports_zip_member_counts(sandbox_env):
+    """The metadata payload exposes ZIP totals/pending so the UI can show the
+    ZIP-member sweep separately from the loose-file probe."""
+    import io
+    import zipfile
+
+    from media_library.services.zip import index_zip_archive
+    from media_library.workers.metadata_worker import MediaMetadataWorker
+
+    media_dir = sandbox_env["media_dir"]
+    zip_path = media_dir / "counts.zip"
+    img = io.BytesIO()
+    Image.new("RGB", (16, 16), color="blue").save(img, format="JPEG")
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("one.jpg", img.getvalue())
+        zf.writestr("two.jpg", img.getvalue())
+    index_zip_archive(str(zip_path), parent_path=str(media_dir))
+
+    worker = MediaMetadataWorker()
+    worker._refresh_stats()
+
+    assert worker.state["total_files"] == 0
+    assert worker.state["zip_total"] == 2
+    assert worker.state["zip_pending_count"] == 2
+
+
+def test_metadata_worker_stays_probing_during_zip_sweep(sandbox_env, monkeypatch):
+    """While the ZIP-member sweep still has batches, the worker must report
+    ``probing`` instead of flipping to ``idle`` — the old code cleared the
+    status every loop iteration when no loose files were pending, which hid the
+    sweep from /api/system/status and the Library's worker panel."""
+    from media_library.workers.metadata_worker import MediaMetadataWorker
+
+    worker = MediaMetadataWorker()
+    calls = {"n": 0}
+
+    async def always_active():
+        calls["n"] += 1
+        worker.state["current_file"] = "member.jpg"
+        return True
+
+    monkeypatch.setattr(worker, "_backfill_zip_batch", always_active)
+
+    async def run():
+        task = asyncio.create_task(worker._run_loop())
+        try:
+            for _ in range(200):
+                await asyncio.sleep(0.02)
+                if calls["n"] > 0 and worker.state["status"] == "probing":
+                    break
+            assert calls["n"] > 0, "ZIP sweep should have been invoked"
+            assert worker.state["status"] == "probing"
+            assert worker.state["current_file"] == "member.jpg"
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(run())

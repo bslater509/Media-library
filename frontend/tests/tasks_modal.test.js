@@ -93,6 +93,28 @@ describe('Background Tasks modal — indexer honesty', () => {
   });
 });
 
+describe('Background Tasks modal — analysis workers stay visible', () => {
+  it.each(MODALS)('%s lists the metadata probe and visual hash worker cards', (_label, html) => {
+    ['metaWorkerSummaryText', 'metaWorkerProgressBar', 'vhashSummaryText', 'vhashProgressBar'].forEach((id) => {
+      expect(html).toContain(`id="${id}"`);
+    });
+  });
+
+  it('both bundles render metadata and visual-hash progress from the status payload', () => {
+    [librarySource, sorterSource].forEach((src) => {
+      expect(src).toMatch(/metaWorkerPercentText/);
+      expect(src).toMatch(/vhashPercentText/);
+      // The metadata card surfaces the ZIP-member sweep separately.
+      expect(src).toMatch(/zip_pending_count/);
+    });
+  });
+
+  it('sorter header badge counts metadata probing and visual hashing', () => {
+    expect(sorterSource).toMatch(/metadata: state\.latestMetadataData/);
+    expect(sorterSource).toMatch(/thumbHash: state\.latestThumbHashData/);
+  });
+});
+
 describe('Background Tasks modal — output escaping', () => {
   it('escapes transfer/transcode/zip/upload names before innerHTML', () => {
     expect(librarySource).toMatch(/escapeHtml\(q\.filename\)/);

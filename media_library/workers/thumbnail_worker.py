@@ -36,15 +36,18 @@ class ThumbnailWorker(BaseWorker):
             "current_file": "",
             "current_folder": "",
             "processed_count": 0,
+            "is_paused": False,
         }
 
     def pause(self):
         super().pause()
         self.state["status"] = "paused"
+        self.state["is_paused"] = True
 
     def resume(self):
         super().resume()
         self.state["status"] = "generating"
+        self.state["is_paused"] = False
 
     def enqueue_folder(self, folder_path: str):
         try:

@@ -130,6 +130,22 @@ const hashProgressBar = document.getElementById("hashProgressBar");
 const hashCountsText = document.getElementById("hashCountsText");
 const hashStatusLabel = document.getElementById("hashStatusLabel");
 
+// Media Metadata Probe UI
+const metaWorkerSummaryText = document.getElementById("metaWorkerSummaryText");
+const metaWorkerCurrentFile = document.getElementById("metaWorkerCurrentFile");
+const metaWorkerPercentText = document.getElementById("metaWorkerPercentText");
+const metaWorkerProgressBar = document.getElementById("metaWorkerProgressBar");
+const metaWorkerCountsText = document.getElementById("metaWorkerCountsText");
+const metaWorkerStatusLabel = document.getElementById("metaWorkerStatusLabel");
+
+// Visual Hash Indexer UI
+const vhashSummaryText = document.getElementById("vhashSummaryText");
+const vhashCurrentFile = document.getElementById("vhashCurrentFile");
+const vhashPercentText = document.getElementById("vhashPercentText");
+const vhashProgressBar = document.getElementById("vhashProgressBar");
+const vhashCountsText = document.getElementById("vhashCountsText");
+const vhashStatusLabel = document.getElementById("vhashStatusLabel");
+
 // WebP Optimizer UI
 const webpSummaryText = document.getElementById("webpSummaryText");
 const toggleWebpPauseBtn = document.getElementById("toggleWebpPauseBtn");
@@ -972,6 +988,11 @@ async function pollTransfers(immediate = false) {
     }
     if (sysData.thumb_hash) {
       state.latestThumbHashData = sysData.thumb_hash;
+      renderVisualHashUI(sysData.thumb_hash);
+    }
+    if (sysData.metadata) {
+      state.latestMetadataData = sysData.metadata;
+      renderMetadataUI(sysData.metadata);
     }
     if (sysData.library_backup) {
       state.latestLibBackupData = sysData.library_backup;
@@ -1153,6 +1174,8 @@ function updateHeaderTaskBadge() {
     webp: state.latestWebpData,
     index: state.latestIndexData,
     backup: state.latestLibBackupData,
+    metadata: state.latestMetadataData,
+    thumbHash: state.latestThumbHashData,
   };
   const tasksSummary = computeTaskSummary(taskSources);
   const tasksLabel = describePrimaryTask(taskSources);
@@ -1207,7 +1230,8 @@ function updateHeaderTaskBadge() {
     const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
     const isDupHashing = state.latestDupHashData && (state.latestDupHashData.status === "hashing" || state.latestDupHashData.pending_count > 0);
     const isThumbHashing = state.latestThumbHashData && (state.latestThumbHashData.status === "hashing" || state.latestThumbHashData.status === "migrating");
-    const isAnyWorkerActive = isThumbGenerating || isWebpConverting || isIndexing || isDupHashing || isThumbHashing;
+    const isMetadataProbing = state.latestMetadataData && state.latestMetadataData.status === "probing";
+    const isAnyWorkerActive = isThumbGenerating || isWebpConverting || isIndexing || isDupHashing || isThumbHashing || isMetadataProbing;
     if (isAnyWorkerActive) {
       tabBadgeWorkers.textContent = "Active";
       tabBadgeWorkers.className = "px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono";
@@ -1238,7 +1262,7 @@ function pollThumbnailStatus() {
 
 function renderThumbnailUI(data) {
   if (!thumbSummaryText) return;
-  const isPaused = data.is_paused;
+  const isPaused = data.is_paused || data.status === "paused";
   const isGenerating = data.status === "generating";
   const isDone = data.status === "complete" || (data.pending_count === 0 && data.total_files > 0);
 
@@ -1335,6 +1359,100 @@ async function toggleDuplicateHashPause() {
     }
   } catch (err) {
     console.error("Error toggling hash verification pause:", err);
+  }
+}
+
+// Media Metadata Probe (dimensions / duration / codec indexing)
+function renderMetadataUI(data) {
+  if (!metaWorkerSummaryText) return;
+  const isPaused = data.status === "paused";
+  const isProbing = data.status === "probing";
+  const pending = data.pending_count || 0;
+  const total = data.total_files || 0;
+  const zipPending = data.zip_pending_count || 0;
+  const isDone = !isProbing && pending === 0 && total > 0;
+
+  if (isPaused) {
+    metaWorkerSummaryText.textContent = "Paused";
+    if (metaWorkerStatusLabel) metaWorkerStatusLabel.textContent = "Paused";
+  } else if (isProbing) {
+    metaWorkerSummaryText.textContent = "Probing";
+    if (metaWorkerStatusLabel) metaWorkerStatusLabel.textContent = "Active";
+  } else if (isDone) {
+    metaWorkerSummaryText.textContent = "100% Probed";
+    if (metaWorkerStatusLabel) metaWorkerStatusLabel.textContent = "Complete";
+  } else {
+    metaWorkerSummaryText.textContent = "Idle";
+    if (metaWorkerStatusLabel) metaWorkerStatusLabel.textContent = "Idle";
+  }
+
+  if (metaWorkerCurrentFile) {
+    if (isProbing && data.current_file) {
+      metaWorkerCurrentFile.textContent = data.current_file;
+      metaWorkerCurrentFile.title = data.current_file;
+    } else if (isDone) {
+      metaWorkerCurrentFile.textContent = `All ${total.toLocaleString()} files probed`;
+    } else {
+      metaWorkerCurrentFile.textContent = data.current_file || (isPaused ? "Metadata probing paused" : "Idle");
+      metaWorkerCurrentFile.title = isPaused ? "" : (data.current_file || "");
+    }
+  }
+
+  const pct = typeof data.percent === "number" ? data.percent : (total > 0 ? 100 : 0);
+  if (metaWorkerPercentText) metaWorkerPercentText.textContent = `${pct.toFixed(1)}%`;
+  if (metaWorkerProgressBar) metaWorkerProgressBar.style.width = `${pct}%`;
+  if (metaWorkerCountsText) {
+    const processed = Math.max(0, total - pending);
+    let text = `${processed.toLocaleString()} / ${total.toLocaleString()} probed`;
+    if (zipPending > 0) text += ` · ${zipPending.toLocaleString()} ZIP pending`;
+    metaWorkerCountsText.textContent = text;
+  }
+}
+
+// Visual Hash Indexer (64-bit pHash for visual duplicate detection)
+function renderVisualHashUI(data) {
+  if (!vhashSummaryText) return;
+  const isPaused = data.status === "paused";
+  const isMigrating = data.status === "migrating";
+  const isHashing = data.status === "hashing";
+  const pending = data.pending_count || 0;
+  const total = data.total_thumbnails || 0;
+  const isDone = !isHashing && !isMigrating && !isPaused && pending === 0 && total > 0;
+
+  if (isPaused) {
+    vhashSummaryText.textContent = "Paused";
+    if (vhashStatusLabel) vhashStatusLabel.textContent = "Paused";
+  } else if (isMigrating) {
+    vhashSummaryText.textContent = "Migrating";
+    if (vhashStatusLabel) vhashStatusLabel.textContent = "Active";
+  } else if (isHashing) {
+    vhashSummaryText.textContent = "Hashing";
+    if (vhashStatusLabel) vhashStatusLabel.textContent = "Active";
+  } else if (isDone) {
+    vhashSummaryText.textContent = "100% Hashed";
+    if (vhashStatusLabel) vhashStatusLabel.textContent = "Complete";
+  } else {
+    vhashSummaryText.textContent = "Idle";
+    if (vhashStatusLabel) vhashStatusLabel.textContent = "Idle";
+  }
+
+  if (vhashCurrentFile) {
+    if ((isHashing || isMigrating) && data.current_file) {
+      vhashCurrentFile.textContent = data.current_file;
+      vhashCurrentFile.title = data.current_file;
+    } else if (isDone) {
+      vhashCurrentFile.textContent = `All ${total.toLocaleString()} posters hashed`;
+    } else {
+      vhashCurrentFile.textContent = data.current_file || (isPaused ? "Visual hashing paused" : "Idle");
+      vhashCurrentFile.title = isPaused ? "" : (data.current_file || "");
+    }
+  }
+
+  const pct = typeof data.percent === "number" ? data.percent : (total > 0 ? 100 : 0);
+  if (vhashPercentText) vhashPercentText.textContent = `${pct.toFixed(1)}%`;
+  if (vhashProgressBar) vhashProgressBar.style.width = `${pct}%`;
+  if (vhashCountsText) {
+    vhashCountsText.textContent = `${(data.hashed_count || 0).toLocaleString()} / ${total.toLocaleString()} hashed`;
   }
 }
 

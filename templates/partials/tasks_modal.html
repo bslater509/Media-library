@@ -370,6 +370,58 @@
             </div>
           </div>
 
+          <!-- Worker Card 3b: Media Metadata Probe -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="image" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Media Metadata Probe</h4>
+                  <span id="metaWorkerSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+            </div>
+            <div id="metaWorkerProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="metaWorkerCurrentFile">Checking media...</span>
+                <span class="text-sky-400 font-mono text-[10px] font-bold shrink-0" id="metaWorkerPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="metaWorkerProgressBar" class="bg-sky-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="metaWorkerCountsText">0 / 0 probed</span>
+                <span id="metaWorkerStatusLabel" class="text-slate-500">Idle</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Worker Card 3c: Visual Hash Indexer -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="search" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Visual Hash Indexer</h4>
+                  <span id="vhashSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+            </div>
+            <div id="vhashProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="vhashCurrentFile">Checking posters...</span>
+                <span class="text-rose-400 font-mono text-[10px] font-bold shrink-0" id="vhashPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="vhashProgressBar" class="bg-rose-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="vhashCountsText">0 / 0 hashed</span>
+                <span id="vhashStatusLabel" class="text-slate-500">Idle</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Worker Card 4: Library Indexer -->
           <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2">

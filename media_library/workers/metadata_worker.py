@@ -53,6 +53,7 @@ class MediaMetadataWorker(BaseWorker):
             "status": "idle",  # "probing" | "idle" | "paused"
             "total_files": 0,
             "pending_count": 0,
+            "zip_total": 0,
             "zip_pending_count": 0,
             "processed_count": 0,
             "percent": 100.0,
@@ -93,8 +94,13 @@ class MediaMetadataWorker(BaseWorker):
                     "SELECT count(*) FROM files f LEFT JOIN folders fo ON f.folder_path = fo.path "
                     "WHERE COALESCE(fo.is_zip, 0) = 1 AND f.width IS NULL"
                 ).fetchone()[0]
+                zip_total = conn.execute(
+                    "SELECT count(*) FROM files f LEFT JOIN folders fo ON f.folder_path = fo.path "
+                    "WHERE COALESCE(fo.is_zip, 0) = 1"
+                ).fetchone()[0]
             self.state["total_files"] = total
             self.state["pending_count"] = pending
+            self.state["zip_total"] = zip_total
             self.state["zip_pending_count"] = zip_pending
             self.state["percent"] = (
                 round(((total - pending) / total * 100.0), 1) if total > 0 else 100.0
@@ -239,7 +245,7 @@ class MediaMetadataWorker(BaseWorker):
 
                 # ZIP members resolve from local thumbnails cheaply, so sweep
                 # them alongside (not after) the slower FUSE source probing.
-                await self._backfill_zip_batch()
+                zip_active = await self._backfill_zip_batch()
 
                 batch = []
                 try:
@@ -261,6 +267,13 @@ class MediaMetadataWorker(BaseWorker):
                     logger.error(f"Error fetching metadata batch: {e}")
 
                 if not batch:
+                    if zip_active:
+                        # Still walking ZIP members: keep reporting "probing" so
+                        # /api/system/status and the UI show the sweep instead of
+                        # a false "idle" (which also cleared current_file).
+                        self.state["status"] = "probing"
+                        await asyncio.sleep(0.1)
+                        continue
                     self.state["status"] = "idle"
                     self.state["current_file"] = ""
                     self.state["pending_count"] = 0

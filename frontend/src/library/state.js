@@ -490,6 +490,22 @@
     hashProgressBar: document.getElementById('hashProgressBar'),
     hashCountsText: document.getElementById('hashCountsText'),
     hashStatusLabel: document.getElementById('hashStatusLabel'),
+    // Media Metadata Probe (dimensions / duration / codec indexing)
+    metaWorkerSummaryText: document.getElementById('metaWorkerSummaryText'),
+    metaWorkerProgressBox: document.getElementById('metaWorkerProgressBox'),
+    metaWorkerCurrentFile: document.getElementById('metaWorkerCurrentFile'),
+    metaWorkerPercentText: document.getElementById('metaWorkerPercentText'),
+    metaWorkerProgressBar: document.getElementById('metaWorkerProgressBar'),
+    metaWorkerCountsText: document.getElementById('metaWorkerCountsText'),
+    metaWorkerStatusLabel: document.getElementById('metaWorkerStatusLabel'),
+    // Visual Hash Indexer (pHash for visual duplicate detection)
+    vhashSummaryText: document.getElementById('vhashSummaryText'),
+    vhashProgressBox: document.getElementById('vhashProgressBox'),
+    vhashCurrentFile: document.getElementById('vhashCurrentFile'),
+    vhashPercentText: document.getElementById('vhashPercentText'),
+    vhashProgressBar: document.getElementById('vhashProgressBar'),
+    vhashCountsText: document.getElementById('vhashCountsText'),
+    vhashStatusLabel: document.getElementById('vhashStatusLabel'),
     // WebP Optimizer Controls
     webpSummaryText: document.getElementById('webpSummaryText'),
     toggleWebpPauseBtn: document.getElementById('toggleWebpPauseBtn'),

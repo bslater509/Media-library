@@ -70,6 +70,18 @@ def test_thumbnail_worker_status():
     assert "status" in status
     assert "total_files" in status
     assert "percent" in status
+    # The unified /api/system/status payload is this dict, so the card needs the
+    # pause flag here (the dedicated status route used to add it separately).
+    assert status["is_paused"] is False
+
+
+def test_thumbnail_worker_pause_flag_round_trips():
+    worker = ThumbnailWorker()
+    worker.pause()
+    assert worker.get_status()["is_paused"] is True
+    assert worker.get_status()["status"] == "paused"
+    worker.resume()
+    assert worker.get_status()["is_paused"] is False
 
 
 def test_webp_optimizer_worker_status():
