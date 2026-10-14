@@ -4765,8 +4765,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       if (els.queuedTransfersCount) els.queuedTransfersCount.textContent = queued.length;
       els.queuedTransfersList.innerHTML = queued.slice(0, sheetListSlice('queuedTransfers', queued.length, 10)).map(q => `
         <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
-          <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${q.filename}</span>
-          <span class="text-[10px] text-emerald-400 font-mono shrink-0">→ /${q.destination_folder}</span>
+          <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(q.filename)}</span>
+          <span class="text-[10px] text-emerald-400 font-mono shrink-0">→ /${escapeHtml(q.destination_folder)}</span>
         </div>
       `).join('') + renderListExpander('queuedTransfers', queued.length, 10);
     } else {
@@ -4938,8 +4938,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       const displayQueue = queued.slice(0, sheetListSlice('queuedTranscodes', queued.length, 15));
       els.queuedTranscodesList.innerHTML = displayQueue.map(q => `
         <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
-          <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${q.filename}</span>
-          <button onclick="window.libraryApp.cancelTranscode('${q.id}')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 bg-red-950/40 hover:bg-red-900/60 rounded border border-red-800/50 shrink-0">Cancel</button>
+          <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(q.filename)}</span>
+          <button onclick="window.libraryApp.cancelTranscode('${safeAttrEscape(q.id)}')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 bg-red-950/40 hover:bg-red-900/60 rounded border border-red-800/50 shrink-0">Cancel</button>
         </div>
       `).join('') + renderListExpander('queuedTranscodes', queued.length, 15);
     } else {
@@ -4956,8 +4956,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         const color = isSuccess ? 'text-emerald-400' : 'text-red-400';
         return `
           <div class="flex items-center justify-between gap-2 text-[10px] font-mono py-0.5 border-b border-slate-800/50 last:border-0">
-            <span class="truncate text-slate-300 flex-1 min-w-0">${h.filename}</span>
-            <span class="${color} shrink-0 flex items-center gap-1">${statusIcon} ${h.status}</span>
+            <span class="truncate text-slate-300 flex-1 min-w-0">${escapeHtml(h.filename)}</span>
+            <span class="${color} shrink-0 flex items-center gap-1">${statusIcon} ${escapeHtml(h.status)}</span>
           </div>
         `;
       }).join('') + renderListExpander('transcodeHistory', history.length, 8);
@@ -5619,13 +5619,13 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       return `
         <div class="bg-slate-950 p-2 rounded-lg border border-slate-800 text-[11px] flex flex-col gap-1">
           <div class="flex items-center justify-between">
-            <span class="font-medium text-slate-200 truncate max-w-[180px]">${t.filename}</span>
-            <span class="${statusColor} font-mono text-[10px]">${t.status === 'running' ? Math.round(t.percent) + '%' : t.status}</span>
+            <span class="font-medium text-slate-200 truncate max-w-[180px]">${escapeHtml(t.filename)}</span>
+            <span class="${statusColor} font-mono text-[10px]">${t.status === 'running' ? Math.round(t.percent) + '%' : escapeHtml(t.status)}</span>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1 overflow-hidden">
             <div class="bg-sky-500 h-1 rounded-full transition-all" style="width: ${t.percent || 0}%"></div>
           </div>
-          <span class="text-[10px] text-slate-400 truncate">${typeLabel}: ${t.message || t.status}</span>
+          <span class="text-[10px] text-slate-400 truncate">${typeLabel}: ${escapeHtml(t.message || t.status)}</span>
         </div>
       `;
     }).join('');
@@ -6320,6 +6320,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
   async function openEmptyFoldersModal() {
     if (els.transferDropdown) {
       els.transferDropdown.classList.add('hidden');
+    }
+    if (els.transferBackdrop) {
+      els.transferBackdrop.classList.add('hidden');
     }
     if (!els.emptyFoldersModal) return;
     els.emptyFoldersModal.classList.remove('hidden');
@@ -7310,10 +7313,14 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     }
 
     // Tasks tab switcher
-    const switchTasksTab = (tabName) => {
+    const switchTasksTab = (tabName, persist = true) => {
       const tabs = ['active', 'workers', 'tools'];
       const target = tabs.includes(tabName) ? tabName : 'active';
-      try { localStorage.setItem('tasks_active_tab', target); } catch (e) {}
+      // Only persist explicit user selections; the automatic "open on Active
+      // because work is running" choice must not clobber the saved preference.
+      if (persist) {
+        try { localStorage.setItem('tasks_active_tab', target); } catch (e) {}
+      }
 
       const btnActive = document.getElementById('tasksTabBtnActive');
       const btnWorkers = document.getElementById('tasksTabBtnWorkers');
@@ -7329,6 +7336,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         } else {
           btn.className = 'tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0';
         }
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
       };
 
       setTabStyle(btnActive, target === 'active');
@@ -7367,7 +7375,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
           uploadState.queue.some((f) => f.status === 'pending');
 
         if (hasActiveQueues) {
-          switchTasksTab('active');
+          switchTasksTab('active', false);
         } else {
           let saved = 'workers';
           try { saved = localStorage.getItem('tasks_active_tab') || 'workers'; } catch (e) {}
@@ -7406,6 +7414,17 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         if (e.target === els.transferDropdown) {
           setTransferDropdownOpen(false);
         }
+      });
+    }
+
+    // Footer "Close" button goes through the same close path as the header ✕
+    // so the dimming backdrop overlay is dismissed too.
+    if (els.transferDropdown) {
+      els.transferDropdown.querySelectorAll('[data-tasks-modal-close]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setTransferDropdownOpen(false);
+        });
       });
     }
 
@@ -8680,12 +8699,12 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         <div class="flex items-center gap-2 p-2 rounded-lg border text-xs ${rowClass}">
           <span class="shrink-0 w-4 flex items-center justify-center">${statusIcon}</span>
           <div class="flex-1 min-w-0 flex flex-col">
-            <span class="text-slate-300 truncate font-medium">${f.relativePath}</span>
+            <span class="text-slate-300 truncate font-medium">${escapeHtml(f.relativePath)}</span>
             ${f.status === 'uploading' ? `<div class="h-1 w-full bg-slate-800 rounded-full mt-1 overflow-hidden"><div class="h-full bg-emerald-500" style="width: ${filePercent}%"></div></div>` : ''}
           </div>
           <span class="shrink-0 text-slate-500 text-[10px] w-12 text-right">${formatBytes(f.size)}</span>
           ${(f.status === 'pending' || f.status === 'uploading') ? `
-            <button onclick="window.cancelSingleUpload('${f.id}')" class="shrink-0 text-red-400 hover:text-red-300 p-0.5 rounded hover:bg-slate-800 transition">${icon('x', 'w-3.5 h-3.5')}</button>
+            <button onclick="window.cancelSingleUpload('${safeAttrEscape(f.id)}')" class="shrink-0 text-red-400 hover:text-red-300 p-0.5 rounded hover:bg-slate-800 transition">${icon('x', 'w-3.5 h-3.5')}</button>
           ` : ''}
         </div>
       `;

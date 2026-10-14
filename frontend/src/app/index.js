@@ -967,6 +967,9 @@ async function pollTransfers(immediate = false) {
       state.latestIndexData = sysData.index;
       renderIndexUI(sysData.index);
     }
+    if (sysData.thumb_hash) {
+      state.latestThumbHashData = sysData.thumb_hash;
+    }
     if (sysData.library_backup) {
       state.latestLibBackupData = sysData.library_backup;
     }
@@ -1170,8 +1173,16 @@ function updateHeaderTaskBadge() {
     transferCountText.classList.toggle("hidden", !badgeText);
   }
 
-  // Update tab badges and empty state in tasks modal
-  const activeQueueCount = tasksSummary.count;
+  // Update tab badges and empty state in tasks modal. The Active tab badge /
+  // empty state track only the queue rows the Active & Queues pane actually
+  // renders (transfers + transcodes), so a nonzero badge always has a matching
+  // row; worker-only sweeps (index, thumbnails, WebP, hashing) light the
+  // Background Workers tab instead.
+  const activeQueueCount =
+    (state.activeTransfer ? 1 : 0) +
+    (Array.isArray(state.queuedTransfers) ? state.queuedTransfers.length : 0) +
+    (state.activeTranscode ? 1 : 0) +
+    (Array.isArray(state.queuedTranscodes) ? state.queuedTranscodes.length : 0);
   const tabBadgeActive = document.getElementById("tabBadgeActive");
   const activeQueuesEmptyState = document.getElementById("activeQueuesEmptyState");
   if (tabBadgeActive) {
@@ -1191,7 +1202,9 @@ function updateHeaderTaskBadge() {
     const isThumbGenerating = state.latestThumbData && state.latestThumbData.status === "generating" && state.latestThumbData.pending_count > 0;
     const isWebpConverting = state.latestWebpData && state.latestWebpData.status === "converting" && state.latestWebpData.pending_count > 0;
     const isIndexing = state.latestIndexData && state.latestIndexData.status === "crawling";
-    const isAnyWorkerActive = isThumbGenerating || isWebpConverting || isIndexing || (state.latestHashData && (state.latestHashData.status === "checking" || state.latestHashData.pending_count > 0));
+    const isDupHashing = state.latestDupHashData && (state.latestDupHashData.status === "hashing" || state.latestDupHashData.pending_count > 0);
+    const isThumbHashing = state.latestThumbHashData && (state.latestThumbHashData.status === "hashing" || state.latestThumbHashData.status === "migrating");
+    const isAnyWorkerActive = isThumbGenerating || isWebpConverting || isIndexing || isDupHashing || isThumbHashing;
     if (isAnyWorkerActive) {
       tabBadgeWorkers.textContent = "Active";
       tabBadgeWorkers.className = "px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono";
@@ -1201,6 +1214,14 @@ function updateHeaderTaskBadge() {
       tabBadgeWorkers.className = "px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-mono";
       tabBadgeWorkers.classList.remove("hidden");
     }
+  }
+
+  // Footer status line reflects real activity instead of a static claim.
+  const globalStatusEl = document.getElementById("tasksModalGlobalStatus");
+  if (globalStatusEl) {
+    globalStatusEl.textContent = tasksSummary.active
+      ? `Active${tasksLabel ? ` · ${tasksLabel}` : ''}`
+      : 'System ready · All background services idle';
   }
 }
 
@@ -1481,6 +1502,10 @@ if (triggerIndexSyncDropdownBtn) {
 async function openEmptyFoldersModal() {
   if (transferDropdown) {
     transferDropdown.classList.add("hidden");
+  }
+  const backdrop = document.getElementById("transferBackdrop");
+  if (backdrop) {
+    backdrop.classList.add("hidden");
   }
   if (!emptyFoldersModal) return;
   emptyFoldersModal.classList.remove("hidden");
@@ -2169,6 +2194,16 @@ function setupEventListeners() {
     });
   }
 
+  // Footer "Close" button uses the same close path as the header ✕ so the
+  // dimming backdrop overlay is dismissed too.
+  transferDropdown.querySelectorAll("[data-tasks-modal-close]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      transferDropdown.classList.add("hidden");
+      if (transferBackdrop) transferBackdrop.classList.add("hidden");
+    });
+  });
+
   if (transferBackdrop) {
     transferBackdrop.addEventListener("click", () => {
       transferDropdown.classList.add("hidden");
@@ -2177,10 +2212,14 @@ function setupEventListeners() {
   }
 
   // Tasks tab switcher
-  function switchTasksTab(tabName) {
+  function switchTasksTab(tabName, persist = true) {
     const tabs = ['active', 'workers', 'tools'];
     const target = tabs.includes(tabName) ? tabName : 'active';
-    try { localStorage.setItem('tasks_active_tab', target); } catch (e) {}
+    // Only persist explicit user selections; the automatic "open on Active
+    // because work is running" choice must not clobber the saved preference.
+    if (persist) {
+      try { localStorage.setItem('tasks_active_tab', target); } catch (e) {}
+    }
 
     const btnActive = document.getElementById('tasksTabBtnActive');
     const btnWorkers = document.getElementById('tasksTabBtnWorkers');
@@ -2196,6 +2235,7 @@ function setupEventListeners() {
       } else {
         btn.className = 'tasks-tab-btn py-2.5 px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer';
       }
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     };
 
     setTabStyle(btnActive, target === 'active');
@@ -2223,7 +2263,7 @@ function setupEventListeners() {
       if (!isHidden) {
         const hasActiveQueues = (state.totalPendingTransfers || 0) > 0 || (state.totalPendingTranscodes || 0) > 0 || !!state.activeTransfer || !!state.activeTranscode;
         if (hasActiveQueues) {
-          switchTasksTab('active');
+          switchTasksTab('active', false);
         } else {
           let saved = 'workers';
           try { saved = localStorage.getItem('tasks_active_tab') || 'workers'; } catch (e) {}

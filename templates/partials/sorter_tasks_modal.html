@@ -1,11 +1,11 @@
-<div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+<div id="transferDropdown" role="dialog" aria-modal="true" aria-labelledby="tasksModalTitle" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
   <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
     
     <!-- Modal Header -->
     <div class="flex items-center justify-between px-3.5 py-2.5 sm:px-5 sm:py-3.5 bg-slate-900 border-b border-slate-800 shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
-        <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">Background Tasks & System Status</h3>
+        <h3 id="tasksModalTitle" class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">Background Tasks & System Status</h3>
       </div>
       <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs flex items-center justify-center w-7 h-7 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition cursor-pointer shrink-0" title="Close Panel">
         <span data-lb-icon="x" data-lb-icon-class="w-3.5 h-3.5"></span>
@@ -13,18 +13,18 @@
     </div>
 
     <!-- Tab Navigation Bar (Scrollable on small screens) -->
-    <div class="flex items-center px-2.5 sm:px-5 bg-slate-900 border-b border-slate-800 shrink-0 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
-      <button type="button" id="tasksTabBtnActive" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
+    <div role="tablist" class="flex items-center px-2.5 sm:px-5 bg-slate-900 border-b border-slate-800 shrink-0 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+      <button type="button" id="tasksTabBtnActive" role="tab" aria-selected="true" aria-controls="tasksPaneActive" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
         <span data-lb-icon="zap" data-lb-icon-class="w-3.5 h-3.5"></span>
         <span>Active & Queues</span>
         <span id="tabBadgeActive" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">0</span>
       </button>
-      <button type="button" id="tasksTabBtnWorkers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
+      <button type="button" id="tasksTabBtnWorkers" role="tab" aria-selected="false" aria-controls="tasksPaneWorkers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
         <span data-lb-icon="settings" data-lb-icon-class="w-3.5 h-3.5"></span>
         <span>Background Workers</span>
         <span id="tabBadgeWorkers" class="hidden px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">Idle</span>
       </button>
-      <button type="button" id="tasksTabBtnTools" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
+      <button type="button" id="tasksTabBtnTools" role="tab" aria-selected="false" aria-controls="tasksPaneTools" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
         <span data-lb-icon="wrench" data-lb-icon-class="w-3.5 h-3.5"></span>
         <span>Tools & Maintenance</span>
       </button>
@@ -34,7 +34,7 @@
     <div class="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 flex flex-col gap-4 bg-slate-900">
       
       <!-- PANE 1: Active & Queues -->
-      <div id="tasksPaneActive" class="tasks-pane flex flex-col gap-3.5">
+      <div id="tasksPaneActive" role="tabpanel" aria-labelledby="tasksTabBtnActive" class="tasks-pane flex flex-col gap-3.5">
         
         <!-- Empty State (Shown when all queues idle) -->
         <div id="activeQueuesEmptyState" class="p-8 text-center flex flex-col items-center justify-center gap-2.5 bg-slate-950 border border-slate-800 rounded-xl">
@@ -126,7 +126,7 @@
       </div>
 
       <!-- PANE 2: Background Workers -->
-      <div id="tasksPaneWorkers" class="tasks-pane hidden flex flex-col gap-3">
+      <div id="tasksPaneWorkers" role="tabpanel" aria-labelledby="tasksTabBtnWorkers" class="tasks-pane hidden flex flex-col gap-3">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           
           <!-- Worker Card 1: Thumbnail Generator -->
@@ -250,7 +250,7 @@
       </div>
 
       <!-- PANE 3: Tools & Maintenance -->
-      <div id="tasksPaneTools" class="tasks-pane hidden flex flex-col gap-3">
+      <div id="tasksPaneTools" role="tabpanel" aria-labelledby="tasksTabBtnTools" class="tasks-pane hidden flex flex-col gap-3">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           
           <!-- Tool Card 1: Library Index Sync -->
@@ -306,9 +306,9 @@
     <div class="px-3.5 py-2 sm:px-5 sm:py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0 gap-2">
       <div class="flex items-center gap-2 truncate min-w-0">
         <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-        <span id="tasksModalGlobalStatus" class="truncate">System ready · All background services active</span>
+        <span id="tasksModalGlobalStatus" class="truncate">System ready · All background services idle</span>
       </div>
-      <button type="button" onclick="document.getElementById('transferDropdown').classList.add('hidden')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-medium transition cursor-pointer shrink-0">
+      <button type="button" data-tasks-modal-close class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-medium transition cursor-pointer shrink-0">
         Close
       </button>
     </div>
