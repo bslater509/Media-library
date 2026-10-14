@@ -14,4 +14,4 @@ function w(t,n="info"){const e=document.createElement("div"),s={success:"bg-emer
             <span class="text-[10px] text-emerald-400 font-mono shrink-0">${e?g:"queued"}</span>
           </div>`:""}
           ${a.length?`<div class="text-[10px] text-slate-500 font-mono truncate">${d(a.join(" · "))}</div>`:""}
-        </div>`}function C(t,{historyLimit:n=20,retryable:e=!1}={}){const s=t&&t.active||[],r=t&&t.queued||[],o=t&&t.history||[],u=n>0?o.slice(-n):o;return[...s,...r,...u.slice().reverse()].map(c=>y(c,{retryable:e})).join("")}export{k as a,y as b,M as c,S as d,d as e,B as f,q as g,A as h,N as i,_ as j,D as k,C as l,w as s,T as u};
+        </div>`}function C(t,{historyLimit:n=20,retryable:e=!1}={}){const s=t&&t.active||[],r=t&&t.queued||[],o=t&&t.history||[],u=n>0?o.slice(-n):o;return[...s,...r,...u.slice().reverse()].map(c=>y(c,{retryable:e})).join("")}export{k as a,y as b,M as c,A as d,d as e,S as f,q as g,B as h,N as i,_ as j,C as k,D as l,w as s,T as u};

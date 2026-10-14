@@ -1,8 +1,45 @@
 import { describe, it, expect } from 'vitest';
 import tasksModalHtml from '../../templates/partials/tasks_modal.html?raw';
 import sorterTasksModalHtml from '../../templates/partials/sorter_tasks_modal.html?raw';
-import librarySource from '../src/library/index.js?raw';
+import libraryIndex from '../src/library/index.js?raw';
+import libraryLayout from '../src/library/layout.js?raw';
+import libraryAnimations from '../src/library/animations.js?raw';
+import libraryFolders from '../src/library/folders.js?raw';
+import librarySearch from '../src/library/search.js?raw';
+import libraryGallery from '../src/library/gallery.js?raw';
+import libraryLightbox from '../src/library/lightbox.js?raw';
+import libraryManagement from '../src/library/management.js?raw';
+import libraryDuplicates from '../src/library/duplicates.js?raw';
+import libraryTasks from '../src/library/tasks.js?raw';
+import libraryWorkers from '../src/library/workers.js?raw';
+import libraryZip from '../src/library/zip.js?raw';
+import libraryTheme from '../src/library/theme.js?raw';
+import librarySheet from '../src/library/sheet.js?raw';
+import libraryUploads from '../src/library/uploads.js?raw';
+import libraryThumbnailChooser from '../src/library/thumbnail_chooser.js?raw';
 import sorterSource from '../src/app/index.js?raw';
+
+// The library bundle is split across several ES modules; assertions that check
+// bundle behaviour read them as one concatenated source (index first so
+// same-file proximity checks keep working).
+const librarySource = [
+  libraryIndex,
+  libraryLayout,
+  libraryAnimations,
+  libraryFolders,
+  librarySearch,
+  libraryGallery,
+  libraryLightbox,
+  libraryManagement,
+  libraryDuplicates,
+  libraryTasks,
+  libraryWorkers,
+  libraryZip,
+  libraryTheme,
+  librarySheet,
+  libraryUploads,
+  libraryThumbnailChooser,
+].join('\n');
 
 const MODALS = [
   ['library tasks modal', tasksModalHtml],
