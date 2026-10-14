@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   nameCollator,
   TILE_SCALES,
@@ -146,6 +147,29 @@ describe('library/state.js unit tests', () => {
       expect(state.searchTruncated).toBe(false);
       expect(state).toHaveProperty('searchLimit');
       expect(state.searchLimit).toBe(1000);
+    });
+  });
+
+  describe('mobile thumbnail-size buttons', () => {
+    // The mobile Controls sheet renders five preset buttons (XS–XL) whose
+    // data-scale values must line up, in order, with TILE_SCALES. A previous
+    // XL value of 1.5 was not a valid preset, so tapping XL silently did
+    // nothing (and reverted on reload) — this guards against that drift.
+    const sheetHtml = readFileSync(
+      'templates/partials/mobile_controls_sheet.html',
+      'utf8'
+    );
+
+    it('renders one preset button per TILE_SCALES entry, in order', () => {
+      const scales = [...sheetHtml.matchAll(/id="mobileTileSizeBtn[A-Z]+"[^>]*data-scale="([0-9.]+)"/g)]
+        .map((m) => parseFloat(m[1]));
+      expect(scales).toEqual(TILE_SCALES);
+    });
+
+    it('XL maps to the largest preset, not an off-list scale', () => {
+      const xl = sheetHtml.match(/id="mobileTileSizeBtnXL"[^>]*data-scale="([0-9.]+)"/);
+      expect(xl).not.toBeNull();
+      expect(parseFloat(xl[1])).toBe(TILE_SCALES[TILE_SCALES.length - 1]);
     });
   });
 

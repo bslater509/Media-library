@@ -6918,17 +6918,21 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     }
 
     // Tab 2: Display & Theme
+    // Derive each button's scale from TILE_SCALES by position so the XS→XL
+    // buttons can never drift out of sync with the preset list (the old
+    // hardcoded XL of 1.5 was not a valid preset, so tapping it did nothing
+    // and reverted on reload).
     const mobileScaleBtns = [
-      { el: els.mobileTileSizeBtnXS, scale: 0.6 },
-      { el: els.mobileTileSizeBtnS, scale: 0.8 },
-      { el: els.mobileTileSizeBtnM, scale: 1.0 },
-      { el: els.mobileTileSizeBtnL, scale: 1.25 },
-      { el: els.mobileTileSizeBtnXL, scale: 1.5 }
+      els.mobileTileSizeBtnXS,
+      els.mobileTileSizeBtnS,
+      els.mobileTileSizeBtnM,
+      els.mobileTileSizeBtnL,
+      els.mobileTileSizeBtnXL
     ];
-    mobileScaleBtns.forEach(item => {
-      if (item.el) {
-        item.el.addEventListener('click', () => {
-          state.tileScale = item.scale;
+    mobileScaleBtns.forEach((btn, idx) => {
+      if (btn) {
+        btn.addEventListener('click', () => {
+          state.tileScale = TILE_SCALES[idx];
           applyTileScale();
         });
       }
