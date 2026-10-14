@@ -2,7 +2,7 @@ import "../../../static/styles.css";
 import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, getResolutionLabel, getAspectRatio, formatTimestamp, formatBitrate, shouldPlayAnimatedThumb } from './utils.js';
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
-import { icon, hydrateIcons } from './icons.js';
+import { icon, hydrateIcons } from '../shared/icons.js';
 import { urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../shared/tasks_badge.js';
 
@@ -4880,12 +4880,12 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (history.length > 0) {
       els.transcodeHistoryList.innerHTML = history.slice(0, sheetListSlice('transcodeHistory', history.length, 8)).map(h => {
         const isSuccess = h.status === 'completed';
-        const icon = isSuccess ? '✓' : '✕';
+        const statusIcon = icon(isSuccess ? 'check' : 'x', 'w-3 h-3');
         const color = isSuccess ? 'text-emerald-400' : 'text-red-400';
         return `
           <div class="flex items-center justify-between gap-2 text-[10px] font-mono py-0.5 border-b border-slate-800/50 last:border-0">
             <span class="truncate text-slate-300 flex-1 min-w-0">${h.filename}</span>
-            <span class="${color} shrink-0">${icon} ${h.status}</span>
+            <span class="${color} shrink-0 flex items-center gap-1">${statusIcon} ${h.status}</span>
           </div>
         `;
       }).join('') + renderListExpander('transcodeHistory', history.length, 8);
@@ -7544,7 +7544,7 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         try {
           els.cleanDbBtn.disabled = true;
           const originalText = els.cleanDbBtn.innerHTML;
-          els.cleanDbBtn.innerHTML = '<span>⏳</span><span>Starting...</span>';
+          els.cleanDbBtn.innerHTML = `${icon('loader-circle', 'w-3.5 h-3.5 animate-spin')}<span>Starting...</span>`;
           const res = await fetch('/api/system/clean-db', { method: 'POST' });
           if (res.ok) {
             showToast('Database deep clean and thumbnail sweep started in the background.', 'success');
@@ -8600,25 +8600,25 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       const order = { 'uploading': 1, 'pending': 2, 'error': 3, 'done': 4, 'cancelled': 5 };
       return order[a.status] - order[b.status];
     }).map(f => {
-      let statusIcon = '⏳';
+      let statusIcon = icon('loader-circle', 'w-3.5 h-3.5');
       let rowClass = 'bg-slate-900 border-slate-700/50';
-      if (f.status === 'uploading') { statusIcon = '⬆️'; rowClass = 'bg-emerald-950/20 border-emerald-900/30'; }
-      if (f.status === 'done') { statusIcon = '✅'; rowClass = 'bg-emerald-950/40 border-emerald-800/40 opacity-70'; }
-      if (f.status === 'error') { statusIcon = '❌'; rowClass = 'bg-red-950/30 border-red-900/40'; }
-      if (f.status === 'cancelled') { statusIcon = '🚫'; rowClass = 'bg-slate-900/50 border-slate-800/50 opacity-50'; }
+      if (f.status === 'uploading') { statusIcon = icon('upload', 'w-3.5 h-3.5'); rowClass = 'bg-emerald-950/20 border-emerald-900/30'; }
+      if (f.status === 'done') { statusIcon = icon('circle-check', 'w-3.5 h-3.5'); rowClass = 'bg-emerald-950/40 border-emerald-800/40 opacity-70'; }
+      if (f.status === 'error') { statusIcon = icon('circle-x', 'w-3.5 h-3.5'); rowClass = 'bg-red-950/30 border-red-900/40'; }
+      if (f.status === 'cancelled') { statusIcon = icon('ban', 'w-3.5 h-3.5'); rowClass = 'bg-slate-900/50 border-slate-800/50 opacity-50'; }
       
       const filePercent = f.size > 0 ? Math.floor((f.uploadedBytes / f.size) * 100) : 100;
       
       return `
         <div class="flex items-center gap-2 p-2 rounded-lg border text-xs ${rowClass}">
-          <span class="shrink-0 w-4 text-center">${statusIcon}</span>
+          <span class="shrink-0 w-4 flex items-center justify-center">${statusIcon}</span>
           <div class="flex-1 min-w-0 flex flex-col">
             <span class="text-slate-300 truncate font-medium">${f.relativePath}</span>
             ${f.status === 'uploading' ? `<div class="h-1 w-full bg-slate-800 rounded-full mt-1 overflow-hidden"><div class="h-full bg-emerald-500" style="width: ${filePercent}%"></div></div>` : ''}
           </div>
           <span class="shrink-0 text-slate-500 text-[10px] w-12 text-right">${formatBytes(f.size)}</span>
           ${(f.status === 'pending' || f.status === 'uploading') ? `
-            <button onclick="window.cancelSingleUpload('${f.id}')" class="shrink-0 text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-slate-800 transition">✕</button>
+            <button onclick="window.cancelSingleUpload('${f.id}')" class="shrink-0 text-red-400 hover:text-red-300 p-0.5 rounded hover:bg-slate-800 transition">${icon('x', 'w-3.5 h-3.5')}</button>
           ` : ''}
         </div>
       `;

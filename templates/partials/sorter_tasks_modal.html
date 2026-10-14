@@ -1,0 +1,317 @@
+<div id="transferDropdown" class="hidden fixed inset-0 bg-slate-950/80 z-[70] flex items-center justify-center p-2.5 sm:p-4 md:p-6" style="backdrop-filter: none !important;">
+  <div id="tasksModalCard" class="tasks-modal-panel bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-3xl h-[88vh] max-h-[88dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden text-slate-200" onclick="event.stopPropagation()">
+    
+    <!-- Modal Header -->
+    <div class="flex items-center justify-between px-3.5 py-2.5 sm:px-5 sm:py-3.5 bg-slate-900 border-b border-slate-800 shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+        <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate">Background Tasks & System Status</h3>
+      </div>
+      <button id="closeTransferDropdownBtn" class="text-slate-400 hover:text-white p-1 rounded-lg text-xs flex items-center justify-center w-7 h-7 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition cursor-pointer shrink-0" title="Close Panel">
+        <span data-lb-icon="x" data-lb-icon-class="w-3.5 h-3.5"></span>
+      </button>
+    </div>
+
+    <!-- Tab Navigation Bar (Scrollable on small screens) -->
+    <div class="flex items-center px-2.5 sm:px-5 bg-slate-900 border-b border-slate-800 shrink-0 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+      <button type="button" id="tasksTabBtnActive" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
+        <span data-lb-icon="zap" data-lb-icon-class="w-3.5 h-3.5"></span>
+        <span>Active & Queues</span>
+        <span id="tabBadgeActive" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">0</span>
+      </button>
+      <button type="button" id="tasksTabBtnWorkers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
+        <span data-lb-icon="settings" data-lb-icon-class="w-3.5 h-3.5"></span>
+        <span>Background Workers</span>
+        <span id="tabBadgeWorkers" class="hidden px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">Idle</span>
+      </button>
+      <button type="button" id="tasksTabBtnTools" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
+        <span data-lb-icon="wrench" data-lb-icon-class="w-3.5 h-3.5"></span>
+        <span>Tools & Maintenance</span>
+      </button>
+    </div>
+
+    <!-- Scrollable Tab Content Container -->
+    <div class="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 flex flex-col gap-4 bg-slate-900">
+      
+      <!-- PANE 1: Active & Queues -->
+      <div id="tasksPaneActive" class="tasks-pane flex flex-col gap-3.5">
+        
+        <!-- Empty State (Shown when all queues idle) -->
+        <div id="activeQueuesEmptyState" class="p-8 text-center flex flex-col items-center justify-center gap-2.5 bg-slate-950 border border-slate-800 rounded-xl">
+          <div class="w-10 h-10 rounded-full bg-emerald-950/60 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
+            <span data-lb-icon="circle-check" data-lb-icon-class="w-5 h-5"></span>
+          </div>
+          <div class="text-sm font-semibold text-slate-200">All Queues are Idle</div>
+          <p class="text-xs text-slate-400 max-w-sm">No file transfers or video transcodes are currently running.</p>
+          <button type="button" id="jumpToWorkersBtn" class="mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition cursor-pointer">
+            View Background Workers →
+          </button>
+        </div>
+
+        <!-- Section: Background Transfers to Destination -->
+        <div class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+              <span data-lb-icon="rocket" data-lb-icon-class="w-3.5 h-3.5"></span> Transfers to Destination
+            </h4>
+            <span id="transferDropdownSummary" class="text-[10px] text-slate-400 font-mono">0 pending</span>
+          </div>
+          
+          <!-- Active Transfer Box -->
+          <div id="activeTransferBox" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-emerald-300 font-medium truncate flex-1 min-w-0" id="activeTransferFilename">clip.mp4</span>
+              <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTransferPercent">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div id="activeTransferProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+              <span id="activeTransferTarget" class="truncate max-w-[240px]">➔ /Folder</span>
+              <span id="activeTransferSize">0 MB</span>
+            </div>
+          </div>
+
+          <!-- Queued Transfers List -->
+          <div id="queuedTransfersList" class="flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+        </div>
+
+        <!-- Section: Auto-MP4 Pre-Transcoder -->
+        <div class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+              <span data-lb-icon="cog" data-lb-icon-class="w-3.5 h-3.5"></span> Auto-MP4 Pre-Transcoder
+            </h4>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span id="transcodeSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+              <button id="toggleTranscodePauseBtn" title="Pause or resume background pre-transcoding" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                Pause
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Conversion Box -->
+          <div id="activeTranscodeBox" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <div class="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                <span id="activeTranscodeMethodBadge" class="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono shrink-0">Encode</span>
+                <span class="text-emerald-200 font-medium truncate" id="activeTranscodeFilename">clip.mkv</span>
+              </div>
+              <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeTranscodePercent">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div id="activeTranscodeProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+              <span id="activeTranscodeSpeed">0 fps</span>
+              <span id="activeTranscodeEta" class="text-emerald-300">ETA: --</span>
+            </div>
+          </div>
+
+          <!-- Queued Transcodes List -->
+          <div id="queuedTranscodesContainer" class="hidden flex flex-col gap-1.5">
+            <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming Conversions:</span>
+            <div id="queuedTranscodesList" class="flex flex-col gap-1 max-h-24 overflow-y-auto no-scrollbar text-xs"></div>
+          </div>
+        </div>
+
+        <!-- Section: Completed Transfers Activity -->
+        <div class="flex flex-col gap-2 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <span class="text-[10px] uppercase font-bold text-slate-500">Recent Completed Transfers</span>
+          <div id="transferHistoryList" class="flex flex-col gap-1 max-h-24 overflow-y-auto no-scrollbar text-[11px] text-slate-400">
+            <span class="text-slate-600 italic">No transfers yet</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PANE 2: Background Workers -->
+      <div id="tasksPaneWorkers" class="tasks-pane hidden flex flex-col gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          
+          <!-- Worker Card 1: Thumbnail Generator -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="images" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Thumbnail Generator</h4>
+                  <span id="thumbSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+              <button id="toggleThumbPauseBtn" title="Pause or resume background thumbnail generation" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                Pause
+              </button>
+            </div>
+            <div id="thumbProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="thumbCurrentFile">Checking thumbnails...</span>
+                <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="thumbPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="thumbProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="thumbCountsText">0 / 0</span>
+                <span id="thumbStatusLabel" class="text-slate-500">Idle</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Worker Card 2: WebP Image Optimizer -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="zap" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">WebP Image Optimizer</h4>
+                  <span id="webpSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+              <button id="toggleWebpPauseBtn" title="Pause or resume background WebP optimization" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                Pause
+              </button>
+            </div>
+            <div id="webpProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="webpCurrentFile">Checking images...</span>
+                <span class="text-teal-400 font-mono text-[10px] font-bold shrink-0" id="webpPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="webpProgressBar" class="bg-teal-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="webpCountsText">0 / 0 converted</span>
+                <span id="webpSavedText" class="text-emerald-400 font-semibold">Saved: 0 B</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Worker Card 3: Duplicate Hash Verifier -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="search" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Duplicate Hash Verifier</h4>
+                  <span id="hashSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+              <button id="toggleHashPauseBtn" title="Pause or resume background duplicate hash verification" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0">
+                Pause
+              </button>
+            </div>
+            <div id="hashProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="hashCurrentFile">Checking candidate hashes...</span>
+                <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="hashPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="hashProgressBar" class="bg-amber-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="hashCountsText">0 / 0</span>
+                <span id="hashStatusLabel" class="text-slate-500">Idle</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Worker Card 4: Library Indexer -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="database" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Library Indexer</h4>
+                  <span id="indexSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+              <button id="triggerIndexSyncDropdownBtn" title="Scan destination directory and re-index all folders/files" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition flex items-center gap-1 cursor-pointer shrink-0">
+                <span id="indexSyncDropdownIcon" data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span>
+                <span>Sync</span>
+              </button>
+            </div>
+            <div id="indexProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="indexCurrentFolder">All folders indexed</span>
+                <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="indexPercentText">100%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="indexProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 100%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="indexCountsText">0 / 0 folders</span>
+                <span id="indexFilesText" class="text-slate-500">0 files</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PANE 3: Tools & Maintenance -->
+      <div id="tasksPaneTools" class="tasks-pane hidden flex flex-col gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          
+          <!-- Tool Card 1: Library Index Sync -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-base"><span data-lb-icon="refresh-cw" data-lb-icon-class="w-5 h-5"></span></span>
+                <h4 class="text-xs font-bold text-white">Filesystem Index Sync</h4>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">Crawl destination directory and sync newly added, modified, or moved files with the SQLite index.</p>
+            </div>
+            <button type="button" onclick="document.getElementById('triggerIndexSyncDropdownBtn').click()" class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <span data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span> Scan &amp; Resync Library
+            </button>
+          </div>
+
+          <!-- Tool Card: Clean DB & Thumbnails -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-base"><span data-lb-icon="sparkles" data-lb-icon-class="w-5 h-5"></span></span>
+                <h4 class="text-xs font-bold text-white">Clean DB & Thumbnails</h4>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">Deep scan the database to remove missing files and delete orphaned thumbnails.</p>
+            </div>
+            <button id="cleanDbBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 hover:text-white border border-amber-800/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Clean stale entries and thumbnails">
+              <span data-lb-icon="sparkles" data-lb-icon-class="w-3.5 h-3.5"></span>
+              <span>Run Deep Clean</span>
+            </button>
+          </div>
+
+          <!-- Tool Card 2: Delete All Empty Folders -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-2.5">
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-base"><span data-lb-icon="trash-2" data-lb-icon-class="w-5 h-5"></span></span>
+                <h4 class="text-xs font-bold text-white">Clean Empty Folders</h4>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">Scan the media collection for directories containing 0 files and permanently delete them.</p>
+            </div>
+            <button id="deleteEmptyFoldersBtn" class="w-full py-1.5 px-2.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-white border border-rose-800/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer" title="Find and delete all empty folders across the library">
+              <span data-lb-icon="trash-2" data-lb-icon-class="w-3.5 h-3.5"></span>
+              <span id="deleteEmptyFoldersBtnText">Delete All Empty Folders</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="px-3.5 py-2 sm:px-5 sm:py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0 gap-2">
+      <div class="flex items-center gap-2 truncate min-w-0">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+        <span id="tasksModalGlobalStatus" class="truncate">System ready · All background services active</span>
+      </div>
+      <button type="button" onclick="document.getElementById('transferDropdown').classList.add('hidden')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-medium transition cursor-pointer shrink-0">
+        Close
+      </button>
+    </div>
+
+  </div>
+</div>

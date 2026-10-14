@@ -1,5 +1,6 @@
 import "../../../static/styles.css";
 import { computeTaskSummary, formatTaskCount, describePrimaryTask } from "../shared/tasks_badge.js";
+import { icon, hydrateIcons } from "../shared/icons.js";
 // Video Sorter Frontend Application - v2.1
 let state = {
   queue: [],
@@ -247,6 +248,9 @@ function addRecentFolder(folder) {
 
 // Initialize Application
 document.addEventListener("DOMContentLoaded", async () => {
+  // Static template markup carries icon placeholders; swap in the shared
+  // inline SVG set before anything renders.
+  hydrateIcons(document);
   setupEventListeners();
   setupVideoGestures();
   setupVideoControlsManager();
@@ -1111,10 +1115,10 @@ function renderTranscodeUI() {
         row.className = "flex items-center justify-between p-1.5 bg-slate-950/70 rounded-lg text-[11px] text-slate-300";
         row.innerHTML = `
           <div class="flex items-center gap-1.5 truncate min-w-0">
-            <span class="text-emerald-400">⚙️</span>
+            ${icon('cog', 'w-3.5 h-3.5 text-emerald-400 shrink-0')}
             <span class="truncate max-w-[200px]">${escapeHtml(t.filename)}</span>
           </div>
-          <button class="cancelTranscodeBtn text-slate-500 hover:text-red-400 p-0.5 ml-1 leading-none" title="Cancel this conversion">&times;</button>
+          <button class="cancelTranscodeBtn text-slate-500 hover:text-red-400 p-0.5 ml-1 leading-none" title="Cancel this conversion">${icon('x', 'w-3.5 h-3.5')}</button>
         `;
         row.querySelector(".cancelTranscodeBtn").addEventListener("click", () => cancelSpecificTranscode(t.id));
         queuedTranscodesList.appendChild(row);
@@ -1650,7 +1654,7 @@ if (cleanDbBtn) {
     try {
       cleanDbBtn.disabled = true;
       const originalText = cleanDbBtn.innerHTML;
-      cleanDbBtn.innerHTML = '<span>⏳</span><span>Starting...</span>';
+      cleanDbBtn.innerHTML = `${icon('loader-circle', 'w-3.5 h-3.5 animate-spin')}<span>Starting...</span>`;
       const res = await fetch("/api/system/clean-db", { method: "POST" });
       if (res.ok) {
         showToast("Database deep clean and thumbnail sweep started in the background.", "success");
@@ -1757,11 +1761,11 @@ function renderTransfersUI() {
       row.className = "flex items-center justify-between p-1.5 bg-slate-950/70 rounded-lg text-[11px] text-slate-300";
       row.innerHTML = `
         <div class="flex items-center gap-1.5 truncate min-w-0">
-          <span class="text-emerald-400">⏳</span>
+          ${icon('loader-circle', 'w-3.5 h-3.5 text-emerald-400 shrink-0')}
           <span class="truncate max-w-[150px]">${escapeHtml(item.filename)}</span>
           <span class="text-[10px] text-slate-500">➔ /${escapeHtml(item.destination_folder)}</span>
         </div>
-        <button class="cancelTaskBtn text-slate-500 hover:text-red-400 p-0.5 ml-1 leading-none" title="Cancel this transfer">&times;</button>
+        <button class="cancelTaskBtn text-slate-500 hover:text-red-400 p-0.5 ml-1 leading-none" title="Cancel this transfer">${icon('x', 'w-3.5 h-3.5')}</button>
       `;
       const cancelBtn = row.querySelector(".cancelTaskBtn");
       cancelBtn.addEventListener("click", () => cancelSpecificTransfer(item.id));
@@ -1777,9 +1781,17 @@ function renderTransfersUI() {
     state.transferHistory.slice(0, 5).forEach((h) => {
       const row = document.createElement("div");
       row.className = "flex items-center justify-between text-[11px] py-0.5";
-      const icon = h.status === "completed" ? "✅" : h.status === "cancelled" ? "🚫" : "❌";
+      const statusTone = h.status === "completed"
+        ? "text-emerald-400"
+        : h.status === "cancelled"
+          ? "text-slate-500"
+          : "text-red-400";
+      const statusIcon = icon(
+        { completed: 'circle-check', cancelled: 'ban' }[h.status] || 'circle-x',
+        `w-3 h-3 ${statusTone}`
+      );
       row.innerHTML = `
-        <span class="truncate max-w-[190px] text-slate-300">${icon} ${escapeHtml(h.filename)}</span>
+        <span class="truncate max-w-[190px] text-slate-300 flex items-center gap-1">${statusIcon} ${escapeHtml(h.filename)}</span>
         <span class="text-[10px] text-slate-500 font-mono">/${escapeHtml(h.destination_folder)}</span>
       `;
       transferHistoryList.appendChild(row);
@@ -2706,10 +2718,10 @@ function showSorterSeekRipple(container, side, text) {
 
   const ripple = document.createElement('div');
   ripple.className = `mobile-seek-ripple-container ${side}`;
-  const icon = side === 'left' ? '⏪' : '⏩';
+  const rippleGlyph = side === 'left' ? '⏪' : '⏩';
   ripple.innerHTML = `
     <div class="mobile-seek-ripple-bubble">
-      <span class="icon">${icon}</span>
+      <span class="icon">${rippleGlyph}</span>
       <span class="label font-mono font-bold">${text}</span>
     </div>
   `;
