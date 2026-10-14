@@ -1,0 +1,85 @@
+<div id="bulkRenameModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-lg w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <span>✏️</span> Bulk Rename <span id="bulkRenameCount" class="text-[11px] font-mono text-sky-300">0 files</span>
+        </h3>
+        <button id="closeBulkRenameModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label class="text-xs text-slate-400">Rename mode:</label>
+        <select id="bulkRenameMode" class="bg-slate-950/80 border border-slate-700 focus:border-emerald-500 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none cursor-pointer">
+          <option value="prefix">Prefix / Suffix</option>
+          <option value="numbering">Numbering</option>
+          <option value="base_counter">New base name + counter</option>
+          <option value="find_replace">Find &amp; replace</option>
+          <option value="case">Change case</option>
+        </select>
+
+        <!-- Params: prefix/suffix -->
+        <div id="bulkPrefixParams" class="bulk-param flex gap-2">
+          <input id="bulkPrefixInput" placeholder="Prefix" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none font-mono" />
+          <input id="bulkSuffixInput" placeholder="Suffix" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none font-mono" />
+        </div>
+
+        <!-- Params: numbering -->
+        <div id="bulkNumberingParams" class="bulk-param hidden flex gap-2 items-end">
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-slate-500">Start</label>
+            <input id="bulkNumStart" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-slate-500">Step</label>
+            <input id="bulkNumStep" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-slate-500">Padding</label>
+            <input id="bulkNumPadding" type="number" value="0" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
+          </div>
+          <select id="bulkNumPosition" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white h-[30px]">
+            <option value="suffix">After name</option>
+            <option value="prefix">Before name</option>
+          </select>
+        </div>
+
+        <!-- Params: base + counter -->
+        <div id="bulkBaseCounterParams" class="bulk-param hidden flex gap-2 items-end">
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-[10px] text-slate-500">Base name</label>
+            <input id="bulkBaseName" placeholder="Trip" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-slate-500">Start</label>
+            <input id="bulkBaseStart" type="number" value="1" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-slate-500">Padding</label>
+            <input id="bulkBasePadding" type="number" value="2" class="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white" />
+          </div>
+        </div>
+
+        <!-- Params: find & replace -->
+        <div id="bulkFindReplaceParams" class="bulk-param hidden flex gap-2">
+          <input id="bulkFindInput" placeholder="Find" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
+          <input id="bulkReplaceInput" placeholder="Replace" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono" />
+        </div>
+
+        <!-- Params: case -->
+        <div id="bulkCaseParams" class="bulk-param hidden">
+          <select id="bulkCaseSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white">
+            <option value="lower">lowercase</option>
+            <option value="upper">UPPERCASE</option>
+            <option value="title">Title Case</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="bulkRenamePreviewList" class="max-h-48 overflow-y-auto no-scrollbar bg-slate-950/60 rounded-xl border border-slate-800 p-2 flex flex-col gap-1"></div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelBulkRenameBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Cancel</button>
+        <button id="applyBulkRenameBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">Apply Rename</button>
+      </div>
+    </div>
+  </div>

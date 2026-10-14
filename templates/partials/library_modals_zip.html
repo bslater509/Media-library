@@ -1,0 +1,340 @@
+<div id="compressZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-sky-800/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-300 shrink-0 text-xl">
+            📦
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm font-bold text-white truncate">Compress Folder to ZIP Archive</h3>
+            <p class="text-xs text-slate-400 truncate">Reduce cloud IO latency from pCloud</p>
+          </div>
+        </div>
+        <button id="closeCompressZipXBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-300 leading-relaxed">
+        This folder contains only images. Compressing it into a single <span class="font-mono text-sky-300">.zip</span> archive significantly speeds up directory loading and image scrolling.
+      </p>
+
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1.5 text-xs font-mono">
+        <div class="flex justify-between text-slate-400">
+          <span>Folder:</span>
+          <span id="compressFolderName" class="text-white truncate max-w-[200px]">album</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Images:</span>
+          <span id="compressImageCount" class="text-sky-300">0 files</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Total Size:</span>
+          <span id="compressTotalSize" class="text-slate-300">0 MB</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Target File:</span>
+          <span id="compressTargetZip" class="text-emerald-300 truncate max-w-[200px]">album.zip</span>
+        </div>
+      </div>
+
+      <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-tight">
+        ⚠️ <strong>Note:</strong> After archive integrity (CRC) is verified, the original folder will be removed. The archive will continue to be browsable just like a regular folder.
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelCompressZipBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmCompressZipBtn" class="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
+          <span>📦</span>
+          <span>Compress & Replace Folder with ZIP</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="unpackZipModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-indigo-800/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 shrink-0 text-xl">
+            📂
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm font-bold text-white truncate">Unpack ZIP to Regular Folder</h3>
+            <p class="text-xs text-slate-400 truncate">Restore archive back into a standard directory</p>
+          </div>
+        </div>
+        <button id="closeUnpackZipXBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-300 leading-relaxed">
+        This will extract all files from the <span class="font-mono text-indigo-300" id="unpackZipFileName">archive.zip</span> back into a standard folder on storage and delete the archive file.
+      </p>
+
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1.5 text-xs font-mono">
+        <div class="flex justify-between text-slate-400">
+          <span>Archive:</span>
+          <span id="unpackZipSource" class="text-white truncate max-w-[200px]">archive.zip</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Target Directory:</span>
+          <span id="unpackZipTarget" class="text-emerald-300 truncate max-w-[200px]">archive</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelUnpackZipBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmUnpackZipBtn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
+          <span>📂</span>
+          <span>Unpack Archive</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="batchZipModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-sky-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-300 shrink-0 text-lg">
+            📦
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-white truncate">Batch Compress Image Folders</h3>
+            <p class="text-xs text-slate-400 truncate">Find all leaf folders with only images and compress to ZIP</p>
+          </div>
+        </div>
+        <button id="closeBatchZipModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <!-- Summary Stats & Filter Banner -->
+      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Eligible Folders</span>
+            <span id="batchZipCandidateCount" class="text-sm font-bold font-mono text-sky-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Images</span>
+            <span id="batchZipImageCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Size</span>
+            <span id="batchZipTotalSize" class="text-sm font-bold font-mono text-amber-400">0 B</span>
+          </div>
+        </div>
+
+        <!-- Controls Row: Search + Select All -->
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
+              <input type="checkbox" id="batchZipSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-sky-600 focus:ring-sky-500" checked />
+              <span>Select All</span>
+            </label>
+            <span id="batchZipSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800/60 font-mono">0 selected</span>
+          </div>
+          <div class="relative w-48 sm:w-60">
+            <input 
+              type="text" 
+              id="batchZipFilterInput" 
+              placeholder="Filter candidates..." 
+              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-sky-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
+            />
+            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Candidate Folders Scrollable List -->
+      <div id="batchZipCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+        <div class="text-center py-10 text-xs text-slate-500">Scanning library for candidate folders...</div>
+      </div>
+
+      <!-- Note / Warning -->
+      <div class="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-200/90 flex items-center gap-2 shrink-0">
+        <span>⚠️</span>
+        <span>Each folder will be compressed to a verified <code>.zip</code> archive and its original folder removed to eliminate pCloud I/O latency.</span>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
+        <button id="cancelBatchZipModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
+          Cancel
+        </button>
+        <button id="confirmBatchZipBtn" class="px-4 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>📦</span>
+          <span id="confirmBatchZipBtnText">Compress Selected (0)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+<div id="batchUnpackModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-emerald-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-300 shrink-0 text-lg">
+            🗜️
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-white truncate">Extract ZIP Archives to Folders</h3>
+            <p class="text-xs text-slate-400 truncate">Select archives to unpack; each is extracted, verified, and its .zip removed</p>
+          </div>
+        </div>
+        <button id="closeBatchUnpackModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <!-- Summary Stats & Filter Banner -->
+      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">ZIP Archives</span>
+            <span id="batchUnpackCandidateCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Files</span>
+            <span id="batchUnpackFileCount" class="text-sm font-bold font-mono text-sky-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Total Size</span>
+            <span id="batchUnpackTotalSize" class="text-sm font-bold font-mono text-amber-400">0 B</span>
+          </div>
+        </div>
+
+        <!-- Controls Row: Search + Select All -->
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
+              <input type="checkbox" id="batchUnpackSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-emerald-600 focus:ring-emerald-500" checked />
+              <span>Select All</span>
+            </label>
+            <span id="batchUnpackSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/60 font-mono">0 selected</span>
+          </div>
+          <div class="relative w-48 sm:w-60">
+            <input 
+              type="text" 
+              id="batchUnpackFilterInput" 
+              placeholder="Filter archives..." 
+              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-emerald-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
+            />
+            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Candidate ZIP Archives Scrollable List -->
+      <div id="batchUnpackCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+        <div class="text-center py-10 text-xs text-slate-500">Scanning library for ZIP archives...</div>
+      </div>
+
+      <!-- Note / Warning -->
+      <div class="px-4 py-2 bg-amber-500/10 border-t border-amber-500/20 text-[11px] text-amber-200/90 flex items-center gap-2 shrink-0">
+        <span>⚠️</span>
+        <span>Each selected archive is extracted to a verified folder and its <code>.zip</code> removed. Conflicting folder names get a numbered suffix.</span>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
+        <button id="cancelBatchUnpackModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
+          Cancel
+        </button>
+        <button id="confirmBatchUnpackBtn" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>🗜️</span>
+          <span id="confirmBatchUnpackBtnText">Extract Selected (0)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+<div id="emptyFoldersModal" class="ml-sheet fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-3 sm:p-5">
+    <div class="ml-sheet-card bg-slate-900 border border-rose-800/60 rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Drag handle (mobile sheets) -->
+      <div class="ml-sheet-grabber" data-sheet-grabber></div>
+
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-300 shrink-0 text-lg">
+            🗑️
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-sm sm:text-base font-bold text-white truncate">Delete All Empty Folders</h3>
+            <p class="text-xs text-slate-400 truncate">Scan the library for folders containing zero files and remove them</p>
+          </div>
+        </div>
+        <button id="closeEmptyFoldersModalBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0 cursor-pointer" title="Close">✕</button>
+      </div>
+
+      <!-- Summary Stats & Filter Banner -->
+      <div class="p-3 sm:p-4 bg-slate-950/40 border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
+        <div class="grid grid-cols-2 gap-2 text-center text-xs">
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Empty Folders Found</span>
+            <span id="emptyFoldersCandidateCount" class="text-sm font-bold font-mono text-rose-400">0</span>
+          </div>
+          <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Leaf Folders</span>
+            <span id="emptyFoldersLeafCount" class="text-sm font-bold font-mono text-emerald-400">0</span>
+          </div>
+        </div>
+
+        <!-- Controls Row: Search + Select All -->
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-slate-300 font-medium cursor-pointer">
+              <input type="checkbox" id="emptyFoldersSelectAllToggle" class="rounded bg-slate-800 border-slate-700 text-rose-600 focus:ring-rose-500" checked />
+              <span>Select All</span>
+            </label>
+            <span id="emptyFoldersSelectedBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/60 font-mono">0 selected</span>
+          </div>
+          <div class="relative w-48 sm:w-60">
+            <input 
+              type="text" 
+              id="emptyFoldersFilterInput" 
+              placeholder="Filter folders..." 
+              class="w-full bg-slate-950/80 border border-slate-700/80 focus:border-rose-500 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none transition"
+            />
+            <svg class="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Candidate Folders Scrollable List -->
+      <div id="emptyFoldersCandidatesList" class="ml-unbound flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40 max-h-[45vh]">
+        <div class="text-center py-10 text-xs text-slate-500">Scanning library for empty folders...</div>
+      </div>
+
+      <!-- Note / Warning -->
+      <div class="px-4 py-2 bg-rose-500/10 border-t border-rose-500/20 text-[11px] text-rose-200/90 flex items-center gap-2 shrink-0">
+        <span>⚠️</span>
+        <span>Selected folders will be permanently deleted from disk and library index. Only truly empty folders without files are removed.</span>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs shrink-0">
+        <button id="cancelEmptyFoldersModalBtn" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition cursor-pointer">
+          Cancel
+        </button>
+        <button id="confirmEmptyFoldersBtn" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <span>🗑️</span>
+          <span id="confirmEmptyFoldersBtnText">Delete Selected (0)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>

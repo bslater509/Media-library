@@ -1,0 +1,131 @@
+<div id="deleteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-red-900/50 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 text-lg">
+          ⚠️
+        </div>
+        <div>
+          <h3 id="deleteModalTitle" class="text-sm font-bold text-white">Permanently Delete File?</h3>
+          <p id="deleteModalSubtitle" class="text-xs text-slate-400">This action cannot be undone.</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-1">
+        <span id="deleteFileName" class="text-xs font-mono text-red-300 break-all">filename.mp4</span>
+        <span id="deleteFileSize" class="text-[10px] text-slate-500 font-mono">0 MB</span>
+      </div>
+
+      <!-- Every delete requires an explicit acknowledgement -->
+      <label
+        id="deleteConfirmAck"
+        for="deleteConfirmAckInput"
+        class="hidden items-start gap-2.5 cursor-pointer select-none"
+      >
+        <input
+          type="checkbox"
+          id="deleteConfirmAckInput"
+          class="mt-0.5 w-4 h-4 shrink-0 rounded border-slate-600 bg-slate-950 text-red-500 focus:ring-red-500/40 cursor-pointer"
+        />
+        <span class="text-xs text-slate-300 leading-snug">I understand this action cannot be undone.</span>
+      </label>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelDeleteBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmDeleteBtn" class="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition shadow-sm disabled:opacity-40 disabled:pointer-events-none">
+          Delete File
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="moveModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1200] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <span>📁</span> Move To…
+        </h3>
+        <button id="closeMoveModalBtn" class="text-slate-400 hover:text-white text-base">✕</button>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <p class="text-xs text-slate-400">Moving <span id="moveItemName" class="font-mono text-emerald-300">item</span></p>
+        <div class="flex items-center gap-1">
+          <button id="moveUpBtn" title="Go to parent folder" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs shrink-0 transition">⬆ Up</button>
+          <span id="moveCurrentPath" class="flex-1 truncate text-[11px] font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">/</span>
+        </div>
+        <div id="moveFolderList" class="max-h-64 overflow-y-auto no-scrollbar bg-slate-950/60 rounded-xl border border-slate-800 p-1.5 flex flex-col gap-1"></div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="cancelMoveBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmMoveBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">
+          Move Here
+        </button>
+      </div>
+    </div>
+  </div>
+
+<div id="convertAllModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[80] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-emerald-900/60 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 text-base">
+            ⚡
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Convert All Library Videos</h3>
+            <p class="text-[11px] text-slate-400">Batch convert non-MP4 videos to MP4</p>
+          </div>
+        </div>
+        <button id="closeConvertAllModalBtn" class="text-slate-400 hover:text-white text-base p-1">✕</button>
+      </div>
+
+      <!-- Stats Summary Card -->
+      <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400">Pending Videos:</span>
+          <span id="convertAllModalCount" class="text-xs font-mono font-bold text-emerald-400">Loading...</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-400">Estimated Total Size:</span>
+          <span id="convertAllModalSize" class="text-xs font-mono font-bold text-slate-200">--</span>
+        </div>
+        <!-- Format breakdown chips -->
+        <div class="pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
+          <span class="text-[10px] uppercase font-bold text-slate-500">Formats to Convert:</span>
+          <div id="convertAllBreakdownChips" class="flex flex-wrap gap-1.5">
+            <span class="text-[11px] text-slate-500 italic">Checking formats...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Details -->
+      <div class="text-[11px] text-slate-400 flex flex-col gap-1.5 bg-slate-800/40 p-2.5 rounded-xl border border-slate-800">
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>Smallest files first:</strong> Short clips and WebMs convert rapidly before larger movies.</span>
+        </div>
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>In-place replacement:</strong> Originals are replaced with verified web-compatible <code>.mp4</code>.</span>
+        </div>
+        <div class="flex items-start gap-1.5">
+          <span class="text-emerald-400 font-bold">✓</span>
+          <span><strong>Background task:</strong> Runs with low CPU priority; you can pause or cancel anytime.</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="cancelConvertAllModalBtn" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">
+          Cancel
+        </button>
+        <button id="confirmConvertAllModalBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm flex items-center gap-1.5">
+          <span>Start Conversion</span>
+        </button>
+      </div>
+    </div>
+  </div>

@@ -268,6 +268,8 @@ media-library/
 │   ├── downloads.html               # URL/playlist Downloads page user interface
 │   ├── library.html                 # Media Library & Gallery user interface
 │   └── partials/                    # HTML fragments (modals, sidebar, tasks_modal.html, sorter_tasks_modal.html) used via {{include}}
+│                                    #   library modals are split: library_modals_media / _bulk / _manage /
+│                                    #   _duplicates / _zip / _viewer.html, included in that order by library.html
 │
 ├── tests/                           # Automated test suite
 │   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
