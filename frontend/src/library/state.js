@@ -93,6 +93,7 @@
     indexPollTimer: null,
     indexRetryCount: 0,
     indexRetryTimer: null,
+    indexPruneRunning: false,
     thumbPollTimer: null,
     latestThumbData: null,
     latestAnimThumbData: null,
@@ -400,6 +401,9 @@
     indexProgressBar: document.getElementById('indexProgressBar'),
     indexCountsText: document.getElementById('indexCountsText'),
     indexFilesText: document.getElementById('indexFilesText'),
+    indexStaleWarning: document.getElementById('indexStaleWarning'),
+    indexStaleText: document.getElementById('indexStaleText'),
+    indexForcePruneBtn: document.getElementById('indexForcePruneBtn'),
     // Background Transcode Monitor
     transferBadgeBtn: document.getElementById('transferBadgeBtn'),
     transferIcon: document.getElementById('transferIcon'),

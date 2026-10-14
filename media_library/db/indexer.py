@@ -37,6 +37,16 @@ indexer_state: dict[str, Any] = {
     "total_files": 0,
     "current_folder": "",
     "last_synced": None,
+    # Reconciled index health, refreshed at the end of every crawl/prune so the
+    # status panel can tell "everything reachable is indexed" apart from
+    # "indexed rows still point at folders that are gone from the mount".
+    "stale_folders": 0,
+    "stale_files": 0,
+    "prune_aborted": False,
+    "prune_reason": "",
+    # Bumped whenever the folder/file row counts may have changed, so the
+    # 30s count cache in services.status never serves a pre-crawl snapshot.
+    "revision": 0,
 }
 indexer_lock = asyncio.Lock()
 
@@ -692,6 +702,35 @@ def _clean_orphaned_thumbnails(conn: Any, thumb_dir: Any) -> int:
                     pass
     return pruned_orphaned_thumbs
 
+def _count_files_in_folders(conn: Any, folders: list[str]) -> int:
+    """Count indexed file rows belonging to the given folders (chunked for SQLite)."""
+    total = 0
+    for i in range(0, len(folders), 500):
+        chunk = folders[i : i + 500]
+        placeholders = ",".join("?" * len(chunk))
+        total += conn.execute(
+            f"SELECT COUNT(*) FROM files WHERE folder_path IN ({placeholders})", chunk
+        ).fetchone()[0]
+    return total
+
+
+def _record_index_health(conn: Any, stale_folders: list[str]) -> None:
+    """Record how many indexed folders (and files) no longer exist on the mount.
+
+    Kept in ``indexer_state`` so ``/api/system/status`` can show a truthful
+    "reachable vs indexed" split instead of a hardcoded 100%.
+    """
+    indexer_state["stale_folders"] = len(stale_folders)
+    if stale_folders:
+        try:
+            indexer_state["stale_files"] = _count_files_in_folders(conn, stale_folders)
+        except Exception as e:  # never let bookkeeping break the prune
+            logger.error(f"[Prune] Error counting stale files: {e}")
+            indexer_state["stale_files"] = 0
+    else:
+        indexer_state["stale_files"] = 0
+
+
 def prune_stale_index_entries(
     base_dir: str | None = None,
     visited_folders: set[str] | None = None,
@@ -709,6 +748,8 @@ def prune_stale_index_entries(
         logger.warning(
             f"[Prune] Base directory {resolved_base} is not accessible. Aborting prune to prevent accidental data loss."
         )
+        indexer_state["prune_aborted"] = True
+        indexer_state["prune_reason"] = "Base directory unmounted or missing"
         return {
             "pruned_folders": 0,
             "pruned_files": 0,
@@ -736,6 +777,12 @@ def prune_stale_index_entries(
                     f"[Prune] Aborting: {len(candidate_stale)} of {len(under_base_folders)} folders reported missing "
                     f"(safety limit {max_safe_prune}). Suspected transient mount failure; index left intact."
                 )
+                _record_index_health(conn, candidate_stale)
+                indexer_state["prune_aborted"] = True
+                indexer_state["prune_reason"] = (
+                    f"{len(candidate_stale)} of {len(under_base_folders)} indexed folders are missing "
+                    f"(safety limit {max_safe_prune})"
+                )
                 return {
                     "pruned_folders": 0,
                     "pruned_files": 0,
@@ -750,6 +797,15 @@ def prune_stale_index_entries(
             stale_folders = [fp for fp in candidate_stale if _path_confirmed_gone(fp)]
 
             pruned_folders, pruned_files = _remove_stale_folders(conn, stale_folders)
+
+            # Folders left behind because their absence could not be confirmed
+            # still count as stale (they will be retried on the next prune).
+            removed = set(stale_folders)
+            _record_index_health(
+                conn, [fp for fp in candidate_stale if fp not in removed]
+            )
+            indexer_state["prune_aborted"] = False
+            indexer_state["prune_reason"] = ""
 
             with conn:
                 cur = conn.execute("""
@@ -774,6 +830,7 @@ def prune_stale_index_entries(
             indexer_state["total_files"] = cur.fetchone()[0]
             cur_folders = conn.execute("SELECT COUNT(*) FROM folders")
             indexer_state["total_folders"] = cur_folders.fetchone()[0]
+            indexer_state["revision"] = indexer_state.get("revision", 0) + 1
 
             if (
                 pruned_folders > 0
@@ -931,6 +988,10 @@ async def run_background_crawler(force_full: bool = False):
                 logger.warning(
                     "[Crawler] No folders were visited; skipping prune to protect the index."
                 )
+                indexer_state["prune_aborted"] = True
+                indexer_state["prune_reason"] = (
+                    "Crawl visited no folders (mount not ready?)"
+                )
 
             with db_conn() as conn:
                 cur = conn.execute("SELECT COUNT(*) FROM files")
@@ -938,6 +999,7 @@ async def run_background_crawler(force_full: bool = False):
                 cur_folders = conn.execute("SELECT COUNT(*) FROM folders")
                 indexer_state["total_folders"] = cur_folders.fetchone()[0]
 
+            indexer_state["revision"] = indexer_state.get("revision", 0) + 1
             indexer_state["last_synced"] = time.time()
         except Exception as e:
             logger.error(f"Error in background crawler: {e}")

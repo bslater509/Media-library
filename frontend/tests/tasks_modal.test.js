@@ -74,6 +74,25 @@ describe('Background Tasks modal — counts', () => {
   });
 });
 
+describe('Background Tasks modal — indexer honesty', () => {
+  it.each(MODALS)('%s ships a hidden stale-index warning with a prune action', (_label, html) => {
+    expect(html).toMatch(/id="indexStaleWarning"[^>]*class="hidden/);
+    expect(html).toMatch(/id="indexStaleText"/);
+    expect(html).toMatch(/id="indexForcePruneBtn"/);
+  });
+
+  it('both bundles warn instead of claiming "All folders indexed" when rows are stale', () => {
+    [librarySource, sorterSource].forEach((src) => {
+      // The stale state is driven by the payload, never by a hardcoded 100%.
+      expect(src).toMatch(/stale_folders/);
+      expect(src).toMatch(/const isStale =/);
+      expect(src).toMatch(/Index stale/);
+      expect(src).toMatch(/folders missing on mount/);
+      expect(src).toMatch(/\/api\/backup\/index\/prune/);
+    });
+  });
+});
+
 describe('Background Tasks modal — output escaping', () => {
   it('escapes transfer/transcode/zip/upload names before innerHTML', () => {
     expect(librarySource).toMatch(/escapeHtml\(q\.filename\)/);

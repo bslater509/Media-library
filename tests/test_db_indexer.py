@@ -282,3 +282,107 @@ def test_force_full_rescan_reindexes_unchanged_folders(sandbox_env):
     asyncio.run(scenario())
     assert indexer_state["skipped_folders"] == 0
     assert indexer_state["scanned_folders"] >= 1
+
+
+def test_prune_abort_reports_stale_folders_in_status(sandbox_env):
+    """A mass remote deletion must surface as a stale index, not as 100%."""
+    from media_library.services.status import index_status_payload
+
+    media_dir = sandbox_env["media_dir"]
+    state["destination_dir"] = str(media_dir)
+    cats = []
+    for i in range(40):
+        cat = media_dir / f"cat{i:02d}"
+        cat.mkdir()
+        (cat / "clip.mp4").write_bytes(b"\x00" * 16)
+        cats.append(cat)
+
+    asyncio.run(run_background_crawler())
+    assert index_status_payload()["is_complete"] is True
+
+    # Delete more than the mount-safety limit (10%, min 25) of the index and
+    # re-crawl: the prune must refuse and the status must say so.
+    for cat in cats[:30]:
+        shutil.rmtree(str(cat))
+    os.utime(media_dir, None)
+    asyncio.run(run_background_crawler())
+
+    assert indexer_state["prune_aborted"] is True
+    assert indexer_state["stale_folders"] == 30
+
+    payload = index_status_payload()
+    assert payload["status"] == "idle"
+    assert payload["total_folders"] == 40
+    assert payload["scanned_folders"] == 10
+    assert payload["stale_folders"] == 30
+    assert payload["stale_files"] == 30
+    assert payload["percent"] < 100
+    assert payload["is_complete"] is False
+    assert payload["prune_reason"]
+
+
+def test_forced_prune_clears_stale_rows_and_repairs_status(sandbox_env):
+    """The manual prune path removes the stale rows and restores 100%."""
+    from media_library.services.status import index_status_payload
+
+    media_dir = sandbox_env["media_dir"]
+    state["destination_dir"] = str(media_dir)
+    cats = []
+    for i in range(40):
+        cat = media_dir / f"cat{i:02d}"
+        cat.mkdir()
+        (cat / "clip.mp4").write_bytes(b"\x00" * 16)
+        cats.append(cat)
+
+    asyncio.run(run_background_crawler())
+    for cat in cats[:30]:
+        shutil.rmtree(str(cat))
+    os.utime(media_dir, None)
+    asyncio.run(run_background_crawler())
+    assert index_status_payload()["is_complete"] is False
+
+    res = prune_stale_index_entries(str(media_dir), None, True, force=True)
+    assert res.get("aborted") is not True
+    assert res["pruned_folders"] == 30
+    assert res["pruned_files"] == 30
+
+    payload = index_status_payload()
+    assert payload["total_folders"] == 10
+    assert payload["scanned_folders"] == 10
+    assert payload["stale_folders"] == 0
+    assert payload["percent"] == 100.0
+    assert payload["is_complete"] is True
+    assert indexer_state["prune_aborted"] is False
+
+
+def test_prune_skips_folders_outside_the_library(sandbox_env, sample_media):
+    """Rows outside the configured library are never considered stale."""
+    media_dir = sandbox_env["media_dir"]
+    state["destination_dir"] = str(media_dir)
+    outsider = sandbox_env["base_dir"] / "elsewhere"
+    outsider.mkdir()
+    (outsider / "clip.mp4").write_bytes(b"\x00" * 16)
+    index_folder(str(outsider), base_dir=str(media_dir))
+
+    res = prune_stale_index_entries(str(media_dir), None, True, force=True)
+    assert res.get("aborted") is not True
+    assert res["pruned_folders"] == 0
+
+    conn = get_db(sandbox_env["db_path"])
+    still_there = conn.execute(
+        "SELECT COUNT(*) FROM folders WHERE path = ?", (str(outsider),)
+    ).fetchone()[0]
+    conn.close()
+    assert still_there == 1
+
+
+def test_suite_never_writes_to_the_configured_database():
+    """Guard the autouse DB_PATH isolation: a test must never reach the live DB."""
+    from pathlib import Path
+
+    from media_library.core.config import DB_PATH as configured_db_path
+    from media_library.db.connection import get_current_db_path
+
+    assert os.environ.get("DB_PATH")
+    assert get_current_db_path() != Path(configured_db_path)
+

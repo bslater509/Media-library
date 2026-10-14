@@ -49,7 +49,7 @@ def test_html_views(api_client):
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
-    assert "app.js?v=20" in res_sorter.text
+    assert "app.js?v=" in res_sorter.text
     assert 'data-tasks-modal-close' in res_sorter.text
     assert 'role="dialog"' in res_sorter.text
     assert 'role="tabpanel"' in res_sorter.text

@@ -32,7 +32,10 @@ from media_library.services.media_service import (
     search_backup_index,
     validate_backup_path,
 )
-from media_library.services.status import index_status_payload
+from media_library.services.status import (
+    index_status_payload,
+    invalidate_index_counts_cache,
+)
 from media_library.services.zip import (
     extract_zip_to_cache,
     index_zip_archive,
@@ -483,6 +486,13 @@ async def trigger_backup_sync():
 
 @router.post("/api/backup/index/prune")
 async def trigger_backup_prune():
+    # Explicit, user-confirmed prune: bypass the crawler's mount-safety limit
+    # (which refuses to delete >10% of the index at once). Without ``force``
+    # this endpoint could never clear a genuinely large remote deletion — it
+    # just re-ran the same aborted prune and reported success.
     base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
-    stats = await asyncio.to_thread(prune_stale_index_entries, base_dir, None, True)
+    stats = await asyncio.to_thread(
+        prune_stale_index_entries, base_dir, None, True, True
+    )
+    invalidate_index_counts_cache()
     return {"success": True, "stats": stats}

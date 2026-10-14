@@ -149,6 +149,9 @@ const indexPercentText = document.getElementById("indexPercentText");
 const indexProgressBar = document.getElementById("indexProgressBar");
 const indexCountsText = document.getElementById("indexCountsText");
 const indexFilesText = document.getElementById("indexFilesText");
+const indexStaleWarning = document.getElementById("indexStaleWarning");
+const indexStaleText = document.getElementById("indexStaleText");
+const indexForcePruneBtn = document.getElementById("indexForcePruneBtn");
 
 // Delete Empty Folders UI
 const cleanDbBtn = document.getElementById("cleanDbBtn");
@@ -1429,11 +1432,24 @@ function renderIndexUI(data) {
   const scanned = data.scanned_folders || 0;
   const total = data.total_folders || 0;
   const filesCount = data.total_files || 0;
+  const staleFolders = data.stale_folders || 0;
+  const staleFiles = data.stale_files || 0;
+  // Idle with rows pointing at folders the mount no longer has, and whose
+  // prune the mount-safety guard refused: the index needs a manual prune.
+  const isStale = !isCrawling && staleFolders > 0;
   const pct = typeof data.percent === "number" ? data.percent : (total > 0 ? (scanned / total * 100) : 100);
 
   if (indexSummaryText) {
-    indexSummaryText.textContent = isCrawling ? "Indexing" : "Indexed";
-    indexSummaryText.className = isCrawling ? "text-[10px] text-amber-400 font-mono font-medium animate-pulse" : "text-[10px] text-emerald-400 font-mono";
+    if (isCrawling) {
+      indexSummaryText.textContent = "Indexing";
+      indexSummaryText.className = "text-[10px] text-amber-400 font-mono font-medium animate-pulse";
+    } else if (isStale) {
+      indexSummaryText.textContent = "Index stale";
+      indexSummaryText.className = "text-[10px] text-amber-400 font-mono font-medium";
+    } else {
+      indexSummaryText.textContent = "Indexed";
+      indexSummaryText.className = "text-[10px] text-emerald-400 font-mono";
+    }
   }
   if (triggerIndexSyncDropdownBtn) {
     triggerIndexSyncDropdownBtn.disabled = isCrawling;
@@ -1454,18 +1470,37 @@ function renderIndexUI(data) {
     } else if (isCrawling) {
       indexCurrentFolder.textContent = "Scanning folders...";
       indexCurrentFolder.title = "";
+    } else if (isStale) {
+      indexCurrentFolder.textContent = `${staleFolders.toLocaleString()} folders missing on mount`;
+      indexCurrentFolder.title = data.prune_reason || "";
     } else {
       indexCurrentFolder.textContent = "All folders indexed";
       indexCurrentFolder.title = "";
     }
   }
+  if (indexStaleWarning) {
+    indexStaleWarning.classList.toggle("hidden", !isStale);
+  }
+  if (indexStaleText) {
+    if (isStale) {
+      const fileNote = staleFiles > 0 ? ` (${staleFiles.toLocaleString()} files)` : "";
+      indexStaleText.textContent = `${staleFolders.toLocaleString()} indexed folders${fileNote} no longer exist on the mount. Prune was blocked by the mount-safety guard${data.prune_reason ? `: ${data.prune_reason}` : ""}.`;
+    } else {
+      indexStaleText.textContent = "";
+    }
+  }
   if (indexPercentText) {
     indexPercentText.textContent = `${Math.min(100, Math.max(0, pct)).toFixed(0)}%`;
+    indexPercentText.className = isStale
+      ? "text-amber-400 font-mono text-[10px] font-bold shrink-0"
+      : "text-emerald-400 font-mono text-[10px] font-bold shrink-0";
   }
   if (indexProgressBar) {
     indexProgressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
     if (isCrawling) {
       indexProgressBar.className = "bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200";
+    } else if (isStale) {
+      indexProgressBar.className = "bg-gradient-to-r from-amber-500 to-amber-400 h-1.5 rounded-full transition-all duration-200";
     } else {
       indexProgressBar.className = "bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200";
     }
@@ -1493,6 +1528,39 @@ if (triggerIndexSyncDropdownBtn) {
       pollIndexStatus();
     } catch (e) {
       showToast("Failed to trigger index sync: " + e.message, "error");
+    }
+  });
+}
+
+// Drop index rows for folders the mount no longer has. The crawler's automatic
+// prune refuses to remove more than ~10% of the index at once (transient-mount
+// protection), so a genuinely large remote deletion is confirmed by hand here.
+if (indexForcePruneBtn) {
+  indexForcePruneBtn.addEventListener("click", async () => {
+    const originalLabel = indexForcePruneBtn.textContent;
+    indexForcePruneBtn.disabled = true;
+    indexForcePruneBtn.classList.add("opacity-60", "pointer-events-none");
+    indexForcePruneBtn.textContent = "Pruning...";
+    showToast("Removing missing folders from the index...", "info");
+    try {
+      const res = await fetch("/api/backup/index/prune", { method: "POST" });
+      const data = await res.json();
+      const stats = (data && data.stats) || {};
+      if (stats.aborted) {
+        showToast(stats.reason || "Prune was aborted", "error");
+      } else {
+        showToast(
+          `Pruned ${(stats.pruned_folders || 0).toLocaleString()} missing folders and ${(stats.pruned_files || 0).toLocaleString()} file rows`,
+          "success"
+        );
+      }
+      await pollTransfers(true);
+    } catch (e) {
+      showToast("Failed to prune index: " + e.message, "error");
+    } finally {
+      indexForcePruneBtn.disabled = false;
+      indexForcePruneBtn.classList.remove("opacity-60", "pointer-events-none");
+      indexForcePruneBtn.textContent = originalLabel || "Remove missing folders from index";
     }
   });
 }

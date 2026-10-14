@@ -7,6 +7,23 @@ import pytest
 from media_library.db.schema import init_backup_db
 
 
+@pytest.fixture(autouse=True)
+def isolate_index_database(tmp_path, monkeypatch):
+    """Point ``DB_PATH`` at a throwaway database for *every* test.
+
+    ``get_current_db_path()`` falls back to the configured (production) index
+    database when ``DB_PATH`` is unset, and only the tests that request
+    ``sandbox_env``/``api_client`` set it. Tests that use ``tmp_path`` directly
+    (e.g. the transcode worker tests) therefore used to write real folder and
+    file rows into the live ``backup_index.db``. This pins the env var for the
+    whole session so no test can reach the developer's real index.
+    """
+    db_path = tmp_path / "isolated_index.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    init_backup_db(db_path)
+    yield
+
+
 def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     """Point import-time-resolved directory constants at sandbox dirs.
 

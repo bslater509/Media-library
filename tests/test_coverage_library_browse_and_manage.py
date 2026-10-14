@@ -147,11 +147,17 @@ def test_library_search_and_index_status_controls(api_client):
 
     indexer_state["status"] = orig_status
 
-    # 4. Index prune
-    with patch("media_library.routers.library_browse.prune_stale_index_entries", return_value={"pruned": 0}):
+    # 4. Index prune — must be the explicit forced variant, otherwise a large
+    #    remote deletion can never clear the index (the mount-safety limit
+    #    aborts every automatic prune).
+    with patch(
+        "media_library.routers.library_browse.prune_stale_index_entries",
+        return_value={"pruned": 0},
+    ) as prune_mock:
         res_prune = api_client.post("/api/backup/index/prune")
         assert res_prune.status_code == 200
         assert res_prune.json()["success"] is True
+        assert prune_mock.call_args.args[3] is True  # force
 
 
 def test_library_manage_move_validations(api_client):

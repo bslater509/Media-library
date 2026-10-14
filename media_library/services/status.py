@@ -24,17 +24,24 @@ from media_library.workers import (
 
 logger = logging.getLogger(__name__)
 
-_index_counts_cache = {"total_files": 0, "total_folders": 0, "expires_at": 0.0}
+_index_counts_cache = {
+    "total_files": 0,
+    "total_folders": 0,
+    "expires_at": 0.0,
+    "revision": -1,
+}
 _index_counts_lock = threading.Lock()
 
 
 def get_cached_index_counts() -> tuple[int, int]:
     """Return indexed file/folder counts, cached for 30 seconds (FUSE-safe)."""
     now = time.time()
+    revision = indexer_state.get("revision", 0)
     with _index_counts_lock:
         if (
             now < _index_counts_cache["expires_at"]
             and _index_counts_cache["total_files"] > 0
+            and _index_counts_cache["revision"] == revision
         ):
             return _index_counts_cache["total_files"], _index_counts_cache[
                 "total_folders"
@@ -48,6 +55,7 @@ def get_cached_index_counts() -> tuple[int, int]:
                 _index_counts_cache["total_files"] = total_files
                 _index_counts_cache["total_folders"] = total_folders
                 _index_counts_cache["expires_at"] = now + INDEX_COUNT_CACHE_TTL_S
+                _index_counts_cache["revision"] = revision
                 return total_files, total_folders
         except sqlite3.DatabaseError as e:
             logger.error(f"Error reading index counts: {e}")
@@ -58,19 +66,34 @@ def get_cached_index_counts() -> tuple[int, int]:
             )
 
 
+def invalidate_index_counts_cache() -> None:
+    """Drop the cached file/folder counts so the next status read is fresh."""
+    with _index_counts_lock:
+        _index_counts_cache["expires_at"] = 0.0
+        _index_counts_cache["revision"] = -1
+
+
 def index_status_payload() -> dict[str, Any]:
     """Common index-status body: percent math plus crawler counters."""
     total_files, total_folders = get_cached_index_counts()
 
     is_crawling = indexer_state.get("status") == "crawling"
     scanned_f = indexer_state.get("scanned_folders", 0)
-    total_f = (
-        indexer_state.get("total_folders", 0)
-        if is_crawling
-        else (total_folders or indexer_state.get("total_folders", 0))
-    )
-    if is_crawling and total_f > 0:
+    stale_f = int(indexer_state.get("stale_folders", 0) or 0)
+    if is_crawling:
+        total_f = indexer_state.get("total_folders", 0) or total_folders
+    else:
+        # Idle: the DB-row count is the denominator, and the folders known to be
+        # gone from the mount (awaiting prune) are the only shortfall. Reporting
+        # the raw last-crawl counter here mixed two different snapshots and made
+        # "242 / 561 folders" sit next to a hardcoded 100%.
+        total_f = total_folders or indexer_state.get("total_folders", 0)
+        scanned_f = max(0, total_f - min(stale_f, total_f))
+
+    if total_f > 0 and scanned_f < total_f:
         pct = min(99.0, max(1.0, round(scanned_f / total_f * 100.0, 1)))
+    elif is_crawling:
+        pct = 99.0
     else:
         pct = 100.0
 
@@ -83,6 +106,11 @@ def index_status_payload() -> dict[str, Any]:
         "total_files": total_files,
         "percent": pct,
         "current_folder": indexer_state.get("current_folder", ""),
+        "stale_folders": stale_f,
+        "stale_files": int(indexer_state.get("stale_files", 0) or 0),
+        "prune_aborted": bool(indexer_state.get("prune_aborted", False)),
+        "prune_reason": indexer_state.get("prune_reason", ""),
+        "is_complete": (not is_crawling) and stale_f == 0,
     }
 
 

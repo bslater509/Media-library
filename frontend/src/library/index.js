@@ -996,6 +996,11 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     const scanned = data.scanned_folders || 0;
     const total = data.total_folders || 0;
     const filesCount = data.total_files || 0;
+    const staleFolders = data.stale_folders || 0;
+    const staleFiles = data.stale_files || 0;
+    // A stale index is idle + rows pointing at folders that are gone from the
+    // mount and whose prune was blocked by the mount-safety guard.
+    const isStale = !isCrawling && staleFolders > 0;
     const pct = typeof data.percent === 'number' ? data.percent : (total > 0 ? (scanned / total * 100) : 100);
 
     // Update Dropdown elements
@@ -1003,6 +1008,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       if (isCrawling) {
         els.indexSummaryText.textContent = 'Indexing';
         els.indexSummaryText.className = 'text-[10px] text-amber-400 font-mono font-medium animate-pulse';
+      } else if (isStale) {
+        els.indexSummaryText.textContent = 'Index stale';
+        els.indexSummaryText.className = 'text-[10px] text-amber-400 font-mono font-medium';
       } else {
         els.indexSummaryText.textContent = 'Indexed';
         els.indexSummaryText.className = 'text-[10px] text-emerald-400 font-mono';
@@ -1032,20 +1040,40 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       } else if (isCrawling) {
         els.indexCurrentFolder.textContent = 'Scanning folders...';
         els.indexCurrentFolder.title = '';
+      } else if (isStale) {
+        els.indexCurrentFolder.textContent = `${staleFolders.toLocaleString()} folders missing on mount`;
+        els.indexCurrentFolder.title = data.prune_reason || '';
       } else {
         els.indexCurrentFolder.textContent = 'All folders indexed';
         els.indexCurrentFolder.title = '';
       }
     }
 
+    if (els.indexStaleWarning) {
+      els.indexStaleWarning.classList.toggle('hidden', !isStale);
+    }
+    if (els.indexStaleText) {
+      if (isStale) {
+        const fileNote = staleFiles > 0 ? ` (${staleFiles.toLocaleString()} files)` : '';
+        els.indexStaleText.textContent = `${staleFolders.toLocaleString()} indexed folders${fileNote} no longer exist on the mount. Prune was blocked by the mount-safety guard${data.prune_reason ? `: ${data.prune_reason}` : ''}.`;
+      } else {
+        els.indexStaleText.textContent = '';
+      }
+    }
+
     if (els.indexPercentText) {
       els.indexPercentText.textContent = `${Math.min(100, Math.max(0, pct)).toFixed(0)}%`;
+      els.indexPercentText.className = isStale
+        ? 'text-amber-400 font-mono text-[10px] font-bold shrink-0'
+        : 'text-emerald-400 font-mono text-[10px] font-bold shrink-0';
     }
 
     if (els.indexProgressBar) {
       els.indexProgressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
       if (isCrawling) {
         els.indexProgressBar.className = 'bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full transition-all duration-200';
+      } else if (isStale) {
+        els.indexProgressBar.className = 'bg-gradient-to-r from-amber-500 to-amber-400 h-1.5 rounded-full transition-all duration-200';
       } else {
         els.indexProgressBar.className = 'bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-200';
       }
@@ -1106,6 +1134,48 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       pollIndexStatus();
     } catch (err) {
       showToast('Failed to trigger index sync: ' + err.message, 'error');
+    }
+  }
+
+  // Drop index rows for folders that no longer exist on the mount. The
+  // crawler's automatic prune refuses to delete more than ~10% of the index at
+  // once (transient-mount protection), so a genuinely large remote deletion
+  // has to be confirmed by hand from the indexer card.
+  async function forceIndexPrune() {
+    if (state.indexPruneRunning) return;
+    state.indexPruneRunning = true;
+    const btn = els.indexForcePruneBtn;
+    const originalLabel = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add('opacity-60', 'pointer-events-none');
+      btn.textContent = 'Pruning...';
+    }
+    showToast('Removing missing folders from the index...', 'info');
+    try {
+      const res = await fetch('/api/backup/index/prune', { method: 'POST' });
+      const data = await res.json();
+      const stats = (data && data.stats) || {};
+      if (stats.aborted) {
+        showToast(stats.reason || 'Prune was aborted', 'error');
+      } else {
+        const folders = stats.pruned_folders || 0;
+        const files = stats.pruned_files || 0;
+        showToast(
+          `Pruned ${folders.toLocaleString()} missing folders and ${files.toLocaleString()} file rows`,
+          'success'
+        );
+      }
+      await pollSystemStatus(true);
+    } catch (err) {
+      showToast('Failed to prune index: ' + err.message, 'error');
+    } finally {
+      state.indexPruneRunning = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-60', 'pointer-events-none');
+        btn.textContent = originalLabel || 'Remove missing folders from index';
+      }
     }
   }
 
@@ -7753,6 +7823,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     }
     if (els.triggerIndexSyncDropdownBtn) {
       els.triggerIndexSyncDropdownBtn.addEventListener('click', triggerIndexSync);
+    }
+    if (els.indexForcePruneBtn) {
+      els.indexForcePruneBtn.addEventListener('click', forceIndexPrune);
     }
 
     // Library Folder Backup Buttons
