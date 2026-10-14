@@ -17,19 +17,19 @@
 
     <!-- Tab Navigation Bar (Scrollable on small screens) -->
     <div role="tablist" class="flex items-center px-2.5 sm:px-5 bg-slate-900 border-b border-slate-800 shrink-0 gap-1 sm:gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
-      <button type="button" id="tasksTabBtnActive" role="tab" aria-selected="true" aria-controls="tasksPaneActive" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
+      <button type="button" id="tasksTabBtnActive" role="tab" aria-selected="true" aria-controls="tasksPaneActive" aria-label="Active & Queues" title="Active & Queues" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0" data-tab="active">
         <span data-lb-icon="zap" data-lb-icon-class="w-3.5 h-3.5"></span>
-        <span>Active & Queues</span>
+        <span class="hidden md:inline">Active & Queues</span>
         <span id="tabBadgeActive" class="hidden px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">0</span>
       </button>
-      <button type="button" id="tasksTabBtnWorkers" role="tab" aria-selected="false" aria-controls="tasksPaneWorkers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
+      <button type="button" id="tasksTabBtnWorkers" role="tab" aria-selected="false" aria-controls="tasksPaneWorkers" aria-label="Background Workers" title="Background Workers" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="workers">
         <span data-lb-icon="settings" data-lb-icon-class="w-3.5 h-3.5"></span>
-        <span>Background Workers</span>
+        <span class="hidden md:inline">Background Workers</span>
         <span id="tabBadgeWorkers" class="hidden px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">Idle</span>
       </button>
-      <button type="button" id="tasksTabBtnTools" role="tab" aria-selected="false" aria-controls="tasksPaneTools" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
+      <button type="button" id="tasksTabBtnTools" role="tab" aria-selected="false" aria-controls="tasksPaneTools" aria-label="Tools & Maintenance" title="Tools & Maintenance" class="tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0" data-tab="tools">
         <span data-lb-icon="wrench" data-lb-icon-class="w-3.5 h-3.5"></span>
-        <span>Tools & Maintenance</span>
+        <span class="hidden md:inline">Tools & Maintenance</span>
       </button>
     </div>
 

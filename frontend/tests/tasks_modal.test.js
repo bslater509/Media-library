@@ -42,6 +42,16 @@ describe('Background Tasks modal — accessibility contract', () => {
       expect(src).toMatch(/setAttribute\('aria-selected'/);
     });
   });
+
+  it.each(MODALS)('%s shows tab labels only from md up, keeping names for assistive tech', (_label, html) => {
+    // On phones the tab strip is icon-only so it never needs sideways scroll.
+    ['Active & Queues', 'Background Workers', 'Tools & Maintenance'].forEach((name) => {
+      expect(html).toContain(`aria-label="${name}"`);
+      expect(html).toContain(`title="${name}"`);
+    });
+    const labelled = [...html.matchAll(/<span class="hidden md:inline">([^<]+)<\/span>/g)].map((m) => m[1]);
+    expect(labelled).toEqual(['Active & Queues', 'Background Workers', 'Tools & Maintenance']);
+  });
 });
 
 describe('Background Tasks modal — counts', () => {
