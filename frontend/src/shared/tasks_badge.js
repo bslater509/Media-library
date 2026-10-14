@@ -31,6 +31,7 @@ export function computeTaskSummary(sources = {}) {
   const {
     transfers, libraryOps, transcode, animated, thumbnails, webp,
     index, backup, zip, batchZip, batchUnpack, urlDownloads, uploads,
+    metadata, thumbHash,
   } = sources;
 
   const trans = transfers ? (transfers.active ? 1 : 0) + queueLength(transfers) : 0;
@@ -47,6 +48,8 @@ export function computeTaskSummary(sources = {}) {
   const zp = zip && zip.is_active ? 1 : 0;
   const bz = batchZip && BATCH_ACTIVE_STATUSES.has(batchZip.status) ? 1 : 0;
   const bu = batchUnpack && BATCH_ACTIVE_STATUSES.has(batchUnpack.status) ? 1 : 0;
+  const md = metadata && metadata.status === 'probing' ? 1 : 0;
+  const thh = thumbHash && (thumbHash.status === 'hashing' || thumbHash.status === 'migrating') ? 1 : 0;
   const dl = urlDownloads
     ? (Array.isArray(urlDownloads.active) ? urlDownloads.active.length : 0)
       + (Array.isArray(urlDownloads.queued) ? urlDownloads.queued.length : 0)
@@ -54,8 +57,8 @@ export function computeTaskSummary(sources = {}) {
   const up = uploads ? (uploads.active || 0) + (uploads.queued || 0) : 0;
 
   return {
-    count: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + dl + up,
-    active: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + dl + up > 0,
+    count: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up,
+    active: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up > 0,
   };
 }
 
@@ -68,6 +71,7 @@ export function describePrimaryTask(sources = {}) {
   const {
     transfers, libraryOps, transcode, animated, thumbnails, webp,
     index, backup, zip, batchZip, batchUnpack, urlDownloads, uploads,
+    metadata, thumbHash,
   } = sources;
 
   const hasQueue = (d) => d && (d.active || queueLength(d) > 0);
@@ -108,6 +112,12 @@ export function describePrimaryTask(sources = {}) {
   }
   if (webp && webp.status === 'converting' && (webp.pending_count || 0) > 0) {
     return `WebP ${Math.round(webp.percent || 0)}%`;
+  }
+  if (metadata && metadata.status === 'probing') {
+    return `Probing ${Math.round(metadata.percent || 0)}%`;
+  }
+  if (thumbHash && (thumbHash.status === 'hashing' || thumbHash.status === 'migrating')) {
+    return `Visual hash ${Math.round(thumbHash.percent || 0)}%`;
   }
   if (batchZip && BATCH_ACTIVE_STATUSES.has(batchZip.status)) {
     return `Batch Zip ${Math.round(batchZip.percent || 0)}%`;

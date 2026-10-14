@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from media_library.core.constants import INDEX_COUNT_CACHE_TTL_S
+from media_library.core.state import format_size
 from media_library.db.connection import db_conn
 from media_library.db.indexer import indexer_state
 from media_library.services.zip import zip_lock, zip_tasks_state
@@ -156,6 +157,8 @@ def transfers_payload() -> dict[str, Any]:
         transcode_active_data = {
             "id": act_tc["id"],
             "filename": act_tc["filename"],
+            "source_path": act_tc.get("source_path"),
+            "target_path": act_tc.get("target_path"),
             "percent": act_tc.get("percent", 0.0),
             "fps": act_tc.get("fps", 0.0),
             "speed": act_tc.get("speed", ""),
@@ -171,6 +174,7 @@ def transfers_payload() -> dict[str, Any]:
                 {
                     "id": t["id"],
                     "filename": t["filename"],
+                    "source_path": t.get("source_path"),
                     "status": "queued",
                     "created_at": t.get("created_at"),
                 }
@@ -180,12 +184,19 @@ def transfers_payload() -> dict[str, Any]:
     transcode_history_list = []
     for t in reversed(transcode_worker_instance.transcode_history[-15:]):
         if t.get("status") in ("completed", "failed", "cancelled"):
+            target_size = t.get("target_size")
             transcode_history_list.append(
                 {
                     "id": t["id"],
                     "filename": t["filename"],
+                    "source_path": t.get("source_path"),
+                    "target_path": t.get("target_path"),
                     "target_filename": os.path.basename(t["target_path"])
                     if t.get("target_path")
+                    else None,
+                    "target_size": target_size,
+                    "target_size_formatted": format_size(target_size)
+                    if target_size
                     else None,
                     "status": t["status"],
                     "error": t.get("error"),

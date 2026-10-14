@@ -23,7 +23,6 @@ from media_library.workers import (
     metadata_worker_instance,
     thumb_hash_worker_instance,
     thumbnail_worker_instance,
-    transcode_worker_instance,
     webp_worker_instance,
 )
 
@@ -37,8 +36,10 @@ async def get_all_system_status() -> dict[str, Any]:
     # 1. Transfers
     transfers_data = transfers_payload()
 
-    # 2. Transcode
-    transcode_data = transcode_worker_instance.get_status()
+    # 2. Transcode. Reuse the shared shaping from transfers_payload (the same
+    #    payload the sorter consumes as transfers.transcode) so the Library's
+    #    transcode panel gets the queued list, is_paused and target filenames.
+    transcode_data = transfers_data["transcode"]
 
     # 3. Index status (cached count)
     index_data = index_status_payload()
@@ -99,6 +100,7 @@ async def get_all_system_status() -> dict[str, Any]:
         bool(transfers_data.get("active"))
         or len(transfers_data.get("queued", [])) > 0
         or bool(transcode_data.get("active"))
+        or len(transcode_data.get("queued", [])) > 0
         or index_data.get("status") == "crawling"
         or thumb_data.get("status") == "generating"
         or metadata_data.get("status") == "probing"

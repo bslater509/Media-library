@@ -88,6 +88,16 @@ describe('library/shared/tasks_badge.js unit tests', () => {
     it('includes client-side uploads as active + queued items', () => {
       expect(computeTaskSummary({ uploads: { active: 2, queued: 3 } }).count).toBe(5);
     });
+
+    it('counts metadata probing and visual hashing as one each', () => {
+      const summary = computeTaskSummary({
+        metadata: { status: 'probing', percent: 10 },
+        thumbHash: { status: 'hashing', percent: 20 },
+      });
+      expect(summary.count).toBe(2);
+      expect(summary.active).toBe(true);
+      expect(computeTaskSummary({ metadata: { status: 'idle' }, thumbHash: { status: 'migrating' } }).count).toBe(1);
+    });
   });
 
   describe('describePrimaryTask', () => {
@@ -137,6 +147,11 @@ describe('library/shared/tasks_badge.js unit tests', () => {
 
     it('describes active uploads', () => {
       expect(describePrimaryTask({ uploads: { active: 1, queued: 0, percent: 60 } })).toBe('Uploading 60%');
+    });
+
+    it('describes metadata probing and visual hashing', () => {
+      expect(describePrimaryTask({ metadata: { status: 'probing', percent: 12.4 } })).toBe('Probing 12%');
+      expect(describePrimaryTask({ thumbHash: { status: 'migrating', percent: 7 } })).toBe('Visual hash 7%');
     });
   });
 });

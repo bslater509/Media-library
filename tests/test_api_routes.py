@@ -49,7 +49,7 @@ def test_html_views(api_client):
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
-    assert "app.js?v=18" in res_sorter.text
+    assert "app.js?v=19" in res_sorter.text
     assert "styles.css?v=42" in res_sorter.text
     assert "sticky top-0 z-50" in res_sorter.text
     assert "themeCustomizerModal" in res_sorter.text
@@ -58,7 +58,7 @@ def test_html_views(api_client):
     res_dl = api_client.get("/downloads")
     assert res_dl.status_code == 200
     assert "text/html" in res_dl.headers.get("content-type", "")
-    assert "downloads.js?v=2" in res_dl.text
+    assert "downloads.js?v=3" in res_dl.text
     assert 'id="dlUrlsInput"' in res_dl.text
     assert 'id="dlPickerModal"' in res_dl.text
     assert 'id="dlBrowseBtn"' in res_dl.text

@@ -96,6 +96,8 @@
     thumbPollTimer: null,
     latestThumbData: null,
     latestAnimThumbData: null,
+    latestMetadataData: null,
+    latestThumbHashData: null,
     dupHashPollTimer: null,
     latestDupHashData: null,
     libBackupPollTimer: null,

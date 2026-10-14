@@ -3,7 +3,7 @@ import { showToast, escapeHtml, safeAttrEscape, formatBytes, formatDuration, get
 import { nameCollator, TILE_SCALES, TILE_SCALE_LABELS, TILE_SCALE_KEY, loadTileScale, SIDEBAR_TREE_KEY, loadExpandedFolders, persistExpandedFolders, persistAnimatedThumbs, state, els } from './state.js';
 import { initServiceWorker, getBrowserAnimCacheStats, clearBrowserAnimCache, precacheFolderAnimatedPreviews } from './service_worker.js';
 import { icon, hydrateIcons } from '../shared/icons.js';
-import { urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
+import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../shared/tasks_badge.js';
 
 
@@ -4478,6 +4478,12 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
           state.latestDupHashData = data.duplicate_hash;
           renderDuplicateHashStatus(data.duplicate_hash);
         }
+        if (data.metadata) {
+          state.latestMetadataData = data.metadata;
+        }
+        if (data.thumb_hash) {
+          state.latestThumbHashData = data.thumb_hash;
+        }
         if (data.webp) {
           state.latestWebpData = data.webp;
           renderWebpStatus(data.webp);
@@ -4547,21 +4553,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     const batchUnpackData = state.latestBatchUnpackData;
     const libOpsData = state.latestLibraryOpsData;
     const urlDlData = state.latestUrlDownloadsData;
-
-    const trActive = trData && (trData.active || (trData.queued && trData.queued.length > 0));
-    const libOpsActive = libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0));
-    const idxActive = idxData && idxData.status === 'crawling';
-    const tActive = tData && (tData.active || (tData.queued && tData.queued.length > 0));
-    const thActive = thData && thData.status === 'generating' && (thData.pending_count > 0);
-    const animActive = animData && ((animData.status === 'generating') || (animData.total_queued > 0) || Boolean(animData.active));
-    const wActive = wData && wData.status === 'converting' && (wData.pending_count > 0);
-    const bkActive = bkData && (bkData.status === 'backing_up' || bkData.status === 'restoring');
-    const zipActive = zipData && zipData.is_active;
-    const batchZipActive = batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'processing');
-    const batchUnpackActive = batchUnpackData && (batchUnpackData.status === 'running' || batchUnpackData.status === 'processing');
-    const urlDlActive = urlDlData && ((urlDlData.active_count || 0) > 0 || (urlDlData.queued_count || 0) > 0);
-
-    const isAnyActive = trActive || libOpsActive || idxActive || bkActive || tActive || thActive || animActive || wActive || zipActive || batchZipActive || batchUnpackActive || urlDlActive;
+    const metaData = state.latestMetadataData;
+    const hashData = state.latestThumbHashData;
 
     // Unified badge state shared by the desktop pill and the mobile header
     // one-tap tasks button (active+queued item count + descriptive tooltip).
@@ -4577,6 +4570,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       zip: zipData,
       batchZip: batchZipData,
       batchUnpack: batchUnpackData,
+      metadata: metaData,
+      thumbHash: hashData,
       urlDownloads: urlDlData,
       uploads: {
         active: uploadState.activeUploads || 0,
@@ -4632,7 +4627,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
 
     updateMobileControlsBadge();
 
-    // Update tab badges and empty state in tasks modal
+    // Update tab badges and empty state in tasks modal. The tab badge mirrors
+    // the same active+queued item count as the header pill, so a nonzero badge
+    // always has a matching row somewhere in the Active & Queues pane.
     const activeQueueCount = (trData && trData.active ? 1 : 0) +
       (trData && trData.queued ? trData.queued.length : 0) +
       (libOpsData && libOpsData.active ? 1 : 0) +
@@ -4641,6 +4638,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       (tData && tData.queued ? tData.queued.length : 0) +
       (animData && animData.active ? 1 : 0) +
       (animData && animData.queued ? animData.queued.length : 0) +
+      (uploadState.activeUploads || 0) +
+      uploadState.queue.filter((f) => f.status === 'pending').length +
       urlDownloadsActivityCount(urlDlData);
 
     const tabBadgeActive = document.getElementById('tabBadgeActive');
@@ -4659,8 +4658,14 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
 
     const tabBadgeWorkers = document.getElementById('tabBadgeWorkers');
     if (tabBadgeWorkers) {
-      const hData = state.latestHashData;
-      const isAnyWorkerActive = idxActive || thActive || animActive || wActive || (hData && (hData.status === 'checking' || (hData.pending_count > 0)));
+      const isAnyWorkerActive =
+        (idxData && idxData.status === 'crawling') ||
+        (thData && thData.status === 'generating' && thData.pending_count > 0) ||
+        (animData && (animData.status === 'generating' || animData.total_queued > 0)) ||
+        (wData && wData.status === 'converting' && wData.pending_count > 0) ||
+        (metaData && metaData.status === 'probing') ||
+        (hashData && (hashData.status === 'hashing' || hashData.status === 'migrating')) ||
+        (state.latestDupHashData && (state.latestDupHashData.status === 'hashing' || state.latestDupHashData.pending_count > 0));
       if (isAnyWorkerActive) {
         tabBadgeWorkers.textContent = 'Active';
         tabBadgeWorkers.className = 'px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono';
@@ -4670,6 +4675,54 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         tabBadgeWorkers.className = 'px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-mono';
         tabBadgeWorkers.classList.remove('hidden');
       }
+    }
+
+    updateZipTasksSummary();
+
+    // Footer status line reflects real activity instead of a static claim.
+    const globalStatusEl = document.getElementById('tasksModalGlobalStatus');
+    if (globalStatusEl) {
+      globalStatusEl.textContent = tasksSummary.active
+        ? `Active${tasksLabel ? ` · ${tasksLabel}` : ''}`
+        : 'System ready · All background services idle';
+    }
+  }
+
+  // Single owner of the "Active Archive Operations" summary so the ZIP task
+  // panel and the two batch runners cannot overwrite each other.
+  function updateZipTasksSummary() {
+    if (!els.zipTasksSummary) return;
+    const zipData = state.latestZipData;
+    const batchZipData = state.latestBatchZipData;
+    const batchUnpackData = state.latestBatchUnpackData;
+    const parts = [];
+    const activeZip = zipData && Array.isArray(zipData.tasks)
+      ? zipData.tasks.filter((t) => t.status === 'running').length
+      : 0;
+    if (activeZip > 0) parts.push(`${activeZip} active`);
+    if (batchZipData && (batchZipData.status === 'running' || batchZipData.status === 'paused')) {
+      parts.push(`Batch: ${batchZipData.current_index}/${batchZipData.total_folders}`);
+    }
+    if (batchUnpackData && (batchUnpackData.status === 'running' || batchUnpackData.status === 'paused')) {
+      parts.push(`Extract: ${batchUnpackData.current_index}/${batchUnpackData.total_zips}`);
+    }
+    els.zipTasksSummary.textContent = parts.length ? parts.join(' · ') : 'Idle';
+  }
+
+  // Non-MP4 count badge on the Tools card's "Batch Convert Videos to MP4"
+  // button. Refreshed when the Tools tab is opened (index-only summary query).
+  async function updateConvertAllBadge() {
+    const badge = document.getElementById('convertAllLibraryBadge');
+    if (!badge) return;
+    try {
+      const res = await fetch('/api/backup/transcode/summary');
+      if (!res.ok) return;
+      const data = await res.json();
+      const n = data.pending_count || 0;
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.classList.toggle('hidden', n === 0);
+    } catch (e) {
+      /* transient network hiccup; retried next time the tab opens */
     }
   }
 
@@ -4783,12 +4836,31 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     });
   }
 
-  // Mobile Controls & Settings sheet "Downloads" tab: form + full live job list.
-  // The desktop Background Tasks modal URL Downloads section was removed when
-  // the /downloads page became the canonical downloader surface, so this is the
-  // only in-library render left.
+  // URL download jobs render on two in-library surfaces: the desktop
+  // Background Tasks modal (Active & Queues) and the mobile Controls & Settings
+  // "Downloads" tab. The /downloads page remains the full management surface
+  // (history, retry, clear), so the modal shows only live/queued jobs + cancel.
   function renderUrlDownloadsStatus(data) {
     renderMobileUrlDownloadsStatus(data);
+    renderDesktopUrlDownloadsStatus(data);
+  }
+
+  function renderDesktopUrlDownloadsStatus(data) {
+    const section = document.getElementById('urlDownloadsSection');
+    const listEl = document.getElementById('urlDownloadsList');
+    if (!section || !listEl) return;
+    const count = urlDownloadsActivityCount(data);
+    section.classList.toggle('hidden', count === 0);
+    if (count === 0) {
+      listEl.innerHTML = '';
+      return;
+    }
+    const summaryEl = document.getElementById('urlDownloadsSummary');
+    if (summaryEl) summaryEl.textContent = urlDownloadsSummaryText(data);
+    listEl.innerHTML = [...((data && data.active) || []), ...((data && data.queued) || [])]
+      .map((item) => urlDownloadRowHtml(item, { retryable: false }))
+      .join('');
+    bindUrlDownloadCancelButtons(listEl);
   }
 
   function renderMobileUrlDownloadsStatus(data) {
@@ -4843,8 +4915,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     els.transcodeSummaryText.textContent = isPaused ? 'Paused' : (active ? 'Converting' : 'Idle');
     els.toggleTranscodePauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
     els.toggleTranscodePauseBtn.className = isPaused 
-      ? 'px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition'
-      : 'px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition';
+      ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer'
+      : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer';
 
     // Active task box
     if (active) {
@@ -4923,8 +4995,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (els.toggleThumbPauseBtn) {
       els.toggleThumbPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
       els.toggleThumbPauseBtn.className = isPaused 
-        ? 'px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition'
-        : 'px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition';
+        ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0'
+        : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0';
     }
 
     if (els.thumbCurrentFile) {
@@ -5152,8 +5224,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (els.toggleHashPauseBtn) {
       els.toggleHashPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
       els.toggleHashPauseBtn.className = isPaused 
-        ? 'px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition'
-        : 'px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition';
+        ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0'
+        : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0';
     }
 
     if (els.hashCurrentFile) {
@@ -5226,8 +5298,8 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
     if (els.toggleWebpPauseBtn) {
       els.toggleWebpPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
       els.toggleWebpPauseBtn.className = isPaused 
-        ? 'px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold transition'
-        : 'px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded text-[10px] font-semibold transition';
+        ? 'px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0'
+        : 'px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer shrink-0';
     }
 
     if (els.webpCurrentFile) {
@@ -5535,10 +5607,6 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
   function renderZipStatus(data) {
     if (!els.zipTasksList) return;
     const tasks = data.tasks || [];
-    const activeTasks = tasks.filter(t => t.status === 'running');
-    if (els.zipTasksSummary) {
-      els.zipTasksSummary.textContent = activeTasks.length > 0 ? `${activeTasks.length} active` : 'Idle';
-    }
 
     if (tasks.length === 0) {
       els.zipTasksList.innerHTML = `<div class="text-[10px] text-slate-500 italic">No active zip operations</div>`;
@@ -5953,11 +6021,6 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       if (els.batchZipStatusText) {
         els.batchZipStatusText.textContent = data.is_paused ? 'Paused' : (data.status === 'completed' ? 'Done' : 'Compressing...');
       }
-      if (els.zipTasksSummary) {
-        els.zipTasksSummary.textContent = isRunning 
-          ? `Batch: ${data.current_index}/${data.total_folders}`
-          : 'Idle';
-      }
     }
 
     // Detect batch completion transition
@@ -6236,11 +6299,6 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       }
       if (els.batchUnpackStatusText) {
         els.batchUnpackStatusText.textContent = data.is_paused ? 'Paused' : (data.status === 'completed' ? 'Done' : 'Extracting...');
-      }
-      if (els.zipTasksSummary) {
-        els.zipTasksSummary.textContent = isRunning
-          ? `Extract: ${data.current_index}/${data.total_zips}`
-          : 'Idle';
       }
     }
 
@@ -7267,9 +7325,9 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       const setTabStyle = (btn, isActive) => {
         if (!btn) return;
         if (isActive) {
-          btn.className = 'tasks-tab-btn py-2.5 px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer';
+          btn.className = 'tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-emerald-400 border-emerald-400 cursor-pointer shrink-0';
         } else {
-          btn.className = 'tasks-tab-btn py-2.5 px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer';
+          btn.className = 'tasks-tab-btn py-2.5 px-2.5 sm:px-3 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition text-slate-400 border-transparent hover:text-slate-200 cursor-pointer shrink-0';
         }
       };
 
@@ -7280,7 +7338,10 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
       if (paneActive) paneActive.classList.toggle('hidden', target !== 'active');
       if (paneWorkers) paneWorkers.classList.toggle('hidden', target !== 'workers');
       if (paneTools) paneTools.classList.toggle('hidden', target !== 'tools');
-      if (target === 'tools') updateBrowserCacheBadge();
+      if (target === 'tools') {
+        updateBrowserCacheBadge();
+        updateConvertAllBadge();
+      }
     };
     window.switchTasksTab = switchTasksTab;
 
@@ -7295,9 +7356,15 @@ import { computeTaskSummary, formatTaskCount, describePrimaryTask } from '../sha
         const trData = state.latestTransferData;
         const libOpsData = state.latestLibraryOpsData;
         const tData = state.latestTranscodeData;
+        const animData = state.latestAnimThumbData;
+        const urlDlData = state.latestUrlDownloadsData;
         const hasActiveQueues = (trData && (trData.active || (trData.queued && trData.queued.length > 0))) ||
           (libOpsData && (libOpsData.active || (libOpsData.queued && libOpsData.queued.length > 0))) ||
-          (tData && (tData.active || (tData.queued && tData.queued.length > 0)));
+          (tData && (tData.active || (tData.queued && tData.queued.length > 0))) ||
+          (animData && (animData.active || (animData.queued && animData.queued.length > 0))) ||
+          urlDownloadsActivityCount(urlDlData) > 0 ||
+          (uploadState.activeUploads || 0) > 0 ||
+          uploadState.queue.some((f) => f.status === 'pending');
 
         if (hasActiveQueues) {
           switchTasksTab('active');

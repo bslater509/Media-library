@@ -134,6 +134,20 @@
           </div>
         </div>
 
+        <!-- Section 0c: URL Downloads -->
+        <div id="urlDownloadsSection" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+              <span data-lb-icon="download" data-lb-icon-class="w-3.5 h-3.5"></span> URL Downloads
+            </h4>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span id="urlDownloadsSummary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+              <a href="/downloads" class="text-[10px] text-emerald-400 hover:text-emerald-300 hover:underline transition">Open page →</a>
+            </div>
+          </div>
+          <div id="urlDownloadsList" class="ml-flatten flex flex-col gap-1.5"></div>
+        </div>
+
         <!-- Section 1: Auto-MP4 Pre-Transcoding -->
         <div id="activeTranscodeSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
           <div class="flex items-center justify-between gap-2">

@@ -62,6 +62,7 @@ const state = {
   pickerPath: '',
   pickerIsRoot: true,
   submitting: false,
+  lastLiveCount: 0,    // active+queued count at the previous poll
 };
 
 // ---------------------------------------------------------------- target
@@ -202,14 +203,41 @@ async function pollStatus() {
     const res = await fetch('/api/backup/upload/url/status');
     const j = await res.json();
     if (res.ok) {
+      const liveCount = (j.active_count || 0) + (j.queued_count || 0);
+      const dropped = liveCount < state.lastLiveCount;
       state.status = j;
       renderToolsStatus(j.tools);
+      // A job that just finished is no longer live and is only in the status
+      // payload's short history tail — fold it in so it never vanishes from the
+      // list before the next explicit page fetch.
+      mergeStatusHistory(j.history);
       renderJobs();
       renderLoadMore();
+      if (dropped) {
+        // Keep the total and older pages accurate as jobs complete.
+        fetchHistory();
+      }
+      state.lastLiveCount = liveCount;
     }
   } catch (err) {
     /* transient network hiccup; keep the last known state */
   }
+}
+
+/**
+ * Merge the status payload's recent finished jobs into the paged history list.
+ * `history` arrives oldest -> newest (the worker slices the tail); rows render
+ * newest first, so unseen entries are reversed and prepended. Returns true when
+ * anything new was added.
+ */
+function mergeStatusHistory(history) {
+  if (!Array.isArray(history) || !history.length) return false;
+  const known = new Set(state.historyRows.map(r => r.id));
+  const incoming = history.filter(r => r.id && !known.has(r.id));
+  if (!incoming.length) return false;
+  state.historyRows = incoming.slice().reverse().concat(state.historyRows);
+  state.historyLoaded = true;
+  return true;
 }
 
 // ---------------------------------------------------------------- actions
