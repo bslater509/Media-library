@@ -74,7 +74,12 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(url_dl_mod, "UPLOAD_STAGING_DIR", upload_staging)
 
     monkeypatch.setattr(state_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
-    monkeypatch.setattr(indexer_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
+    # The indexer is split into submodules that each bind the config values at
+    # import time, so patch every module that holds a copy.
+    for _mod_name in ("indexer", "indexer_scan", "indexer_files", "indexer_prune", "indexer_crawl"):
+        _mod = importlib.import_module(f"media_library.db.{_mod_name}")
+        if hasattr(_mod, "THUMBNAIL_CACHE_DIR"):
+            monkeypatch.setattr(_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     monkeypatch.setattr(zip_mod.core, "ZIP_CACHE_DIR", zip_cache)
     monkeypatch.setattr(zip_mod.core, "ZIP_STAGING_DIR", zip_staging)
     monkeypatch.setattr(zip_mod.core, "THUMBNAIL_CACHE_DIR", thumb_dir)

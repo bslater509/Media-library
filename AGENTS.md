@@ -174,7 +174,12 @@ media-library/
 │   │   ├── __init__.py
 │   │   ├── connection.py            # SQLite connection factory with WAL PRAGMAs
 │   │   ├── schema.py                # Schema tables, indexes, idempotent migrations
-│   │   └── indexer.py               # Filesystem crawler, folder indexing, index pruning
+│   │   └── indexer.py               # Indexer facade: re-exports the modules below
+│   │   ├── indexer_state.py         # Shared indexer_state dict + asyncio lock
+│   │   ├── indexer_scan.py          # Folder/entry scanning, ZIP archives, index_folder
+│   │   ├── indexer_files.py         # Per-file index mutations (add/update/move/remove)
+│   │   ├── indexer_prune.py         # Pruning, health reconciliation, deep clean
+│   │   └── indexer_crawl.py         # Background crawler loop
 │   │
 │   ├── routers/                     # FastAPI route modules
 │   │   ├── __init__.py              # Export of all_routers list
