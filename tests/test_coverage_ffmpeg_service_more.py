@@ -21,6 +21,7 @@ import pytest
 from PIL import Image
 
 import media_library.services.ffmpeg_service as ffmpeg
+import media_library.services.ffmpeg_frames as ffmpeg_frames
 from media_library.db.connection import db_conn
 
 _REAL_PATH_STAT = Path.stat
@@ -474,7 +475,7 @@ async def test_generate_animated_preview_builds_animation(sandbox_env, monkeypat
     async def fake_frame(path, timestamp=0.0):
         return frames.get(round(timestamp, 1))
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", fake_frame)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", fake_frame)
 
     anim = await ffmpeg.generate_animated_preview(str(video))
     assert anim is not None and anim.exists()
@@ -507,7 +508,7 @@ async def test_generate_animated_preview_single_and_identical_frames(
         calls["n"] += 1
         return only if calls["n"] == 1 else None
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", one_frame)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", one_frame)
     anim = await ffmpeg.generate_animated_preview(str(video))
     assert anim is not None
     with Image.open(anim) as img:
@@ -522,7 +523,7 @@ async def test_generate_animated_preview_single_and_identical_frames(
     async def same_frames(path, timestamp=0.0):
         return only
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", same_frames)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", same_frames)
     anim2 = await ffmpeg.generate_animated_preview(str(media2))
     assert anim2 is not None
     with Image.open(anim2) as img:
@@ -546,8 +547,8 @@ async def test_generate_animated_preview_static_fallback_and_failures(
     async def fake_thumb(path, is_video=True, **kwargs):
         return static
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", no_frames)
-    monkeypatch.setattr(ffmpeg, "generate_thumbnail", fake_thumb)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", no_frames)
+    monkeypatch.setattr(ffmpeg_frames, "generate_thumbnail", fake_thumb)
 
     anim = await ffmpeg.generate_animated_preview(str(video))
     assert anim is not None
@@ -560,7 +561,7 @@ async def test_generate_animated_preview_static_fallback_and_failures(
 
     media2 = media / "anim_none.mp4"
     media2.write_bytes(b"\x00" * 8)
-    monkeypatch.setattr(ffmpeg, "generate_thumbnail", no_thumb)
+    monkeypatch.setattr(ffmpeg_frames, "generate_thumbnail", no_thumb)
     assert await ffmpeg.generate_animated_preview(str(media2)) is None
 
 
@@ -577,7 +578,7 @@ async def test_generate_animated_preview_long_video_sampling(sandbox_env, monkey
         stamps.append(timestamp)
         return _write_jpeg(media / f"long_{len(stamps)}.jpg", "red", (480, 270))
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", record)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", record)
 
     anim = await ffmpeg.generate_animated_preview(str(video), max_frames=3)
     assert anim is not None
@@ -604,7 +605,7 @@ async def test_generate_animated_preview_resolves_zip_members(api_client, monkey
     async def one_frame(path, timestamp=0.0):
         return _write_jpeg(dest / "zip_frame.jpg", "green", (480, 270))
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", one_frame)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", one_frame)
 
     anim = await ffmpeg.generate_animated_preview(f"{zip_path}/member.mp4")
     assert anim is not None and anim.exists()
@@ -624,7 +625,7 @@ async def test_generate_animated_preview_propagates_failures(sandbox_env, monkey
     async def boom(path, timestamp=0.0):
         raise RuntimeError("frame extraction exploded")
 
-    monkeypatch.setattr(ffmpeg, "extract_candidate_frame", boom)
+    monkeypatch.setattr(ffmpeg_frames, "extract_candidate_frame", boom)
     assert await ffmpeg.generate_animated_preview(str(video)) is None
 
 

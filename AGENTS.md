@@ -203,7 +203,11 @@ media-library/
 │   │   ├── upload_service.py        # Chunked upload staging and FUSE-safe atomic moves
 │   │   ├── library_query.py         # Index-only row→dict shaping for library browsing
 │   │   ├── status.py                # Shared worker/index/transfer/ZIP status payload builders
-│   │   ├── ffmpeg_service.py        # FFmpeg/FFprobe poster extraction, WebP conversion
+│   │   ├── ffmpeg_service.py        # FFmpeg facade: re-exports the helpers below + WebP conversion
+│   │   ├── ffmpeg_probe.py          # FFprobe metadata (dimensions, codecs, duration, capture time)
+│   │   ├── ffmpeg_transcode.py      # Live transcode command build + stdout relay
+│   │   ├── ffmpeg_posters.py        # Poster frame extraction / thumbnail generation
+│   │   ├── ffmpeg_frames.py         # Candidate frames + animated WebP preview generation
 │   │   ├── deduplication_service.py # Quick-hash, pHash/dHash, duplicate resolution
 │   │   ├── backup_service.py        # SQLite live backup, thumbnail tar bundling, auto-restore
 │   │   └── zip/                     # ZIP operations package
