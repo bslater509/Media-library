@@ -174,12 +174,12 @@ media-library/
 │   │   ├── __init__.py
 │   │   ├── connection.py            # SQLite connection factory with WAL PRAGMAs
 │   │   ├── schema.py                # Schema tables, indexes, idempotent migrations
-│   │   └── indexer.py               # Indexer facade: re-exports the modules below
 │   │   ├── indexer_state.py         # Shared indexer_state dict + asyncio lock
 │   │   ├── indexer_scan.py          # Folder/entry scanning, ZIP archives, index_folder
 │   │   ├── indexer_files.py         # Per-file index mutations (add/update/move/remove)
 │   │   ├── indexer_prune.py         # Pruning, health reconciliation, deep clean
-│   │   └── indexer_crawl.py         # Background crawler loop
+│   │   ├── indexer_crawl.py         # Background crawler loop
+│   │   └── indexer.py               # Indexer facade: re-exports the modules above
 │   │
 │   ├── routers/                     # FastAPI route modules
 │   │   ├── __init__.py              # Export of all_routers list
@@ -213,7 +213,11 @@ media-library/
 │   │   ├── ffmpeg_transcode.py      # Live transcode command build + stdout relay
 │   │   ├── ffmpeg_posters.py        # Poster frame extraction / thumbnail generation
 │   │   ├── ffmpeg_frames.py         # Candidate frames + animated WebP preview generation
-│   │   ├── deduplication_service.py # Quick-hash, pHash/dHash, duplicate resolution
+│   │   ├── deduplication_service.py # Dedup facade: re-exports the modules below
+│   │   ├── dedup_common.py          # Quick-hash, pHash/dHash, pair normalisation, scoring
+│   │   ├── dedup_visual.py          # Visual (pHash) clustering and group filtering
+│   │   ├── dedup_backup.py          # Backup duplicate listing
+│   │   ├── dedup_resolve.py         # Resolve groups / autodelete verified duplicates
 │   │   ├── backup_service.py        # SQLite live backup, thumbnail tar bundling, auto-restore
 │   │   └── zip/                     # ZIP operations package
 │   │       ├── core.py              # ZIP metadata & utilities
