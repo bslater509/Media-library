@@ -93,7 +93,7 @@ function openFancybox(startIndex) {
     const durLabel = isVid && f.duration ? formatDuration(f.duration) : '';
     const dirLabel = parentDirectoryOf(f.path);
     const dirName = dirLabel.split('/').filter(Boolean).pop() || dirLabel;
-    return {
+    const item = {
       src: f.media_url,
       thumb: f.thumb_url,
       type: isVid ? 'html5video' : 'image',
@@ -159,6 +159,13 @@ function openFancybox(startIndex) {
         file: f,
       }
     };
+    // Fancybox sizes a video slide from its own `videoRatio` and falls back to
+    // 16:9, which letterboxes portrait clips. Use the probed dimensions so each
+    // clip is framed at its real shape (unprobed files keep the 16:9 default).
+    if (isVid && f.width && f.height) {
+      item.videoRatio = f.width / f.height;
+    }
+    return item;
   });
 
   Fancybox.show(items, {

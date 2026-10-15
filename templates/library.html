@@ -54,6 +54,17 @@
       width: auto !important;
       padding: 0 !important;
     }
+    /* Fancybox boxes every video slide at a fixed 16:9 (capped at 960x540), so
+       portrait clips get letterboxed and a large display stays mostly empty.
+       Measuring the content box against the whole slide instead lets Fancybox
+       size the video to its own `videoRatio` (set per item from the probed
+       dimensions in openFancybox) and use all the room the slide offers. */
+    .fancybox__slide.has-html5video .fancybox__content {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+    }
 
     .lb-meta {
       display: flex;
@@ -776,7 +787,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=72"></script>
+  <script type="module" src="/static/dist/library.js?v=73"></script>
   {{include 'partials/library_modals_media.html'}}
   {{include 'partials/library_modals_bulk.html'}}
   {{include 'partials/library_modals_manage.html'}}
