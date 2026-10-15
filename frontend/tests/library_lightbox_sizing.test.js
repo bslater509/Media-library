@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { state } from '../src/library/state.js';
 import { openFancybox } from '../src/library/lightbox.js';
+
+const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../templates');
 
 // Fancybox frames a video slide at the item's own `videoRatio` and falls back to
 // 16/9, which letterboxes portrait clips. The library therefore forwards the
@@ -45,5 +50,24 @@ describe('lightbox video sizing', () => {
 
     // Images are not touched by the video sizing path.
     expect(items[2].videoRatio).toBeUndefined();
+  });
+
+  // The two CSS halves of the same fix live in the page markup: the content box
+  // measures against the whole slide (instead of Fancybox's 960x540 16:9 box)
+  // and the bottom control bar gets its own band reserved inside video slides so
+  // the picture never runs underneath it.
+  it('keeps the video sizing and caption bar band rules in the page markup', () => {
+    const css = fs.readFileSync(path.join(templatesDir, 'library.html'), 'utf8');
+    const block = (selector) => {
+      const i = css.indexOf(selector);
+      return i === -1 ? '' : css.slice(i, css.indexOf('}', i));
+    };
+
+    const content = block('.fancybox__slide.has-html5video .fancybox__content');
+    expect(content).toContain('width: 100%');
+    expect(content).toContain('height: 100%');
+
+    const slide = block('.fancybox__slide.has-html5video {');
+    expect(slide).toContain('padding-bottom');
   });
 });

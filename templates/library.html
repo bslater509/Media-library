@@ -65,6 +65,19 @@
       max-width: 100%;
       max-height: 100%;
     }
+    /* The caption bar overlays the bottom of the slide, which used to only ever
+       land on the black matte around a small 16:9 box. Now that a clip fills the
+       stage, reserve the bar's own band inside the slide so the picture never
+       runs underneath it: the bar (≈46px desktop, ≈75-110px phones once the
+       action row wraps) plus its bottom margin from `.lb-meta.is-video`. */
+    .fancybox__slide.has-html5video {
+      padding-bottom: 6.5rem;
+    }
+    @media (max-width: 767px) {
+      .fancybox__slide.has-html5video {
+        padding-bottom: 9rem;
+      }
+    }
 
     .lb-meta {
       display: flex;
