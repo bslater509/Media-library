@@ -11,12 +11,12 @@ import { updateMobileControlsBadge } from './theme.js';
 // Gallery filtering, media card rendering and infinite scroll.
 // Extracted from the former monolithic library index.js.
 
-// Favourite star button classes. The star stays visible at rest (not just on
-// hover) so it is discoverable and tappable on touch devices, where
-// `group-hover` never fires.
-const FAV_BTN_BASE = 'card-fav-btn p-1.5 rounded-lg backdrop-blur-md transition-all active:scale-90';
-const FAV_BTN_ON = 'bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow opacity-100';
-const FAV_BTN_OFF = 'bg-slate-900/70 text-slate-400 hover:text-white border border-slate-700/70 opacity-80 group-hover:opacity-100 focus:opacity-100';
+// Favourite star button classes. The star lives in the card footer next to the
+// metadata pills and stays visible at rest (not just on hover) so it is
+// discoverable and tappable on touch devices, where `group-hover` never fires.
+const FAV_BTN_BASE = 'card-fav-btn shrink-0 p-1 rounded-md transition-all active:scale-90';
+const FAV_BTN_ON = 'text-amber-300 bg-amber-500/20 border border-amber-500/40';
+const FAV_BTN_OFF = 'text-slate-400 hover:text-white border border-slate-700/70 opacity-70 group-hover:opacity-100 hover:opacity-100 focus:opacity-100';
 
 // Apply Type Filter, Sort and Search
 function applyFiltersAndSort() {
@@ -309,17 +309,8 @@ function renderCards(start, count) {
           <span>⚙️</span> Queued
         </div>
 
-        <!-- Quick Action Buttons on Hover & Favorite Star -->
+        <!-- Quick Action Buttons on Hover -->
         <div class="absolute top-2 right-2 flex items-center gap-1 z-20">
-          <button 
-            type="button" 
-            data-action="favorite" 
-            data-idx="${globalIdx}" 
-            title="${file.is_favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'}" 
-            class="${FAV_BTN_BASE} ${file.is_favorite ? FAV_BTN_ON : FAV_BTN_OFF}"
-          >
-            <svg class="w-3.5 h-3.5 ${file.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}" fill="${file.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-          </button>
           <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <button 
               type="button"
@@ -377,14 +368,24 @@ function renderCards(start, count) {
             ${file.name}
           </span>
         </div>
-        <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono gap-1">
+        <div class="flex items-center text-[10px] text-slate-400 font-mono gap-1.5">
+          <button 
+            type="button" 
+            data-action="favorite" 
+            data-idx="${globalIdx}" 
+            title="${file.is_favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'}" 
+            aria-label="${file.is_favorite ? 'Remove from favorites' : 'Add to favorites'}"
+            class="${FAV_BTN_BASE} ${file.is_favorite ? FAV_BTN_ON : FAV_BTN_OFF}"
+          >
+            <svg class="w-3 h-3 ${file.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}" fill="${file.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          </button>
           <span class="card-filesize truncate whitespace-nowrap min-w-0">${file.size_formatted}</span>
           ${dimsLabel ? `
             <span class="text-slate-400 text-[9px] truncate" title="${dimsLabel} px">
               ${dimsLabel}
             </span>
           ` : ''}
-          <span class="shrink-0 text-[9px] uppercase px-1 rounded ${isVid ? 'text-emerald-400 bg-emerald-950/60' : 'text-slate-400 bg-slate-800'}">
+          <span class="shrink-0 ml-auto text-[9px] uppercase px-1 rounded ${isVid ? 'text-emerald-400 bg-emerald-950/60' : 'text-slate-400 bg-slate-800'}">
             ${file.type}
           </span>
         </div>
@@ -634,7 +635,7 @@ async function toggleFavorite(path, cardEl = null) {
         const svg = favBtn.querySelector('svg');
         if (svg) {
           svg.setAttribute('fill', isFav ? 'currentColor' : 'none');
-          svg.className = `w-3.5 h-3.5 ${isFav ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`;
+          svg.className = `w-3 h-3 ${isFav ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`;
         }
       }
     }
