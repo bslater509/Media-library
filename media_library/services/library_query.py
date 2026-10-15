@@ -58,14 +58,38 @@ def _build_file_entry(r: Any) -> dict[str, Any]:
         "thumb_url": f"/api/backup/thumbnail{thumb_query}",
         "animated_url": f"/api/backup/thumbnails/animated?path={urllib.parse.quote(fpath)}{f'&v={v_tag}' if v_tag is not None else ''}" if is_vid else None,
         "media_url": media_url,
+        "is_favorite": bool(r["is_favorite"]) if ("is_favorite" in r.keys() and r["is_favorite"]) else False,
+        "folder_path": r["folder_path"] if "folder_path" in r.keys() else os.path.dirname(fpath),
     }
 
 
 def _read_indexed_files(conn, folder_path: str) -> list[dict[str, Any]]:
     cur = conn.execute(
-        "SELECT * FROM files WHERE folder_path = ? ORDER BY LOWER(name) ASC",
+        """
+        SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END AS is_favorite
+        FROM files f
+        LEFT JOIN favorites fav ON f.path = fav.path
+        WHERE f.folder_path = ?
+        ORDER BY LOWER(f.name) ASC
+        """,
         (folder_path,),
     )
+    return [_build_file_entry(r) for r in cur.fetchall()]
+
+
+def read_indexed_favorites(conn, media_type: str | None = None) -> list[dict[str, Any]]:
+    """Returns all favorited files in the library, sorted by favorited timestamp descending."""
+    sql = """
+    SELECT f.*, 1 AS is_favorite
+    FROM files f
+    JOIN favorites fav ON f.path = fav.path
+    """
+    params: list[Any] = []
+    if media_type and media_type in ("video", "image"):
+        sql += " WHERE f.type = ?"
+        params.append(media_type)
+    sql += " ORDER BY fav.created_at DESC"
+    cur = conn.execute(sql, params)
     return [_build_file_entry(r) for r in cur.fetchall()]
 
 

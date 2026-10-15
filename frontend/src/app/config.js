@@ -1,6 +1,6 @@
 import { browseDirectory } from './browser.js';
 import { checkCurrentVideoDuplicate, hideDuplicateBanner } from './duplicates.js';
-import { currentSourceDisplay, currentVideoIndex, currentVideoSize, currentVideoTitle, destPathDisplay, emptyVideoState, folderSearchInput, lanIpBadge, preloadVideoPlayer, primaryMoveBtn, queueCountBadge, streamTypeBadge, toggleStreamModeBtn, videoPlayer } from './elements.js';
+import { currentSourceDisplay, currentVideoIndex, currentVideoSize, currentVideoTitle, destPathDisplay, emptyVideoState, favoriteBtn, favoriteHeaderBtn, favoriteHeaderIcon, favoriteToolbarIcon, favoriteToolbarText, folderSearchInput, lanIpBadge, mobileFavoriteBtn, mobileFavoriteIcon, preloadVideoPlayer, primaryMoveBtn, queueCountBadge, streamTypeBadge, toggleStreamModeBtn, videoPlayer } from './elements.js';
 import { filterFolders, renderRecentFolders, updatePrimaryMoveBtn } from './folders.js';
 import { updateCurrentVideoTranscodeBadge } from './polling.js';
 import { showToast, state, updateUndoState } from './state.js';
@@ -8,6 +8,35 @@ import { loadVideoSource, preloadNextVideo } from './video.js';
 
 // Config, destinations and the incoming queue.
 // Split out of the former monolithic sorter index.js.
+
+function syncFavoriteUI(video) {
+  const isFav = video ? Boolean(video.is_favorite) : false;
+  if (favoriteHeaderBtn) {
+    favoriteHeaderBtn.title = isFav ? "Remove Favorite (B)" : "Add Favorite (B)";
+    if (favoriteHeaderIcon) {
+      favoriteHeaderIcon.textContent = isFav ? "⭐" : "☆";
+      favoriteHeaderIcon.className = isFav ? "text-xs sm:text-sm text-amber-400" : "text-xs sm:text-sm text-slate-400";
+    }
+  }
+  if (favoriteBtn) {
+    favoriteBtn.title = isFav ? "Remove Favorite (B)" : "Favorite (B)";
+    if (favoriteToolbarIcon) {
+      favoriteToolbarIcon.textContent = isFav ? "⭐" : "☆";
+      favoriteToolbarIcon.className = isFav ? "text-sm text-amber-400" : "text-sm text-slate-400";
+    }
+    if (favoriteToolbarText) {
+      favoriteToolbarText.textContent = isFav ? "Starred (B)" : "Favorite (B)";
+      favoriteToolbarText.className = isFav ? "text-amber-400 font-semibold" : "";
+    }
+  }
+  if (mobileFavoriteBtn) {
+    mobileFavoriteBtn.title = isFav ? "Remove Favorite (B)" : "Favorite (B)";
+    if (mobileFavoriteIcon) {
+      mobileFavoriteIcon.textContent = isFav ? "⭐" : "☆";
+      mobileFavoriteIcon.className = isFav ? "text-xs text-amber-400" : "text-xs text-slate-400";
+    }
+  }
+}
 
 async function loadConfig() {
 try {
@@ -88,6 +117,7 @@ if (!video) {
   toggleStreamModeBtn.classList.add("hidden");
   primaryMoveBtn.disabled = true;
   hideDuplicateBanner();
+  syncFavoriteUI(null);
   return;
 }
 
@@ -100,6 +130,7 @@ const isDirectCapable = !video.needs_transcode;
 loadVideoSource(video, isDirectCapable);
 updatePrimaryMoveBtn();
 updateCurrentVideoTranscodeBadge();
+syncFavoriteUI(video);
 
 // Instant Next Video Preloading
 preloadNextVideo();
@@ -133,4 +164,4 @@ try {
 }
 }
 
-export { currentVideo, loadConfig, loadDestinations, loadQuickNav, refreshQueue, updateUI };
+export { currentVideo, loadConfig, loadDestinations, loadQuickNav, refreshQueue, syncFavoriteUI, updateUI };

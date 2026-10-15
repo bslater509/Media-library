@@ -185,4 +185,13 @@ def init_backup_db(custom_path: str | Path | None = None):
             value TEXT
         )""")
 
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            path TEXT PRIMARY KEY,
+            created_at REAL NOT NULL
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON favorites(created_at DESC)"
+        )
+
         conn.commit()

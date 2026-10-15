@@ -402,7 +402,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m12 14 4-4" />
   <path d="M3.34 19a10 10 0 1 1 17.32 0" />
 </svg>
-`,rn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-globe"
   xmlns="http://www.w3.org/2000/svg"
@@ -419,7 +419,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
   <path d="M2 12h20" />
 </svg>
-`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,rn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-hard-drive"
   xmlns="http://www.w3.org/2000/svg"
@@ -555,7 +555,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M20 13v3.87a2.06 2.06 0 0 1-1.11 1.83l-6 3.08a1.93 1.93 0 0 1-1.78 0l-6-3.08A2.06 2.06 0 0 1 4 16.87V13" />
   <path d="M21 12.43a1.93 1.93 0 0 0 0-3.36L8.83 2.2a1.64 1.64 0 0 0-1.63 0L3 4.57a1.93 1.93 0 0 0 0 3.36l12.18 6.86a1.636 1.636 0 0 0 1.63 0z" />
 </svg>
-`,pn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,vn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-palette"
   xmlns="http://www.w3.org/2000/svg"
@@ -574,7 +574,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
   <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
 </svg>
-`,vn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,pn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-pencil"
   xmlns="http://www.w3.org/2000/svg"
@@ -717,6 +717,21 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M22 4h-4" />
   <circle cx="4" cy="20" r="2" />
 </svg>
+`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-star"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
+</svg>
 `,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-trash-2"
@@ -736,7 +751,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 6h18" />
   <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 </svg>
-`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,In=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-upload"
   xmlns="http://www.w3.org/2000/svg"
@@ -753,7 +768,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m17 8-5-5-5 5" />
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 </svg>
-`,In=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Bn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-video"
   xmlns="http://www.w3.org/2000/svg"
@@ -769,7 +784,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
   <rect x="2" y="6" width="14" height="12" rx="2" />
 </svg>
-`,Bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-wrench"
   xmlns="http://www.w3.org/2000/svg"
@@ -784,7 +799,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
 </svg>
-`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -800,7 +815,7 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M18 6 6 18" />
   <path d="m6 6 12 12" />
 </svg>
-`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,An=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-zap"
   xmlns="http://www.w3.org/2000/svg"
@@ -815,4 +830,4 @@ const q=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z" />
 </svg>
-`,An=Object.freeze({archive:q,"arrow-right-left":_,ban:T,camera:Z,check:D,"circle-check":N,"circle-x":U,clapperboard:E,clock:O,cog:P,copy:R,database:Q,download:W,"file-archive":X,"file-up":F,"file-video":G,film:K,folder:J,"folder-input":Y,"folder-plus":nn,"folder-tree":en,"folder-up":tn,gauge:sn,globe:rn,"hard-drive":on,image:cn,images:ln,info:an,link:dn,"loader-circle":hn,monitor:un,"package-open":wn,palette:pn,pencil:vn,"refresh-cw":gn,"repeat-2":kn,rocket:xn,search:fn,settings:mn,"sliders-horizontal":Mn,sparkles:Cn,"trash-2":yn,upload:Sn,video:In,wrench:Bn,x:jn,zap:bn}),V="lb-icon";function $n(t,e=V){const s=An[t];return s?s.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function Ln(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(s=>{const c=$n(s.dataset.lbIcon,s.dataset.lbIconClass||V);c&&(s.innerHTML=c,e+=1)}),e}const z=99,Hn={move:"Moving",delete:"Deleting",rename:"Renaming"},M=new Set(["running","processing"]);function zn(t){const e=Number(t)||0;return e<=0?"":e>z?`${z}+`:String(e)}function l(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Vn(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,m=e?(e.active?1:0)+l(e):0,n=s?(s.active?1:0)+l(s):0,r=c?(c.active?1:0)+l(c):0,d=o?Number(o.total_queued)||0||(o.active?1:0)+l(o):0,C=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,y=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,S=p&&p.status==="crawling"?1:0,I=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,B=g&&g.is_active?1:0,j=k&&M.has(k.status)?1:0,b=x&&M.has(x.status)?1:0,A=f&&f.status==="probing"?1:0,$=w&&(w.status==="hashing"||w.status==="migrating")?1:0,H=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,L=v?(v.active||0)+(v.queued||0):0;return{count:m+n+r+d+C+y+S+I+B+j+b+A+$+H+L,active:m+n+r+d+C+y+S+I+B+j+b+A+$+H+L>0}}function qn(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:o,thumbnails:h,webp:u,index:p,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:v,metadata:f,thumbHash:w}=t,m=n=>n&&(n.active||l(n)>0);if(m(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${l(e)} transfer${l(e)>1?"s":""}`}if(m(s)){const n=s.active,r=l(s),d=n?Hn[n.op]||"Working":"Queued";return n?`${d}${r?` +${r}`:""}`:`${r} op${r>1?"s":""}`}if(p&&p.status==="crawling")return`Indexing ${typeof p.percent=="number"?Math.round(p.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(m(c)){const n=c.active,r=l(c);return n?`${Math.round(n.percent||0)}% (${r+1})`:`${r} queued`}if(o&&(o.active||(o.total_queued||0)>0)){const n=Math.round(o.percent||0);return o.active?`Anim ${n}%`:`${o.total_queued||l(o)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(f&&f.status==="probing")return`Probing ${Math.round(f.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(k&&M.has(k.status))return`Batch Zip ${Math.round(k.percent||0)}%`;if(x&&M.has(x.status))return`Extract ${Math.round(x.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,r=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${r?` +${r}`:""}`}if(g&&g.is_active){const n=(g.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:v&&(v.active||0)>0?`Uploading ${Math.round(v.percent||0)}%`:""}export{Vn as c,qn as d,zn as f,Ln as h,$n as i};
+`,$n=Object.freeze({archive:q,"arrow-right-left":_,ban:T,camera:Z,check:D,"circle-check":N,"circle-x":U,clapperboard:E,clock:O,cog:P,copy:R,database:Q,download:W,"file-archive":X,"file-up":F,"file-video":G,film:K,folder:J,"folder-input":Y,"folder-plus":nn,"folder-tree":en,"folder-up":tn,gauge:sn,globe:on,"hard-drive":rn,image:cn,images:ln,info:an,link:dn,"loader-circle":hn,monitor:un,"package-open":wn,palette:vn,pencil:pn,"refresh-cw":gn,"repeat-2":kn,rocket:xn,search:fn,settings:mn,"sliders-horizontal":Mn,sparkles:Cn,star:Sn,"trash-2":yn,upload:In,video:Bn,wrench:jn,x:bn,zap:An}),V="lb-icon";function Ln(t,e=V){const s=$n[t];return s?s.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function zn(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(s=>{const c=Ln(s.dataset.lbIcon,s.dataset.lbIconClass||V);c&&(s.innerHTML=c,e+=1)}),e}const z=99,Hn={move:"Moving",delete:"Deleting",rename:"Renaming"},M=new Set(["running","processing"]);function Vn(t){const e=Number(t)||0;return e<=0?"":e>z?`${z}+`:String(e)}function l(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function qn(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:r,thumbnails:h,webp:u,index:v,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:p,metadata:f,thumbHash:w}=t,m=e?(e.active?1:0)+l(e):0,n=s?(s.active?1:0)+l(s):0,o=c?(c.active?1:0)+l(c):0,d=r?Number(r.total_queued)||0||(r.active?1:0)+l(r):0,C=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,S=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,y=v&&v.status==="crawling"?1:0,I=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,B=g&&g.is_active?1:0,j=k&&M.has(k.status)?1:0,b=x&&M.has(x.status)?1:0,A=f&&f.status==="probing"?1:0,$=w&&(w.status==="hashing"||w.status==="migrating")?1:0,L=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,H=p?(p.active||0)+(p.queued||0):0;return{count:m+n+o+d+C+S+y+I+B+j+b+A+$+L+H,active:m+n+o+d+C+S+y+I+B+j+b+A+$+L+H>0}}function _n(t={}){const{transfers:e,libraryOps:s,transcode:c,animated:r,thumbnails:h,webp:u,index:v,backup:a,zip:g,batchZip:k,batchUnpack:x,urlDownloads:i,uploads:p,metadata:f,thumbHash:w}=t,m=n=>n&&(n.active||l(n)>0);if(m(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${l(e)} transfer${l(e)>1?"s":""}`}if(m(s)){const n=s.active,o=l(s),d=n?Hn[n.op]||"Working":"Queued";return n?`${d}${o?` +${o}`:""}`:`${o} op${o>1?"s":""}`}if(v&&v.status==="crawling")return`Indexing ${typeof v.percent=="number"?Math.round(v.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(m(c)){const n=c.active,o=l(c);return n?`${Math.round(n.percent||0)}% (${o+1})`:`${o} queued`}if(r&&(r.active||(r.total_queued||0)>0)){const n=Math.round(r.percent||0);return r.active?`Anim ${n}%`:`${r.total_queued||l(r)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(f&&f.status==="probing")return`Probing ${Math.round(f.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(k&&M.has(k.status))return`Batch Zip ${Math.round(k.percent||0)}%`;if(x&&M.has(x.status))return`Extract ${Math.round(x.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,o=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${o?` +${o}`:""}`}if(g&&g.is_active){const n=(g.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:p&&(p.active||0)>0?`Uploading ${Math.round(p.percent||0)}%`:""}export{qn as c,_n as d,Vn as f,zn as h,Ln as i};

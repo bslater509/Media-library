@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 class MoveRequest(BaseModel):
     file_id: str
     destination_folder: str
+    is_favorite: bool = False
 
 
 class RenameRequest(BaseModel):
@@ -130,6 +131,7 @@ def move_video(req: MoveRequest) -> dict:
         "error": None,
         "collision_renamed": collision_renamed,
         "waiting_on_transcode": waiting_transcode_id,
+        "is_favorite": req.is_favorite,
         "abort_event": threading.Event(),
     }
 

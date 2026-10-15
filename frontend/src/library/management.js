@@ -2,7 +2,7 @@ import { els, state } from './state.js';
 import { escapeHtml, showToast } from './utils.js';
 import { generateAnimatedPreviewForTarget } from './animations.js';
 import { loadFolder } from './folders.js';
-import { applyFiltersAndSort } from './gallery.js';
+import { applyFiltersAndSort, toggleFavorite, updateFavoritesBadgeCount } from './gallery.js';
 import { downloadMediaFile, openFancybox, openMediaInfoModal } from './lightbox.js';
 
 // File/folder management: rename, delete, new folder, move, selection and bulk operations.
@@ -254,6 +254,18 @@ function openContextMenu(x, y, target) {
     animBtn.classList.toggle('hidden', !isVid);
     animBtn.classList.toggle('flex', isVid);
   }
+  const favBtn = els.contextMenu ? els.contextMenu.querySelector('button[data-cm="favorite"]') : null;
+  if (favBtn) {
+    const isFile = target && target.kind === 'file';
+    favBtn.classList.toggle('hidden', !isFile);
+    favBtn.classList.toggle('flex', isFile);
+    if (isFile) {
+      const file = state.allFiles ? state.allFiles.find((f) => f.path === target.path) : null;
+      const isFav = file ? Boolean(file.is_favorite) : false;
+      const textEl = favBtn.querySelector('#cmFavoriteText');
+      if (textEl) textEl.textContent = isFav ? 'Remove from Favorites' : 'Add to Favorites';
+    }
+  }
   els.contextMenu.style.left = `${x}px`;
   els.contextMenu.style.top = `${y}px`;
   els.contextMenu.classList.remove('hidden');
@@ -270,7 +282,8 @@ function runContextAction(action) {
   const target = state.contextMenuTarget;
   closeContextMenu();
   if (!target) return;
-  if (action === 'move') openMoveModal(target);
+  if (action === 'favorite') toggleFavorite(target.path);
+  else if (action === 'move') openMoveModal(target);
   else if (action === 'rename') openRenameModal(target.path, target.name, target.kind);
   else if (action === 'delete') openDeleteModal(target.path, target.name, target.size_formatted || '', target.kind);
   else if (action === 'info') openMediaInfoModal(target);
@@ -658,6 +671,41 @@ async function bulkWebpOptimize() {
     showToast(err.message || 'Error queueing WebP optimization', 'error');
   }
 }
+async function bulkFavoriteToggle() {
+  const paths = Array.from(state.selectedPaths);
+  if (!paths.length) return;
+
+  const items = paths
+    .map(p => (state.allFiles || []).find(f => f.path === p))
+    .filter(Boolean);
+  const targetPaths = items.length ? items.map(f => f.path) : paths;
+
+  const allFav = items.length > 0 && items.every(f => Boolean(f.is_favorite));
+  const action = allFav ? 'remove' : 'add';
+
+  try {
+    const res = await fetch('/api/backup/favorites/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: targetPaths, action }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update favorites');
+
+    const isFav = action === 'add';
+    const pathSet = new Set(targetPaths);
+    (state.allFiles || []).forEach(f => {
+      if (pathSet.has(f.path)) f.is_favorite = isFav;
+    });
+
+    applyFiltersAndSort();
+    updateFavoritesBadgeCount();
+    clearSelection();
+    showToast(`${isFav ? 'Added' : 'Removed'} ${data.updated ?? targetPaths.length} item(s) ${isFav ? 'to' : 'from'} favorites`, 'success');
+  } catch (err) {
+    showToast(err.message || 'Error updating favorites', 'error');
+  }
+}
 function formatDate(mtime) {
   if (!mtime) return '--';
   try {
@@ -668,4 +716,4 @@ function formatDate(mtime) {
   }
 }
 
-export { allFilteredSelected, applyBulkRename, attachLongPress, awaitLibraryOpsAndRefresh, bulkWebpOptimize, clearSelection, closeBulkRenameModal, closeContextMenu, closeDeleteModal, closeMoveModal, closeNewFolderModal, closeRenameModal, collectBulkRenameParams, doMove, formatDate, loadMoveFolders, movePickerUp, openBulkDeleteModal, openBulkMove, openBulkRenameModal, openContextMenu, openDeleteModal, openMoveModal, openNewFolderModal, openRenameModal, previewBulkRename, rangeSelect, renderBulkRenameParams, renderMoveFolders, resetDeleteConfirmation, runContextAction, selectedItems, submitDelete, submitMove, submitNewFolder, submitRename, toggleSelect, toggleSelectAll, updateCardSelectStates, updateSelectAllBtn, updateSelectionToolbar };
+export { allFilteredSelected, applyBulkRename, attachLongPress, awaitLibraryOpsAndRefresh, bulkFavoriteToggle, bulkWebpOptimize, clearSelection, closeBulkRenameModal, closeContextMenu, closeDeleteModal, closeMoveModal, closeNewFolderModal, closeRenameModal, collectBulkRenameParams, doMove, formatDate, loadMoveFolders, movePickerUp, openBulkDeleteModal, openBulkMove, openBulkRenameModal, openContextMenu, openDeleteModal, openMoveModal, openNewFolderModal, openRenameModal, previewBulkRename, rangeSelect, renderBulkRenameParams, renderMoveFolders, resetDeleteConfirmation, runContextAction, selectedItems, submitDelete, submitMove, submitNewFolder, submitRename, toggleSelect, toggleSelectAll, updateCardSelectStates, updateSelectAllBtn, updateSelectionToolbar };

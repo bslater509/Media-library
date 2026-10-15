@@ -2,7 +2,7 @@ import { icon } from '../shared/icons.js';
 import { els, state } from './state.js';
 import { escapeHtml, formatBitrate, formatBytes, formatDuration, formatTimestamp, getAspectRatio, getResolutionLabel, safeAttrEscape, showToast } from './utils.js';
 import { pauseAllGalleryAnimations, resumeVisibleGalleryAnimations, syncCardAnimationState } from './animations.js';
-import { parentDirectoryOf } from './gallery.js';
+import { parentDirectoryOf, toggleFavorite } from './gallery.js';
 import { openMoveModal } from './management.js';
 
 // Fullscreen lightbox viewer and media info modal.
@@ -65,6 +65,17 @@ function syncLightboxBar() {
   // Fancybox's `init` event fires before the container is in the DOM, so the
   // idle wiring is (re)established from here as well.
   initLightboxBarIdle(container);
+
+  const slide = state.fancyboxInstance ? state.fancyboxInstance.getSlide() : null;
+  if (slide && slide.customData && slide.customData.file) {
+    const isFav = Boolean(slide.customData.file.is_favorite);
+    container.querySelectorAll('.lightbox-fav-btn').forEach((btn) => {
+      btn.classList.toggle('text-amber-400', isFav);
+      btn.classList.toggle('fill-amber-400', isFav);
+      btn.setAttribute('title', isFav ? 'Remove from Favorites (F)' : 'Add to Favorites (F)');
+    });
+  }
+
   if (!container.classList.contains('is-compact')) return;
   const isVideo = Boolean(document.querySelector('.fancybox__slide.is-selected.has-html5video'));
   container.querySelectorAll('.lb-meta').forEach((bar) => bar.classList.toggle('is-video', isVideo));
@@ -119,6 +130,9 @@ function openFancybox(startIndex) {
                 ${icon('film')}
               </button>
             ` : ''}
+            <button type="button" onclick="window.libraryApp.toggleCurrentLightboxFavorite()" class="lb-btn lightbox-fav-btn ${f.is_favorite ? 'text-amber-400 fill-amber-400' : ''}" title="${f.is_favorite ? 'Remove from Favorites (F)' : 'Add to Favorites (F)'}" aria-label="Toggle favorite">
+              ${icon('star')}
+            </button>
             <button type="button" onclick="window.libraryApp.openMediaInfoModalByPath('${safeAttrEscape(f.path)}')" class="lb-btn" title="Media Details (I)" aria-label="Media details">
               ${icon('info')}
             </button>
@@ -543,4 +557,33 @@ function downloadMediaFile(target) {
   showToast(`Downloading "${target.name || 'file'}"...`, 'info');
 }
 
-export { LIGHTBOX_BAR_IDLE_MS, captureCurrentFrameAsPoster, closeMediaInfoModal, downloadMediaFile, initLightboxBarIdle, lightboxBarHovered, lightboxBarIdleTimer, openFancybox, openMediaInfoModal, openMediaInfoModalByPath, openMoveModalFromLightbox, revealLightboxBar, setLightboxVideoSpeed, setupVideoTouchSeek, showMobileSeekRipple, stopLightboxBarIdle, syncActiveLightboxVideo, syncLightboxBar, toggleLightboxVideoLoop };
+function toggleCurrentLightboxFavorite() {
+  if (!state.fancyboxInstance) return;
+  const slide = state.fancyboxInstance.getSlide();
+  if (!slide || !slide.customData) return;
+  const path = slide.customData.path;
+  toggleFavorite(path);
+}
+
+export {
+  LIGHTBOX_BAR_IDLE_MS,
+  captureCurrentFrameAsPoster,
+  closeMediaInfoModal,
+  downloadMediaFile,
+  initLightboxBarIdle,
+  lightboxBarHovered,
+  lightboxBarIdleTimer,
+  openFancybox,
+  openMediaInfoModal,
+  openMediaInfoModalByPath,
+  openMoveModalFromLightbox,
+  revealLightboxBar,
+  setLightboxVideoSpeed,
+  setupVideoTouchSeek,
+  showMobileSeekRipple,
+  stopLightboxBarIdle,
+  syncActiveLightboxVideo,
+  syncLightboxBar,
+  toggleCurrentLightboxFavorite,
+  toggleLightboxVideoLoop,
+};

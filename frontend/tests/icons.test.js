@@ -8,7 +8,7 @@ import sorterTasksModalHtml from '../../templates/partials/sorter_tasks_modal.ht
 import { librarySource, sorterSource } from './sources.js';
 // Every icon the lightbox overlay bar renders.
 const LIGHTBOX_ICONS = [
-  'gauge', 'repeat-2', 'camera', 'film', 'info', 'download',
+  'gauge', 'repeat-2', 'camera', 'film', 'star', 'info', 'download',
   'folder-input', 'pencil', 'trash-2', 'hard-drive', 'monitor', 'clock',
 ];
 

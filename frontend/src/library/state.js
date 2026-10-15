@@ -65,7 +65,9 @@
     _gridPendingStart: 0,
     tileScale: loadTileScale(),
     animatedThumbs: loadAnimatedThumbs(),
-    activeFilter: 'all', // 'all' | 'video' | 'image'
+    activeFilter: 'all', // 'all' | 'video' | 'image' | 'favorite'
+    isFavoritesView: false,
+    favoritesCount: 0,
     activeSort: 'name_asc',
     searchScope: 'current', // 'current' | 'global'
     searchQuery: '',
@@ -207,9 +209,11 @@
     mobileFilterAllBtn: document.getElementById('mobileFilterAllBtn'),
     mobileFilterVideosBtn: document.getElementById('mobileFilterVideosBtn'),
     mobileFilterImagesBtn: document.getElementById('mobileFilterImagesBtn'),
+    mobileFilterFavoritesBtn: document.getElementById('mobileFilterFavoritesBtn'),
     mobileCountAllBadge: document.getElementById('mobileCountAllBadge'),
     mobileCountVideosBadge: document.getElementById('mobileCountVideosBadge'),
     mobileCountImagesBadge: document.getElementById('mobileCountImagesBadge'),
+    mobileCountFavoritesBadge: document.getElementById('mobileCountFavoritesBadge'),
     mobileSortSelect: document.getElementById('mobileSortSelect'),
 
     mobileTileSizeValue: document.getElementById('mobileTileSizeValue'),
@@ -258,6 +262,8 @@
     folderCountBadge: document.getElementById('folderCountBadge'),
     folderSearchInput: document.getElementById('folderSearchInput'),
     rootFolderList: document.getElementById('rootFolderList'),
+    sidebarFavoritesBtn: document.getElementById('sidebarFavoritesBtn'),
+    sidebarFavoritesBadge: document.getElementById('sidebarFavoritesBadge'),
     toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
     closeSidebarBtn: document.getElementById('closeSidebarBtn'),
     sidebarDrawer: document.getElementById('sidebarDrawer'),
@@ -270,6 +276,8 @@
     filterAllBtn: document.getElementById('filterAllBtn'),
     filterVideosBtn: document.getElementById('filterVideosBtn'),
     filterImagesBtn: document.getElementById('filterImagesBtn'),
+    filterFavoritesBtn: document.getElementById('filterFavoritesBtn'),
+    countFavoritesBadge: document.getElementById('countFavoritesBadge'),
     convertAllNonMp4Btn: document.getElementById('convertAllNonMp4Btn'),
     convertBtnText: document.getElementById('convertBtnText'),
     generateFolderThumbsBtn: document.getElementById('generateFolderThumbsBtn'),
@@ -587,6 +595,7 @@
     selectionRenameBtn: document.getElementById('selectionRenameBtn'),
     selectionAnimBtn: document.getElementById('selectionAnimBtn'),
     selectionWebpBtn: document.getElementById('selectionWebpBtn'),
+    selectionFavoriteBtn: document.getElementById('selectionFavoriteBtn'),
     selectionDeleteBtn: document.getElementById('selectionDeleteBtn'),
     selectionClearBtn: document.getElementById('selectionClearBtn'),
     bulkRenameModal: document.getElementById('bulkRenameModal'),

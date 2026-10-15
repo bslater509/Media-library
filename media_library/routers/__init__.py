@@ -3,6 +3,7 @@
 from media_library.routers.auth import router as auth_router
 from media_library.routers.backup import router as backup_router
 from media_library.routers.duplicates import router as duplicates_router
+from media_library.routers.favorites import router as favorites_router
 from media_library.routers.library_admin import router as library_admin_router
 from media_library.routers.library_browse import router as library_browse_router
 from media_library.routers.library_manage import router as library_manage_router
@@ -25,6 +26,7 @@ all_routers = [
     sorter_move_router,
     sorter_media_router,
     library_browse_router,
+    favorites_router,
     library_media_router,
     library_admin_router,
     library_manage_router,
@@ -43,6 +45,7 @@ __all__ = [
     "auth_router",
     "backup_router",
     "duplicates_router",
+    "favorites_router",
     "library_admin_router",
     "library_browse_router",
     "library_manage_router",

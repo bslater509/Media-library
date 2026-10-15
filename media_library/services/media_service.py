@@ -68,6 +68,14 @@ def scan_videos(directory: str) -> list[dict[str, Any]]:
         return []
 
     videos = []
+    fav_paths = set()
+    try:
+        with db_conn() as conn:
+            rows = conn.execute("SELECT path FROM favorites").fetchall()
+            fav_paths = {r[0] for r in rows}
+    except Exception:
+        pass
+
     try:
         with os.scandir(directory) as entries:
             for entry in entries:
@@ -89,6 +97,7 @@ def scan_videos(directory: str) -> list[dict[str, Any]]:
                                     "mtime": stat.st_mtime,
                                     "ext": ext,
                                     "needs_transcode": needs_transcode,
+                                    "is_favorite": entry.path in fav_paths,
                                 }
                             )
                         except Exception as e:
@@ -173,25 +182,28 @@ def search_backup_index(
             if not words:
                 return ([], False) if return_meta else []
 
-            where_clauses = ["LOWER(name) LIKE ?" for _ in words]
-            sql = f"SELECT * FROM files WHERE {' AND '.join(where_clauses)}"
+            where_clauses = ["LOWER(f.name) LIKE ?" for _ in words]
+            sql = (
+                "SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END AS is_favorite "
+                f"FROM files f LEFT JOIN favorites fav ON f.path = fav.path WHERE {' AND '.join(where_clauses)}"
+            )
             params: list[Any] = [f"%{w}%" for w in words]
 
             if type_filter and type_filter in ("video", "image"):
-                sql += " AND type = ?"
+                sql += " AND f.type = ?"
                 params.append(type_filter)
 
-            sort_sql = "name ASC"
+            sort_sql = "f.name ASC"
             if sort_by == "name_desc":
-                sort_sql = "name DESC"
+                sort_sql = "f.name DESC"
             elif sort_by == "date_desc":
-                sort_sql = "mtime DESC"
+                sort_sql = "f.mtime DESC"
             elif sort_by == "date_asc":
-                sort_sql = "mtime ASC"
+                sort_sql = "f.mtime ASC"
             elif sort_by == "size_desc":
-                sort_sql = "size DESC"
+                sort_sql = "f.size DESC"
             elif sort_by == "size_asc":
-                sort_sql = "size ASC"
+                sort_sql = "f.size ASC"
 
             # Query limit + 1 rows to detect truncation without an extra COUNT(*) query
             sql += f" ORDER BY {sort_sql} LIMIT ?"
@@ -253,6 +265,9 @@ def search_backup_index(
                         "capture_time": r["capture_time"]
                         if "capture_time" in r.keys()
                         else None,
+                        "is_favorite": bool(r["is_favorite"])
+                        if "is_favorite" in r.keys()
+                        else False,
                         "thumb_url": (
                             f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}"
                             + (f"&mtime={r['mtime']}&size={r['size']}" if (r["mtime"] is not None and r["size"] is not None) else "")
@@ -275,7 +290,7 @@ def do_transfer(
     """Executes a move/copy transfer item from queue with chunking and fallback."""
     source_path = item["source_path"]
     target_path = item["target_path"]
-    abort_event: threading.Event = item["abort_event"]
+    abort_event: threading.Event = item.get("abort_event") or threading.Event()
 
     # Wait on pre-transcode if linked
     wait_transcode_id = item.get("waiting_on_transcode")
@@ -329,18 +344,27 @@ def do_transfer(
         d_stat = os.stat(target_dir)
         if s_stat.st_dev == d_stat.st_dev:
             os.rename(source_path, target_path)
-            item["bytes_copied"] = item["total_bytes"]
+            item["bytes_copied"] = item.get("total_bytes", s_stat.st_size)
             item["percent"] = 100.0
             item["status"] = "completed"
             item["completed_at"] = time.time()
             add_file_to_index(target_path)
+            if item.get("is_favorite"):
+                try:
+                    with db_conn() as conn, conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO favorites (path, created_at) VALUES (?, ?)",
+                            (target_path, time.time()),
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not record favorite for {target_path}: {e}")
             return
     except Exception:
         pass
 
     # Across-filesystem chunked copy with cancel support
     temp_target = target_path + f".tmp.{item['id']}"
-    total_size = item["total_bytes"]
+    total_size = item.get("total_bytes") or (os.path.getsize(source_path) if os.path.exists(source_path) else 0)
     bytes_copied = 0
     chunk_size = 4 * 1024 * 1024
 
@@ -368,6 +392,15 @@ def do_transfer(
         item["completed_at"] = time.time()
         item["percent"] = 100.0
         add_file_to_index(target_path)
+        if item.get("is_favorite"):
+            try:
+                with db_conn() as conn, conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO favorites (path, created_at) VALUES (?, ?)",
+                        (target_path, time.time()),
+                    )
+            except Exception as e:
+                logger.warning(f"Could not record favorite for {target_path}: {e}")
     except InterruptedError:
         if os.path.exists(temp_target):
             try:

@@ -172,6 +172,10 @@ def update_file_in_index(
 
             with conn:
                 conn.execute("DELETE FROM files WHERE path = ?", (old_path,))
+                conn.execute(
+                    "UPDATE favorites SET path = ? WHERE path = ?",
+                    (new_path, old_path),
+                )
                 has_thumb = 1 if get_thumbnail_cache_path(new_path).exists() else 0
                 conn.execute(
                     """
@@ -263,6 +267,10 @@ def move_path_in_index(old_path: str, new_path: str, kind: str):
                     "UPDATE files SET path = ? || substr(path, ?) WHERE path LIKE ?",
                     (new_path, old_len, old_prefix + "%"),
                 )
+                conn.execute(
+                    "UPDATE favorites SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                    (new_path, old_len, old_prefix + "%"),
+                )
             elif kind == "folder":
                 # Descendant folder rows and their parent pointers.
                 conn.execute(
@@ -284,6 +292,10 @@ def move_path_in_index(old_path: str, new_path: str, kind: str):
                     "WHERE folder_path = ? OR folder_path LIKE ?",
                     (new_path, old_len, old_path, old_prefix + "%"),
                 )
+                conn.execute(
+                    "UPDATE favorites SET path = ? || substr(path, ?) WHERE path = ? OR path LIKE ?",
+                    (new_path, old_len, old_path, old_prefix + "%"),
+                )
     except Exception as e:
         logger.error(f"Error moving {old_path} -> {new_path} in index: {e}")
 
@@ -293,6 +305,7 @@ def delete_path_from_index(path: str, kind: str):
         with db_conn() as conn, conn:
             if kind == "file":
                 conn.execute("DELETE FROM files WHERE path = ?", (path,))
+                conn.execute("DELETE FROM favorites WHERE path = ?", (path,))
                 conn.execute(
                     "DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ?",
                     (path, path),
@@ -310,6 +323,11 @@ def delete_path_from_index(path: str, kind: str):
             elif kind == "zip":
                 conn.execute("DELETE FROM folders WHERE path = ?", (path,))
                 conn.execute("DELETE FROM files WHERE folder_path = ?", (path,))
+                prefix = path + os.sep
+                conn.execute(
+                    "DELETE FROM favorites WHERE path = ? OR path LIKE ?",
+                    (path, prefix + "%"),
+                )
             elif kind == "folder":
                 prefix = path + os.sep
                 conn.execute(
@@ -318,6 +336,10 @@ def delete_path_from_index(path: str, kind: str):
                 )
                 conn.execute(
                     "DELETE FROM files WHERE folder_path = ? OR folder_path LIKE ?",
+                    (path, prefix + "%"),
+                )
+                conn.execute(
+                    "DELETE FROM favorites WHERE path = ? OR path LIKE ?",
                     (path, prefix + "%"),
                 )
     except Exception as e:

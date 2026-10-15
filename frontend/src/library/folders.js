@@ -23,6 +23,7 @@ function setSidebarOpen(open) {
 // Load Folder Contents
 async function loadFolder(targetPath, pushHistory = true, forceRefresh = false, silent = false) {
   try {
+    state.isFavoritesView = false;
     state.searchTruncated = false;
     if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
     if (pushHistory) {
@@ -126,6 +127,76 @@ async function loadFolder(targetPath, pushHistory = true, forceRefresh = false, 
     els.emptyStateMsg.textContent = 'Could not access this folder or directory on pCloud.';
   }
 }
+
+// Load Global Favorites View
+async function loadFavoritesView(pushHistory = true) {
+  try {
+    state.isFavoritesView = true;
+    state.searchTruncated = false;
+    if (els.searchTruncationBanner) els.searchTruncationBanner.classList.add('hidden');
+    if (pushHistory) {
+      state.indexRetryCount = 0;
+      clearTimeout(state.indexRetryTimer);
+      if (els.mainStage) els.mainStage.scrollTop = 0;
+      history.pushState({ path: '__favorites__' }, '', '/library?view=favorites');
+    }
+    els.emptyState.classList.add('hidden');
+    els.mediaGrid.innerHTML = `
+      <div class="w-full py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <span class="w-7 h-7 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></span>
+        <span class="text-xs">Loading favorites...</span>
+      </div>
+    `;
+
+    const res = await fetch('/api/backup/favorites', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Failed to load favorites (${res.status})`);
+    const data = await res.json();
+
+    state.currentPath = '';
+    state.isZip = false;
+    state.zipExtracting = false;
+    state.subfolders = [];
+    state.breadcrumbs = [
+      { name: 'Library', path: '' },
+      { name: '⭐ Favorites', path: '__favorites__' },
+    ];
+
+    const baseDir = state.basePath || '';
+    state.allFiles = (data.files || []).map((f) => {
+      const fDir = f.folder_path || '';
+      const rel = fDir.startsWith(baseDir) ? fDir.slice(baseDir.length).replace(/^[/\\]+/, '') : fDir;
+      return {
+        ...f,
+        is_favorite: true,
+        rel_folder: rel,
+        folder_name: fDir.split(/[/\\]/).filter(Boolean).pop() || fDir,
+      };
+    });
+    clearSelection();
+
+    if (els.headerPathSubtitle) {
+      els.headerPathSubtitle.textContent = '⭐ Favorites Collection';
+      els.headerPathSubtitle.title = 'All favorited files across your library';
+    }
+
+    if (els.sidebarFavoritesBadge) {
+      els.sidebarFavoritesBadge.textContent = data.counts ? data.counts.all : state.allFiles.length;
+    }
+
+    renderSidebarTree();
+    renderBreadcrumbs();
+    renderSubfolders();
+    applyFiltersAndSort();
+
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  } catch (err) {
+    console.error('Error loading favorites:', err);
+    showToast(err.message || 'Error loading favorites', 'error');
+  }
+}
+
 async function fetchFolderChildren(path) {
   const res = await fetch(`/api/backup/folders?path=${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error(`Failed to load subfolders (${res.status})`);
@@ -440,4 +511,17 @@ function renderSubfolders() {
   });
 }
 
-export { ensureFolderChildren, fetchFolderChildren, hasMatchingDescendant, loadFolder, renderBreadcrumbs, renderSidebarTree, renderSubfolders, setSidebarOpen, subfolderCardHtml, syncTreeToCurrentPath, toggleFolderExpand };
+export {
+  ensureFolderChildren,
+  fetchFolderChildren,
+  hasMatchingDescendant,
+  loadFavoritesView,
+  loadFolder,
+  renderBreadcrumbs,
+  renderSidebarTree,
+  renderSubfolders,
+  setSidebarOpen,
+  subfolderCardHtml,
+  syncTreeToCurrentPath,
+  toggleFolderExpand,
+};

@@ -571,6 +571,9 @@
               <button id="filterImagesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
                 🖼️ Images <span id="countImagesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
               </button>
+              <button id="filterFavoritesBtn" class="px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap">
+                ⭐ Favorites <span id="countFavoritesBadge" class="opacity-80 text-[10px] ml-0.5 font-mono">0</span>
+              </button>
               <button id="toggleAnimatedPreviewsBtn" title="Toggle animated WebP previews on video tiles" class="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap flex items-center gap-1">
                 <span>🎞️</span><span class="hidden sm:inline">Animated</span>
               </button>
@@ -641,6 +644,7 @@
           <button id="selectionRenameBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-sky-300 hover:text-white bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 transition flex items-center gap-1 shrink-0">✏️ Rename</button>
           <button id="selectionAnimBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-violet-300 hover:text-white bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 transition flex items-center gap-1 shrink-0" title="Generate animated WebP previews for selected videos">🎞️ Animated</button>
           <button id="selectionWebpBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-teal-300 hover:text-white bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 transition flex items-center gap-1 shrink-0">⚡ WebP</button>
+          <button id="selectionFavoriteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-amber-300 hover:text-white bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition flex items-center gap-1 shrink-0">⭐ Favorite</button>
           <button id="selectionDeleteBtn" class="px-2.5 py-1 rounded-md font-semibold text-[11px] sm:text-xs text-red-300 hover:text-white bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition flex items-center gap-1 shrink-0">🗑️ Delete</button>
           <button id="selectionClearBtn" class="px-2 py-1 rounded-md text-[11px] text-slate-400 hover:text-white transition shrink-0">Clear</button>
         </div>
@@ -735,6 +739,7 @@
 
   <!-- Right-click Context Menu -->
   <div id="contextMenu" class="hidden fixed z-[60] min-w-[160px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/70 rounded-xl shadow-2xl p-1.5 flex flex-col gap-0.5">
+    <button data-cm="favorite" class="cm-item hidden items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-amber-300 hover:bg-slate-800 text-left transition"><span id="cmFavoriteIcon">⭐</span> <span id="cmFavoriteText">Toggle Favorite</span></button>
     <button data-cm="info" class="cm-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">ℹ️ Media Info</button>
     <button data-cm="set-poster" class="cm-item hidden items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">📷 Set Poster Frame</button>
     <button data-cm="gen-animated" class="cm-item hidden items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition">🎞️ Generate Animated Preview</button>
@@ -771,7 +776,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=70"></script>
+  <script type="module" src="/static/dist/library.js?v=71"></script>
   {{include 'partials/library_modals_media.html'}}
   {{include 'partials/library_modals_bulk.html'}}
   {{include 'partials/library_modals_manage.html'}}

@@ -75,7 +75,7 @@
         <!-- Media Type Filters -->
         <div class="space-y-1.5">
           <label class="text-xs font-semibold text-slate-300">Media Type</label>
-          <div class="grid grid-cols-3 gap-2 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
+          <div class="grid grid-cols-4 gap-1.5 bg-slate-950/70 p-1 rounded-xl border border-slate-800 text-xs">
             <button id="mobileFilterAllBtn" type="button" class="py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1">
               <span>All</span> <span id="mobileCountAllBadge" class="text-[10px] font-mono opacity-80">0</span>
             </button>
@@ -84,6 +84,9 @@
             </button>
             <button id="mobileFilterImagesBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
               <span data-lb-icon="image" data-lb-icon-class="w-3.5 h-3.5"></span><span>Images</span> <span id="mobileCountImagesBadge" class="text-[10px] font-mono opacity-80">0</span>
+            </button>
+            <button id="mobileFilterFavoritesBtn" type="button" class="py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1">
+              <span data-lb-icon="star" data-lb-icon-class="w-3.5 h-3.5"></span><span>Stars</span> <span id="mobileCountFavoritesBadge" class="text-[10px] font-mono opacity-80">0</span>
             </button>
           </div>
         </div>

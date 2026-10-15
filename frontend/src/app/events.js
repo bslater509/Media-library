@@ -1,7 +1,7 @@
 import { browseDirectory, browserCurrentPath, closeBrowser, openBrowser, setSourceDirectory } from './browser.js';
-import { currentVideo, loadDestinations } from './config.js';
+import { currentVideo, loadDestinations, syncFavoriteUI } from './config.js';
 import { hideDuplicateBanner, toggleDuplicateCompare, trashCurrentDuplicate } from './duplicates.js';
-import { autoTrashDuplicateToggle, browserGoBtn, browserPathInput, browserUpBtn, cancelBrowserBtn, cancelDeleteBtn, cancelRenameBtn, clearSearchBtn, closeBrowserModalBtn, closeShortcutsBtn, confirmDeleteBtn, confirmRenameBtn, createAndMoveBtn, currentVideoTitle, deleteBtn, dismissDuplicateBtn, duplicateBanner, emptyStateBrowseBtn, folderSearchInput, mobileDeleteBtn, mobilePrevBtn, mobileRenameBtn, mobileSkipBtn, mobileUndoBtn, newFolderInput, openFolderBrowserBtn, prevBtn, primaryMoveBtn, refreshDestsBtn, renameBtn, renameHeaderBtn, renameInput, selectCurrentFolderBtn, shortcutsBtn, shortcutsModal, skipBtn, toggleDuplicateCompareBtn, toggleHashPauseBtn, toggleStreamModeBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transferBadgeBtn, transferDropdown, trashIncomingDuplicateBtn, undoBtn, videoPlayer } from './elements.js';
+import { autoTrashDuplicateToggle, browserGoBtn, browserPathInput, browserUpBtn, cancelBrowserBtn, cancelDeleteBtn, cancelRenameBtn, clearSearchBtn, closeBrowserModalBtn, closeShortcutsBtn, confirmDeleteBtn, confirmRenameBtn, createAndMoveBtn, currentVideoTitle, deleteBtn, dismissDuplicateBtn, duplicateBanner, emptyStateBrowseBtn, favoriteBtn, favoriteHeaderBtn, folderSearchInput, mobileDeleteBtn, mobileFavoriteBtn, mobilePrevBtn, mobileRenameBtn, mobileSkipBtn, mobileUndoBtn, newFolderInput, openFolderBrowserBtn, prevBtn, primaryMoveBtn, refreshDestsBtn, renameBtn, renameHeaderBtn, renameInput, selectCurrentFolderBtn, shortcutsBtn, shortcutsModal, skipBtn, toggleDuplicateCompareBtn, toggleHashPauseBtn, toggleStreamModeBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transferBadgeBtn, transferDropdown, trashIncomingDuplicateBtn, undoBtn, videoPlayer } from './elements.js';
 import { filterFolders, scrollHighlightedIntoView, updateHighlight } from './folders.js';
 import { closeDeleteModal, closeRenameModal, openDeleteModal, openRenameModal, submitDelete, submitRename } from './modals.js';
 import { createAndMoveFolder, executeMove, prevVideo, skipVideo, undoLastMove } from './moves.js';
@@ -239,9 +239,31 @@ newFolderInput.addEventListener("keydown", (e) => {
   }
 });
 
+async function toggleCurrentVideoFavorite() {
+  const video = currentVideo();
+  if (!video) return;
+
+  const nextState = !video.is_favorite;
+  video.is_favorite = nextState;
+  syncFavoriteUI(video);
+
+  if (video.path) {
+    try {
+      await fetch('/api/backup/favorites/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: video.path }),
+      });
+    } catch (e) {
+      // non-fatal
+    }
+  }
+}
+
 // Toolbar Actions (Desktop)
 if (prevBtn) prevBtn.addEventListener("click", prevVideo);
 if (skipBtn) skipBtn.addEventListener("click", skipVideo);
+if (favoriteBtn) favoriteBtn.addEventListener("click", toggleCurrentVideoFavorite);
 if (renameBtn) renameBtn.addEventListener("click", openRenameModal);
 if (deleteBtn) deleteBtn.addEventListener("click", openDeleteModal);
 if (undoBtn) undoBtn.addEventListener("click", undoLastMove);
@@ -250,9 +272,11 @@ if (undoBtn) undoBtn.addEventListener("click", undoLastMove);
 if (mobilePrevBtn) mobilePrevBtn.addEventListener("click", prevVideo);
 if (mobileSkipBtn) mobileSkipBtn.addEventListener("click", skipVideo);
 if (mobileUndoBtn) mobileUndoBtn.addEventListener("click", undoLastMove);
+if (mobileFavoriteBtn) mobileFavoriteBtn.addEventListener("click", toggleCurrentVideoFavorite);
 if (mobileRenameBtn) mobileRenameBtn.addEventListener("click", openRenameModal);
 if (mobileDeleteBtn) mobileDeleteBtn.addEventListener("click", openDeleteModal);
 
+if (favoriteHeaderBtn) favoriteHeaderBtn.addEventListener("click", toggleCurrentVideoFavorite);
 renameHeaderBtn.addEventListener("click", openRenameModal);
 currentVideoTitle.addEventListener("click", openRenameModal);
 
@@ -404,6 +428,10 @@ window.addEventListener("keydown", (e) => {
     case "l":
       videoPlayer.loop = !videoPlayer.loop;
       showToast(videoPlayer.loop ? "Loop enabled" : "Loop disabled", "info", 1500);
+      break;
+    case "b":
+      e.preventDefault();
+      toggleCurrentVideoFavorite();
       break;
     case "f":
       if (document.fullscreenElement) {

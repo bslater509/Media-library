@@ -1,5 +1,5 @@
 import { els, nameCollator, state } from './state.js';
-import { formatDuration, getResolutionLabel } from './utils.js';
+import { formatDuration, getResolutionLabel, showToast } from './utils.js';
 import { hasHoverPointer, observeAnimatedCard, syncCardAnimationState } from './animations.js';
 import { loadFolder } from './folders.js';
 import { gridGapPx, gridWidth, layoutJustifiedRows, mediaColumnCount, targetRowHeight, tileRatio } from './layout.js';
@@ -10,6 +10,13 @@ import { updateMobileControlsBadge } from './theme.js';
 
 // Gallery filtering, media card rendering and infinite scroll.
 // Extracted from the former monolithic library index.js.
+
+// Favourite star button classes. The star stays visible at rest (not just on
+// hover) so it is discoverable and tappable on touch devices, where
+// `group-hover` never fires.
+const FAV_BTN_BASE = 'card-fav-btn p-1.5 rounded-lg backdrop-blur-md transition-all active:scale-90';
+const FAV_BTN_ON = 'bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow opacity-100';
+const FAV_BTN_OFF = 'bg-slate-900/70 text-slate-400 hover:text-white border border-slate-700/70 opacity-80 group-hover:opacity-100 focus:opacity-100';
 
 // Apply Type Filter, Sort and Search
 function applyFiltersAndSort() {
@@ -23,13 +30,16 @@ function applyFiltersAndSort() {
 
   const videoCount = state.allFiles.filter(f => f.type === 'video').length;
   const imageCount = state.allFiles.filter(f => f.type === 'image').length;
+  const favCount = state.allFiles.filter(f => f.is_favorite).length;
 
   els.countAllBadge.textContent = state.allFiles.length;
   els.countVideosBadge.textContent = videoCount;
   els.countImagesBadge.textContent = imageCount;
+  if (els.countFavoritesBadge) els.countFavoritesBadge.textContent = favCount;
   if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = state.allFiles.length;
   if (els.mobileCountVideosBadge) els.mobileCountVideosBadge.textContent = videoCount;
   if (els.mobileCountImagesBadge) els.mobileCountImagesBadge.textContent = imageCount;
+  if (els.mobileCountFavoritesBadge) els.mobileCountFavoritesBadge.textContent = favCount;
   updateMobileControlsBadge();
 
   // Check for non-MP4 videos to show Convert Button
@@ -84,12 +94,14 @@ function applyFiltersAndSort() {
     }
   }
 
-  // Filter by type
+  // Filter by type or favorites
   let files = state.allFiles;
   if (state.activeFilter === 'video') {
     files = files.filter(f => f.type === 'video');
   } else if (state.activeFilter === 'image') {
     files = files.filter(f => f.type === 'image');
+  } else if (state.activeFilter === 'favorite') {
+    files = files.filter(f => f.is_favorite);
   }
 
   // Filter by search query
@@ -125,8 +137,8 @@ function applyFiltersAndSort() {
   if (state.filteredFiles.length === 0) {
     els.emptyState.classList.remove('hidden');
     els.emptyStateMsg.textContent = state.allFiles.length === 0 
-      ? 'No media files found in this folder.' 
-      : 'No files match your search filter.';
+      ? (state.isFavoritesView ? 'No favorited media yet. Star any video or image to see it here!' : 'No media files found in this folder.') 
+      : (state.activeFilter === 'favorite' ? 'No favorited files in this view.' : 'No files match your search filter.');
     els.infiniteScrollSentinel.classList.add('hidden');
   } else {
     els.emptyState.classList.add('hidden');
@@ -297,46 +309,60 @@ function renderCards(start, count) {
           <span>⚙️</span> Queued
         </div>
 
-        <!-- Quick Action Buttons on Hover -->
-        <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+        <!-- Quick Action Buttons on Hover & Favorite Star -->
+        <div class="absolute top-2 right-2 flex items-center gap-1 z-20">
           <button 
-            data-action="info" 
+            type="button" 
+            data-action="favorite" 
             data-idx="${globalIdx}" 
-            title="Media details & info" 
-            class="p-1 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
+            title="${file.is_favorite ? 'Remove from favorites (F)' : 'Add to favorites (F)'}" 
+            class="${FAV_BTN_BASE} ${file.is_favorite ? FAV_BTN_ON : FAV_BTN_OFF}"
           >
-            ℹ️
+            <svg class="w-3.5 h-3.5 ${file.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}" fill="${file.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
-          <button 
-            data-action="rename" 
-            data-idx="${globalIdx}" 
-            title="Rename file" 
-            class="p-1 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
-          >
-            ✏️
-          </button>
-          <button 
-            data-action="delete" 
-            data-idx="${globalIdx}" 
-            title="Delete file" 
-            class="p-1 rounded-md bg-red-900/90 hover:bg-red-800 text-red-200 hover:text-white border border-red-700 transition"
-          >
-            🗑️
-          </button>
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button 
+              type="button"
+              data-action="info" 
+              data-idx="${globalIdx}" 
+              title="Media details & info" 
+              class="p-1 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
+            >
+              ℹ️
+            </button>
+            <button 
+              type="button"
+              data-action="rename" 
+              data-idx="${globalIdx}" 
+              title="Rename file" 
+              class="p-1 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition"
+            >
+              ✏️
+            </button>
+            <button 
+              type="button"
+              data-action="delete" 
+              data-idx="${globalIdx}" 
+              title="Delete file" 
+              class="p-1 rounded-md bg-red-900/90 hover:bg-red-800 text-red-200 hover:text-white border border-red-700 transition"
+            >
+              🗑️
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- Card Footer -->
       <div class="p-1.5 sm:p-2.5 flex flex-col gap-0.5 sm:gap-1 min-w-0 bg-slate-900/90">
-        ${file.folder_name ? `
+        ${(file.folder_name || state.isFavoritesView) ? `
           <button 
             type="button" 
-            data-jump-folder="${encodeURIComponent(file.folder_path)}" 
+            data-jump-folder="${encodeURIComponent(file.folder_path || '')}" 
             class="text-[10px] text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 truncate text-left font-sans font-medium"
-            title="Open folder: ${file.rel_folder || file.folder_name}"
+            title="Open folder: ${file.rel_folder || file.folder_name || ''}"
           >
             <span class="shrink-0">📁</span>
-            <span class="truncate">${file.rel_folder || file.folder_name}</span>
+            <span class="truncate">${file.rel_folder || file.folder_name || 'Folder'}</span>
           </button>
         ` : ''}
         <div class="flex items-center gap-1.5 min-w-0">
@@ -421,6 +447,8 @@ function renderCards(start, count) {
           openRenameModal(f.path, f.name);
         } else if (action === 'delete') {
           openDeleteModal(f.path, f.name, f.size_formatted);
+        } else if (action === 'favorite') {
+          toggleFavorite(f.path, card);
         }
       });
     });
@@ -564,4 +592,91 @@ function setupInfiniteScroll() {
   state.observer.observe(els.infiniteScrollSentinel);
 }
 
-export { applyFiltersAndSort, parentDirectoryOf, renderCards, setupInfiniteScroll, updateCardsTranscodeStatus };
+// Toggle favorite status on a file path
+async function toggleFavorite(path, cardEl = null) {
+  try {
+    const res = await fetch('/api/backup/favorites/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) throw new Error('Failed to toggle favorite');
+    const data = await res.json();
+    const isFav = Boolean(data.is_favorite);
+
+    // Update in state.allFiles and state.filteredFiles
+    [state.allFiles, state.filteredFiles].forEach((list) => {
+      const item = list.find((f) => f.path === path);
+      if (item) item.is_favorite = isFav;
+    });
+
+    // Update active Fancybox slide if open
+    if (state.fancyboxInstance) {
+      const slide = state.fancyboxInstance.getSlide();
+      if (slide && slide.customData && slide.customData.path === path) {
+        if (slide.customData.file) slide.customData.file.is_favorite = isFav;
+        const favBtn = document.querySelector('.lightbox-fav-btn');
+        if (favBtn) {
+          favBtn.classList.toggle('text-amber-400', isFav);
+          favBtn.classList.toggle('fill-amber-400', isFav);
+          favBtn.setAttribute('title', isFav ? 'Remove from Favorites (F)' : 'Add to Favorites (F)');
+        }
+      }
+    }
+
+    // Update card DOM if provided or found
+    const targetCard = cardEl || document.querySelector(`.media-card[data-path="${CSS.escape(path)}"]`);
+    if (targetCard) {
+      const favBtn = targetCard.querySelector('.card-fav-btn');
+      if (favBtn) {
+        favBtn.title = isFav ? 'Remove from favorites (F)' : 'Add to favorites (F)';
+        favBtn.className = `${FAV_BTN_BASE} ${isFav ? FAV_BTN_ON : FAV_BTN_OFF}`;
+        const svg = favBtn.querySelector('svg');
+        if (svg) {
+          svg.setAttribute('fill', isFav ? 'currentColor' : 'none');
+          svg.className = `w-3.5 h-3.5 ${isFav ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`;
+        }
+      }
+    }
+
+    // Refresh favorite badge counts
+    updateFavoritesBadgeCount();
+
+    // If currently filtering favorites or in global favorites view and item was unfavorited, re-render
+    if (state.activeFilter === 'favorite' || state.isFavoritesView) {
+      applyFiltersAndSort();
+    }
+
+    showToast(isFav ? 'Added to favorites ⭐' : 'Removed from favorites', 'info', 1500);
+    return isFav;
+  } catch (err) {
+    showToast('Failed to update favorite', 'error');
+    return null;
+  }
+}
+
+// Refresh the global favorites count badge
+async function updateFavoritesBadgeCount() {
+  try {
+    const res = await fetch('/api/backup/favorites');
+    if (!res.ok) return;
+    const data = await res.json();
+    const count = data.counts ? data.counts.all : (data.files ? data.files.length : 0);
+    state.favoritesCount = count;
+    if (els.sidebarFavoritesBadge) {
+      els.sidebarFavoritesBadge.textContent = count;
+    }
+  } catch (err) {
+    // best-effort
+  }
+}
+
+export {
+  applyFiltersAndSort,
+  parentDirectoryOf,
+  renderCards,
+  setupInfiniteScroll,
+  toggleFavorite,
+  updateCardsTranscodeStatus,
+  updateFavoritesBadgeCount,
+};

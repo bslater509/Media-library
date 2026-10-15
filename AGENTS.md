@@ -452,6 +452,18 @@ CREATE TABLE db_meta (
 );
 ```
 
+#### 6. `favorites`
+Stores persistent bookmarks / favorited media files.
+```sql
+CREATE TABLE favorites (
+    path TEXT PRIMARY KEY,
+    created_at REAL NOT NULL
+);
+```
+- Stored in a dedicated SQLite table so index rescans, crawl prunes, or mount disconnects never wipe user bookmarks.
+- Automatically synchronized during file and folder renames/moves (`move_path_in_index`), and cleaned up upon file deletion (`delete_path_from_index`).
+- Transferred video files sorted via the Video Sorter preserve their favorite state on move.
+
 ### Essential Indexes
 - `idx_files_folder ON files(folder_path)`
 - `idx_files_folder_lower_name ON files(folder_path, LOWER(name))`
@@ -467,6 +479,7 @@ CREATE TABLE db_meta (
 - `idx_folders_parent ON folders(parent_path)`
 - `idx_folders_parent_lower_name ON folders(parent_path, LOWER(name))`
 - `idx_ignored_p1_p2 ON ignored_duplicates(path1, path2)`
+- `idx_favorites_created_at ON favorites(created_at DESC)`
 
 ---
 
@@ -776,6 +789,12 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `POST /api/backup/bulk/webp-optimize` — Convert selected images, enqueue selected folders for WebP, skip others
 - `GET /api/backup/folders/empty/candidates` — Find all empty folders across the library (zero files and zero non-empty subfolders) with candidate list, leaf status, and count
 - `POST /api/backup/folders/empty/delete` — Delete empty folders bottom-up (cleans benign OS junk like `.DS_Store`/`Thumbs.db` prior to `rmdir`, updates SQLite index, protects against deleting folders with user files)
+
+### Favorites & Bookmarking (`media_library.routers.favorites`)
+- `POST /api/backup/favorites/toggle` — Toggle favorite status for a single media file (`path`); returns `{status: "success", path, is_favorite: bool}`
+- `POST /api/backup/favorites/batch` — Bulk star, unstar, or toggle favorite status on multiple files (`paths`, `action`: `"add"` | `"remove"` | `"toggle"`); returns `{status: "success", action, updated: int}`
+- `GET /api/backup/favorites?type={video|image}` — List all favorited media files library-wide sorted by favorited timestamp descending, with total, video, and image counts
+- `GET /api/backup/favorites/status?path={path}` — Check favorite status for a single file; returns `{path, is_favorite: bool}`
 
 ### Sorter Workflow (`media_library.routers.sorter_queue` + `sorter_move` + `sorter_media`)
 - `GET /api/config` — App config, queue count, undo availability, LAN IP (`sorter_queue`)

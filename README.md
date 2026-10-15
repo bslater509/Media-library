@@ -14,6 +14,20 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 - **Batch Management**: Context menus and multi-select toolbar for batch moves, deletes, renames, and WebP optimization.
 - **Multi-Word Search**: Filter by multi-word queries with category and folder badge navigation.
 
+### ⭐ Favorites & Bookmarking System
+- **Dual-Access Navigation**:
+  - **In-Folder Filter Pill**: Filter any folder view instantly to show only starred media with live count badge (`⭐ Favorites`).
+  - **Global Sidebar Collection**: Library-wide chronological grid showing every favorited video and image with folder jump-chips to navigate directly to containing folders.
+- **Card, Lightbox & Context Controls**:
+  - Star button on card overlays (hover-revealed on desktop, always visible filled gold `⭐` when favorited, touch-accessible).
+  - Star toggle in fullscreen Lightbox overlay bar and keyboard hotkey `F`.
+  - Right-click / tap-and-hold context menu actions ("Add to Favorites" / "Remove from Favorites").
+  - 1-click bulk star / unstar toggle in selection toolbar.
+- **Video Sorter Integration**:
+  - Star button in desktop toolbar, header, and mobile bottom bar + keyboard hotkey `B` (keeping `F` dedicated for fullscreen video).
+  - **Move Persistence**: Starred videos in Sorter automatically preserve their favorite status when transferred to destination folders.
+- **Resilient SQLite Architecture**: Dedicated `favorites` table ensures index rescans never erase bookmarks, and automatically updates during file/folder moves, renames, and deletions.
+
 ### 🔗 URL & Playlist Downloads
 - **Dedicated Downloads Page** (`/downloads`): a first-class downloader reached from the Library/Sorter nav tabs and the mobile drawer.
 - **Batch Queueing**: Paste several URLs at once; each valid http(s) link is queued into the chosen folder (invalid/duplicate lines are reported and skipped).

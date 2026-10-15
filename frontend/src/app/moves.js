@@ -43,6 +43,7 @@ try {
     body: JSON.stringify({
       file_id: video.id,
       destination_folder: targetFolder,
+      is_favorite: Boolean(video.is_favorite),
     }),
   });
 

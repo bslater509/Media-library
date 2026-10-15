@@ -59,6 +59,7 @@ import search from 'lucide-static/icons/search.svg?raw';
 import settings from 'lucide-static/icons/settings.svg?raw';
 import slidersHorizontal from 'lucide-static/icons/sliders-horizontal.svg?raw';
 import sparkles from 'lucide-static/icons/sparkles.svg?raw';
+import star from 'lucide-static/icons/star.svg?raw';
 import trash2 from 'lucide-static/icons/trash-2.svg?raw';
 import upload from 'lucide-static/icons/upload.svg?raw';
 import video from 'lucide-static/icons/video.svg?raw';
@@ -108,6 +109,7 @@ export const ICONS = Object.freeze({
   settings,
   'sliders-horizontal': slidersHorizontal,
   sparkles,
+  star,
   'trash-2': trash2,
   upload,
   video,

@@ -3,11 +3,11 @@ import { hydrateIcons, icon } from '../shared/icons.js';
 import { computeTaskSummary, describePrimaryTask, formatTaskCount } from '../shared/tasks_badge.js';
 import { cancelAllAnimPreviews, pauseAllGalleryAnimations, resumeVisibleGalleryAnimations, setAnimatedPreviews, syncAnimatedPreviewsUI, toggleAnimPause, triggerAllAnimatedPreviews, triggerFolderAnimatedPreviews, triggerSelectedAnimatedPreviews, updateBrowserCacheBadge } from './animations.js';
 import { autoDeleteAllVerified, closeDuplicatesModal, closeIgnoredDuplicatesModal, deleteSingleDuplicateFile, fetchDuplicateSummary, ignoreCurrentDuplicateMatch, loadDuplicateGroups, openDuplicatesModal, openIgnoredDuplicatesModal, renderCurrentDuplicateGroup, resolveDuplicateSet, setDuplicatesMode, unignoreDuplicatePair, updateIgnoredCountBadge, verifyCurrentGroupHashes } from './duplicates.js';
-import { loadFolder, renderSidebarTree, setSidebarOpen, toggleFolderExpand } from './folders.js';
-import { applyFiltersAndSort, setupInfiniteScroll } from './gallery.js';
+import { loadFavoritesView, loadFolder, renderSidebarTree, setSidebarOpen, toggleFolderExpand } from './folders.js';
+import { applyFiltersAndSort, setupInfiniteScroll, toggleFavorite, updateFavoritesBadgeCount } from './gallery.js';
 import { relayoutMediaGrid, relayoutSubfolders, stepTileScale, syncTileScaleUI } from './layout.js';
-import { captureCurrentFrameAsPoster, closeMediaInfoModal, downloadMediaFile, openFancybox, openMediaInfoModal, openMediaInfoModalByPath, openMoveModalFromLightbox, setLightboxVideoSpeed, toggleLightboxVideoLoop } from './lightbox.js';
-import { applyBulkRename, bulkWebpOptimize, clearSelection, closeBulkRenameModal, closeContextMenu, closeDeleteModal, closeMoveModal, closeNewFolderModal, closeRenameModal, doMove, movePickerUp, openBulkDeleteModal, openBulkMove, openBulkRenameModal, openDeleteModal, openMoveModal, openNewFolderModal, openRenameModal, previewBulkRename, renderBulkRenameParams, runContextAction, selectedItems, submitDelete, submitMove, submitNewFolder, submitRename, toggleSelectAll } from './management.js';
+import { captureCurrentFrameAsPoster, closeMediaInfoModal, downloadMediaFile, openFancybox, openMediaInfoModal, openMediaInfoModalByPath, openMoveModalFromLightbox, setLightboxVideoSpeed, toggleCurrentLightboxFavorite, toggleLightboxVideoLoop } from './lightbox.js';
+import { applyBulkRename, bulkFavoriteToggle, bulkWebpOptimize, clearSelection, closeBulkRenameModal, closeContextMenu, closeDeleteModal, closeMoveModal, closeNewFolderModal, closeRenameModal, doMove, movePickerUp, openBulkDeleteModal, openBulkMove, openBulkRenameModal, openDeleteModal, openMoveModal, openNewFolderModal, openRenameModal, previewBulkRename, renderBulkRenameParams, runContextAction, selectedItems, submitDelete, submitMove, submitNewFolder, submitRename, toggleSelectAll } from './management.js';
 import { debouncedGlobalSearch, forceIndexPrune, performGlobalSearch, setSearchScope, triggerIndexSync } from './search.js';
 import { clearBrowserAnimCache, getBrowserAnimCacheStats, initServiceWorker, precacheFolderAnimatedPreviews } from './service_worker.js';
 import { toggleSheetList } from './sheet.js';
@@ -115,6 +115,9 @@ document.addEventListener('keydown', (e) => {
     } else if (e.key === 'd' || e.key === 'D') {
       e.preventDefault();
       openDeleteModal(path, name, size_formatted);
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleCurrentLightboxFavorite();
     } else if (e.key === 'i' || e.key === 'I') {
       e.preventDefault();
       if (file) openMediaInfoModal(file);
@@ -200,6 +203,12 @@ function initEvents() {
   }
   if (els.sidebarBackdrop) {
     els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+  }
+  if (els.sidebarFavoritesBtn) {
+    els.sidebarFavoritesBtn.addEventListener('click', () => {
+      loadFavoritesView();
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    });
   }
 
   // Tasks tab switcher
@@ -742,13 +751,13 @@ function initEvents() {
   }
   syncAnimatedPreviewsUI();
 
-  // Filter Buttons (All, Videos, Images)
+  // Filter Buttons (All, Videos, Images, Favorites)
   const setFilter = (type) => {
     state.activeFilter = type;
-    [els.filterAllBtn, els.filterVideosBtn, els.filterImagesBtn].forEach(btn => {
+    [els.filterAllBtn, els.filterVideosBtn, els.filterImagesBtn, els.filterFavoritesBtn].forEach(btn => {
       if (btn) btn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium text-slate-400 hover:text-white transition whitespace-nowrap';
     });
-    [els.mobileFilterAllBtn, els.mobileFilterVideosBtn, els.mobileFilterImagesBtn].forEach(btn => {
+    [els.mobileFilterAllBtn, els.mobileFilterVideosBtn, els.mobileFilterImagesBtn, els.mobileFilterFavoritesBtn].forEach(btn => {
       if (btn) btn.className = 'py-2 rounded-lg font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1';
     });
 
@@ -761,6 +770,9 @@ function initEvents() {
     } else if (type === 'image') {
       if (els.filterImagesBtn) els.filterImagesBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-medium transition bg-emerald-600 text-white shadow-sm whitespace-nowrap';
       if (els.mobileFilterImagesBtn) els.mobileFilterImagesBtn.className = 'py-2 rounded-lg font-semibold transition bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1';
+    } else if (type === 'favorite') {
+      if (els.filterFavoritesBtn) els.filterFavoritesBtn.className = 'px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md font-semibold transition bg-amber-500 text-slate-950 shadow-sm whitespace-nowrap';
+      if (els.mobileFilterFavoritesBtn) els.mobileFilterFavoritesBtn.className = 'py-2 rounded-lg font-semibold transition bg-amber-500 text-slate-950 shadow-sm flex items-center justify-center gap-1';
     }
 
     applyFiltersAndSort();
@@ -770,6 +782,8 @@ function initEvents() {
   els.filterAllBtn.addEventListener('click', () => setFilter('all'));
   els.filterVideosBtn.addEventListener('click', () => setFilter('video'));
   els.filterImagesBtn.addEventListener('click', () => setFilter('image'));
+  if (els.filterFavoritesBtn) els.filterFavoritesBtn.addEventListener('click', () => setFilter('favorite'));
+  if (els.mobileFilterFavoritesBtn) els.mobileFilterFavoritesBtn.addEventListener('click', () => setFilter('favorite'));
 
   // Rename Modal Actions
   els.confirmRenameBtn.addEventListener('click', submitRename);
@@ -843,6 +857,7 @@ function initEvents() {
   // Selection toolbar & bulk actions
   if (els.selectionClearBtn) els.selectionClearBtn.addEventListener('click', clearSelection);
   if (els.selectAllBtn) els.selectAllBtn.addEventListener('click', toggleSelectAll);
+  if (els.selectionFavoriteBtn) els.selectionFavoriteBtn.addEventListener('click', bulkFavoriteToggle);
   if (els.selectionMoveBtn) els.selectionMoveBtn.addEventListener('click', () => {
     const items = selectedItems().map(f => ({ path: f.path, name: f.name, kind: 'file' }));
     if (items.length) openBulkMove(items);
@@ -1084,6 +1099,7 @@ async function init() {
   pollSystemStatus();
   fetchDuplicateSummary();
   updateIgnoredCountBadge();
+  updateFavoritesBadgeCount();
 }
 
 // Hook into events
@@ -1091,6 +1107,9 @@ initUploadEvents();
 
 // Expose callbacks globally
 window.libraryApp = {
+  loadFavoritesView,
+  toggleFavorite,
+  toggleCurrentLightboxFavorite,
   openRenameModal,
   openDeleteModal,
   cancelTranscode,

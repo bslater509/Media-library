@@ -122,9 +122,14 @@
               <button id="toggleStreamModeBtn" class="text-emerald-400 hover:text-emerald-300 underline ml-1 hidden">Transcode</button>
             </div>
           </div>
-          <button id="renameHeaderBtn" title="Rename video (R)" class="p-1.5 sm:p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
-            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button id="favoriteHeaderBtn" title="Toggle Favorite (B)" class="p-1.5 sm:p-2 text-slate-400 hover:text-amber-400 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition" aria-label="Toggle favorite">
+              <span id="favoriteHeaderIcon" class="text-xs sm:text-sm">☆</span>
+            </button>
+            <button id="renameHeaderBtn" title="Rename video (R)" class="p-1.5 sm:p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition">
+              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -239,7 +244,7 @@
       </div>
 
       <!-- Action Buttons Toolbar (Visible on Desktop / Tablets) -->
-      <div class="hidden md:grid grid-cols-4 gap-2 bg-slate-900/60 backdrop-blur-md p-2.5 rounded-xl border border-slate-800/70 shadow">
+      <div class="hidden md:grid grid-cols-5 gap-2 bg-slate-900/60 backdrop-blur-md p-2.5 rounded-xl border border-slate-800/70 shadow">
         
         <button id="prevBtn" title="Previous video (P)" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -249,6 +254,11 @@
         <button id="skipBtn" title="Skip to next video without moving (S)" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition">
           <span>Skip (S)</span>
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+
+        <button id="favoriteBtn" title="Toggle favorite (B)" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition">
+          <span id="favoriteToolbarIcon" class="text-sm">☆</span>
+          <span id="favoriteToolbarText">Favorite (B)</span>
         </button>
 
         <button id="renameBtn" title="Rename file (R)" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition">
@@ -356,6 +366,10 @@
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
       <span class="text-[10px] font-medium">Undo</span>
     </button>
+    <button id="mobileFavoriteBtn" class="flex-1 min-h-[44px] py-1.5 flex flex-col items-center justify-center gap-0.5 text-slate-300 hover:text-amber-300 active:scale-95 transition" title="Toggle favorite (B)">
+      <span id="mobileFavoriteIcon" class="text-xs">☆</span>
+      <span class="text-[10px] font-medium">Favorite</span>
+    </button>
     <button id="mobileRenameBtn" class="flex-1 min-h-[44px] py-1.5 flex flex-col items-center justify-center gap-0.5 text-emerald-300 hover:text-emerald-200 active:scale-95 transition">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
       <span class="text-[10px] font-medium">Rename</span>
@@ -389,7 +403,7 @@
   <!-- Delete Empty Folders Modal -->
   
 
-  <script type="module" src="/static/dist/app.js?v=23"></script>
+  <script type="module" src="/static/dist/app.js?v=24"></script>
   {{include 'partials/index_modals.html'}}
   {{include 'partials/theme_modal.html'}}
 </body>
