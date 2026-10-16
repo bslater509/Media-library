@@ -29,9 +29,6 @@ echarts.use([
 const els = {};
 let charts = {};
 let currentData = null;
-// Which responsive branch the mounted charts were built for, so a resize that
-// crosses the phone breakpoint can rebuild instead of just re-measuring.
-let narrowLayout = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -49,6 +46,9 @@ function cacheEls() {
   els.kpis = byId('anKpis');
   els.treemap = byId('anTreemap');
   els.treemapTotal = byId('anTreemapTotal');
+  els.treemapZoomIn = byId('anTreemapZoomIn');
+  els.treemapZoomOut = byId('anTreemapZoomOut');
+  els.treemapReset = byId('anTreemapReset');
   els.typeChart = byId('anTypeChart');
   els.typeLegend = byId('anTypeLegend');
   els.extChart = byId('anExtChart');
@@ -391,83 +391,126 @@ function mountChart(key, el, option) {
   charts[key] = chart;
 }
 
-// ---------------------------------------------------- responsive treemap
+// ------------------------------------------------------- treemap roam/zoom
 
-// The phone layout is a single full-width column, so the treemap is roughly
-// 360px across; at that width dozens of top-level blocks read as unlabelled
-// slivers. Phones get a taller stage, fewer top-level blocks, and child
-// labels suppressed unless the parent is genuinely large.
-const NARROW_MAX_WIDTH = 639;
-const NARROW_TREEMAP_TOP = 12;
-const NARROW_CHILDREN_MIN = 9000; // px² — a parent must own ~this much area
+// A phone can show the whole library at once but cannot read it at that size,
+// so the treemap is *roamable*: pinch/wheel zooms, a drag pans, and the buttons
+// drive the same view programmatically for mouse users. `visibleMin` /
+// `childrenVisibleMin` keep the zoomed-out view free of unreadable specks —
+// ECharts re-lays out on every zoom, so detail (and its labels) reappears as
+// soon as a block is big enough to read.
+const TREEMAP_ZOOM_MIN = 0.35;
+const TREEMAP_ZOOM_MAX = 12;
+const TREEMAP_ZOOM_STEP = 1.45;
+// How far a finger/pointer may travel before a release stops counting as a tap
+// on a block (a pan must not navigate to the folder under the pointer).
+const TREEMAP_TAP_SLOP = 8;
+let treemapDragDistance = 0;
 
-function isNarrowLayout() {
-  // `innerWidth` is the layout viewport — the same signal the template's
-  // `sm:`/`lg:` classes respond to — and unlike `matchMedia` it is easy to
-  // drive from tests. Fall back to `matchMedia` only when no width is known.
-  const width = window.innerWidth;
-  if (typeof width === 'number' && width > 0) return width <= NARROW_MAX_WIDTH;
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia(`(max-width: ${NARROW_MAX_WIDTH}px)`).matches;
+function treemapSeries(chart) {
+  try {
+    return chart.getModel().getSeriesByIndex(0);
+  } catch (e) {
+    return null;
   }
-  return false;
 }
 
-// The server already folds everything past 40 top nodes into one aggregate
-// node; on a phone we fold much earlier. `nodeCount` unwraps the aggregate's
-// own folder count (its name encodes it) so the merged label stays truthful.
-function treemapNodeCount(node) {
-  if (node && node.is_group) {
-    const m = /\((\d+)\)\s*$/.exec(node.name || '');
-    if (m) return Number(m[1]);
+// The live view is described by the root node's rect inside the chart box: at
+// zoom 1 it is exactly the box, and a bigger rect means the treemap overflows
+// (the canvas clips it) so panning can bring the rest into view.
+function treemapView(chart) {
+  const series = treemapSeries(chart);
+  if (!series) return null;
+  try {
+    const layout = series.getData().tree.root.getLayout();
+    const info = series.layoutInfo;
+    if (!layout || !info || !layout.width || !layout.height) return null;
+    return { series, layout, info };
+  } catch (e) {
+    return null;
   }
-  return 1;
 }
 
-function foldTreemapTop(top, narrow) {
-  if (!narrow || top.length <= NARROW_TREEMAP_TOP) return top;
-  const kept = top.slice(0, NARROW_TREEMAP_TOP);
-  const rest = top.slice(NARROW_TREEMAP_TOP);
-  const bytes = rest.reduce((sum, f) => sum + Number(f.bytes || 0), 0);
-  const count = rest.reduce((sum, f) => sum + treemapNodeCount(f), 0);
-  kept.push({ path: null, name: `Smaller folders (${count})`, bytes, is_group: true, children: [] });
-  return kept;
+function dispatchTreemapView(chart, view, rootRect) {
+  chart.dispatchAction({ type: 'treemapRender', seriesId: view.series.id, rootRect });
+}
+
+// Zoom about the centre of the visible box, keeping the point under the centre
+// fixed so a zoom-in does not drift. The "zoom" is how much bigger the drawn
+// root rect is than the chart box, so zooming in grows the rect (the canvas
+// clips it and a drag brings the rest into view).
+function zoomTreemap(factor) {
+  const chart = charts.treemap;
+  if (!chart) return;
+  const view = treemapView(chart);
+  if (!view) return;
+  const { layout, info } = view;
+  const current = layout.width / info.width;
+  const target = Math.min(TREEMAP_ZOOM_MAX, Math.max(TREEMAP_ZOOM_MIN, current * factor));
+  const step = target / current;
+  if (Math.abs(step - 1) < 1e-4) return;
+  const cx = info.width / 2;
+  const cy = info.height / 2;
+  dispatchTreemapView(chart, view, {
+    x: cx + (layout.x - cx) * step,
+    y: cy + (layout.y - cy) * step,
+    width: layout.width * step,
+    height: layout.height * step,
+  });
+}
+
+function resetTreemap() {
+  const chart = charts.treemap;
+  if (!chart) return;
+  const view = treemapView(chart);
+  if (!view) return;
+  dispatchTreemapView(chart, view, { x: 0, y: 0, width: view.info.width, height: view.info.height });
+}
+
+// Track how far the pointer moved between press and release so the click
+// handler can tell a tap from a pan (roam drags end in a click as well).
+function trackTreemapDrag() {
+  if (!els.treemap) return;
+  let down = null;
+  els.treemap.addEventListener('pointerdown', (e) => {
+    down = { x: e.clientX, y: e.clientY };
+    treemapDragDistance = 0;
+  });
+  els.treemap.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    treemapDragDistance = Math.max(
+      treemapDragDistance,
+      Math.hypot(e.clientX - down.x, e.clientY - down.y),
+    );
+  });
+  const end = () => { down = null; };
+  els.treemap.addEventListener('pointerup', end);
+  els.treemap.addEventListener('pointercancel', end);
+  els.treemap.addEventListener('pointerleave', end);
 }
 
 function buildCharts(data) {
   disposeCharts();
   const c = themeColors();
-  const narrow = isNarrowLayout();
-  narrowLayout = narrow;
   const tooltip = {
     backgroundColor: c.surface,
     borderColor: c.border,
     textStyle: { color: c.text, fontSize: 11 },
   };
 
-  // Treemap: top-level folders, one level of children each.
-  const topFold = foldTreemapTop(data.folders.top || [], narrow);
-  const treemapNodes = topFold.map((f, i) => ({
+  // Treemap: every top-level folder, one level of children each. Nothing is
+  // folded away — the whole library is in the chart and roam is how a phone
+  // reads it.
+  const treemapNodes = (data.folders.top || []).map((f, i) => ({
     name: f.name,
     value: f.bytes,
     path: f.path,
     is_group: Boolean(f.is_group),
     itemStyle: f.is_group ? { color: c.palette[(i + 2) % c.palette.length] } : { color: c.palette[i % c.palette.length] },
-    children: (f.children || []).map((kid) => ({
-      name: kid.name,
-      value: kid.bytes,
-      path: kid.path,
-      // `levels[i].label` is not honoured for this depth, so the phone policy
-      // is applied per node: child blocks stay as colour, the parent's upper
-      // label names the group, and a tap still reveals the name in the tooltip.
-      ...(narrow ? { label: { show: false } } : {}),
-    })),
+    children: (f.children || []).map((kid) => ({ name: kid.name, value: kid.bytes, path: kid.path })),
   }));
   if (els.treemapTotal) {
-    const topCount = (data.folders.top || []).length;
-    els.treemapTotal.textContent = treemapNodes.length < topCount
-      ? `${data.folders.root_bytes_formatted} · showing ${fmtInt(treemapNodes.length)} of ${fmtInt(topCount)}`
-      : `${data.folders.root_bytes_formatted} · ${fmtInt(topCount)} top-level`;
+    els.treemapTotal.textContent = `${data.folders.root_bytes_formatted} · ${fmtInt(treemapNodes.length)} top-level`;
   }
   mountChart('treemap', els.treemap, {
     tooltip: {
@@ -482,17 +525,21 @@ function buildCharts(data) {
     series: [{
       type: 'treemap',
       name: 'Storage',
-      roam: false,
+      // Pinch / scroll zooms, a drag pans; the buttons drive the same view.
+      roam: true,
+      scaleLimit: { min: TREEMAP_ZOOM_MIN, max: TREEMAP_ZOOM_MAX },
       nodeClick: false,
       breadcrumb: { show: false },
       width: '100%',
       height: '100%',
       data: treemapNodes,
-      // Keep slivers out of the way rather than drawing unlabelled specks.
-      visibleMin: narrow ? 40 : 10,
-      childrenVisibleMin: narrow ? NARROW_CHILDREN_MIN : 1000,
-      label: { fontSize: narrow ? 12 : 11, color: '#ffffff', overflow: 'truncate' },
-      upperLabel: { show: true, height: 20, fontSize: narrow ? 11 : 10, color: '#ffffff', overflow: 'truncate' },
+      // At zoom 1 the whole library is on screen, so hide what cannot be read
+      // there; each zoom re-lays out and brings the next level back with its
+      // labels once a block is big enough to hold them.
+      visibleMin: 40,
+      childrenVisibleMin: 12000,
+      label: { fontSize: 11, color: '#ffffff', overflow: 'truncate' },
+      upperLabel: { show: true, height: 20, fontSize: 10, color: '#ffffff', overflow: 'truncate' },
       itemStyle: { borderColor: c.surface, borderWidth: 2, gapWidth: 2 },
       levels: [
         { itemStyle: { borderColor: c.surface, borderWidth: 3, gapWidth: 3 }, upperLabel: { show: true, height: 22 } },
@@ -506,6 +553,9 @@ function buildCharts(data) {
   });
   if (charts.treemap) {
     charts.treemap.on('click', (p) => {
+      // A pan also ends in a click, so only a tap that barely moved opens the
+      // folder — otherwise dragging around the treemap would navigate away.
+      if (treemapDragDistance > TREEMAP_TAP_SLOP) return;
       const path = p && p.data && p.data.path;
       if (path) window.location.href = `/?folder=${encodeURIComponent(path)}`;
     });
@@ -707,6 +757,10 @@ function init() {
   cacheEls();
 
   if (els.refreshBtn) els.refreshBtn.addEventListener('click', () => load({ refresh: true }));
+  if (els.treemapZoomIn) els.treemapZoomIn.addEventListener('click', () => zoomTreemap(TREEMAP_ZOOM_STEP));
+  if (els.treemapZoomOut) els.treemapZoomOut.addEventListener('click', () => zoomTreemap(1 / TREEMAP_ZOOM_STEP));
+  if (els.treemapReset) els.treemapReset.addEventListener('click', resetTreemap);
+  trackTreemapDrag();
   if (els.previewCloseBtn) els.previewCloseBtn.addEventListener('click', closePreview);
   if (els.previewModal) {
     els.previewModal.addEventListener('click', (e) => { if (e.target === els.previewModal) closePreview(); });
@@ -731,12 +785,7 @@ function init() {
   };
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      // Crossing the phone breakpoint changes the treemap's shape (height,
-      // top-level fold, label policy), so rebuild rather than just re-measure.
-      if (currentData && isNarrowLayout() !== narrowLayout) buildCharts(currentData);
-      else resizeCharts();
-    }, 150);
+    resizeTimer = setTimeout(resizeCharts, 150);
   });
   // A tab that was hidden while the page loaded has no layout, so charts init
   // at zero size; re-measure when it becomes visible again.

@@ -131,11 +131,25 @@
                 <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                   <span>🗂️</span> Storage by Folder
                 </h3>
-                <p class="text-[11px] text-slate-500 mt-1">Recursive subtree size. Click a block to open that folder in the Library.</p>
+                <p class="text-[11px] text-slate-500 mt-1">Recursive subtree size. Pinch or scroll to zoom, drag to pan, tap a block to open that folder in the Library.</p>
               </div>
               <span id="anTreemapTotal" class="text-[10px] text-slate-400 font-mono shrink-0"></span>
             </div>
-            <div id="anTreemap" class="w-full h-[460px] sm:h-[420px] lg:h-[320px]"></div>
+            <div class="relative">
+              <div id="anTreemap" class="w-full h-[520px] sm:h-[440px] lg:h-[360px]"></div>
+              <div class="absolute top-1.5 right-1.5 flex flex-col gap-1.5" role="group" aria-label="Treemap zoom controls">
+                <button id="anTreemapZoomIn" type="button" title="Zoom in" aria-label="Zoom in" class="w-8 h-8 rounded-lg bg-slate-950/85 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"></circle><path stroke-linecap="round" d="M10.5 8v5M8 10.5h5M20 20l-4.6-4.6"></path></svg>
+                </button>
+                <button id="anTreemapZoomOut" type="button" title="Zoom out" aria-label="Zoom out" class="w-8 h-8 rounded-lg bg-slate-950/85 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"></circle><path stroke-linecap="round" d="M8 10.5h5M20 20l-4.6-4.6"></path></svg>
+                </button>
+                <button id="anTreemapReset" type="button" title="Reset view (show the whole library)" aria-label="Reset view" class="w-8 h-8 rounded-lg bg-slate-950/85 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5"></path></svg>
+                </button>
+              </div>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-2">Showing every top-level folder — zoom in to read the smaller ones, and the reset button fits the whole library back into the card.</p>
           </section>
 
           <section class="bg-slate-900/50 backdrop-blur-md p-3.5 sm:p-5 rounded-2xl border border-slate-800/70 min-w-0">
@@ -265,6 +279,6 @@
   {{include 'partials/theme_modal.html'}}
 
   <!-- Analytics Script -->
-  <script type="module" src="/static/dist/analytics.js?v=3"></script>
+  <script type="module" src="/static/dist/analytics.js?v=4"></script>
 </body>
 </html>

@@ -8,9 +8,32 @@ import { fileURLToPath } from 'node:url';
 // the DOM/render contract under test without a canvas dependency.
 const setOption = vi.fn();
 const chartOn = vi.fn();
+// A mutable stand-in for the treemap's live view: a 600x360 chart box whose
+// root rect is the box at zoom 1, and which the zoom buttons move through
+// `treemapRender` — so a round trip of the buttons can be asserted.
+const CHART_BOX = { x: 0, y: 0, width: 600, height: 360 };
+const viewState = { rect: { ...CHART_BOX } };
+const dispatchAction = vi.fn((action) => {
+  if (action && action.type === 'treemapRender' && action.rootRect) {
+    viewState.rect = { ...action.rootRect };
+  }
+});
 vi.mock('echarts/core', () => ({
   use: vi.fn(),
-  init: vi.fn(() => ({ setOption, on: chartOn, resize: vi.fn(), dispose: vi.fn() })),
+  init: vi.fn(() => ({
+    setOption,
+    on: chartOn,
+    resize: vi.fn(),
+    dispose: vi.fn(),
+    dispatchAction,
+    getModel: () => ({
+      getSeriesByIndex: () => ({
+        id: 'storage-treemap',
+        layoutInfo: CHART_BOX,
+        getData: () => ({ tree: { root: { getLayout: () => ({ ...viewState.rect }) } } }),
+      }),
+    }),
+  })),
 }));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -230,8 +253,7 @@ describe('analytics page publisher', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
-    // happy-dom's default viewport; the narrow-layout test overrides it.
-    window.innerWidth = 1024;
+    viewState.rect = { ...CHART_BOX };
   });
 
   it('loads the overview and renders the KPI strip, tables, cards and pills', async () => {
@@ -287,8 +309,7 @@ describe('analytics page publisher', () => {
     expect(types).toEqual(['treemap', 'pie', 'bar', 'bar']);
   });
 
-  it('folds the treemap to a readable number of blocks on a phone viewport', async () => {
-    window.innerWidth = 390;
+  it('keeps every top-level folder in the treemap and lets the view roam', async () => {
     const payload = JSON.parse(JSON.stringify(PAYLOAD));
     payload.folders.top = Array.from({ length: 30 }, (_, i) => ({
       path: `/media/F${i}`,
@@ -307,15 +328,75 @@ describe('analytics page publisher', () => {
 
     const treemapCall = setOption.mock.calls.find(([o]) => o.series?.[0]?.type === 'treemap');
     const series = treemapCall[0].series[0];
-    // 12 largest kept, everything else rolled into one aggregate block.
-    expect(series.data).toHaveLength(13);
-    expect(series.data[12].name).toBe('Smaller folders (18)');
-    expect(series.data[12].path).toBeNull();
-    expect(series.data[12].is_group).toBe(true);
-    // Child labels are suppressed so the phone blocks stay legible.
-    expect(series.data[0].children[0].label).toEqual({ show: false });
-    expect(series.childrenVisibleMin).toBeGreaterThan(0);
-    expect(document.getElementById('anTreemapTotal').textContent).toContain('showing 13 of 30');
+    // Nothing is folded away: the whole library is in the chart, however many
+    // top-level folders that is, and the caption reports the real count.
+    expect(series.data).toHaveLength(30);
+    expect(series.data[29].name).toBe('F29');
+    expect(series.data[29].path).toBe('/media/F29');
+    expect(document.getElementById('anTreemapTotal').textContent).toContain('30 top-level');
+
+    // Roam (pinch / scroll / drag) plus the buttons drive the same view.
+    expect(series.roam).toBe(true);
+    expect(series.scaleLimit.max).toBeGreaterThan(1);
+    expect(series.scaleLimit.min).toBeLessThan(1);
+  });
+
+  it('zooms and resets the treemap through the buttons', async () => {
+    await boot();
+
+    const zoomIn = document.getElementById('anTreemapZoomIn');
+    const zoomOut = document.getElementById('anTreemapZoomOut');
+    const reset = document.getElementById('anTreemapReset');
+    expect(zoomIn && zoomOut && reset).toBeTruthy();
+
+    // The chart box in the mock is 600x360, and at zoom 1 the drawn root rect
+    // is the box exactly — so zooming in grows the rect (a bigger drawing, of
+    // which the box shows a window) and zooming out shrinks it back.
+    reset.click();
+    expect(dispatchAction).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'treemapRender',
+      rootRect: { x: 0, y: 0, width: 600, height: 360 },
+    }));
+
+    zoomIn.click();
+    let rect = dispatchAction.mock.calls.at(-1)[0].rootRect;
+    expect(rect.width).toBeGreaterThan(600);
+    expect(rect.height).toBeGreaterThan(360);
+    // Zooming about the centre keeps the centre of the box fixed.
+    expect(rect.x + rect.width / 2).toBeCloseTo(300, 5);
+    expect(rect.y + rect.height / 2).toBeCloseTo(180, 5);
+
+    zoomOut.click();
+    rect = dispatchAction.mock.calls.at(-1)[0].rootRect;
+    expect(rect.width).toBeCloseTo(600, 5);
+    expect(rect.x).toBeCloseTo(0, 5);
+
+    // The zoom limits hold even when the buttons are hammered.
+    for (let i = 0; i < 40; i += 1) zoomIn.click();
+    rect = dispatchAction.mock.calls.at(-1)[0].rootRect;
+    expect(rect.width / 600).toBeLessThanOrEqual(12.0001);
+  });
+
+  it('does not open a folder when the treemap click ended a drag', async () => {
+    await boot();
+
+    const clickHandler = chartOn.mock.calls.find(([ev]) => ev === 'click')?.[1];
+    expect(typeof clickHandler).toBeTruthy();
+    const target = document.getElementById('anTreemap');
+    const before = window.location.href;
+
+    // A drag across the treemap must not navigate away.
+    target.dispatchEvent(new PointerEvent('pointerdown', { clientX: 20, clientY: 20, bubbles: true }));
+    target.dispatchEvent(new PointerEvent('pointermove', { clientX: 120, clientY: 90, bubbles: true }));
+    target.dispatchEvent(new PointerEvent('pointerup', { clientX: 120, clientY: 90, bubbles: true }));
+    clickHandler({ data: { path: '/media/Movies' } });
+    expect(window.location.href).toBe(before);
+
+    // A tap that stayed put does open the folder.
+    target.dispatchEvent(new PointerEvent('pointerdown', { clientX: 20, clientY: 20, bubbles: true }));
+    target.dispatchEvent(new PointerEvent('pointerup', { clientX: 21, clientY: 20, bubbles: true }));
+    clickHandler({ data: { path: '/media/Movies' } });
+    expect(window.location.href).toContain('/?folder=%2Fmedia%2FMovies');
   });
 
   it('reloads with refresh=1 when the Refresh button is pressed', async () => {
