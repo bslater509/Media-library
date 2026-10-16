@@ -5,6 +5,7 @@ import { ICONS, icon, hydrateIcons, DEFAULT_ICON_CLASS } from '../src/shared/ico
 import sheetHtml from '../../templates/partials/mobile_controls_sheet.html?raw';
 import tasksModalHtml from '../../templates/partials/tasks_modal.html?raw';
 import sorterTasksModalHtml from '../../templates/partials/sorter_tasks_modal.html?raw';
+import libraryHtml from '../../templates/library.html?raw';
 import { librarySource, sorterSource } from './sources.js';
 // Every icon the lightbox overlay bar renders.
 const LIGHTBOX_ICONS = [
@@ -108,6 +109,11 @@ describe('static template icon placeholders', () => {
 
   it('only references icons that exist in the shared set (sorter tasks modal)', () => {
     expectPlaceholdersResolve(sorterTasksModalHtml, 'sorter tasks modal');
+  });
+
+  it('only references icons that exist in the shared set (library page shell)', () => {
+    // The mobile top bar's one-tap Analytics link hydrates `gauge` here.
+    expectPlaceholdersResolve(libraryHtml, 'library page');
   });
 
   it('leaves no emoji behind in either Background Tasks modal', () => {

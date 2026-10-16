@@ -103,6 +103,10 @@ def test_html_views(api_client):
     assert res_lib.status_code == 200
     assert "tasksTabBtnActive" in res_lib.text
     assert "tasksTabBtnWorkers" in res_lib.text
+    # The mobile top bar carries a one-tap Analytics link (plus the drawer footer
+    # and the Controls sheet card), so the dashboard is reachable on a phone
+    # without opening a drawer or sheet.
+    assert 'id="mobileAnalyticsBtn"' in res_lib.text
     assert "tasksTabBtnTools" in res_lib.text
     assert "activeQueuesEmptyState" in res_lib.text
     assert "duplicatesModal" in res_lib.text
