@@ -27,6 +27,7 @@ from media_library.workers import (
     backup_watcher_instance,
     duplicate_hash_worker_instance,
     enqueue_pretranscode_for_source,
+    h265_worker_instance,
     library_ops_worker_instance,
     metadata_worker_instance,
     thumb_hash_worker_instance,
@@ -93,6 +94,7 @@ def create_app(
             await library_ops_worker_instance.start()
             await animated_thumb_worker_instance.start()
             await url_download_worker_instance.start()
+            await h265_worker_instance.start()
 
             # Auto-enqueue pre-transcoding for configured source directory
             if state.get("source_dir") and os.path.isdir(state["source_dir"]):
@@ -122,6 +124,7 @@ def create_app(
             await library_ops_worker_instance.stop()
             await animated_thumb_worker_instance.stop()
             await url_download_worker_instance.stop()
+            await h265_worker_instance.stop()
 
         # Perform clean snapshot backup to library folder on clean shutdown
         try:

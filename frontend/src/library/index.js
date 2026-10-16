@@ -6,13 +6,13 @@ import { autoDeleteAllVerified, closeDuplicatesModal, closeIgnoredDuplicatesModa
 import { loadFavoritesView, loadFolder, renderSidebarTree, setSidebarOpen, toggleFolderExpand } from './folders.js';
 import { applyFiltersAndSort, setupInfiniteScroll, toggleFavorite, updateFavoritesBadgeCount } from './gallery.js';
 import { relayoutMediaGrid, relayoutSubfolders, stepTileScale, syncTileScaleUI } from './layout.js';
-import { captureCurrentFrameAsPoster, closeMediaInfoModal, downloadMediaFile, openFancybox, openMediaInfoModal, openMediaInfoModalByPath, openMoveModalFromLightbox, setLightboxVideoSpeed, toggleCurrentLightboxFavorite, toggleLightboxVideoLoop } from './lightbox.js';
+import { captureCurrentFrameAsPoster, closeMediaInfoModal, convertLightboxVideoToX265, downloadMediaFile, openFancybox, openMediaInfoModal, openMediaInfoModalByPath, openMoveModalFromLightbox, setLightboxVideoSpeed, toggleCurrentLightboxFavorite, toggleLightboxVideoLoop } from './lightbox.js';
 import { applyBulkRename, bulkFavoriteToggle, bulkWebpOptimize, clearSelection, closeBulkRenameModal, closeContextMenu, closeDeleteModal, closeMoveModal, closeNewFolderModal, closeRenameModal, doMove, movePickerUp, openBulkDeleteModal, openBulkMove, openBulkRenameModal, openDeleteModal, openMoveModal, openNewFolderModal, openRenameModal, previewBulkRename, renderBulkRenameParams, runContextAction, selectedItems, submitDelete, submitMove, submitNewFolder, submitRename, toggleSelectAll } from './management.js';
 import { debouncedGlobalSearch, forceIndexPrune, performGlobalSearch, setSearchScope, triggerIndexSync } from './search.js';
 import { clearBrowserAnimCache, getBrowserAnimCacheStats, initServiceWorker, precacheFolderAnimatedPreviews } from './service_worker.js';
 import { toggleSheetList } from './sheet.js';
 import { SIDEBAR_TREE_KEY, TILE_SCALES, TILE_SCALE_KEY, TILE_SCALE_LABELS, els, loadExpandedFolders, loadTileScale, nameCollator, persistAnimatedThumbs, persistExpandedFolders, state } from './state.js';
-import { cancelAllTranscodes, cancelTranscode, closeConvertAllModal, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, submitConvertAll, toggleDuplicateHashPause, updateConvertAllBadge } from './tasks.js';
+import { cancelAllTranscodes, cancelH265, cancelTranscode, closeConvertAllModal, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, submitConvertAll, toggleDuplicateHashPause, updateConvertAllBadge } from './tasks.js';
 import { closeThemeModal, initMobileControlsSheet, initSheetDrag, initThemeCustomizerEvents, openThemeModal, updateMobileControlsBadge } from './theme.js';
 import { applySelectedThumbnail, closeThumbnailChooser, onThumbChooserScrub, openThumbnailChooser, useCurrentThumbChooserPosition } from './thumbnail_chooser.js';
 import { initUploadEvents, uploadState } from './uploads.js';
@@ -139,6 +139,9 @@ document.addEventListener('keydown', (e) => {
     } else if ((e.key === 'p' || e.key === 'P') && activeVideo) {
       e.preventDefault();
       captureCurrentFrameAsPoster();
+    } else if ((e.key === 's' || e.key === 'S') && activeVideo) {
+      e.preventDefault();
+      convertLightboxVideoToX265();
     } else if (e.key === '[' && activeVideo) {
       e.preventDefault();
       const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
@@ -888,6 +891,10 @@ function initEvents() {
   if (els.cancelConvertAllModalBtn) els.cancelConvertAllModalBtn.addEventListener('click', closeConvertAllModal);
   if (els.confirmConvertAllModalBtn) els.confirmConvertAllModalBtn.addEventListener('click', submitConvertAll);
   if (els.cancelAllTranscodesBtn) els.cancelAllTranscodesBtn.addEventListener('click', cancelAllTranscodes);
+  if (els.cancelH265Btn) els.cancelH265Btn.addEventListener('click', () => {
+    const job = state.latestH265Data && state.latestH265Data.active;
+    if (job) cancelH265(job.id);
+  });
 
   // Media Info Modal Events
   if (els.closeInfoModalBtn) els.closeInfoModalBtn.addEventListener('click', closeMediaInfoModal);
@@ -1115,6 +1122,7 @@ window.libraryApp = {
   cancelTranscode,
   openConvertAllModal,
   cancelAllTranscodes,
+  cancelH265,
   openDuplicatesModal,
   resolveDuplicateSet,
   deleteSingleDuplicateFile,
@@ -1138,6 +1146,7 @@ window.libraryApp = {
   setLightboxVideoSpeed,
   toggleLightboxVideoLoop,
   captureCurrentFrameAsPoster,
+  convertLightboxVideoToX265,
   openThumbnailChooser,
   closeThumbnailChooser,
   applySelectedThumbnail,

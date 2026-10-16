@@ -263,6 +263,104 @@
       color: #fff;
     }
 
+    /* Floating progress panel for the in-place x265 (HEVC) conversion. Sits
+       top-centre over the viewer's own glass tokens and never fades with the
+       idle caption bar (it lives outside `.lb-meta`). */
+    .lb-x265-panel {
+      position: absolute;
+      top: max(1rem, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 40;
+      width: min(420px, calc(100% - 2rem));
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.7rem 0.85rem;
+      border-radius: 0.75rem;
+      background: var(--glass-bg-strong, rgba(12, 10, 9, 0.9));
+      border: 1px solid var(--glass-border, rgba(168, 162, 158, 0.2));
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.2);
+      -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.2);
+      color: #e7e5e4;
+      pointer-events: auto;
+    }
+    .lb-x265-panel__row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .lb-x265-panel__icon {
+      width: 1rem;
+      height: 1rem;
+      flex: 0 0 auto;
+      color: var(--accent, #f59e0b);
+    }
+    .lb-x265-panel__title {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lb-x265-panel__cancel {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 0.4rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(231, 229, 228, 0.8);
+      cursor: pointer;
+    }
+    .lb-x265-panel__cancel .lb-icon {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+    .lb-x265-panel__cancel:hover {
+      background: rgba(239, 68, 68, 0.85);
+      border-color: transparent;
+      color: #fff;
+    }
+    .lb-x265-panel__track {
+      width: 100%;
+      height: 0.4rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+    }
+    .lb-x265-panel__fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: var(--accent, #f59e0b);
+      transition: width 0.25s ease;
+    }
+    .lb-x265-panel__meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.625rem;
+      color: rgba(231, 229, 228, 0.6);
+    }
+    .lb-x265-panel__pct {
+      color: var(--accent, #f59e0b);
+      font-weight: 700;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .lb-x265-panel__fill {
+        transition: none;
+      }
+    }
+
     /* Phones: two tiers (metadata over actions) and tighter controls so the
        whole bar fits a 360px viewport without scrolling sideways. */
     @media (max-width: 767px) {
@@ -807,7 +905,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=74"></script>
+  <script type="module" src="/static/dist/library.js?v=75"></script>
   {{include 'partials/library_modals_media.html'}}
   {{include 'partials/library_modals_bulk.html'}}
   {{include 'partials/library_modals_manage.html'}}

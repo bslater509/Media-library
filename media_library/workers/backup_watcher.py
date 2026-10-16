@@ -110,6 +110,7 @@ class BackupWatcherWorker(BaseWorker):
             duplicate_hash_worker_instance,
             thumb_hash_worker_instance,
         )
+        from media_library.workers.h265_worker import h265_worker_instance
         from media_library.workers.library_ops_worker import (
             library_ops_worker_instance,
         )
@@ -165,6 +166,10 @@ class BackupWatcherWorker(BaseWorker):
                     bool(url_download_worker_instance.active_jobs)
                     or url_download_worker_instance.jobs_queue.qsize() > 0
                 )
+                is_h265_busy = (
+                    h265_worker_instance.active is not None
+                    or h265_worker_instance.queue.qsize() > 0
+                )
                 is_batch_zip_busy = batch_zip_state.get("status") in (
                     "running",
                     "paused",
@@ -192,6 +197,7 @@ class BackupWatcherWorker(BaseWorker):
                     or is_metadata_busy
                     or is_anim_busy
                     or is_url_dl_busy
+                    or is_h265_busy
                     or is_batch_zip_busy
                     or is_batch_unzip_busy
                     or is_zip_busy

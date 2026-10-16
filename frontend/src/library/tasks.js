@@ -196,6 +196,10 @@ async function pollSystemStatus(immediate = false) {
         state.latestUrlDownloadsData = data.url_downloads;
         renderUrlDownloadsStatus(data.url_downloads);
       }
+      if (data.h265) {
+        state.latestH265Data = data.h265;
+        renderH265Status(data.h265);
+      }
 
       updateHeaderTaskBadge();
 
@@ -238,6 +242,7 @@ function updateHeaderTaskBadge() {
   const urlDlData = state.latestUrlDownloadsData;
   const metaData = state.latestMetadataData;
   const hashData = state.latestThumbHashData;
+  const h265Data = state.latestH265Data;
 
   // Unified badge state shared by the desktop pill and the mobile header
   // one-tap tasks button (active+queued item count + descriptive tooltip).
@@ -256,6 +261,7 @@ function updateHeaderTaskBadge() {
     metadata: metaData,
     thumbHash: hashData,
     urlDownloads: urlDlData,
+    h265: h265Data,
     uploads: {
       active: uploadState.activeUploads || 0,
       queued: uploadState.queue.filter((f) => f.status === 'pending').length,
@@ -319,6 +325,8 @@ function updateHeaderTaskBadge() {
     (libOpsData && libOpsData.queued ? libOpsData.queued.length : 0) +
     (tData && tData.active ? 1 : 0) +
     (tData && tData.queued ? tData.queued.length : 0) +
+    (h265Data && h265Data.active ? 1 : 0) +
+    (h265Data && h265Data.queued ? h265Data.queued.length : 0) +
     (animData && animData.active ? 1 : 0) +
     (animData && animData.queued ? animData.queued.length : 0) +
     (uploadState.activeUploads || 0) +
@@ -505,6 +513,70 @@ function renderLibraryOpsStatus(data) {
     if (els.queuedLibraryOpsList) els.queuedLibraryOpsList.innerHTML = '';
   }
 }
+// In-place x265 (HEVC) conversion panel. One conversion runs at a time, so the
+// active box + a short queued list is all the background tasks modal shows.
+function renderH265Status(data) {
+  if (!els.h265Section) return;
+  const active = data ? data.active : null;
+  const queued = (data && data.queued) || [];
+  const isActive = !!active || queued.length > 0;
+
+  els.h265Section.classList.toggle('hidden', !isActive);
+  if (!isActive) return;
+
+  if (els.h265Summary) {
+    els.h265Summary.textContent = active
+      ? `Converting${queued.length ? ` +${queued.length}` : ''}`
+      : `${queued.length} queued`;
+  }
+
+  if (active) {
+    els.activeH265Box.classList.remove('hidden');
+    if (els.activeH265Filename) els.activeH265Filename.textContent = active.filename;
+    if (els.activeH265Percent) els.activeH265Percent.textContent = `${(active.percent || 0).toFixed(1)}%`;
+    if (els.activeH265ProgressBar) els.activeH265ProgressBar.style.width = `${active.percent || 0}%`;
+    if (els.activeH265Stats) {
+      const bits = [];
+      if (active.fps) bits.push(`${active.fps} fps`);
+      if (active.speed) bits.push(active.speed);
+      if (active.eta) bits.push(`ETA ${active.eta}`);
+      els.activeH265Stats.textContent = bits.join(' · ') || 'Encoding';
+    }
+  } else {
+    els.activeH265Box.classList.add('hidden');
+  }
+
+  if (queued.length) {
+    els.queuedH265Container.classList.remove('hidden');
+    if (els.queuedH265Count) els.queuedH265Count.textContent = queued.length;
+    if (els.queuedH265List) {
+      els.queuedH265List.innerHTML = queued.slice(0, sheetListSlice('queuedH265', queued.length, 10)).map(q => `
+        <div class="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+          <span class="truncate text-slate-300 font-mono text-[11px] flex-1 min-w-0">${escapeHtml(q.filename)}</span>
+          <button onclick="window.libraryApp.cancelH265('${safeAttrEscape(q.id)}')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 bg-red-950/40 hover:bg-red-900/60 rounded border border-red-800/50 shrink-0">Cancel</button>
+        </div>
+      `).join('') + renderListExpander('queuedH265', queued.length, 10);
+    }
+  } else {
+    els.queuedH265Container.classList.add('hidden');
+    if (els.queuedH265List) els.queuedH265List.innerHTML = '';
+  }
+}
+async function cancelH265(jobId) {
+  try {
+    const res = await fetch('/api/backup/transcode/x265/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+    if (res.ok) {
+      showToast('x265 conversion cancelled', 'info');
+      pollSystemStatus(true);
+    }
+  } catch (err) {
+    console.error('Error cancelling x265 conversion:', err);
+  }
+}
 function bindUrlDownloadCancelButtons(container) {
   if (!container) return;
   container.querySelectorAll('[data-urldl-cancel]').forEach(btn => {
@@ -651,4 +723,4 @@ async function toggleDuplicateHashPause() {
   }
 }
 
-export { LIBOP_BADGES, LIBOP_LABELS, bindUrlDownloadCancelButtons, cancelAllTranscodes, cancelTranscode, cancelUrlDownloadJob, closeConvertAllModal, isPollingSystem, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, pollTransfersStatus, renderDesktopUrlDownloadsStatus, renderLibraryOpsStatus, renderMobileUrlDownloadsStatus, renderTranscodeStatus, renderTransferStatus, renderUrlDownloadsStatus, submitConvertAll, systemPollTimer, toggleDuplicateHashPause, updateConvertAllBadge, updateHeaderTaskBadge, updateZipTasksSummary };
+export { LIBOP_BADGES, LIBOP_LABELS, bindUrlDownloadCancelButtons, cancelAllTranscodes, cancelH265, cancelTranscode, cancelUrlDownloadJob, closeConvertAllModal, isPollingSystem, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, pollTransfersStatus, renderDesktopUrlDownloadsStatus, renderH265Status, renderLibraryOpsStatus, renderMobileUrlDownloadsStatus, renderTranscodeStatus, renderTransferStatus, renderUrlDownloadsStatus, submitConvertAll, systemPollTimer, toggleDuplicateHashPause, updateConvertAllBadge, updateHeaderTaskBadge, updateZipTasksSummary };

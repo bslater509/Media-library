@@ -42,6 +42,7 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     ffmpeg_mod = importlib.import_module("media_library.services.ffmpeg_service")
     backup_mod = importlib.import_module("media_library.services.backup_service")
     transcode_mod = importlib.import_module("media_library.workers.transcode_worker")
+    h265_mod = importlib.import_module("media_library.workers.h265_worker")
 
     transcode_dir = data_dir / "transcodes"
     webp_staging = data_dir / "webp_staging"
@@ -87,6 +88,7 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(backup_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     monkeypatch.setattr(backup_mod, "BACKUP_STAGING_DIR", backup_staging)
     monkeypatch.setattr(transcode_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
+    monkeypatch.setattr(h265_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
 
 
 @pytest.fixture(autouse=True)

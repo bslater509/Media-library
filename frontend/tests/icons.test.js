@@ -11,6 +11,7 @@ import { librarySource, sorterSource } from './sources.js';
 const LIGHTBOX_ICONS = [
   'gauge', 'repeat-2', 'camera', 'film', 'star', 'info', 'download',
   'folder-input', 'pencil', 'trash-2', 'hard-drive', 'monitor', 'clock',
+  'shrink',
 ];
 
 // Every icon the two Background Tasks modals render.

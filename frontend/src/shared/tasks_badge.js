@@ -31,12 +31,13 @@ export function computeTaskSummary(sources = {}) {
   const {
     transfers, libraryOps, transcode, animated, thumbnails, webp,
     index, backup, zip, batchZip, batchUnpack, urlDownloads, uploads,
-    metadata, thumbHash,
+    metadata, thumbHash, h265,
   } = sources;
 
   const trans = transfers ? (transfers.active ? 1 : 0) + queueLength(transfers) : 0;
   const ops = libraryOps ? (libraryOps.active ? 1 : 0) + queueLength(libraryOps) : 0;
   const tx = transcode ? (transcode.active ? 1 : 0) + queueLength(transcode) : 0;
+  const hx = h265 ? (h265.active ? 1 : 0) + queueLength(h265) : 0;
   const anim = animated
     ? (Number(animated.total_queued) || 0)
       || (animated.active ? 1 : 0) + queueLength(animated)
@@ -57,8 +58,8 @@ export function computeTaskSummary(sources = {}) {
   const up = uploads ? (uploads.active || 0) + (uploads.queued || 0) : 0;
 
   return {
-    count: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up,
-    active: trans + ops + tx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up > 0,
+    count: trans + ops + tx + hx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up,
+    active: trans + ops + tx + hx + anim + th + wp + ix + bk + zp + bz + bu + md + thh + dl + up > 0,
   };
 }
 
@@ -71,7 +72,7 @@ export function describePrimaryTask(sources = {}) {
   const {
     transfers, libraryOps, transcode, animated, thumbnails, webp,
     index, backup, zip, batchZip, batchUnpack, urlDownloads, uploads,
-    metadata, thumbHash,
+    metadata, thumbHash, h265,
   } = sources;
 
   const hasQueue = (d) => d && (d.active || queueLength(d) > 0);
@@ -102,6 +103,13 @@ export function describePrimaryTask(sources = {}) {
     return active
       ? `${Math.round(active.percent || 0)}% (${q + 1})`
       : `${q} queued`;
+  }
+  if (hasQueue(h265)) {
+    const active = h265.active;
+    const q = queueLength(h265);
+    return active
+      ? `x265 ${Math.round(active.percent || 0)}%`
+      : `${q} x265 queued`;
   }
   if (animated && (animated.active || (animated.total_queued || 0) > 0)) {
     const pct = Math.round(animated.percent || 0);

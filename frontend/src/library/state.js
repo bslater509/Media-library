@@ -455,6 +455,18 @@
     queuedLibraryOpsContainer: document.getElementById('queuedLibraryOpsContainer'),
     queuedLibraryOpsCount: document.getElementById('queuedLibraryOpsCount'),
     queuedLibraryOpsList: document.getElementById('queuedLibraryOpsList'),
+    // x265 (HEVC) Conversion Elements
+    h265Section: document.getElementById('h265Section'),
+    h265Summary: document.getElementById('h265Summary'),
+    activeH265Box: document.getElementById('activeH265Box'),
+    activeH265Filename: document.getElementById('activeH265Filename'),
+    activeH265Percent: document.getElementById('activeH265Percent'),
+    activeH265ProgressBar: document.getElementById('activeH265ProgressBar'),
+    activeH265Stats: document.getElementById('activeH265Stats'),
+    cancelH265Btn: document.getElementById('cancelH265Btn'),
+    queuedH265Container: document.getElementById('queuedH265Container'),
+    queuedH265Count: document.getElementById('queuedH265Count'),
+    queuedH265List: document.getElementById('queuedH265List'),
     // Animated Preview Queue Controls
     activeAnimatedSection: document.getElementById('activeAnimatedSection'),
     animSummaryText: document.getElementById('animSummaryText'),

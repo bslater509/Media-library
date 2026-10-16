@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from media_library.core.constants import VIDEO_EXTENSIONS
 from media_library.core.state import format_size, state
 from media_library.db.connection import db_conn
 from media_library.services.ffmpeg_service import (
@@ -18,6 +19,7 @@ from media_library.services.media_service import (
     resolve_video_path,
     validate_backup_path,
 )
+from media_library.workers.h265_worker import h265_worker_instance
 from media_library.workers.transcode_worker import transcode_worker_instance
 
 router = APIRouter()
@@ -32,6 +34,11 @@ class CancelTranscodeRequest(BaseModel):
 class BackupTranscodeRequest(BaseModel):
     folder_path: str | None = None
     file_path: str | None = None
+
+
+class X265ConvertRequest(BaseModel):
+    path: str | None = None
+    job_id: str | None = None
 
 
 @router.post("/api/transcode/pause")
@@ -149,6 +156,52 @@ async def backup_enqueue_all_transcode() -> dict:
         "success": True,
         "enqueued_count": len(enqueued),
     }
+
+
+@router.post("/api/backup/transcode/x265")
+async def enqueue_x265_conversion(req: X265ConvertRequest) -> dict:
+    """Queue an in-place H.265 (HEVC) re-encode of a library video.
+
+    Drives the lightbox's "Convert to x265" button. The worker keeps the
+    original filename and just replaces the bytes (a ``.mp4`` sibling is
+    produced when the source used a container the browser cannot play).
+    """
+    if not req.path:
+        raise HTTPException(status_code=400, detail="A file path is required")
+    real_path = validate_backup_path(req.path)
+    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail="Video file not found")
+    if os.path.splitext(real_path)[1].lower() not in VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Path is not a video file")
+
+    try:
+        job = h265_worker_instance.enqueue(real_path)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return {
+        "success": True,
+        "job_id": job["id"],
+        "source_path": real_path,
+        "status": job["status"],
+    }
+
+
+@router.get("/api/backup/transcode/x265/status")
+def get_x265_status(path: str | None = Query(None)) -> dict:
+    """Active/queued x265 jobs and, when ``path`` is given, that file's job."""
+    return h265_worker_instance.get_status(path)
+
+
+@router.post("/api/backup/transcode/x265/cancel")
+async def cancel_x265_conversion(req: X265ConvertRequest) -> dict:
+    job_id = req.job_id
+    if not job_id and req.path:
+        job = h265_worker_instance.job_for_path(validate_backup_path(req.path))
+        job_id = job["id"] if job else None
+    if not job_id or not h265_worker_instance.cancel(job_id):
+        raise HTTPException(status_code=404, detail="Conversion job not found")
+    return {"success": True, "action": "cancelled"}
 
 
 @router.get("/api/backup/transcode_stream")

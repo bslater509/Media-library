@@ -98,6 +98,11 @@ describe('library/shared/tasks_badge.js unit tests', () => {
       expect(summary.active).toBe(true);
       expect(computeTaskSummary({ metadata: { status: 'idle' }, thumbHash: { status: 'migrating' } }).count).toBe(1);
     });
+
+    it('counts active and queued x265 conversions as items', () => {
+      expect(computeTaskSummary({ h265: { active: { id: 'a' }, queued: [{ id: 'b' }] } }).count).toBe(2);
+      expect(computeTaskSummary({ h265: { active: null, queued: [] } }).count).toBe(0);
+    });
   });
 
   describe('describePrimaryTask', () => {
@@ -143,6 +148,11 @@ describe('library/shared/tasks_badge.js unit tests', () => {
       expect(describePrimaryTask({ animated: { active: { id: 1 }, percent: 50, total_queued: 3 } })).toBe('Anim 50%');
       expect(describePrimaryTask({ animated: { active: null, total_queued: 2 } })).toBe('2 anim');
       expect(describePrimaryTask({ urlDownloads: { active: [], queued: [{ id: 1 }] } })).toBe('1 dl queued');
+    });
+
+    it('describes an active or queued x265 conversion', () => {
+      expect(describePrimaryTask({ h265: { active: { percent: 42 }, queued: [] } })).toBe('x265 42%');
+      expect(describePrimaryTask({ h265: { active: null, queued: [{ id: 1 }, { id: 2 }] } })).toBe('2 x265 queued');
     });
 
     it('describes active uploads', () => {

@@ -148,6 +148,35 @@
           <div id="urlDownloadsList" class="ml-flatten flex flex-col gap-1.5"></div>
         </div>
 
+        <!-- Section 0d: x265 (HEVC) Conversions -->
+        <div id="h265Section" class="hidden flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+              <span data-lb-icon="shrink" data-lb-icon-class="w-3.5 h-3.5"></span> x265 Conversions
+            </h4>
+            <span id="h265Summary" class="text-[10px] text-slate-400 font-mono">Idle</span>
+          </div>
+
+          <div id="activeH265Box" class="bg-slate-900 p-2.5 rounded-lg border border-emerald-900/40 hidden flex flex-col gap-1.5 shadow-inner">
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-emerald-200 font-medium truncate" id="activeH265Filename">clip.mp4</span>
+              <span class="text-emerald-400 font-mono text-[10px] font-bold shrink-0" id="activeH265Percent">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div id="activeH265ProgressBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono gap-2">
+              <span id="activeH265Stats" class="truncate">0 fps</span>
+              <button id="cancelH265Btn" class="text-[10px] text-rose-400 hover:text-rose-300 hover:underline transition cursor-pointer shrink-0">Cancel</button>
+            </div>
+          </div>
+
+          <div id="queuedH265Container" class="hidden flex flex-col gap-1.5">
+            <span class="text-[10px] uppercase font-bold text-slate-500">Upcoming x265 Jobs (<span id="queuedH265Count">0</span>):</span>
+            <div id="queuedH265List" class="ml-flatten flex flex-col gap-1 max-h-28 overflow-y-auto no-scrollbar text-xs"></div>
+          </div>
+        </div>
+
         <!-- Section 1: Auto-MP4 Pre-Transcoding -->
         <div id="activeTranscodeSection" class="flex flex-col gap-2.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
           <div class="flex items-center justify-between gap-2">

@@ -57,6 +57,7 @@ import repeat2 from 'lucide-static/icons/repeat-2.svg?raw';
 import rocket from 'lucide-static/icons/rocket.svg?raw';
 import search from 'lucide-static/icons/search.svg?raw';
 import settings from 'lucide-static/icons/settings.svg?raw';
+import shrink from 'lucide-static/icons/shrink.svg?raw';
 import slidersHorizontal from 'lucide-static/icons/sliders-horizontal.svg?raw';
 import sparkles from 'lucide-static/icons/sparkles.svg?raw';
 import star from 'lucide-static/icons/star.svg?raw';
@@ -107,6 +108,7 @@ export const ICONS = Object.freeze({
   rocket,
   search,
   settings,
+  shrink,
   'sliders-horizontal': slidersHorizontal,
   sparkles,
   star,

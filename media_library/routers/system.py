@@ -18,11 +18,12 @@ from media_library.services.zip import (
 )
 from media_library.workers import (
     animated_thumb_worker_instance,
-    url_download_worker_instance,
+    h265_worker_instance,
     library_ops_worker_instance,
     metadata_worker_instance,
     thumb_hash_worker_instance,
     thumbnail_worker_instance,
+    url_download_worker_instance,
     webp_worker_instance,
 )
 
@@ -95,6 +96,9 @@ async def get_all_system_status() -> dict[str, Any]:
     # 13. URL playlist downloads (yt-dlp)
     url_dl_data = url_download_worker_instance.get_status()
 
+    # 14. In-place H.265 (x265) conversions (Library lightbox action)
+    h265_data = h265_worker_instance.get_status()
+
     # Calculate overall activity flag so client can adapt poll interval
     is_active = (
         bool(transfers_data.get("active"))
@@ -118,6 +122,8 @@ async def get_all_system_status() -> dict[str, Any]:
         or bool(anim_thumb_data.get("active"))
         or url_dl_data.get("active_count", 0) > 0
         or url_dl_data.get("queued_count", 0) > 0
+        or bool(h265_data.get("active"))
+        or h265_data.get("queued_count", 0) > 0
     )
 
     return {
@@ -137,6 +143,7 @@ async def get_all_system_status() -> dict[str, Any]:
         "batch_unzip": batch_unzip_data,
         "library_ops": library_ops_data,
         "url_downloads": url_dl_data,
+        "h265": h265_data,
     }
 
 
