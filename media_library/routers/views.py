@@ -34,6 +34,14 @@ async def serve_downloads():
     return HTMLResponse(content=downloads_template)
 
 
+@router.api_route("/analytics", methods=["GET", "HEAD"], response_class=HTMLResponse)
+async def serve_analytics():
+    analytics_template = load_template("analytics.html")
+    if analytics_template is None:
+        return HTMLResponse("<h1>Analytics page loading...</h1>", status_code=200)
+    return HTMLResponse(content=analytics_template)
+
+
 @router.api_route("/library", methods=["GET", "HEAD"])
 async def redirect_library(request: Request):
     # Preserve the query string (e.g. ?folder=...) so deep links and refreshes

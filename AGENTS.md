@@ -63,6 +63,13 @@
    - Mobile Sidebar Drawer & Backdrop Isolation: On mobile (`< md`), `#sidebarBackdrop` sits at `z-40` (`fixed inset-0 bg-slate-950/80 backdrop-blur-sm`) and `#sidebarDrawer` sits at `z-[45]` (`fixed top-12 sm:top-[52px] bottom-0 left-0 w-72 sm:w-80`) with solid theme-reactive surface (`bg-slate-900` / `#050506` in OLED mode) and mobile close button (`#closeSidebarBtn`), sliding over the blurred background so the drawer itself is never blurred or obscured.
    - Modal scroll isolation: modals apply `.modal-scroll-lock` (`overflow: hidden !important`) to `document.body` and set `overscroll-behavior: contain !important` on scrollable bodies, preventing theme/task modal interactions from causing background overscroll.
    - Transfer dropdowns sit at `z-[70]` with backdrops at `z-[60]`. Full-page modals sit at `z-[80]` and high-priority action dialogs at `z-[1200]`.
+10. **Library Analytics Dashboard (`/analytics`, `templates/analytics.html`, `frontend/src/analytics/index.js`)**:
+   - A read-only, index-only overview of the whole collection, reached from an **Analytics** nav tab in the Library, Sorter and Downloads desktop headers and from an **Analytics** shortcut in the mobile sidebar drawer footer (next to Downloads). Every figure is computed from SQLite alone — no `os.walk`, no `os.scandir`, no remote `os.stat`, no media decode — so the page stays instant over FUSE; `tests/test_analytics_api.py` asserts the no-filesystem-touch contract by poisoning `os.walk`/`os.scandir` during the request.
+   - **One endpoint, revision-keyed memo**: `GET /api/analytics/overview` (filters `folder_limit` 1–100 default 15, `file_limit` 1–100 default 25, `refresh` bool) returns `{generated_at, library_root, limits, totals, by_type, by_extension, folders{root_bytes, root_files, top, largest}, largest_files, quality, reclaimable, health}`. The payload is memoized for `INDEX_COUNT_CACHE_TTL_S` (30s) keyed on `indexer_state["revision"]` — the same invalidation key the unified status API's count cache uses — so a crawl or forced prune can never serve a stale snapshot; `?refresh=1` drops the memo for the page's **Refresh** button (library ops such as moves/deletes do not bump `revision`).
+   - **Recursive folder rollup** (`services/analytics_service.py`): every indexed folder is linked to its nearest included ancestor (so an unindexed intermediate directory cannot orphan a subtree), file totals per `folder_path` are attached to their node (orphan member folders such as ZIP-internal paths roll up into the archive node), and subtree sizes/counts accumulate deepest-first. The library root is the configured `destination_dir` when it is indexed, else the shallowest indexed folder; folders outside it are dropped from the ranking. `.media_library_backup` is excluded from every ranking. `folders.largest` is a **partition** — a folder appears only when none of its ancestors is already listed — so the share percentages cannot double-count; `folders.top` is the treemap's top-level data with one level of children (capped at 12 per node), and everything past the top 40 is folded into a `is_group` "Smaller folders (N)" node so the treemap stays complete in area but bounded in payload.
+   - **Cards**: KPI strip (total bytes, files, videos, images, folders, total runtime); *Storage by Folder* ECharts **treemap** (click a block to open that folder in the Library via `/?folder=<path>`, aggregate node not clickable) plus a ranked **Largest Folders** table with share bars and `Open →` links; *Media Mix* bytes **donut** + count/bytes legend + top-extensions **bar** chart; *Reclaimable Space* (duplicate size-match candidate groups/files/upper-bound bytes, WebP saved + loose images still to convert, ZIP-eligible leaf image folders, indexed empty leaf folders) each linking into the Library panel that does the work; *Largest Files* table (top N, resolution/duration/codec) where a row opens an in-page **preview modal** with byte-range-streamed media, size/resolution/codec metadata and an "Open folder in Library →" link; *Quality & Runtime* resolution **histogram** (videos bucketed by longest edge — 4K/1440p/1080p/720p/SD/n-a, so a portrait 2160x3840 clip reads as 4K) with probed/high-fps/runtime notes; and *Health & Housekeeping* pills (index fresh/stale/crawling from `indexer_state`, missing thumbnails, probed, visual hashes, missing animated previews, needing transcoding, empty folders, ignored duplicate pairs) that turn amber when work is outstanding.
+   - **Charts** are a tree-shaken **ECharts 6** build (a build-time devDependency bundled into `analytics.js` like `lucide-static`, so runtime dependencies stay at zero: `echarts/core` + Bar/Pie/Treemap charts + Grid/Tooltip components + `LegacyGridContainLabel` (required for `grid.containLabel` on ECharts 6) + CanvasRenderer). Chrome colours and the block palette derive from the live theme tokens (`THEME_MANAGER.ACCENTS`/`BASES`) and are rebuilt on the `themechange` event, so accent and OLED/surface switches apply immediately; the stage is revealed *before* charts mount (ECharts measures its container on init) and a `visibilitychange`/debounced `resize` listener re-measures. The dashboard keeps its own theme-customizer wiring (mirroring `/downloads`) rather than importing the Library's `theme.js`, which would pull in the whole Library bundle.
+   - Read-only by design: no mutation endpoints, so duplicate resolution, WebP, ZIP and empty-folder cleanup stay in the Library's existing panels. The page is a single entrypoint (`static/dist/analytics.js?v=1`) with its own version string in `templates/analytics.html`, plus `frontend/tests/analytics_smoke.test.js` (ECharts mocked) asserting the KPI/table/pill rendering, HTML escaping of filenames, the treemap's clickable-vs-aggregate data, the `refresh=1` reload, the preview modal, and the error state.
 
 
 ### Tech Stack
@@ -72,7 +79,7 @@
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
 - **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
 - **URL Playlist Downloading**: yt-dlp (run as an isolated subprocess: `python -m yt_dlp`, never imported in-process) with an automatic **gallery-dl** fallback (`python -m gallery_dl`) for sites yt-dlp does not support (image boards / file hosts such as bunkr album links)
-- **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video. Icons are inline SVGs inlined at build time from `lucide-static` (ISC, a devDependency) via Vite `?raw` imports into the shared registry `frontend/src/shared/icons.js` (`icon(name, class)` for JS-rendered markup, `hydrateIcons()` for static `[data-lb-icon]` placeholders) — no icon font, no runtime icon library, and no CDN request; only the icons actually imported are bundled, and both entrypoints (`library.js`, `app.js`) share the one registry.
+- **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video. Icons are inline SVGs inlined at build time from `lucide-static` (ISC, a devDependency) via Vite `?raw` imports into the shared registry `frontend/src/shared/icons.js` (`icon(name, class)` for JS-rendered markup, `hydrateIcons()` for static `[data-lb-icon]` placeholders) — no icon font, no runtime icon library, and no CDN request; only the icons actually imported are bundled, and both entrypoints (`library.js`, `app.js`) share the one registry. The only other build-time dependency is **ECharts 6** (a devDependency, tree-shaken into the `analytics.js` bundle only: Bar/Pie/Treemap charts, Grid/Tooltip components, `LegacyGridContainLabel`, canvas renderer) — the `/analytics` dashboard's charts, still with no runtime dependency and no CDN request on any page.
 - **Testing**: Backend: Pytest (v8.0+) with `pytest-cov` and `conftest.py` sandboxing fixtures; Frontend: Vitest (v1.6+) with `happy-dom` DOM simulation under `frontend/tests/`.
 
 ---
@@ -124,6 +131,7 @@ When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember tha
 - If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`. The sorter UI is split into feature modules under `frontend/src/app/` (entrypoint `index.js` plus `elements`, `state`, `config`, `folders`, `video`, `duplicates`, `moves`, `polling`, `empty_folders`, `browser`, `modals`, `events`); editing any of them still needs only the single `app.js` bump.
 - If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`. The Library UI is split into feature modules under `frontend/src/library/` (entrypoint `index.js` plus `layout`, `folders`, `search`, `gallery`, `lightbox`, `thumbnail_chooser`, `management`, `duplicates`, `tasks`, `workers`, `zip`, `animations`, `theme`, `sheet`, `uploads`); editing any of them still needs only the single `library.js` bump.
 - If you modify Downloads JS (`frontend/src/downloads/*`), increment `src="/static/dist/downloads.js?v=XX"` in `templates/downloads.html`. (Modules under `frontend/src/library/` are shared: `url_downloads.js` and `recent_targets.js` feed both `library.js` and `downloads.js`, and `frontend/src/shared/tasks_badge.js` plus `frontend/src/shared/icons.js` feed both `library.js` and `app.js` — touching either shared module means bumping **both** entrypoint versions. `templates/partials/tasks_modal.html` / `sorter_tasks_modal.html` edits land in `library.js` / `app.js` respectively.)
+- If you modify Analytics JS (`frontend/src/analytics/*`), increment `src="/static/dist/analytics.js?v=XX"` in `templates/analytics.html`. It imports the shared `frontend/src/library/utils.js` (`showToast`/`escapeHtml`/formatting), so a change to that helper affects `library.js`, `downloads.js` and `analytics.js` alike — bump every entrypoint whose bundle you rebuilt.
 
 ### Rule 7: Always Commit & Push Changes (Zero Personal Data & Secrets)
 Every task involving code, template, configuration, or documentation changes must be committed and pushed to the remote repository (`origin`) upon completion:
@@ -183,8 +191,9 @@ media-library/
 │   │
 │   ├── routers/                     # FastAPI route modules
 │   │   ├── __init__.py              # Export of all_routers list
-│   │   ├── views.py                 # HTML page endpoints (/, /sorter, /downloads, /library)
+│   │   ├── views.py                 # HTML page endpoints (/, /sorter, /downloads, /analytics, /library)
 │   │   ├── auth.py                  # Shared-password login page/routes and auth middleware
+│   │   ├── analytics.py             # Library analytics overview API (index-only, read-only)
 │   │   ├── library_browse.py        # Library browsing, folder tree, search, index controls
 │   │   ├── library_media.py         # Library file/thumbnail byte-range streaming
 │   │   ├── library_admin.py         # Library rename/delete + thumbnail controls
@@ -206,7 +215,8 @@ media-library/
 │   │   ├── media_service.py         # Path validation, LAN IP detection, video queue scanner
 │   │   ├── library_manage_service.py# Move/delete/rename/create helpers + index rewrite
 │   │   ├── upload_service.py        # Chunked upload staging and FUSE-safe atomic moves
-│   │   ├── library_query.py         # Index-only row→dict shaping for library browsing
+│   │   ├── library_query.py         # Index-only row→dict shaping for library browsing (+ largest-files reader)
+│   │   ├── analytics_service.py     # Index-only analytics rollups: recursive folder rollup, quality, reclaimable, health
 │   │   ├── status.py                # Shared worker/index/transfer/ZIP status payload builders
 │   │   ├── ffmpeg_service.py        # FFmpeg facade: re-exports the helpers below + WebP conversion
 │   │   ├── ffmpeg_probe.py          # FFprobe metadata (dimensions, codecs, duration, capture time)
@@ -248,6 +258,7 @@ media-library/
 │   │   │                            #   config.js, folders.js, video.js, duplicates.js, moves.js,
 │   │   │                            #   polling.js, empty_folders.js, browser.js, modals.js, events.js
 │   │   ├── downloads/               # Downloads page UI logic (index.js)
+│   │   ├── analytics/               # Analytics dashboard UI logic (index.js: ECharts treemap/donut/bars, cards, preview)
 │   │   ├── library/                 # Media Library UI logic, split into feature modules:
 │   │   │                            #   index.js (entrypoint: shortcuts, initEvents, bootstrap, window.libraryApp)
 │   │   │                            #   layout.js, folders.js, search.js, gallery.js, lightbox.js,
@@ -255,17 +266,18 @@ media-library/
 │   │   │                            #   zip.js, animations.js, theme.js, sheet.js, uploads.js
 │   │   │                            #   plus shared state.js, utils.js, url_downloads.js, recent_targets.js, service_worker.js
 │   │   └── shared/                  # Cross-page modules (icons.js, tasks_badge.js)
-│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_smoke, sorter_smoke)
+│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_smoke, sorter_smoke, analytics_smoke)
 │
 ├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
 ├── static/                          # Static assets and built bundles
 │   ├── styles.css                   # Main application stylesheet (source)
-│   └── dist/                        # Vite build output (app.js, library.js, downloads.js, styles.css)
+│   └── dist/                        # Vite build output (app.js, library.js, downloads.js, analytics.js, styles.css)
 │
 ├── templates/                       # Raw HTML templates (served via HTMLResponse)
 │   ├── index.html                   # Video Sorter user interface
 │   ├── login.html                   # Shared-password sign-in page
 │   ├── downloads.html               # URL/playlist Downloads page user interface
+│   ├── analytics.html               # Library Analytics dashboard user interface (bundle analytics.js)
 │   ├── library.html                 # Media Library & Gallery user interface
 │   └── partials/                    # HTML fragments (modals, sidebar, tasks_modal.html, sorter_tasks_modal.html) used via {{include}}
 │                                    #   library modals are split: library_modals_media / _bulk / _manage /
@@ -273,6 +285,7 @@ media-library/
 │
 ├── tests/                           # Automated test suite
 │   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
+│   ├── test_analytics_api.py        # /api/analytics/overview shape, recursive folder rollup/partition, limits, refresh cache bypass, index-only contract
 │   ├── test_api_routes.py           # HTTP endpoints & status verification
 │   ├── test_auth.py                 # Shared-password authentication & session protection
 │   ├── test_backup_and_admin_operations.py # Backup snapshot/restore, rename/delete, poster capture
@@ -735,6 +748,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `GET /` — Serves Media Library UI (`templates/library.html`)
 - `GET /sorter` / `GET /sort` — Serves Incoming Video Sorter UI (`templates/index.html`)
 - `GET /downloads` — Serves the URL/playlist Downloads page (`templates/downloads.html`; bundle `static/dist/downloads.js`)
+- `GET /analytics` — Serves the Library Analytics dashboard (`templates/analytics.html`; bundle `static/dist/analytics.js`)
 - `GET /library` — 302 Redirect to `/`
 - `GET /sw.js` — Serves Service Worker script (`static/sw.js`) with `Service-Worker-Allowed: /` and `Cache-Control: no-cache, no-store, must-revalidate` for client-side animated WebP thumbnail interception and CacheStorage caching
 
@@ -865,6 +879,9 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `GET /api/backup/library-backup/status` — Backup status, size, file/thumb count, timestamp
 - `POST /api/backup/library-backup/save` — Trigger background snapshot creation
 - `POST /api/backup/library-backup/restore` — Trigger background snapshot restoration
+
+### Library Analytics (`media_library.routers.analytics`)
+- `GET /api/analytics/overview?folder_limit={n}&file_limit={n}&refresh={bool}` — Index-only analytics body for the `/analytics` dashboard (read-only; no mutation endpoints). Returns `generated_at`, `library_root`, `limits`, `totals` (bytes/files/videos/images/folders/ZIP counts with formatted sizes), `by_type`, `by_extension` (top 12 by bytes plus a rolled-up remainder so shares sum to 100%), `folders` (`root_bytes`/`root_files`, `top` = treemap top-level nodes with one level of children and a `is_group` aggregate for anything past the top 40, `largest` = the top-N recursive subtrees pruned to a non-overlapping partition), `largest_files` (browse-shaped entries with `thumb_url`/`media_url`), `quality` (resolution buckets by longest edge, probed/high-fps counts, total runtime), `reclaimable` (duplicate size-match candidates, WebP saved/pending, ZIP-eligible leaf folders, empty leaf folders) and `health` (outstanding thumbnails/probes/visual hashes/animated previews/transcodes plus `indexer_state` staleness). `folder_limit`/`file_limit` are 1–100 (defaults 15/25, out-of-range → `422`). Memoized for 30s keyed on `indexer_state["revision"]`; `refresh=true` drops the memo for the manual Refresh button. Never walks or scans the filesystem. (`analytics`)
 
 ### Unified System Status (`media_library.routers.system`)
 - `GET /api/system/status` — Consolidated status for all background subsystems

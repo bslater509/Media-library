@@ -1,6 +1,7 @@
 """Routers package exports."""
 
 from media_library.routers.auth import router as auth_router
+from media_library.routers.analytics import router as analytics_router
 from media_library.routers.backup import router as backup_router
 from media_library.routers.duplicates import router as duplicates_router
 from media_library.routers.favorites import router as favorites_router
@@ -37,11 +38,13 @@ all_routers = [
     webp_router,
     backup_router,
     zip_router,
+    analytics_router,
     system_router,
 ]
 
 __all__ = [
     "all_routers",
+    "analytics_router",
     "auth_router",
     "backup_router",
     "duplicates_router",

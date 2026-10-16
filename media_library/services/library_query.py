@@ -77,6 +77,29 @@ def _read_indexed_files(conn, folder_path: str) -> list[dict[str, Any]]:
     return [_build_file_entry(r) for r in cur.fetchall()]
 
 
+def read_largest_files(conn, limit: int = 25) -> list[dict[str, Any]]:
+    """Return the ``limit`` largest media files, shaped like browse entries.
+
+    Index-only (never stats remote files) and shared with the ``/analytics``
+    dashboard's "largest files" card, so each row carries the same
+    ``thumb_url`` / ``media_url`` a gallery tile does and can be opened in the
+    existing lightbox.
+    """
+    limit = max(1, int(limit))
+    cur = conn.execute(
+        """
+        SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END AS is_favorite
+        FROM files f
+        LEFT JOIN favorites fav ON f.path = fav.path
+        WHERE f.size > 0
+        ORDER BY f.size DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    return [_build_file_entry(r) for r in cur.fetchall()]
+
+
 def read_indexed_favorites(conn, media_type: str | None = None) -> list[dict[str, Any]]:
     """Returns all favorited files in the library, sorted by favorited timestamp descending."""
     sql = """

@@ -61,7 +61,7 @@ def test_html_views(api_client):
     res_dl = api_client.get("/downloads")
     assert res_dl.status_code == 200
     assert "text/html" in res_dl.headers.get("content-type", "")
-    assert "downloads.js?v=3" in res_dl.text
+    assert "downloads.js?v=4" in res_dl.text
     assert 'id="dlUrlsInput"' in res_dl.text
     assert 'id="dlPickerModal"' in res_dl.text
     assert 'id="dlBrowseBtn"' in res_dl.text
@@ -73,6 +73,31 @@ def test_html_views(api_client):
     assert res_dl.text.count("data-theme-modal-btn") == 2
     assert "themeModalBtnMobile" in res_dl.text
     assert "safe-area-inset-top, 0px))" in res_dl.text
+    assert 'href="/analytics"' in res_dl.text
+
+    res_an = api_client.get("/analytics")
+    assert res_an.status_code == 200
+    assert "text/html" in res_an.headers.get("content-type", "")
+    assert "analytics.js?v=1" in res_an.text
+    assert "styles.css?v=42" in res_an.text
+    # Every card container the analytics bundle looks up must exist in the markup.
+    for el_id in (
+        "anKpis",
+        "anTreemap",
+        "anTypeChart",
+        "anExtChart",
+        "anResChart",
+        "anFolderRows",
+        "anFileRows",
+        "anReclaim",
+        "anHealthPills",
+        "anPreviewModal",
+        "anRefreshBtn",
+    ):
+        assert f'id="{el_id}"' in res_an.text, f"missing #{el_id} in analytics page"
+    assert "themeCustomizerModal" in res_an.text
+    assert res_an.text.count("data-theme-modal-btn") == 2
+    assert 'href="/analytics"' in res_an.text
 
     res_lib = api_client.get("/library", follow_redirects=True)
     assert res_lib.status_code == 200
