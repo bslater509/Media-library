@@ -501,16 +501,20 @@ header.sticky {
 }
 
 @media (max-width: 767px) {
+  /* Phones: the drawer is a full-bleed overlay covering the whole viewport
+     top-to-bottom (mobile top bar included — it sits behind the backdrop
+     anyway).  Pinning it to `top: 0` instead of the top bar's own height is
+     what stops a gap appearing under the bar, and `100dvh` keeps the bottom
+     edge on the current (dynamic) viewport so no band is left dangling. */
   #sidebarDrawer {
-    top: 48px;
+    top: 0;
     bottom: 0;
-    padding-bottom: max(4.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 3.5rem));
-  }
-}
-
-@media (min-width: 640px) and (max-width: 767px) {
-  #sidebarDrawer {
-    top: 52px;
+    height: 100dvh;
+    max-height: 100dvh;
+    /* Clear the display cutout / status bar the page may render under
+       (viewport-fit=cover), then the drawer's own 0.875rem padding. */
+    padding-top: calc(0.875rem + var(--sat, env(safe-area-inset-top, 0px)));
+    padding-bottom: max(1rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem));
   }
 }
 

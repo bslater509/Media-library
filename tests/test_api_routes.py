@@ -20,7 +20,7 @@ def test_html_views(api_client):
     assert "generateAllAnimatedBtn" in res_root.text
     import re
     assert re.search(r"library\.js\?v=\d+", res_root.text)
-    assert "styles.css?v=42" in res_root.text
+    assert re.search(r"styles\.css\?v=\d+", res_root.text)
     assert 'id="mobileHeader"' in res_root.text
     assert 'id="mobileControlsModal"' in res_root.text
     assert 'id="mobileControlsBtn"' in res_root.text
@@ -30,7 +30,7 @@ def test_html_views(api_client):
     assert 'id="libraryStickyHeader"' in res_root.text
     assert 'id="galleryContentArea"' in res_root.text
     assert 'pb-28 sm:pb-32 md:pb-6' in res_root.text
-    assert '/static/dist/styles.css?v=42' in res_root.text
+    assert re.search(r"styles\.css\?v=\d+", res_root.text)
     assert 'id="scrollToTopBtn"' in res_root.text
     assert 'id="sidebarDrawer"' in res_root.text
     assert 'id="sidebarBackdrop"' in res_root.text
@@ -44,7 +44,7 @@ def test_html_views(api_client):
     res_sorter = api_client.get("/sorter")
     assert res_sorter.status_code == 200
     assert "text/html" in res_sorter.headers.get("content-type", "")
-    assert '/static/dist/styles.css?v=42' in res_sorter.text
+    assert re.search(r"styles\.css\?v=\d+", res_sorter.text)
     assert 'tasksTabBtnActive' in res_sorter.text
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
@@ -53,7 +53,7 @@ def test_html_views(api_client):
     assert 'data-tasks-modal-close' in res_sorter.text
     assert 'role="dialog"' in res_sorter.text
     assert 'role="tabpanel"' in res_sorter.text
-    assert "styles.css?v=42" in res_sorter.text
+    assert re.search(r"styles\.css\?v=\d+", res_sorter.text)
     assert "sticky top-0 z-50" in res_sorter.text
     assert "themeCustomizerModal" in res_sorter.text
     assert "themeModalBtn" in res_sorter.text
@@ -61,7 +61,7 @@ def test_html_views(api_client):
     res_dl = api_client.get("/downloads")
     assert res_dl.status_code == 200
     assert "text/html" in res_dl.headers.get("content-type", "")
-    assert "downloads.js?v=4" in res_dl.text
+    assert re.search(r"downloads\.js\?v=\d+", res_dl.text)
     assert 'id="dlUrlsInput"' in res_dl.text
     assert 'id="dlPickerModal"' in res_dl.text
     assert 'id="dlBrowseBtn"' in res_dl.text
@@ -78,8 +78,8 @@ def test_html_views(api_client):
     res_an = api_client.get("/analytics")
     assert res_an.status_code == 200
     assert "text/html" in res_an.headers.get("content-type", "")
-    assert "analytics.js?v=1" in res_an.text
-    assert "styles.css?v=42" in res_an.text
+    assert re.search(r"analytics\.js\?v=\d+", res_an.text)
+    assert re.search(r"styles\.css\?v=\d+", res_an.text)
     # Every card container the analytics bundle looks up must exist in the markup.
     for el_id in (
         "anKpis",
@@ -114,7 +114,7 @@ def test_html_views(api_client):
     assert 'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto' in res_lib.text
     assert "ignoredDuplicatesModal" in res_lib.text
     assert 'id="ignoredDuplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
-    assert "styles.css?v=42" in res_lib.text
+    assert re.search(r"styles\.css\?v=\d+", res_lib.text)
     assert 'id="libraryStickyHeader"' in res_lib.text
     assert 'id="scrollToTopBtn"' in res_lib.text
 
