@@ -72,6 +72,16 @@ export function getResolutionLabel(w, h) {
     return '';
 }
 
+export function getCodecLabel(codec) {
+    const c = String(codec || '').trim().toLowerCase();
+    if (!c) return '';
+    if (c === 'h264' || c === 'avc' || c === 'avc1' || c === 'h.264') return 'H.264';
+    if (c === 'hevc' || c === 'h265' || c === 'h.265') return 'H.265';
+    if (c === 'mpeg4' || c === 'mp4v') return 'MPEG-4';
+    if (c === 'mpeg2video') return 'MPEG-2';
+    return c.toUpperCase();
+}
+
 export function getAspectRatio(w, h) {
     const width = Number(w);
     const height = Number(h);

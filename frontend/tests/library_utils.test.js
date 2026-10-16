@@ -6,6 +6,7 @@ import {
   formatDuration,
   getResolutionLabel,
   getAspectRatio,
+  getCodecLabel,
   showToast,
   formatTimestamp,
   formatBitrate,
@@ -67,6 +68,26 @@ describe('library/utils.js unit tests', () => {
     it('handles vertical / rotated video orientations', () => {
       expect(getResolutionLabel(1080, 1920)).toBe('1080p');
       expect(getResolutionLabel(2160, 3840)).toBe('4K');
+    });
+  });
+
+  describe('getCodecLabel', () => {
+    it('maps the H.264/H.265 families to friendly labels', () => {
+      expect(getCodecLabel('h264')).toBe('H.264');
+      expect(getCodecLabel('avc1')).toBe('H.264');
+      expect(getCodecLabel('hevc')).toBe('H.265');
+      expect(getCodecLabel('h265')).toBe('H.265');
+      expect(getCodecLabel('HEVC')).toBe('H.265');
+    });
+
+    it('uppercases other codecs and returns empty for unknown input', () => {
+      expect(getCodecLabel('mpeg4')).toBe('MPEG-4');
+      expect(getCodecLabel('mpeg2video')).toBe('MPEG-2');
+      expect(getCodecLabel('vp9')).toBe('VP9');
+      expect(getCodecLabel('av1')).toBe('AV1');
+      expect(getCodecLabel('')).toBe('');
+      expect(getCodecLabel(null)).toBe('');
+      expect(getCodecLabel(undefined)).toBe('');
     });
   });
 

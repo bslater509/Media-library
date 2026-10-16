@@ -1,5 +1,5 @@
 import { els, nameCollator, state } from './state.js';
-import { formatDuration, getResolutionLabel, showToast } from './utils.js';
+import { formatDuration, getCodecLabel, getResolutionLabel, showToast } from './utils.js';
 import { hasHoverPointer, observeAnimatedCard, syncCardAnimationState } from './animations.js';
 import { loadFolder } from './folders.js';
 import { gridGapPx, gridWidth, layoutJustifiedRows, mediaColumnCount, targetRowHeight, tileRatio } from './layout.js';
@@ -234,6 +234,7 @@ function renderCards(start, count) {
 
     const extLabel = file.ext.toUpperCase().replace('.', '');
     const resLabel = getResolutionLabel(file.width, file.height);
+    const codecLabel = isVid ? getCodecLabel(file.video_codec) : '';
     const durLabel = isVid && file.duration ? formatDuration(file.duration) : '';
     const dimsLabel = (file.width && file.height) ? `${file.width}×${file.height}` : '';
 
@@ -273,6 +274,11 @@ function renderCards(start, count) {
           ${resLabel ? `
             <span class="card-res-badge px-1.5 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[9px] font-mono font-bold text-sky-300 border border-sky-500/30 shadow">
               ${resLabel}
+            </span>
+          ` : ''}
+          ${codecLabel ? `
+            <span class="card-codec-badge px-1.5 py-0.5 rounded backdrop-blur-md text-[9px] font-mono font-bold border shadow ${codecLabel === 'H.265' ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/30' : 'bg-slate-900/80 text-slate-300 border-slate-700'}" title="Video codec">
+              ${codecLabel}
             </span>
           ` : ''}
           ${isVid && file.fps && file.fps >= 50 ? `

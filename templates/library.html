@@ -169,6 +169,17 @@
       color: var(--accent, #f59e0b);
       font-weight: 700;
     }
+    .lb-chip--codec {
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    /* H.265 (HEVC) gets its own tint so the codec you can shrink at a glance
+       reads apart from the neutral H.264 badge. */
+    .lb-chip--h265 {
+      background: rgba(16, 185, 129, 0.18);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
     .lb-chip__icon {
       width: 0.7rem;
       height: 0.7rem;
@@ -905,7 +916,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=75"></script>
+  <script type="module" src="/static/dist/library.js?v=76"></script>
   {{include 'partials/library_modals_media.html'}}
   {{include 'partials/library_modals_bulk.html'}}
   {{include 'partials/library_modals_manage.html'}}

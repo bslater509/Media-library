@@ -1,6 +1,6 @@
 import { icon } from '../shared/icons.js';
 import { els, state } from './state.js';
-import { escapeHtml, formatBitrate, formatBytes, formatDuration, formatTimestamp, getAspectRatio, getResolutionLabel, safeAttrEscape, showToast } from './utils.js';
+import { escapeHtml, formatBitrate, formatBytes, formatDuration, formatTimestamp, getAspectRatio, getCodecLabel, getResolutionLabel, safeAttrEscape, showToast } from './utils.js';
 import { pauseAllGalleryAnimations, resumeVisibleGalleryAnimations, syncCardAnimationState } from './animations.js';
 import { parentDirectoryOf, toggleFavorite } from './gallery.js';
 import { openMoveModal } from './management.js';
@@ -90,6 +90,7 @@ function openFancybox(startIndex) {
   const items = state.filteredFiles.map((f, idx) => {
     const isVid = f.type === 'video';
     const resLabel = getResolutionLabel(f.width, f.height);
+    const codecLabel = isVid ? getCodecLabel(f.video_codec) : '';
     const durLabel = isVid && f.duration ? formatDuration(f.duration) : '';
     const dirLabel = parentDirectoryOf(f.path);
     const dirName = dirLabel.split('/').filter(Boolean).pop() || dirLabel;
@@ -105,6 +106,7 @@ function openFancybox(startIndex) {
             ${dirLabel ? `<span class="lb-meta__dirname" title="${escapeHtml(dirLabel)}">${escapeHtml(dirName)}</span>` : ''}
             <span class="lb-chip">${icon('hard-drive', 'lb-chip__icon')}<span>${escapeHtml(f.size_formatted || '')}</span></span>
             ${resLabel ? `<span class="lb-chip lb-chip--accent">${icon('monitor', 'lb-chip__icon')}<span>${resLabel}</span></span>` : ''}
+            ${codecLabel ? `<span class="lb-chip lb-chip--codec${codecLabel === 'H.265' ? ' lb-chip--h265' : ''}" title="Video codec">${codecLabel}</span>` : ''}
             ${durLabel ? `<span class="lb-chip lb-chip--dur">${icon('clock', 'lb-chip__icon')}<span>${durLabel}</span></span>` : ''}
           </div>
           <div class="lb-actions">
@@ -735,6 +737,12 @@ function syncCardAfterX265(oldPath, finalPath, job) {
   if (sizeEl && job && job.size_after) {
     const txt = formatBytes(job.size_after);
     sizeEl.textContent = txt;
+  }
+  const codecEl = card.querySelector('.card-codec-badge');
+  if (codecEl) {
+    codecEl.textContent = 'H.265';
+    codecEl.className = 'card-codec-badge px-1.5 py-0.5 rounded backdrop-blur-md text-[9px] font-mono font-bold border shadow bg-emerald-950/70 text-emerald-300 border-emerald-500/30';
+    codecEl.title = 'Video codec';
   }
   const img = card.querySelector('img');
   if (img) {
