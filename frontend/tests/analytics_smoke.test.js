@@ -230,6 +230,8 @@ describe('analytics page publisher', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    // happy-dom's default viewport; the narrow-layout test overrides it.
+    window.innerWidth = 1024;
   });
 
   it('loads the overview and renders the KPI strip, tables, cards and pills', async () => {
@@ -273,6 +275,8 @@ describe('analytics page publisher', () => {
     expect(series.data.map((d) => d.name)).toEqual(['Movies', 'Smaller folders (2)']);
     expect(series.data[0].path).toBe('/media/Movies');
     expect(series.data[0].children).toHaveLength(1);
+    // Desktop keeps child labels.
+    expect(series.data[0].children[0].label).toBeUndefined();
     // The aggregate "smaller folders" node carries no path, so a click on it
     // must not navigate anywhere.
     expect(series.data[1].path).toBeNull();
@@ -281,6 +285,37 @@ describe('analytics page publisher', () => {
     // One donut, one extension bar, one resolution bar.
     const types = setOption.mock.calls.map(([o]) => o.series?.[0]?.type);
     expect(types).toEqual(['treemap', 'pie', 'bar', 'bar']);
+  });
+
+  it('folds the treemap to a readable number of blocks on a phone viewport', async () => {
+    window.innerWidth = 390;
+    const payload = JSON.parse(JSON.stringify(PAYLOAD));
+    payload.folders.top = Array.from({ length: 30 }, (_, i) => ({
+      path: `/media/F${i}`,
+      name: `F${i}`,
+      rel_path: `F${i}`,
+      bytes: 1000 - i,
+      bytes_formatted: '1.0 KB',
+      files: 1,
+      percent_bytes: 0.1,
+      is_zip: false,
+      children: [
+        { path: `/media/F${i}/c`, name: `C${i}`, rel_path: `F${i}/c`, bytes: 100, bytes_formatted: '100 B', files: 1, is_zip: false },
+      ],
+    }));
+    await boot(payload);
+
+    const treemapCall = setOption.mock.calls.find(([o]) => o.series?.[0]?.type === 'treemap');
+    const series = treemapCall[0].series[0];
+    // 12 largest kept, everything else rolled into one aggregate block.
+    expect(series.data).toHaveLength(13);
+    expect(series.data[12].name).toBe('Smaller folders (18)');
+    expect(series.data[12].path).toBeNull();
+    expect(series.data[12].is_group).toBe(true);
+    // Child labels are suppressed so the phone blocks stay legible.
+    expect(series.data[0].children[0].label).toEqual({ show: false });
+    expect(series.childrenVisibleMin).toBeGreaterThan(0);
+    expect(document.getElementById('anTreemapTotal').textContent).toContain('showing 13 of 30');
   });
 
   it('reloads with refresh=1 when the Refresh button is pressed', async () => {

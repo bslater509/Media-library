@@ -29,6 +29,9 @@ echarts.use([
 const els = {};
 let charts = {};
 let currentData = null;
+// Which responsive branch the mounted charts were built for, so a resize that
+// crosses the phone breakpoint can rebuild instead of just re-measuring.
+let narrowLayout = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -388,9 +391,54 @@ function mountChart(key, el, option) {
   charts[key] = chart;
 }
 
+// ---------------------------------------------------- responsive treemap
+
+// The phone layout is a single full-width column, so the treemap is roughly
+// 360px across; at that width dozens of top-level blocks read as unlabelled
+// slivers. Phones get a taller stage, fewer top-level blocks, and child
+// labels suppressed unless the parent is genuinely large.
+const NARROW_MAX_WIDTH = 639;
+const NARROW_TREEMAP_TOP = 12;
+const NARROW_CHILDREN_MIN = 9000; // px² — a parent must own ~this much area
+
+function isNarrowLayout() {
+  // `innerWidth` is the layout viewport — the same signal the template's
+  // `sm:`/`lg:` classes respond to — and unlike `matchMedia` it is easy to
+  // drive from tests. Fall back to `matchMedia` only when no width is known.
+  const width = window.innerWidth;
+  if (typeof width === 'number' && width > 0) return width <= NARROW_MAX_WIDTH;
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia(`(max-width: ${NARROW_MAX_WIDTH}px)`).matches;
+  }
+  return false;
+}
+
+// The server already folds everything past 40 top nodes into one aggregate
+// node; on a phone we fold much earlier. `nodeCount` unwraps the aggregate's
+// own folder count (its name encodes it) so the merged label stays truthful.
+function treemapNodeCount(node) {
+  if (node && node.is_group) {
+    const m = /\((\d+)\)\s*$/.exec(node.name || '');
+    if (m) return Number(m[1]);
+  }
+  return 1;
+}
+
+function foldTreemapTop(top, narrow) {
+  if (!narrow || top.length <= NARROW_TREEMAP_TOP) return top;
+  const kept = top.slice(0, NARROW_TREEMAP_TOP);
+  const rest = top.slice(NARROW_TREEMAP_TOP);
+  const bytes = rest.reduce((sum, f) => sum + Number(f.bytes || 0), 0);
+  const count = rest.reduce((sum, f) => sum + treemapNodeCount(f), 0);
+  kept.push({ path: null, name: `Smaller folders (${count})`, bytes, is_group: true, children: [] });
+  return kept;
+}
+
 function buildCharts(data) {
   disposeCharts();
   const c = themeColors();
+  const narrow = isNarrowLayout();
+  narrowLayout = narrow;
   const tooltip = {
     backgroundColor: c.surface,
     borderColor: c.border,
@@ -398,20 +446,33 @@ function buildCharts(data) {
   };
 
   // Treemap: top-level folders, one level of children each.
-  const treemapNodes = (data.folders.top || []).map((f, i) => ({
+  const topFold = foldTreemapTop(data.folders.top || [], narrow);
+  const treemapNodes = topFold.map((f, i) => ({
     name: f.name,
     value: f.bytes,
     path: f.path,
     is_group: Boolean(f.is_group),
     itemStyle: f.is_group ? { color: c.palette[(i + 2) % c.palette.length] } : { color: c.palette[i % c.palette.length] },
-    children: (f.children || []).map((kid) => ({ name: kid.name, value: kid.bytes, path: kid.path })),
+    children: (f.children || []).map((kid) => ({
+      name: kid.name,
+      value: kid.bytes,
+      path: kid.path,
+      // `levels[i].label` is not honoured for this depth, so the phone policy
+      // is applied per node: child blocks stay as colour, the parent's upper
+      // label names the group, and a tap still reveals the name in the tooltip.
+      ...(narrow ? { label: { show: false } } : {}),
+    })),
   }));
   if (els.treemapTotal) {
-    els.treemapTotal.textContent = `${data.folders.root_bytes_formatted} · ${fmtInt(data.folders.top.length)} top-level`;
+    const topCount = (data.folders.top || []).length;
+    els.treemapTotal.textContent = treemapNodes.length < topCount
+      ? `${data.folders.root_bytes_formatted} · showing ${fmtInt(treemapNodes.length)} of ${fmtInt(topCount)}`
+      : `${data.folders.root_bytes_formatted} · ${fmtInt(topCount)} top-level`;
   }
   mountChart('treemap', els.treemap, {
     tooltip: {
       ...tooltip,
+      confine: true,
       formatter: (p) => {
         if (p.value == null) return p.name;
         const pct = data.folders.root_bytes ? ((p.value / data.folders.root_bytes) * 100).toFixed(1) : '0.0';
@@ -427,12 +488,19 @@ function buildCharts(data) {
       width: '100%',
       height: '100%',
       data: treemapNodes,
-      label: { fontSize: 11, color: '#ffffff', overflow: 'truncate' },
-      upperLabel: { show: true, height: 20, fontSize: 10, color: '#ffffff', overflow: 'truncate' },
+      // Keep slivers out of the way rather than drawing unlabelled specks.
+      visibleMin: narrow ? 40 : 10,
+      childrenVisibleMin: narrow ? NARROW_CHILDREN_MIN : 1000,
+      label: { fontSize: narrow ? 12 : 11, color: '#ffffff', overflow: 'truncate' },
+      upperLabel: { show: true, height: 20, fontSize: narrow ? 11 : 10, color: '#ffffff', overflow: 'truncate' },
       itemStyle: { borderColor: c.surface, borderWidth: 2, gapWidth: 2 },
       levels: [
         { itemStyle: { borderColor: c.surface, borderWidth: 3, gapWidth: 3 }, upperLabel: { show: true, height: 22 } },
-        { itemStyle: { borderColor: c.surface, borderWidth: 1, gapWidth: 1 }, colorSaturation: [0.3, 0.55] },
+        {
+          itemStyle: { borderColor: c.surface, borderWidth: 1, gapWidth: 1 },
+          colorSaturation: [0.3, 0.55],
+          label: { fontSize: 10 },
+        },
       ],
     }],
   });
@@ -663,7 +731,12 @@ function init() {
   };
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(resizeCharts, 150);
+    resizeTimer = setTimeout(() => {
+      // Crossing the phone breakpoint changes the treemap's shape (height,
+      // top-level fold, label policy), so rebuild rather than just re-measure.
+      if (currentData && isNarrowLayout() !== narrowLayout) buildCharts(currentData);
+      else resizeCharts();
+    }, 150);
   });
   // A tab that was hidden while the page loaded has no layout, so charts init
   // at zero size; re-measure when it becomes visible again.
