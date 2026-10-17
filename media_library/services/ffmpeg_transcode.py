@@ -1,31 +1,8 @@
 """Live FFmpeg transcoding command construction and stdout relay."""
 
 import asyncio
-import base64
-import io
-import json
 import logging
-import os
-import shutil
-import time
-import uuid
 from collections.abc import AsyncIterator
-from pathlib import Path
-from typing import Any
-
-from PIL import Image
-
-from media_library.core.config import (
-    WEBP_QUALITY,
-    WEBP_SKIP_LARGER,
-    WEBP_STAGING_DIR,
-)
-from media_library.core.constants import IMAGE_EXTENSIONS
-from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
-)
-from media_library.db.connection import db_conn
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +43,7 @@ def build_live_transcode_command(input_path: str, ss: float = 0.0) -> list[str]:
         ]
     )
     return cmd
+
 
 async def relay_process_stdout(
     process: asyncio.subprocess.Process,

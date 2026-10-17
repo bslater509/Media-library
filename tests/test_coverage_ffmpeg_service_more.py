@@ -21,8 +21,8 @@ import pytest
 from PIL import Image
 
 import media_library.services.ffmpeg_service as ffmpeg
-import media_library.services.ffmpeg_frames as ffmpeg_frames
 from media_library.db.connection import db_conn
+from media_library.services import ffmpeg_frames
 
 _REAL_PATH_STAT = Path.stat
 
@@ -122,7 +122,9 @@ def _insert_row(path: Path, folder: str, **extra):
 
 def _row(path: Path):
     with db_conn() as conn:
-        return conn.execute("SELECT * FROM files WHERE path = ?", (str(path),)).fetchone()
+        return conn.execute(
+            "SELECT * FROM files WHERE path = ?", (str(path),)
+        ).fetchone()
 
 
 # --------------------------------------------------------------------------
@@ -141,7 +143,9 @@ async def test_probe_video_meta_parses_streams_and_handles_errors():
         ],
     }
     with patch.object(
-        asyncio, "create_subprocess_exec", AsyncMock(return_value=FakeProcess(json.dumps(payload).encode()))
+        asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=FakeProcess(json.dumps(payload).encode())),
     ):
         meta = await ffmpeg.probe_video_meta("/media/x.mp4")
     assert meta == {"duration": 12.5, "video_codec": "h264", "audio_codec": "aac"}
@@ -149,14 +153,18 @@ async def test_probe_video_meta_parses_streams_and_handles_errors():
     # Unparseable duration string degrades to 0.0.
     bad = {"format": {"duration": "n/a"}, "streams": []}
     with patch.object(
-        asyncio, "create_subprocess_exec", AsyncMock(return_value=FakeProcess(json.dumps(bad).encode()))
+        asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=FakeProcess(json.dumps(bad).encode())),
     ):
         meta = await ffmpeg.probe_video_meta("/media/x.mp4")
     assert meta["duration"] == 0.0
 
     # Non-zero exit code returns the empty default.
     with patch.object(
-        asyncio, "create_subprocess_exec", AsyncMock(return_value=FakeProcess(b"", returncode=1))
+        asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=FakeProcess(b"", returncode=1)),
     ):
         assert await ffmpeg.probe_video_meta("/media/x.mp4") == {
             "duration": 0.0,
@@ -165,7 +173,9 @@ async def test_probe_video_meta_parses_streams_and_handles_errors():
         }
 
     # A crashing subprocess spawn is swallowed.
-    with patch.object(asyncio, "create_subprocess_exec", AsyncMock(side_effect=OSError("no ffprobe"))):
+    with patch.object(
+        asyncio, "create_subprocess_exec", AsyncMock(side_effect=OSError("no ffprobe"))
+    ):
         assert (await ffmpeg.probe_video_meta("/media/x.mp4"))["duration"] == 0.0
 
 
@@ -177,7 +187,10 @@ async def test_probe_media_metadata_rotation_and_capture_time(sandbox_env):
 
     # Rotation via side_data swaps the display dimensions.
     rotated = {
-        "format": {"duration": "8.0", "tags": {"creation_time": "2024-05-06T07:08:09Z"}},
+        "format": {
+            "duration": "8.0",
+            "tags": {"creation_time": "2024-05-06T07:08:09Z"},
+        },
         "streams": [
             {
                 "codec_type": "video",
@@ -255,7 +268,9 @@ async def test_probe_media_metadata_rejects_unusable_streams(sandbox_env):
 
     # Non-zero exit and unparsable JSON both return None.
     with patch.object(
-        asyncio, "create_subprocess_exec", AsyncMock(return_value=FakeProcess(b"", returncode=2))
+        asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=FakeProcess(b"", returncode=2)),
     ):
         assert await ffmpeg.probe_media_metadata(str(video)) is None
     with patch.object(
@@ -268,7 +283,9 @@ async def test_probe_media_metadata_rejects_unusable_streams(sandbox_env):
     # An image without EXIF capture time falls back to Pillow (returns None).
     image_payload = {
         "format": {"duration": "0", "tags": {}},
-        "streams": [{"codec_type": "video", "codec_name": "mjpeg", "width": 64, "height": 48}],
+        "streams": [
+            {"codec_type": "video", "codec_name": "mjpeg", "width": 64, "height": 48}
+        ],
     }
     with patch.object(
         asyncio,
@@ -279,7 +296,9 @@ async def test_probe_media_metadata_rejects_unusable_streams(sandbox_env):
     assert meta["capture_time"] is None
 
     # Unreadable file: ffprobe itself cannot be spawned.
-    with patch.object(asyncio, "create_subprocess_exec", AsyncMock(side_effect=OSError("gone"))):
+    with patch.object(
+        asyncio, "create_subprocess_exec", AsyncMock(side_effect=OSError("gone"))
+    ):
         assert await ffmpeg.probe_media_metadata(str(video)) is None
 
 
@@ -661,7 +680,9 @@ def test_convert_image_to_webp_bytes_mode_conversions(sandbox_env):
     # CMYK JPEGs are flattened to RGB first.
     cmyk = io.BytesIO()
     Image.new("CMYK", (40, 30), color=(0, 100, 100, 0)).save(cmyk, format="JPEG")
-    with Image.open(io.BytesIO(ffmpeg.convert_image_to_webp_bytes(cmyk.getvalue()))) as img:
+    with Image.open(
+        io.BytesIO(ffmpeg.convert_image_to_webp_bytes(cmyk.getvalue()))
+    ) as img:
         assert img.mode in ("RGB", "RGBA")
 
     # Palette images with transparency become RGBA.
@@ -693,7 +714,9 @@ def test_convert_image_file_to_webp_status_branches(sandbox_env, monkeypatch):
     # Unsupported extension.
     unsupported = media / "anim.gif"
     unsupported.write_bytes(_jpeg_bytes())
-    assert ffmpeg.convert_image_file_to_webp(str(unsupported))["status"] == "unsupported"
+    assert (
+        ffmpeg.convert_image_file_to_webp(str(unsupported))["status"] == "unsupported"
+    )
 
     # An unreadable path (OSError from exists()).
     with patch.object(Path, "exists", side_effect=OSError("stale mount")):
@@ -729,15 +752,18 @@ def test_convert_image_file_to_webp_conversion_paths(sandbox_env, monkeypatch):
 
     stats = None
     with db_conn() as conn:
-        stats = conn.execute("SELECT converted_count FROM webp_stats WHERE id = 1").fetchone()
+        stats = conn.execute(
+            "SELECT converted_count FROM webp_stats WHERE id = 1"
+        ).fetchone()
     assert stats["converted_count"] >= 1
 
     # WEBP_SKIP_LARGER keeps the original when the WebP is not smaller.
     bigger = folder / "bigger.jpg"
     _write_jpeg(bigger, "white", (600, 600))
-    with patch.object(
-        Path, "stat", _stat_with_huge_staging_files
-    ), patch.object(ffmpeg, "WEBP_SKIP_LARGER", True):
+    with (
+        patch.object(Path, "stat", _stat_with_huge_staging_files),
+        patch.object(ffmpeg, "WEBP_SKIP_LARGER", True),
+    ):
         res = ffmpeg.convert_image_file_to_webp(str(bigger))
     assert res["status"] == "skipped"
     assert bigger.exists()
@@ -745,7 +771,9 @@ def test_convert_image_file_to_webp_conversion_paths(sandbox_env, monkeypatch):
     # A failing index write must not fail the conversion itself.
     source2 = folder / "second.png"
     source2.write_bytes(png.getvalue())
-    with patch.object(ffmpeg, "db_conn", MagicMock(side_effect=sqlite3.DatabaseError("x"))):
+    with patch.object(
+        ffmpeg, "db_conn", MagicMock(side_effect=sqlite3.DatabaseError("x"))
+    ):
         res = ffmpeg.convert_image_file_to_webp(str(source2))
     assert res["status"] == "converted"
 
@@ -850,11 +878,16 @@ async def test_generate_thumbnail_image_uses_pil_fallback(sandbox_env):
     image2 = media / "thumb_fallback2.jpg"
     image2.write_bytes(_jpeg_bytes("blue", (500, 400)))
     _insert_row(image2, str(media), type="image", ext=".jpg")
-    with patch.object(
-        asyncio,
-        "create_subprocess_exec",
-        AsyncMock(return_value=FakeProcess(b"", returncode=1)),
-    ), patch.object(ffmpeg, "db_conn", MagicMock(side_effect=sqlite3.DatabaseError("x"))):
+    with (
+        patch.object(
+            asyncio,
+            "create_subprocess_exec",
+            AsyncMock(return_value=FakeProcess(b"", returncode=1)),
+        ),
+        patch.object(
+            ffmpeg, "db_conn", MagicMock(side_effect=sqlite3.DatabaseError("x"))
+        ),
+    ):
         thumb2 = await ffmpeg.generate_thumbnail(
             str(image2), is_video=False, update_db=True
         )

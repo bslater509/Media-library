@@ -256,10 +256,7 @@ async def get_thumbnail_candidates(
             # For short videos (<= interval), offer a few evenly spaced candidates across the video
             sub_count = max(2, min(6, int(duration // 2) + 1))
             step = duration / max(1, sub_count - 1)
-            timestamps = [
-                round(min(i * step, max_safe), 3)
-                for i in range(sub_count)
-            ]
+            timestamps = [round(min(i * step, max_safe), 3) for i in range(sub_count)]
         else:
             timestamps = []
             curr = 0.0
@@ -272,11 +269,15 @@ async def get_thumbnail_candidates(
             # include a near-end candidate frame as well
             if (duration - timestamps[-1]) >= max(5.0, chosen_interval * 0.33):
                 end_ts = round(max_safe, 3)
-                if end_ts > timestamps[-1] and (end_ts - timestamps[-1]) >= 3.0 and len(timestamps) < 500:
+                if (
+                    end_ts > timestamps[-1]
+                    and (end_ts - timestamps[-1]) >= 3.0
+                    and len(timestamps) < 500
+                ):
                     timestamps.append(end_ts)
 
     def _format_time(sec: float) -> str:
-        s = int(round(sec))
+        s = round(sec)
         m, s = divmod(s, 60)
         h, m = divmod(m, 60)
         if h > 0:
@@ -328,7 +329,9 @@ async def get_thumbnail_frame(
     if not (cand_path.exists() and cand_path.stat().st_size > 0):
         frame_path = await extract_candidate_frame(real_path, timestamp)
         if not frame_path or not frame_path.exists():
-            raise HTTPException(status_code=500, detail="Could not extract candidate frame")
+            raise HTTPException(
+                status_code=500, detail="Could not extract candidate frame"
+            )
         cand_path = frame_path
 
     if request and request.method == "HEAD":
@@ -369,7 +372,9 @@ async def get_animated_thumbnail(
         if not file_exists:
             raise HTTPException(status_code=404, detail="Video file not found")
 
-    anim_path = await asyncio.to_thread(get_animated_preview_path, real_path, mtime, size)
+    anim_path = await asyncio.to_thread(
+        get_animated_preview_path, real_path, mtime, size
+    )
     if not (anim_path.exists() and anim_path.stat().st_size > 0):
         if wait:
             gen_path = await generate_animated_preview(real_path)
@@ -377,7 +382,9 @@ async def get_animated_thumbnail(
                 anim_path = gen_path
             else:
                 # Fallback to static thumbnail if animated generation failed
-                fallback_thumb = await generate_thumbnail(real_path, is_video=True, mtime=mtime, size=size)
+                fallback_thumb = await generate_thumbnail(
+                    real_path, is_video=True, mtime=mtime, size=size
+                )
                 if fallback_thumb and fallback_thumb.exists():
                     if request and request.method == "HEAD":
                         return Response(
@@ -390,15 +397,21 @@ async def get_animated_thumbnail(
                     return FileResponse(
                         str(fallback_thumb),
                         media_type="image/jpeg",
-                        headers={"Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"},
+                        headers={
+                            "Cache-Control": f"public, max-age={MEDIA_CACHE_MAX_AGE}"
+                        },
                     )
-                raise HTTPException(status_code=500, detail="Could not generate animated preview")
+                raise HTTPException(
+                    status_code=500, detail="Could not generate animated preview"
+                )
         else:
             # Enqueue in AnimatedThumbWorker with priority
             animated_thumb_worker_instance.enqueue(real_path, priority=True)
 
             # Serve static thumbnail immediately so user never sees a missing/blank box
-            fallback_thumb = await generate_thumbnail(real_path, is_video=True, mtime=mtime, size=size)
+            fallback_thumb = await generate_thumbnail(
+                real_path, is_video=True, mtime=mtime, size=size
+            )
             if fallback_thumb and fallback_thumb.exists():
                 if request and request.method == "HEAD":
                     return Response(
@@ -417,7 +430,9 @@ async def get_animated_thumbnail(
                         "X-Thumbnail-Status": "generating",
                     },
                 )
-            raise HTTPException(status_code=202, detail="Animated preview generation in progress")
+            raise HTTPException(
+                status_code=202, detail="Animated preview generation in progress"
+            )
 
     if request and request.method == "HEAD":
         return Response(

@@ -1,8 +1,6 @@
 """Comprehensive tests for MediaService functions, LibraryOpsWorker, and Zip sync-back."""
 
-import asyncio
 import os
-from pathlib import Path
 import threading
 from unittest.mock import patch
 
@@ -127,7 +125,9 @@ def test_search_backup_index_sorting_and_filtering(sandbox_env):
 
     # Search with sort_by: name_desc, date_asc, size_desc
     res_desc = search_backup_index("e", sort_by="name_desc")
-    assert [r["name"] for r in res_desc] == sorted([r["name"] for r in res_desc], reverse=True)
+    assert [r["name"] for r in res_desc] == sorted(
+        [r["name"] for r in res_desc], reverse=True
+    )
 
     res_date_asc = search_backup_index("e", sort_by="date_asc")
     mtimes = [r["mtime"] for r in res_date_asc]

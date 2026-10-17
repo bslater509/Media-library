@@ -73,11 +73,20 @@ def test_library_ops_worker_run_loop_executes_all_ops(sandbox_env):
             "kind": "file",
         }
     )
-    worker.enqueue({"id": "op_del", "op": "delete", "path": str(deleting), "kind": "file"})
     worker.enqueue(
-        {"id": "op_rename", "op": "rename", "path": str(renaming), "new_name": "new_name.txt"}
+        {"id": "op_del", "op": "delete", "path": str(deleting), "kind": "file"}
     )
-    worker.enqueue({"id": "op_cancel", "op": "delete", "path": str(deleting), "kind": "file"})
+    worker.enqueue(
+        {
+            "id": "op_rename",
+            "op": "rename",
+            "path": str(renaming),
+            "new_name": "new_name.txt",
+        }
+    )
+    worker.enqueue(
+        {"id": "op_cancel", "op": "delete", "path": str(deleting), "kind": "file"}
+    )
     worker.cancel("op_cancel")
     worker.enqueue(
         {
@@ -92,7 +101,9 @@ def test_library_ops_worker_run_loop_executes_all_ops(sandbox_env):
     worker.history = [{"id": f"h_{i}"} for i in range(502)]
 
     ran = asyncio.run(
-        _drive_until(worker, lambda: worker.ops_queue.empty() and worker.active_op is None)
+        _drive_until(
+            worker, lambda: worker.ops_queue.empty() and worker.active_op is None
+        )
     )
     assert ran
 
@@ -129,7 +140,9 @@ def test_library_ops_worker_status_with_active_and_queued(sandbox_env):
         "target_path": "/a/dst.txt",
         "kind": "file",
     }
-    worker.enqueue_nowait(worker.ops_queue, {"id": "q1", "op": "delete", "status": "queued"})
+    worker.enqueue_nowait(
+        worker.ops_queue, {"id": "q1", "op": "delete", "status": "queued"}
+    )
     worker.items_map["q1"] = {"id": "q1", "op": "delete", "status": "queued"}
 
     st = worker.get_status()
@@ -166,19 +179,25 @@ def test_thumbnail_worker_batch_pause_idle_and_failures(sandbox_env):
         return not fpath.endswith("bad.mp4")
 
     async def _test():
-        with patch(
-            "media_library.workers.thumbnail_worker.generate_thumbnail",
-            side_effect=fake_generate,
-        ), patch(
-            "media_library.workers.thumbnail_worker.sync_thumbnail_db_cache"
-        ), patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch(
+                "media_library.workers.thumbnail_worker.generate_thumbnail",
+                side_effect=fake_generate,
+            ),
+            patch("media_library.workers.thumbnail_worker.sync_thumbnail_db_cache"),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             worker.pause()
-            assert await _drive_until(worker, lambda: worker.state["status"] == "paused")
+            assert await _drive_until(
+                worker, lambda: worker.state["status"] == "paused"
+            )
             worker.resume()
             assert worker.state["status"] == "generating"
             # The batch runs and records successes/failures; the item whose
             # generator raised is logged and stays pending (retried next pass).
-            done = await _drive_until(worker, lambda: worker.state["processed_count"] >= 1)
+            done = await _drive_until(
+                worker, lambda: worker.state["processed_count"] >= 1
+            )
             assert done
 
             # With every item resolved the loop drains to the idle branch.
@@ -186,8 +205,10 @@ def test_thumbnail_worker_batch_pause_idle_and_failures(sandbox_env):
                 conn.execute("UPDATE files SET has_thumb = 2 WHERE name = 'boom.mp4'")
             done = await _drive_until(
                 worker,
-                lambda: worker.state["pending_count"] == 0
-                and worker.state["status"] == "idle",
+                lambda: (
+                    worker.state["pending_count"] == 0
+                    and worker.state["status"] == "idle"
+                ),
             )
             assert done
 
@@ -225,16 +246,22 @@ def test_thumbnail_worker_priority_queue_and_error_paths(sandbox_env):
         return True
 
     async def _test():
-        with patch(
-            "media_library.workers.thumbnail_worker.generate_thumbnail",
-            side_effect=fake_generate,
-        ), patch(
-            "media_library.workers.thumbnail_worker.sync_thumbnail_db_cache"
-        ), patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch(
+                "media_library.workers.thumbnail_worker.generate_thumbnail",
+                side_effect=fake_generate,
+            ),
+            patch("media_library.workers.thumbnail_worker.sync_thumbnail_db_cache"),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             worker.enqueue_folder(str(media))
             assert worker.priority_queue.qsize() == 1
             done = await _drive_until(
-                worker, lambda: worker.priority_queue.empty() and worker.state["processed_count"] >= 1
+                worker,
+                lambda: (
+                    worker.priority_queue.empty()
+                    and worker.state["processed_count"] >= 1
+                ),
             )
             assert done
 
@@ -270,7 +297,12 @@ def test_webp_worker_enqueue_helpers_and_throttling(sandbox_env):
 
     # Only the loose JPEG is a valid candidate.
     queued = worker.enqueue_files(
-        [str(img), str(media / "note.txt"), str(media / "ghost.jpg"), str(media / "native.webp")]
+        [
+            str(img),
+            str(media / "note.txt"),
+            str(media / "ghost.jpg"),
+            str(media / "native.webp"),
+        ]
     )
     assert queued == 1
     assert worker.priority_queue.qsize() == 1
@@ -395,17 +427,22 @@ def test_webp_worker_run_loop_memory_guard_and_results(sandbox_env):
         return {"status": "already_webp", "converted": 0}
 
     async def _test():
-        with patch(
-            "media_library.workers.webp_worker.convert_image_file_to_webp",
-            side_effect=fake_convert,
-        ), patch(
-            "media_library.workers.webp_worker.optimize_zip_images_to_webp",
-            side_effect=fake_zip,
-        ), patch(
-            # Force the memory back-off loop to run before converting.
-            "media_library.workers.webp_worker._available_memory_mb",
-            return_value=1.0,
-        ), patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch(
+                "media_library.workers.webp_worker.convert_image_file_to_webp",
+                side_effect=fake_convert,
+            ),
+            patch(
+                "media_library.workers.webp_worker.optimize_zip_images_to_webp",
+                side_effect=fake_zip,
+            ),
+            patch(
+                # Force the memory back-off loop to run before converting.
+                "media_library.workers.webp_worker._available_memory_mb",
+                return_value=1.0,
+            ),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             # Duplicate ZIP entries in the priority queue are deduplicated.
             for _ in range(2):
                 worker.enqueue_nowait(
@@ -422,8 +459,10 @@ def test_webp_worker_run_loop_memory_guard_and_results(sandbox_env):
             worker.resume()
             done = await _drive_until(
                 worker,
-                lambda: {"p0.jpg", "p1.jpg", "p2.jpg"} <= set(converted)
-                and len(zip_calls) >= 1,
+                lambda: (
+                    {"p0.jpg", "p1.jpg", "p2.jpg"} <= set(converted)
+                    and len(zip_calls) >= 1
+                ),
             )
             assert done
 
@@ -444,18 +483,25 @@ def test_webp_worker_run_loop_idle_and_db_error(sandbox_env):
         raise RuntimeError("db down")
 
     async def _test():
-        with patch("media_library.workers.webp_worker.WEBP_AUTO_OPTIMIZE", False), patch(
-            "asyncio.sleep", side_effect=_fast_sleep
+        with (
+            patch("media_library.workers.webp_worker.WEBP_AUTO_OPTIMIZE", False),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
         ):
-            done = await _drive_until(worker, lambda: worker.state["last_synced"] is not None)
+            done = await _drive_until(
+                worker, lambda: worker.state["last_synced"] is not None
+            )
             assert done
             assert worker.state["status"] == "idle"
 
         # A DB failure while querying candidates must not kill the loop.
         broken = WebPOptimizerWorker()
-        with patch("media_library.workers.webp_worker.WEBP_AUTO_OPTIMIZE", False), patch(
-            "media_library.workers.webp_worker.db_conn", side_effect=broken_db_conn
-        ), patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch("media_library.workers.webp_worker.WEBP_AUTO_OPTIMIZE", False),
+            patch(
+                "media_library.workers.webp_worker.db_conn", side_effect=broken_db_conn
+            ),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             # The loop keeps retrying instead of dying on the failed query.
             await _drive_until(broken, lambda: len(db_calls) >= 2)
             assert len(db_calls) >= 2
@@ -493,7 +539,9 @@ def test_transcode_worker_enqueue_edge_cases(sandbox_env):
         assert worker.enqueue_for_backup(folder_path=str(media)) == []
 
     # SQLite failures are swallowed.
-    with patch("media_library.db.connection.db_conn", side_effect=RuntimeError("db down")):
+    with patch(
+        "media_library.db.connection.db_conn", side_effect=RuntimeError("db down")
+    ):
         assert worker.enqueue_indexed_folder(str(media)) == []
         assert worker.enqueue_all_for_backup() == []
 
@@ -565,9 +613,14 @@ def test_transcode_worker_run_loop_records_failures_and_outer_errors():
                 "abort_event": threading.Event(),
             }
         )
-        with patch.object(
-            worker, "_run_transcode_task", side_effect=RuntimeError("transcode exploded")
-        ), patch("asyncio.sleep", side_effect=_fast_sleep):
+        with (
+            patch.object(
+                worker,
+                "_run_transcode_task",
+                side_effect=RuntimeError("transcode exploded"),
+            ),
+            patch("asyncio.sleep", side_effect=_fast_sleep),
+        ):
             done = await _drive_until(
                 worker, lambda: worker.transcode_items_map["boom"]["status"] == "failed"
             )
@@ -575,7 +628,9 @@ def test_transcode_worker_run_loop_records_failures_and_outer_errors():
 
         # task_done() failures and fatal queue errors must not kill the loop.
         worker.transcode_queue.task_done = MagicMock(side_effect=ValueError("too many"))
-        worker.transcode_queue.get = MagicMock(side_effect=RuntimeError("queue exploded"))
+        worker.transcode_queue.get = MagicMock(
+            side_effect=RuntimeError("queue exploded")
+        )
         await _drive_until(worker, lambda: False, loops=5)
         worker.transcode_queue.get = asyncio.Queue().get
 
@@ -588,8 +643,8 @@ def test_transcode_worker_run_loop_records_failures_and_outer_errors():
 
 def test_transcode_task_target_collision_and_commit_paths(tmp_path):
     """Covers converted-name collisions, remux abort cleanup, and commit failures."""
-    from media_library.workers.transcode_worker import TRANSCODE_TEMP_DIR
     from media_library.core.state import state
+    from media_library.workers.transcode_worker import TRANSCODE_TEMP_DIR
 
     state["destination_dir"] = str(tmp_path)
 
@@ -618,10 +673,17 @@ def test_transcode_task_target_collision_and_commit_paths(tmp_path):
             temp_p.write_bytes(b"MP4" * 600)
             return mock_proc
 
-        with patch(
-            "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 5.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", side_effect=fake_proc):
+        with (
+            patch(
+                "media_library.workers.transcode_worker.probe_video_meta",
+                return_value={
+                    "duration": 5.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", side_effect=fake_proc),
+        ):
             await worker._run_transcode_task(item)
         assert item["status"] == "completed"
         assert item["target_path"].endswith("clip_converted_2.mp4")
@@ -647,10 +709,17 @@ def test_transcode_task_target_collision_and_commit_paths(tmp_path):
             raise asyncio.TimeoutError()
 
         abort_proc.wait = abort_wait
-        with patch(
-            "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 5.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", return_value=abort_proc):
+        with (
+            patch(
+                "media_library.workers.transcode_worker.probe_video_meta",
+                return_value={
+                    "duration": 5.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", return_value=abort_proc),
+        ):
             await worker._run_transcode_task(item2)
         assert item2["status"] == "cancelled"
         assert not temp2.exists()
@@ -676,10 +745,17 @@ def test_transcode_task_target_collision_and_commit_paths(tmp_path):
 
         fail_proc.stdout = _EmptyStdout()
         worker.transcode_history = [{"id": f"h_{i}"} for i in range(502)]
-        with patch(
-            "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 5.0, "video_codec": "mpeg4", "audio_codec": "mp3"},
-        ), patch("asyncio.create_subprocess_exec", return_value=fail_proc):
+        with (
+            patch(
+                "media_library.workers.transcode_worker.probe_video_meta",
+                return_value={
+                    "duration": 5.0,
+                    "video_codec": "mpeg4",
+                    "audio_codec": "mp3",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", return_value=fail_proc),
+        ):
             await worker._run_transcode_task(item3)
         assert item3["status"] == "failed"
         assert item3["method"] == "fallback_reencode"
@@ -717,12 +793,19 @@ def test_transcode_task_commit_error_paths(tmp_path):
             return mock_proc
 
         # os.replace fails (cross-device) and the verification copy is truncated.
-        with patch(
-            "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 5.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", side_effect=fake_proc), patch(
-            "os.replace", side_effect=OSError(18, "Invalid cross-device link")
-        ), patch("shutil.copy2", side_effect=OSError("copy truncated")):
+        with (
+            patch(
+                "media_library.workers.transcode_worker.probe_video_meta",
+                return_value={
+                    "duration": 5.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", side_effect=fake_proc),
+            patch("os.replace", side_effect=OSError(18, "Invalid cross-device link")),
+            patch("shutil.copy2", side_effect=OSError("copy truncated")),
+        ):
             await worker._run_transcode_task(item)
         assert item["status"] == "failed"
         assert "Failed to commit transcoded file" in item["error"]
@@ -754,14 +837,21 @@ def test_transcode_task_commit_error_paths(tmp_path):
                 raise OSError("read-only mount")
             return real_remove(path, *args, **kwargs)
 
-        with patch(
-            "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 5.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", side_effect=fake_proc2), patch(
-            "os.remove", side_effect=flaky_remove
-        ), patch(
-            "media_library.workers.transcode_worker.get_thumbnail_cache_path",
-            side_effect=OSError("thumb cache unavailable"),
+        with (
+            patch(
+                "media_library.workers.transcode_worker.probe_video_meta",
+                return_value={
+                    "duration": 5.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", side_effect=fake_proc2),
+            patch("os.remove", side_effect=flaky_remove),
+            patch(
+                "media_library.workers.transcode_worker.get_thumbnail_cache_path",
+                side_effect=OSError("thumb cache unavailable"),
+            ),
         ):
             await worker._run_transcode_task(item2)
         assert item2["status"] == "completed"

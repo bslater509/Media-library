@@ -42,7 +42,9 @@ class TranscodeWorker(BaseWorker):
             if self.active_transcode:
                 active_ids.add(self.active_transcode.get("id"))
             for k in list(self.transcode_items_map.keys()):
-                if k not in active_ids and self.transcode_items_map[k].get("status") in (
+                if k not in active_ids and self.transcode_items_map[k].get(
+                    "status"
+                ) in (
                     "completed",
                     "failed",
                     "cancelled",
@@ -568,6 +570,7 @@ class TranscodeWorker(BaseWorker):
                 success = True
 
         if success:
+
             def _commit_transcode():
                 target_dir = os.path.dirname(target_path)
                 commit_tmp = os.path.join(
@@ -579,10 +582,9 @@ class TranscodeWorker(BaseWorker):
                 except OSError:
                     # Cross-device filesystem: copy to atomic tmp in target dir then replace
                     shutil.copy2(temp_path, commit_tmp)
-                    if (
-                        not os.path.exists(commit_tmp)
-                        or os.path.getsize(commit_tmp) != os.path.getsize(temp_path)
-                    ):
+                    if not os.path.exists(commit_tmp) or os.path.getsize(
+                        commit_tmp
+                    ) != os.path.getsize(temp_path):
                         raise OSError("Cross-device transcode copy verification failed")
                     os.replace(commit_tmp, target_path)
                     try:

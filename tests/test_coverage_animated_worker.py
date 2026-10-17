@@ -116,7 +116,9 @@ def test_sync_cache_survives_db_errors(sandbox_env):
     import media_library.db.connection as db_connection_mod
 
     with patch.object(
-        db_connection_mod, "db_conn", MagicMock(side_effect=sqlite3.DatabaseError("boom"))
+        db_connection_mod,
+        "db_conn",
+        MagicMock(side_effect=sqlite3.DatabaseError("boom")),
     ):
         # Must swallow the error instead of raising into the worker startup path.
         sync_animated_thumb_db_cache()
@@ -650,8 +652,9 @@ def test_transfers_payload_shapes_active_and_history():
         }
     ]
 
-    with patch.object(status_mod, "transfer_worker_instance", transfer), patch.object(
-        status_mod, "transcode_worker_instance", transcode
+    with (
+        patch.object(status_mod, "transfer_worker_instance", transfer),
+        patch.object(status_mod, "transcode_worker_instance", transcode),
     ):
         payload = status_mod.transfers_payload()
 
@@ -672,8 +675,9 @@ def test_transfers_payload_shapes_active_and_history():
     transfer.transfers_history = []
     transcode.transcode_items_map = {}
     transcode.transcode_history = []
-    with patch.object(status_mod, "transfer_worker_instance", transfer), patch.object(
-        status_mod, "transcode_worker_instance", transcode
+    with (
+        patch.object(status_mod, "transfer_worker_instance", transfer),
+        patch.object(status_mod, "transcode_worker_instance", transcode),
     ):
         empty = status_mod.transfers_payload()
     assert empty["active"] is None

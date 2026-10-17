@@ -6,15 +6,14 @@ chosen library folder (auto-rename on collisions) before re-indexing it.
 """
 
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from media_library.services.media_service import validate_backup_path
 from media_library.services.library_manage_service import classify_library_path
+from media_library.services.media_service import validate_backup_path
 from media_library.workers import (
     is_gallery_dl_available,
     is_ytdlp_available,

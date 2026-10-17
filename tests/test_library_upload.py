@@ -2,11 +2,12 @@
 
 import io
 from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from media_library.app_factory import create_app
 import media_library.services.upload_service as upload_svc
+from media_library.app_factory import create_app
 
 
 @pytest.fixture
@@ -53,7 +54,9 @@ async def test_upload_chunk_success(app_instance, sandbox_env):
             "destination_dir": str(sandbox_env["media_dir"]),
             "collision_policy": "auto-rename",
         }
-        res_fin = await client.post("/api/backup/upload/finalize", json=finalize_payload)
+        res_fin = await client.post(
+            "/api/backup/upload/finalize", json=finalize_payload
+        )
         assert res_fin.status_code == 200
         result = res_fin.json()
         assert result["status"] == "ok"
@@ -84,7 +87,9 @@ async def test_upload_heic_allowed(app_instance, sandbox_env):
     transport = ASGITransport(app=app_instance)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         upload_id = "upl_heic_test_1"
-        files = {"chunk": ("IMG_1234.HEIC", io.BytesIO(b"mock heic data"), "image/heic")}
+        files = {
+            "chunk": ("IMG_1234.HEIC", io.BytesIO(b"mock heic data"), "image/heic")
+        }
         data = {
             "upload_id": upload_id,
             "chunk_index": "0",
@@ -100,7 +105,9 @@ async def test_upload_heic_allowed(app_instance, sandbox_env):
             "destination_dir": str(sandbox_env["media_dir"]),
             "collision_policy": "auto-rename",
         }
-        res_fin = await client.post("/api/backup/upload/finalize", json=finalize_payload)
+        res_fin = await client.post(
+            "/api/backup/upload/finalize", json=finalize_payload
+        )
         assert res_fin.status_code == 200
         assert Path(res_fin.json()["path"]).exists()
 
@@ -110,7 +117,9 @@ async def test_upload_disallowed_extension(app_instance, sandbox_env):
     transport = ASGITransport(app=app_instance)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         upload_id = "upl_bad_ext_1"
-        files = {"chunk": ("malware.exe", io.BytesIO(b"bad"), "application/octet-stream")}
+        files = {
+            "chunk": ("malware.exe", io.BytesIO(b"bad"), "application/octet-stream")
+        }
         data = {
             "upload_id": upload_id,
             "chunk_index": "0",
@@ -126,7 +135,9 @@ async def test_upload_disallowed_extension(app_instance, sandbox_env):
             "destination_dir": str(sandbox_env["media_dir"]),
             "collision_policy": "auto-rename",
         }
-        res_fin = await client.post("/api/backup/upload/finalize", json=finalize_payload)
+        res_fin = await client.post(
+            "/api/backup/upload/finalize", json=finalize_payload
+        )
         assert res_fin.status_code == 400
         assert "not allowed" in res_fin.json()["detail"]
 
@@ -147,7 +158,9 @@ async def test_cancel_upload(app_instance):
         staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
         assert staging_file.exists()
 
-        res_cancel = await client.post("/api/backup/upload/cancel", json={"upload_id": upload_id})
+        res_cancel = await client.post(
+            "/api/backup/upload/cancel", json={"upload_id": upload_id}
+        )
         assert res_cancel.status_code == 200
         assert not staging_file.exists()
 
@@ -171,15 +184,26 @@ async def test_upload_status_reports_staged_bytes(app_instance, sandbox_env):
         assert empty.json()["exists"] is False
 
         files = {"chunk": ("test.jpg", io.BytesIO(b"resume-me"), "image/jpeg")}
-        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "2", "offset": "0"}
-        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+        data = {
+            "upload_id": upload_id,
+            "chunk_index": "0",
+            "total_chunks": "2",
+            "offset": "0",
+        }
+        assert (
+            await client.post("/api/backup/upload/chunk", data=data, files=files)
+        ).status_code == 200
 
-        res = await client.get("/api/backup/upload/status", params={"upload_id": upload_id})
+        res = await client.get(
+            "/api/backup/upload/status", params={"upload_id": upload_id}
+        )
         assert res.status_code == 200
         assert res.json()["received_bytes"] == len(b"resume-me")
         assert res.json()["exists"] is True
 
-        bad = await client.get("/api/backup/upload/status", params={"upload_id": "../etc"})
+        bad = await client.get(
+            "/api/backup/upload/status", params={"upload_id": "../etc"}
+        )
         assert bad.status_code == 400
 
 
@@ -193,7 +217,12 @@ async def test_retried_chunk_is_idempotent(app_instance, sandbox_env):
 
         for _ in range(2):
             files = {"chunk": ("test.jpg", io.BytesIO(payload), "image/jpeg")}
-            data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "1", "offset": "0"}
+            data = {
+                "upload_id": upload_id,
+                "chunk_index": "0",
+                "total_chunks": "1",
+                "offset": "0",
+            }
             res = await client.post("/api/backup/upload/chunk", data=data, files=files)
             assert res.status_code == 200
 
@@ -208,13 +237,27 @@ async def test_chunk_sent_past_the_staged_end_is_rejected(app_instance, sandbox_
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         upload_id = "upl_gap_rejected"
         files = {"chunk": ("test.jpg", io.BytesIO(b"aaaa"), "image/jpeg")}
-        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "3", "offset": "0"}
-        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+        data = {
+            "upload_id": upload_id,
+            "chunk_index": "0",
+            "total_chunks": "3",
+            "offset": "0",
+        }
+        assert (
+            await client.post("/api/backup/upload/chunk", data=data, files=files)
+        ).status_code == 200
 
         # Chunk 2 arrives while chunk 1 is missing: refuse rather than write a hole.
         gap_files = {"chunk": ("test.jpg", io.BytesIO(b"cccc"), "image/jpeg")}
-        gap_data = {"upload_id": upload_id, "chunk_index": "2", "total_chunks": "3", "offset": "8"}
-        res = await client.post("/api/backup/upload/chunk", data=gap_data, files=gap_files)
+        gap_data = {
+            "upload_id": upload_id,
+            "chunk_index": "2",
+            "total_chunks": "3",
+            "offset": "8",
+        }
+        res = await client.post(
+            "/api/backup/upload/chunk", data=gap_data, files=gap_files
+        )
         assert res.status_code == 409
 
         staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
@@ -233,7 +276,12 @@ async def test_overlapping_chunk_rewrites_the_partial_tail(app_instance, sandbox
         # Chunk 0 is re-sent with its full 11 bytes after a writable crash left
         # 6 of them behind; the file ends up exactly the chunk, not 17 bytes.
         files = {"chunk": ("test.jpg", io.BytesIO(b"hello world"), "image/jpeg")}
-        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "1", "offset": "0"}
+        data = {
+            "upload_id": upload_id,
+            "chunk_index": "0",
+            "total_chunks": "1",
+            "offset": "0",
+        }
         res = await client.post("/api/backup/upload/chunk", data=data, files=files)
         assert res.status_code == 200
         assert staging_file.read_bytes() == b"hello world"
@@ -245,8 +293,15 @@ async def test_finalize_refuses_a_short_upload(app_instance, sandbox_env):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         upload_id = "upl_short_finalize"
         files = {"chunk": ("test.jpg", io.BytesIO(b"half"), "image/jpeg")}
-        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "2", "offset": "0"}
-        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+        data = {
+            "upload_id": upload_id,
+            "chunk_index": "0",
+            "total_chunks": "2",
+            "offset": "0",
+        }
+        assert (
+            await client.post("/api/backup/upload/chunk", data=data, files=files)
+        ).status_code == 200
 
         res = await client.post(
             "/api/backup/upload/finalize",
@@ -266,8 +321,15 @@ async def test_finalize_refuses_a_short_upload(app_instance, sandbox_env):
 
         # Completing the upload (the client has the real total) finalizes cleanly.
         files = {"chunk": ("test.jpg", io.BytesIO(b"-done"), "image/jpeg")}
-        data = {"upload_id": upload_id, "chunk_index": "1", "total_chunks": "2", "offset": "4"}
-        assert ( await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+        data = {
+            "upload_id": upload_id,
+            "chunk_index": "1",
+            "total_chunks": "2",
+            "offset": "4",
+        }
+        assert (
+            await client.post("/api/backup/upload/chunk", data=data, files=files)
+        ).status_code == 200
 
         res_ok = await client.post(
             "/api/backup/upload/finalize",

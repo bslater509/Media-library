@@ -3,26 +3,15 @@
 import asyncio
 import base64
 import io
-import json
 import logging
 import os
-import shutil
 import time
 import uuid
-from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
 
 from PIL import Image
 
-from media_library.core.config import (
-    WEBP_QUALITY,
-    WEBP_SKIP_LARGER,
-    WEBP_STAGING_DIR,
-)
-from media_library.core.constants import IMAGE_EXTENSIONS
 from media_library.core.state import (
-    format_size,
     get_thumbnail_cache_path,
 )
 from media_library.db.connection import db_conn
@@ -32,11 +21,13 @@ logger = logging.getLogger(__name__)
 
 thumbnail_generation_sem = asyncio.Semaphore(4)
 
+
 def get_thumbnail_path_fast(
     file_path: str, mtime: float | None = None, size: int | None = None
 ) -> Path:
     """Computes thumbnail cache path using stat cache or direct file stat."""
     return get_thumbnail_cache_path(file_path, mtime, size)
+
 
 async def generate_thumbnail(
     file_path: str,
@@ -231,6 +222,7 @@ async def generate_thumbnail(
                     pass
     return None
 
+
 async def extract_frame_poster(
     file_path: str,
     timestamp: float = 0.0,
@@ -278,7 +270,9 @@ async def extract_frame_poster(
                 rgb_img.save(temp_thumb, "JPEG", quality=85)
         else:
             ts = max(0.0, float(timestamp))
-            time_str = f"{int(ts // 3600):02d}:{int((ts % 3600) // 60):02d}:{ts % 60:06.3f}"
+            time_str = (
+                f"{int(ts // 3600):02d}:{int((ts % 3600) // 60):02d}:{ts % 60:06.3f}"
+            )
             cmd = [
                 "nice",
                 "-n",
@@ -369,6 +363,7 @@ async def extract_frame_poster(
                 thumb_hash_val = None
                 try:
                     import imagehash
+
                     with Image.open(thumb_path) as img:
                         thumb_hash_val = str(imagehash.phash(img))
                 except Exception:

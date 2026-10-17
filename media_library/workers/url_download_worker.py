@@ -59,8 +59,16 @@ AUDIO_EXTENSIONS = {".mp3", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".flac"}
 # description text, thumbnails). Fallback guard on top of the allowed-extension
 # set, kept for clarity and for future allow-listed extensions.
 SKIPPED_EXTENSIONS = {
-    ".json", ".nfo", ".vtt", ".srt", ".ass", ".ssa", ".lrc",
-    ".description", ".txt", ".thumbnail",
+    ".json",
+    ".nfo",
+    ".vtt",
+    ".srt",
+    ".ass",
+    ".ssa",
+    ".lrc",
+    ".description",
+    ".txt",
+    ".thumbnail",
 }
 
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
@@ -76,9 +84,9 @@ _MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
 _UNSUPPORTED_HINTS = ("Unsupported URL", "No video formats found")
 
 
-
 class DownloadCancelled(Exception):
     pass
+
 
 def _build_ytdlp_command(url: str, out_dir: Path) -> list[str]:
     """Assemble the ``python -m yt_dlp`` subprocess command for one job."""
@@ -145,7 +153,6 @@ def _build_gallerydl_command(url: str, out_dir: Path) -> list[str]:
     return cmd
 
 
-
 def _coerce_num(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -175,7 +182,9 @@ def _apply_progress(item: dict[str, Any], data: dict[str, Any]) -> None:
         item["playlist_count"] = pc
 
 
-def _finalize_downloaded_file(src_file: Path, target_dir: Path, job_id: str) -> str | None:
+def _finalize_downloaded_file(
+    src_file: Path, target_dir: Path, job_id: str
+) -> str | None:
     """Move one downloaded file into the library with auto-rename + atomic replace.
 
     Returns the destination path, or None when the extension is not importable
@@ -183,7 +192,11 @@ def _finalize_downloaded_file(src_file: Path, target_dir: Path, job_id: str) -> 
     ``os.replace`` after a same-directory temporary copy.
     """
     ext = src_file.suffix.lower()
-    if ext not in VIDEO_EXTENSIONS and ext not in IMAGE_EXTENSIONS and ext not in AUDIO_EXTENSIONS:
+    if (
+        ext not in VIDEO_EXTENSIONS
+        and ext not in IMAGE_EXTENSIONS
+        and ext not in AUDIO_EXTENSIONS
+    ):
         return None
     base = src_file.stem
     # Drop sidecars yt-dlp may emit (subtitles, metadata, description text, ...).
@@ -272,7 +285,9 @@ def _apply_gallerydl_line(item: dict[str, Any], line: str, out_dir: Path) -> Non
         item["playlist_index"] = 1
 
 
-def _stream_process(item: dict[str, Any], cmd: list[str], on_line=None) -> tuple[int, list[str]]:
+def _stream_process(
+    item: dict[str, Any], cmd: list[str], on_line=None
+) -> tuple[int, list[str]]:
     """Run a downloader subprocess, streaming stdout lines through ``on_line``.
 
     Returns ``(returncode, lines)``. Raises ``DownloadCancelled`` when the job's
@@ -317,7 +332,9 @@ def _looks_unsupported(lines: list[str]) -> bool:
     return any(hint in joined for hint in _UNSUPPORTED_HINTS)
 
 
-def _attempt_downloads(item: dict[str, Any], job_dir: Path) -> tuple[int, Exception | None]:
+def _attempt_downloads(
+    item: dict[str, Any], job_dir: Path
+) -> tuple[int, Exception | None]:
     """Try yt-dlp, then fall back to gallery-dl for sites yt-dlp cannot handle.
 
     Returns ``(imported_count, last_error)``; ``last_error`` is None on success.
@@ -383,7 +400,9 @@ def _run_ytdlp_job(item: dict[str, Any]) -> None:
             raise error
         item["imported_count"] = imported
         if not imported:
-            raise RuntimeError("No downloadable media found in URL (live streams / premieres skipped?)")
+            raise RuntimeError(
+                "No downloadable media found in URL (live streams / premieres skipped?)"
+            )
         item["status"] = "completed"
         item["percent"] = 100.0
     except DownloadCancelled:
@@ -525,7 +544,7 @@ class URLDownloadWorker(BaseWorker):
         limit = max(1, min(limit, 500))
         offset = max(0, int(offset or 0))
         newest = list(reversed(self.history))
-        page = [self._entry(h) for h in newest[offset:offset + limit]]
+        page = [self._entry(h) for h in newest[offset : offset + limit]]
         return {
             "history": page,
             "total": len(self.history),
@@ -542,7 +561,8 @@ class URLDownloadWorker(BaseWorker):
             "status": item.get("status"),
             "percent": round(float(item.get("percent") or 0.0), 1),
             "downloaded_bytes": item.get("downloaded_bytes", 0),
-            "total_bytes": item.get("total_bytes", 0) or item.get("total_bytes_estimate", 0),
+            "total_bytes": item.get("total_bytes", 0)
+            or item.get("total_bytes_estimate", 0),
             "speed": item.get("speed", ""),
             "eta": item.get("eta", ""),
             "current_title": item.get("current_title", ""),
@@ -618,6 +638,7 @@ def is_ytdlp_available() -> bool:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         ok = proc.returncode == 0
     except Exception:
@@ -637,6 +658,7 @@ def is_gallery_dl_available() -> bool:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         ok = proc.returncode == 0
     except Exception:

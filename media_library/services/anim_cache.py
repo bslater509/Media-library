@@ -227,9 +227,11 @@ def manage_animated_cache_lru(
     anim_dir = get_anim_cache_dir()
     key = f"{anim_dir}|{cap}"
     now = time.time()
-    throttled = max_bytes is None and _LRU_STATE["key"] == key and (
-        now - float(_LRU_STATE["at"])
-    ) < min_interval_s
+    throttled = (
+        max_bytes is None
+        and _LRU_STATE["key"] == key
+        and (now - float(_LRU_STATE["at"])) < min_interval_s
+    )
     if not throttled:
         _LRU_STATE.update(key=key, at=now)
 

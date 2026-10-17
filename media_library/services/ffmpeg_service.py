@@ -5,18 +5,12 @@ The FFprobe/poster/animated-preview helpers live in the sibling modules
 they are re-exported here so existing imports keep working.
 """
 
-import asyncio
-import base64
 import io
-import json
 import logging
 import os
 import shutil
-import time
 import uuid
-from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
 
 from PIL import Image
 
@@ -25,13 +19,11 @@ from media_library.core.config import (
     WEBP_SKIP_LARGER,
     WEBP_STAGING_DIR,
 )
-from media_library.core.constants import IMAGE_EXTENSIONS
 from media_library.core.state import (
     format_size,
     get_thumbnail_cache_path,
 )
 from media_library.db.connection import db_conn
-
 from media_library.services.ffmpeg_frames import (  # noqa: F401
     animated_generation_sem,
     candidate_generation_sem,
@@ -60,6 +52,7 @@ from media_library.services.ffmpeg_transcode import (  # noqa: F401
 )
 
 logger = logging.getLogger(__name__)
+
 
 def convert_image_to_webp_bytes(
     source: str | Path | bytes, quality: int | None = None
@@ -106,6 +99,7 @@ def convert_image_to_webp_bytes(
         out_io = io.BytesIO()
         work_img.save(out_io, **save_kwargs)
         return out_io.getvalue()
+
 
 def convert_image_file_to_webp(file_path: str, quality: int | None = None) -> dict:
     """Converts a local image file to modern WebP format with size and safety checks."""

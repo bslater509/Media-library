@@ -1,12 +1,9 @@
 """Filesystem scanning: folder entries, ZIP archives and folder indexing."""
 
-import asyncio
 import hashlib
 import logging
 import os
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from media_library.core.config import (
@@ -20,7 +17,6 @@ from media_library.core.constants import (
 )
 from media_library.core.state import (
     format_size,
-    get_thumbnail_cache_path,
     state,
 )
 from media_library.db.connection import db_conn
@@ -48,6 +44,7 @@ def _scan_root_dirs(path: str) -> list[str]:
         logger.error(f"Error scanning root dirs from {path}: {e}")
     return root_dirs
 
+
 def _index_zip_archive(real_folder: str, base_dir: str) -> dict[str, Any]:
     try:
         from media_library.services.zip import (
@@ -66,6 +63,7 @@ def _index_zip_archive(real_folder: str, base_dir: str) -> dict[str, Any]:
     except Exception as ze:
         logger.error(f"Error indexing zip archive {real_folder}: {ze}")
         return {"file_count": 0, "subfolder_count": 0, "subfolders": []}
+
 
 def _scan_folder_entries(real_folder: str) -> tuple[list[dict[str, Any]], list[tuple]]:
     subfolders = []
@@ -125,7 +123,14 @@ def _scan_folder_entries(real_folder: str) -> tuple[list[dict[str, Any]], list[t
         logger.error(f"Error scanning folder for index {real_folder}: {e}")
     return subfolders, files
 
-def _update_folder_in_db(real_folder: str, folder_name: str, parent_path: str | None, subfolders: list[dict[str, Any]], files: list[tuple]) -> None:
+
+def _update_folder_in_db(
+    real_folder: str,
+    folder_name: str,
+    parent_path: str | None,
+    subfolders: list[dict[str, Any]],
+    files: list[tuple],
+) -> None:
     try:
         with db_conn() as conn:
             existing = {}
@@ -257,6 +262,7 @@ def _update_folder_in_db(real_folder: str, folder_name: str, parent_path: str | 
                     )
     except Exception as e:
         logger.error(f"DB error indexing {real_folder}: {e}")
+
 
 def index_folder(folder_path: str, base_dir: str | None = None) -> dict[str, Any]:
     if not base_dir:

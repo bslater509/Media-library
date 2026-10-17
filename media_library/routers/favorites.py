@@ -98,7 +98,11 @@ def get_favorites(type: str | None = Query(None)) -> dict[str, Any]:
         video_count = sum(1 for f in all_favs if f.get("type") == "video")
         image_count = sum(1 for f in all_favs if f.get("type") == "image")
 
-        files = all_favs if media_type is None else [f for f in all_favs if f.get("type") == media_type]
+        files = (
+            all_favs
+            if media_type is None
+            else [f for f in all_favs if f.get("type") == media_type]
+        )
 
     return {
         "files": files,

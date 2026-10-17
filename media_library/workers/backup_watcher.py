@@ -139,10 +139,11 @@ class BackupWatcherWorker(BaseWorker):
                 is_thumb_busy = (
                     thumbnail_worker_instance.state.get("status") == "generating"
                 )
-                is_hash_busy = (
-                    duplicate_hash_worker_instance.state.get("status") == "hashing"
-                    or thumb_hash_worker_instance.state.get("status")
-                    in ("hashing", "migrating")
+                is_hash_busy = duplicate_hash_worker_instance.state.get(
+                    "status"
+                ) == "hashing" or thumb_hash_worker_instance.state.get("status") in (
+                    "hashing",
+                    "migrating",
                 )
                 is_webp_busy = webp_worker_instance.state.get("status") == "converting"
                 is_transfer_busy = (

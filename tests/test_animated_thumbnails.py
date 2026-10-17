@@ -3,12 +3,13 @@
 import io
 import os
 from pathlib import Path
-from PIL import Image
+
 import pytest
+from PIL import Image
 
 from media_library.services.ffmpeg_service import (
-    get_animated_preview_path,
     generate_animated_preview,
+    get_animated_preview_path,
 )
 
 
@@ -41,11 +42,18 @@ async def test_generate_animated_preview_and_caching(sandbox_env):
 
     # Populate in files table with duration
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
                VALUES (?, ?, ?, 'video', '.mp4', ?, '1 KB', ?, 120.0, 640, 360)""",
-            (str(vid), "sample_video.mp4", dest, vid.stat().st_size, vid.stat().st_mtime),
+            (
+                str(vid),
+                "sample_video.mp4",
+                dest,
+                vid.stat().st_size,
+                vid.stat().st_mtime,
+            ),
         )
 
     # Generate preview
@@ -68,12 +76,14 @@ async def test_generate_animated_preview_and_caching(sandbox_env):
 
 def test_api_animated_preview_endpoint(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     vid_path = os.path.join(dest, "api_video.mp4")
     _create_mock_video_image(vid_path)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
@@ -100,6 +110,7 @@ def test_api_animated_preview_endpoint(sandbox_env, api_client):
 
 def test_api_animated_preview_errors(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
 
@@ -122,6 +133,7 @@ def test_api_animated_preview_errors(sandbox_env, api_client):
 
 def test_api_generate_and_batch_animated_endpoints(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     vid1 = os.path.join(dest, "batch_vid1.mp4")
@@ -130,6 +142,7 @@ def test_api_generate_and_batch_animated_endpoints(sandbox_env, api_client):
     _create_mock_video_image(vid2)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
@@ -165,15 +178,19 @@ def test_api_generate_and_batch_animated_endpoints(sandbox_env, api_client):
 
 
 @pytest.mark.anyio
-async def test_animated_preview_dimension_normalization_and_custom_poster(sandbox_env, api_client):
+async def test_animated_preview_dimension_normalization_and_custom_poster(
+    sandbox_env, api_client
+):
     from media_library.core.state import state
     from media_library.services.ffmpeg_service import get_thumbnail_path_fast
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     vid_path = os.path.join(dest, "custom_poster_clip.mp4")
     _create_mock_video_image(vid_path)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
@@ -199,7 +216,11 @@ async def test_animated_preview_dimension_normalization_and_custom_poster(sandbo
 
     # Calling set-poster should return animated_url and invalidate old anim file
     import base64
-    img_b64 = "data:image/jpeg;base64," + base64.b64encode(open(vid_path, "rb").read()).decode()
+
+    img_b64 = (
+        "data:image/jpeg;base64,"
+        + base64.b64encode(Path(vid_path).read_bytes()).decode()
+    )
     res_poster = api_client.post(
         "/api/backup/thumbnails/set-poster",
         json={"path": vid_path, "timestamp": 12.5, "image_base64": img_b64},
@@ -214,6 +235,7 @@ async def test_animated_preview_dimension_normalization_and_custom_poster(sandbo
 async def test_animated_thumb_worker_and_system_status(sandbox_env, api_client):
     from media_library.core.state import state
     from media_library.workers.animated_thumb_worker import AnimatedThumbWorker
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     vid_path = os.path.join(dest, "worker_test_clip.mp4")
@@ -270,7 +292,9 @@ async def test_animated_thumb_worker_and_system_status(sandbox_env, api_client):
     # Immediate fallback when wait=0
     vid_uncompiled = os.path.join(dest, "uncompiled_clip.mp4")
     _create_mock_video_image(vid_uncompiled)
-    res_fast = api_client.get(f"/api/backup/thumbnails/animated?path={vid_uncompiled}&wait=0")
+    res_fast = api_client.get(
+        f"/api/backup/thumbnails/animated?path={vid_uncompiled}&wait=0"
+    )
     assert res_fast.status_code in (200, 202)
     assert res_fast.headers.get("x-thumbnail-status") == "generating"
 
@@ -279,7 +303,9 @@ async def test_animated_thumb_worker_and_system_status(sandbox_env, api_client):
 async def test_batch_animated_all_videos(sandbox_env, api_client):
     from media_library.core.state import state
     from media_library.db.connection import db_conn
-    from media_library.workers.animated_thumb_worker import animated_thumb_worker_instance
+    from media_library.workers.animated_thumb_worker import (
+        animated_thumb_worker_instance,
+    )
 
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest

@@ -1,29 +1,20 @@
 """Visual duplicate clustering (pHash) and group filtering."""
 
-import hashlib
 import logging
 import os
-import re
 import time
 import urllib.parse
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
-
-import imagehash
-from fastapi import HTTPException
-from PIL import Image, ImageStat
 
 from media_library.core.config import DEFAULT_DESTINATION_DIR
 from media_library.core.constants import NATIVE_EXTENSIONS
 from media_library.core.state import (
     format_size,
-    get_thumbnail_cache_path,
     state,
 )
 from media_library.db.connection import db_conn
 from media_library.db.indexer import remove_file_from_index
-from media_library.services.media_service import validate_backup_path
 
 logger = logging.getLogger(__name__)
 
@@ -310,8 +301,9 @@ def find_visual_duplicates(
         "offset": offset,
     }
 
+
 def _prune_missing_files_bg(missing_paths: list[str]):
-    from media_library.db.indexer import _path_confirmed_gone, remove_file_from_index
+    from media_library.db.indexer import _path_confirmed_gone
     from media_library.services.zip.core import split_zip_path
 
     for p in missing_paths:
@@ -319,6 +311,7 @@ def _prune_missing_files_bg(missing_paths: list[str]):
         target = zip_p if (zip_p and inner_p) else p
         if _path_confirmed_gone(target, attempts=2, delay=0.1):
             remove_file_from_index(p)
+
 
 def filter_and_prune_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from media_library.services.zip.core import split_zip_path
@@ -341,28 +334,34 @@ def filter_and_prune_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]
                 valid_files.append(f)
             else:
                 missing_paths.append(fpath)
-        
+
         if len(valid_files) >= 2:
             g["files"] = valid_files
             g["files_count"] = len(valid_files)
-            
+
             # Recompute reclaimable bytes
             target_size = g.get("size", 0)
             if target_size > 0:
                 g["reclaimable_bytes"] = (len(valid_files) - 1) * target_size
                 from media_library.core.state import format_size
+
                 g["reclaimable_formatted"] = format_size(g["reclaimable_bytes"])
 
             # Recompute best index
-            best_idx = max(range(len(valid_files)), key=lambda i: valid_files[i].get("score", 0))
+            best_idx = max(
+                range(len(valid_files)), key=lambda i: valid_files[i].get("score", 0)
+            )
             for i, f in enumerate(valid_files):
-                f["is_recommended"] = (i == best_idx)
+                f["is_recommended"] = i == best_idx
             g["suggested_keep_index"] = best_idx
-            
+
             valid_groups.append(g)
 
     if missing_paths:
         import threading
-        threading.Thread(target=_prune_missing_files_bg, args=(missing_paths,), daemon=True).start()
+
+        threading.Thread(
+            target=_prune_missing_files_bg, args=(missing_paths,), daemon=True
+        ).start()
 
     return valid_groups

@@ -426,4 +426,3 @@ async def delete_empty_folders_endpoint(
                 logger.warning("Skipping path outside backup directory: %s", p)
     res = await asyncio.to_thread(delete_empty_folders, paths, str(base_dir))
     return res
-

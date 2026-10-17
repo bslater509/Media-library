@@ -2,22 +2,24 @@ import os
 import time
 import zipfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
 from media_library.db.connection import db_conn
 from media_library.services.zip.core import (
-    split_zip_path,
     get_zip_cache_dir,
-    resolve_zip_file_path,
     index_zip_archive,
     manage_lru_cache,
-    zip_tasks_state,
+    resolve_zip_file_path,
+    split_zip_path,
     zip_lock,
-    ZIP_CACHE_DIR,
-    ZIP_STAGING_DIR,
+    zip_tasks_state,
 )
-from media_library.services.zip.extract import extract_zip_to_cache, unpack_zip_to_folder
+from media_library.services.zip.extract import (
+    extract_zip_to_cache,
+    unpack_zip_to_folder,
+)
 
 
 def test_split_and_resolve_zip_file_path(sandbox_env):
@@ -85,12 +87,18 @@ def test_index_zip_archive_and_missing(sandbox_env):
     index_zip_archive(str(zip_path))
 
     with db_conn() as conn:
-        f_row = conn.execute("SELECT * FROM folders WHERE path = ?", (str(zip_path),)).fetchone()
+        f_row = conn.execute(
+            "SELECT * FROM folders WHERE path = ?", (str(zip_path),)
+        ).fetchone()
         assert f_row is not None
         assert f_row["is_zip"] == 1
-        assert f_row["file_count"] == 3  # photo1, video1, doc.txt (excludes hidden & macosx)
+        assert (
+            f_row["file_count"] == 3
+        )  # photo1, video1, doc.txt (excludes hidden & macosx)
 
-        files = conn.execute("SELECT * FROM files WHERE folder_path = ? ORDER BY name", (str(zip_path),)).fetchall()
+        files = conn.execute(
+            "SELECT * FROM files WHERE folder_path = ? ORDER BY name", (str(zip_path),)
+        ).fetchall()
         assert len(files) == 3
         names = [f["name"] for f in files]
         assert "photo1.jpg" in names
@@ -182,7 +190,10 @@ def test_extract_zip_to_cache_done_marker(sandbox_env):
 def test_extract_zip_to_cache_missing_zip(sandbox_env):
     missing_zip = str(sandbox_env["media_dir"] / "gone.zip")
     with zip_lock:
-        zip_tasks_state["active_tasks"][missing_zip] = {"type": "extract", "status": "running"}
+        zip_tasks_state["active_tasks"][missing_zip] = {
+            "type": "extract",
+            "status": "running",
+        }
 
     res = extract_zip_to_cache(missing_zip)
     assert res is None
@@ -255,7 +266,9 @@ def test_unpack_zip_to_folder_success_and_collision(sandbox_env):
     (existing_folder / "existing.txt").write_text("old")
 
     progress_events = []
-    res = unpack_zip_to_folder(str(zip_path), progress_cb=lambda c, t, n: progress_events.append((c, t)))
+    res = unpack_zip_to_folder(
+        str(zip_path), progress_cb=lambda c, t, n: progress_events.append((c, t))
+    )
 
     assert res["success"] is True
     # Name collided, so holiday_1 created
@@ -270,8 +283,15 @@ def test_unpack_zip_to_folder_success_and_collision(sandbox_env):
 
     # Index updated: old zip path removed, new folder indexed
     with db_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM folders WHERE path = ?", (str(zip_path),)).fetchone()[0] == 0
-        new_f = conn.execute("SELECT COUNT(*) FROM folders WHERE path = ?", (str(unpacked_dir),)).fetchone()[0]
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM folders WHERE path = ?", (str(zip_path),)
+            ).fetchone()[0]
+            == 0
+        )
+        new_f = conn.execute(
+            "SELECT COUNT(*) FROM folders WHERE path = ?", (str(unpacked_dir),)
+        ).fetchone()[0]
         assert new_f == 1
 
 

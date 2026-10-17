@@ -9,7 +9,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from media_library.core.constants import VIDEO_EXTENSIONS
 from media_library.db.connection import db_conn
 from media_library.services.anim_cache import (
     anim_cache_payload,
@@ -27,8 +26,9 @@ logger = logging.getLogger(__name__)
 def sync_animated_thumb_db_cache():
     """Fast check: cross-reference existing cached animated WebP files against files in SQLite."""
     try:
-        from media_library.core.config import THUMBNAIL_CACHE_DIR
         import hashlib
+
+        from media_library.core.config import THUMBNAIL_CACHE_DIR
 
         anim_dir = Path(THUMBNAIL_CACHE_DIR) / "animated"
         if not anim_dir.exists():
@@ -122,6 +122,7 @@ class AnimatedThumbWorker(BaseWorker):
         """Enqueues a video for animated WebP compilation."""
         try:
             from media_library.services.media_service import validate_backup_path
+
             real_path = validate_backup_path(file_path)
         except Exception:
             real_path = file_path
@@ -226,9 +227,7 @@ class AnimatedThumbWorker(BaseWorker):
         ]
         is_paused = self.is_paused()
         is_active = bool(self.active_task)
-        status_str = (
-            "paused" if is_paused else ("generating" if is_active else "idle")
-        )
+        status_str = "paused" if is_paused else ("generating" if is_active else "idle")
         total_q = len(queued_items) + (1 if is_active else 0)
 
         done = self.processed_count

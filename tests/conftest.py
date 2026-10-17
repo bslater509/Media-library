@@ -37,7 +37,6 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
 
     config_mod = importlib.import_module("media_library.core.config")
     state_mod = importlib.import_module("media_library.core.state")
-    indexer_mod = importlib.import_module("media_library.db.indexer")
     zip_mod = importlib.import_module("media_library.services.zip")
     ffmpeg_mod = importlib.import_module("media_library.services.ffmpeg_service")
     backup_mod = importlib.import_module("media_library.services.backup_service")
@@ -50,7 +49,14 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     zip_staging = data_dir / "zip_staging"
     zip_cache = data_dir / "cache" / "zips"
     upload_staging = data_dir / "upload_staging"
-    for d in (transcode_dir, webp_staging, backup_staging, zip_staging, zip_cache, upload_staging):
+    for d in (
+        transcode_dir,
+        webp_staging,
+        backup_staging,
+        zip_staging,
+        zip_cache,
+        upload_staging,
+    ):
         d.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("TRANSCODE_DIR", str(transcode_dir))
@@ -68,7 +74,9 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(config_mod, "ZIP_CACHE_DIR", zip_cache)
     monkeypatch.setattr(config_mod, "UPLOAD_STAGING_DIR", upload_staging)
 
-    upload_service_mod = importlib.import_module("media_library.services.upload_service")
+    upload_service_mod = importlib.import_module(
+        "media_library.services.upload_service"
+    )
     monkeypatch.setattr(upload_service_mod, "UPLOAD_STAGING_DIR", upload_staging)
 
     url_dl_mod = importlib.import_module("media_library.workers.url_download_worker")
@@ -77,7 +85,13 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(state_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
     # The indexer is split into submodules that each bind the config values at
     # import time, so patch every module that holds a copy.
-    for _mod_name in ("indexer", "indexer_scan", "indexer_files", "indexer_prune", "indexer_crawl"):
+    for _mod_name in (
+        "indexer",
+        "indexer_scan",
+        "indexer_files",
+        "indexer_prune",
+        "indexer_crawl",
+    ):
         _mod = importlib.import_module(f"media_library.db.{_mod_name}")
         if hasattr(_mod, "THUMBNAIL_CACHE_DIR"):
             monkeypatch.setattr(_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)

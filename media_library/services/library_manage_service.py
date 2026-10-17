@@ -402,9 +402,7 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
             continue
 
         p_parent = (
-            os.path.realpath(parent_path)
-            if parent_path
-            else os.path.dirname(norm_path)
+            os.path.realpath(parent_path) if parent_path else os.path.dirname(norm_path)
         )
         all_folders[norm_path] = {
             "path": norm_path,
@@ -460,10 +458,11 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
             if os.path.isdir(p):
                 with os.scandir(p) as it:
                     for entry in it:
-                        if (
-                            entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
-                            or entry.name.startswith(".tmp_")
-                        ):
+                        if entry.name in (
+                            ".DS_Store",
+                            "Thumbs.db",
+                            "desktop.ini",
+                        ) or entry.name.startswith(".tmp_"):
                             continue
                         if entry.is_file():
                             has_file = True
@@ -478,9 +477,7 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
     with ThreadPoolExecutor(max_workers=max_threads) as ex:
         scan_results = list(ex.map(_inspect_folder, empty_from_db))
 
-    valid_candidates_set = {
-        p for p, has_file, _ in scan_results if not has_file
-    }
+    valid_candidates_set = {p for p, has_file, _ in scan_results if not has_file}
     subdirs_by_folder = {p: subdirs for p, _, subdirs in scan_results}
 
     # Bottom-up hierarchical confirmation (deepest first):
@@ -500,9 +497,7 @@ def find_empty_folders(base_path: str | None = None) -> dict[str, Any]:
         name = p_info["name"] if p_info else os.path.basename(p)
         parent_path = p_info["parent_path"] if p_info else os.path.dirname(p)
         rel_path = os.path.relpath(p, base_dir)
-        parent_name = (
-            os.path.basename(parent_path) if parent_path else ""
-        )
+        parent_name = os.path.basename(parent_path) if parent_path else ""
         is_leaf = len(children_map.get(p, [])) == 0
 
         final_candidates.append(
@@ -546,10 +541,11 @@ def delete_empty_folder(
         # 1. Clean benign OS junk (.DS_Store, Thumbs.db, desktop.ini, .tmp_*)
         with os.scandir(real_path) as entries:
             for entry in entries:
-                if (
-                    entry.name in (".DS_Store", "Thumbs.db", "desktop.ini")
-                    or entry.name.startswith(".tmp_")
-                ):
+                if entry.name in (
+                    ".DS_Store",
+                    "Thumbs.db",
+                    "desktop.ini",
+                ) or entry.name.startswith(".tmp_"):
                     try:
                         os.remove(entry.path)
                     except OSError:
@@ -557,7 +553,9 @@ def delete_empty_folder(
                 elif entry.is_file():
                     raise OSError(f"Folder is not empty: contains file '{entry.name}'")
                 elif entry.is_dir():
-                    raise OSError(f"Folder is not empty: contains subfolder '{entry.name}'")
+                    raise OSError(
+                        f"Folder is not empty: contains subfolder '{entry.name}'"
+                    )
 
         # 2. Remove directory
         os.rmdir(real_path)
@@ -651,4 +649,3 @@ def delete_empty_folders(
         "failed_count": len(failed),
         "failed": failed,
     }
-

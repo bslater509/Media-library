@@ -3,8 +3,6 @@
 import asyncio
 import io
 import os
-import shutil
-import tempfile
 import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +19,6 @@ from media_library.services.ffmpeg_service import (
     _parse_iso_time,
     build_live_transcode_command,
     convert_image_file_to_webp,
-    convert_image_to_webp_bytes,
     extract_candidate_frame,
     extract_frame_poster,
     format_eta_str,
@@ -200,7 +197,9 @@ def test_generate_thumbnail_and_poster(tmp_path, sandbox_env):
         assert thumb.exists()
 
         # Fast path check
-        fast = get_thumbnail_path_fast(str(img_p), mtime=img_p.stat().st_mtime, size=img_p.stat().st_size)
+        fast = get_thumbnail_path_fast(
+            str(img_p), mtime=img_p.stat().st_mtime, size=img_p.stat().st_size
+        )
         assert fast.exists()
 
         # 2. Extract candidate frame
@@ -259,9 +258,11 @@ def test_convert_image_file_to_webp_edge_cases(tmp_path, sandbox_env):
     img_fail = media / "fail_verify.jpg"
     Image.new("RGB", (30, 30), color="yellow").save(img_fail)
 
-    with patch("shutil.copy2", side_effect=OSError("Disk full")):
-        with pytest.raises(OSError):
-            convert_image_file_to_webp(str(img_fail))
+    with (
+        patch("shutil.copy2", side_effect=OSError("Disk full")),
+        pytest.raises(OSError),
+    ):
+        convert_image_file_to_webp(str(img_fail))
 
     # 4. Error unlinking original rolls back WebP
     img_unlink_fail = media / "unlink_fail.jpg"
@@ -430,8 +431,6 @@ def test_media_service_do_transfer_cross_device_and_errors(tmp_path, sandbox_env
     dest = media / "target" / "large_vid.mp4"
 
     # Simulate cross-device move by having os.rename fail with EXDEV
-    real_rename = os.rename
-
     def fake_rename(s, d):
         raise OSError(18, "Invalid cross-device link")
 
@@ -498,8 +497,9 @@ def test_media_service_do_transfer_cross_device_and_errors(tmp_path, sandbox_env
         "status": "queued",
     }
 
-    with patch("os.rename", side_effect=fake_rename), patch(
-        "builtins.open", side_effect=IOError("Read-only filesystem")
+    with (
+        patch("os.rename", side_effect=fake_rename),
+        patch("builtins.open", side_effect=OSError("Read-only filesystem")),
     ):
         do_transfer(item3)
 
@@ -590,4 +590,3 @@ def test_ffmpeg_video_thumbnail_and_poster_more(sandbox_env, tmp_path):
             assert th_pil.exists()
 
     asyncio.run(_test())
-

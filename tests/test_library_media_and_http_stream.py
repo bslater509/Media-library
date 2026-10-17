@@ -2,12 +2,10 @@
 
 import asyncio
 from pathlib import Path
-from PIL import Image
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import pytest
+from PIL import Image
 from starlette.requests import Request
-from starlette.responses import Response
 
 from media_library.core.http_stream import stream_file_with_range
 from media_library.core.state import state
@@ -27,7 +25,9 @@ def test_http_stream_byte_ranges(tmp_path):
             "headers": [(b"range", b"bytes=0-9")],
         }
         req = Request(scope)
-        res = await stream_file_with_range(str(test_file), req, mime_type="application/octet-stream")
+        res = await stream_file_with_range(
+            str(test_file), req, mime_type="application/octet-stream"
+        )
         assert res.status_code == 206
         assert res.headers["content-length"] == "10"
         assert res.headers["content-range"] == "bytes 0-9/100"
@@ -116,16 +116,12 @@ def test_library_media_thumbnails_and_streaming(api_client, tmp_path):
     img.save(img_file, format="JPEG")
 
     # GET /api/backup/media for image
-    res_img_media = api_client.get(
-        "/api/backup/media", params={"path": str(img_file)}
-    )
+    res_img_media = api_client.get("/api/backup/media", params={"path": str(img_file)})
     assert res_img_media.status_code == 200
     assert "image/jpeg" in res_img_media.headers.get("content-type", "")
 
     # HEAD /api/backup/media for image
-    res_img_head = api_client.head(
-        "/api/backup/media", params={"path": str(img_file)}
-    )
+    res_img_head = api_client.head("/api/backup/media", params={"path": str(img_file)})
     assert res_img_head.status_code == 200
     assert res_img_head.headers.get("content-type") == "image/jpeg"
 
@@ -226,7 +222,8 @@ def test_thumbnail_candidates_and_frame_endpoints(api_client, tmp_path):
 
     # Missing video -> 404
     res_miss_frame = api_client.get(
-        "/api/backup/thumbnails/frame", params={"path": str(dest / "ghost.mp4"), "timestamp": 1.0}
+        "/api/backup/thumbnails/frame",
+        params={"path": str(dest / "ghost.mp4"), "timestamp": 1.0},
     )
     assert res_miss_frame.status_code == 404
 

@@ -67,15 +67,20 @@ def test_browse_unindexed_folder_schedules_background_index(api_client):
     assert data["breadcrumbs"][-1]["name"] == "index_me_later"
 
     # Client re-poll inside the debounce window must not spawn a second job.
-    assert api_client.get("/api/backup/browse", params={"path": str(sub)}).json()[
-        "indexing"
-    ] is False
+    assert (
+        api_client.get("/api/backup/browse", params={"path": str(sub)}).json()[
+            "indexing"
+        ]
+        is False
+    )
 
     assert _wait_until(
-        lambda: api_client.get(
-            "/api/backup/browse", params={"path": str(sub)}
-        ).json()["total_files"]
-        == 1
+        lambda: (
+            api_client.get("/api/backup/browse", params={"path": str(sub)}).json()[
+                "total_files"
+            ]
+            == 1
+        )
     )
     final = api_client.get("/api/backup/browse", params={"path": str(sub)}).json()
     assert final["files"][0]["name"] == "clip.mp4"
@@ -177,10 +182,12 @@ def test_browse_zip_archive_extracts_then_indexes(api_client):
     # Extraction + index both finish in the background.
     assert _wait_until(lambda: is_zip_extracted(str(zip_path)))
     assert _wait_until(
-        lambda: api_client.get(
-            "/api/backup/browse", params={"path": str(zip_path)}
-        ).json()["total_files"]
-        == 1
+        lambda: (
+            api_client.get("/api/backup/browse", params={"path": str(zip_path)}).json()[
+                "total_files"
+            ]
+            == 1
+        )
     )
 
     # Already extracted and running: the percent comes from the live ZIP task.
@@ -222,15 +229,19 @@ def test_browse_index_failure_in_background_thread_is_logged(api_client):
     sub = dest / "index_boom"
     sub.mkdir()
 
-    with patch(
-        "media_library.routers.library_browse.index_folder",
-        side_effect=RuntimeError("indexer crashed"),
-    ), patch(
-        "media_library.routers.library_browse.thumbnail_worker_instance.enqueue_folder",
-        side_effect=RuntimeError("thumb worker down"),
-    ), patch(
-        "media_library.routers.library_browse.transcode_worker_instance.enqueue_indexed_folder",
-        side_effect=RuntimeError("transcoder down"),
+    with (
+        patch(
+            "media_library.routers.library_browse.index_folder",
+            side_effect=RuntimeError("indexer crashed"),
+        ),
+        patch(
+            "media_library.routers.library_browse.thumbnail_worker_instance.enqueue_folder",
+            side_effect=RuntimeError("thumb worker down"),
+        ),
+        patch(
+            "media_library.routers.library_browse.transcode_worker_instance.enqueue_indexed_folder",
+            side_effect=RuntimeError("transcoder down"),
+        ),
     ):
         res = api_client.get("/api/backup/browse", params={"path": str(sub)})
         assert res.status_code == 200
@@ -253,13 +264,17 @@ def test_browse_schedules_zip_optimization_for_archived_folders(api_client):
     api_client.get("/api/backup/browse", params={"path": str(zip_path)})
     assert _wait_until(lambda: _last_scanned(str(zip_path)) > 0)
 
-    with patch(
-        "media_library.routers.library_browse.webp_worker_instance.enqueue_folder"
-    ) as mock_webp, patch(
-        "media_library.routers.library_browse.thumbnail_worker_instance.enqueue_folder"
-    ) as mock_thumbs, patch(
-        "media_library.routers.library_browse.transcode_worker_instance.enqueue_indexed_folder"
-    ) as mock_transcode:
+    with (
+        patch(
+            "media_library.routers.library_browse.webp_worker_instance.enqueue_folder"
+        ) as mock_webp,
+        patch(
+            "media_library.routers.library_browse.thumbnail_worker_instance.enqueue_folder"
+        ) as mock_thumbs,
+        patch(
+            "media_library.routers.library_browse.transcode_worker_instance.enqueue_indexed_folder"
+        ) as mock_transcode,
+    ):
         res = api_client.get("/api/backup/browse", params={"path": str(zip_path)})
         assert res.status_code == 200
         assert res.json()["total_files"] == 1
@@ -340,9 +355,7 @@ def test_zip_router_check_status_and_validation_errors(api_client):
     # Status endpoints answer even when nothing is running.
     assert api_client.get("/api/backup/zip/status").json()["is_active"] is False
     assert api_client.get("/api/backup/zip/batch/status").status_code == 200
-    assert (
-        api_client.get("/api/backup/zip/batch-unpack/status").status_code == 200
-    )
+    assert api_client.get("/api/backup/zip/batch-unpack/status").status_code == 200
     assert api_client.get("/api/backup/zip/batch-unpack/candidates").status_code == 200
 
     # Batch candidates come straight from the index, so index the leaf first.
@@ -380,9 +393,7 @@ def test_zip_router_batch_start_conflict_returns_409(api_client):
     (leaf / "a.jpg").write_bytes(_jpeg_bytes())
     (leaf / "b.jpg").write_bytes(_jpeg_bytes("purple"))
 
-    with patch.object(
-        zip_router, "start_batch_zip", side_effect=RuntimeError("busy")
-    ):
+    with patch.object(zip_router, "start_batch_zip", side_effect=RuntimeError("busy")):
         res = api_client.post(
             "/api/backup/zip/batch/start", json={"folder_paths": [str(leaf)]}
         )

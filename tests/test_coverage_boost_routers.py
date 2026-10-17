@@ -5,7 +5,6 @@ paths, self-moves, undo failures, bulk errors) plus the destination/DB path
 resolution and config load/save helpers in ``core/config``.
 """
 
-import asyncio
 import json
 import os
 import runpy
@@ -14,7 +13,6 @@ from unittest.mock import patch
 
 import pytest
 
-from media_library.core.state import state
 from media_library.workers.library_ops_worker import library_ops_worker_instance
 
 
@@ -51,7 +49,9 @@ def test_move_check_rejects_empty_paths(client):
     )
     assert res.status_code == 400
 
-    res = c.post("/api/backup/move", json={"paths": [], "destination_folder": str(media)})
+    res = c.post(
+        "/api/backup/move", json={"paths": [], "destination_folder": str(media)}
+    )
     assert res.status_code == 400
 
 
@@ -287,7 +287,9 @@ def test_undo_with_nothing_returns_400(client):
 def test_create_folder_duplicate_name_returns_400(client):
     c, media = client
     (media / "exists").mkdir()
-    res = c.post("/api/backup/folders", json={"parent_path": str(media), "name": "exists"})
+    res = c.post(
+        "/api/backup/folders", json={"parent_path": str(media), "name": "exists"}
+    )
     assert res.status_code == 400
 
 
@@ -297,7 +299,9 @@ def test_create_folder_unexpected_error_returns_500(client):
         "media_library.routers.library_manage.create_library_folder",
         side_effect=RuntimeError("disk exploded"),
     ):
-        res = c.post("/api/backup/folders", json={"parent_path": str(media), "name": "new"})
+        res = c.post(
+            "/api/backup/folders", json={"parent_path": str(media), "name": "new"}
+        )
     assert res.status_code == 500
 
 
@@ -364,11 +368,15 @@ def test_bulk_rename_errors(client):
 
     # Empty paths are rejected by both endpoints.
     assert (
-        c.post("/api/backup/bulk/rename/preview", json={"paths": [], "mode": "prefix"}).status_code
+        c.post(
+            "/api/backup/bulk/rename/preview", json={"paths": [], "mode": "prefix"}
+        ).status_code
         == 400
     )
     assert (
-        c.post("/api/backup/bulk/rename", json={"paths": [], "mode": "prefix"}).status_code
+        c.post(
+            "/api/backup/bulk/rename", json={"paths": [], "mode": "prefix"}
+        ).status_code
         == 400
     )
 
@@ -378,9 +386,7 @@ def test_bulk_rename_errors(client):
         json={"paths": [existing], "mode": "bogus"},
     )
     assert res.status_code == 400
-    res = c.post(
-        "/api/backup/bulk/rename", json={"paths": [existing], "mode": "bogus"}
-    )
+    res = c.post("/api/backup/bulk/rename", json={"paths": [existing], "mode": "bogus"})
     assert res.status_code == 400
 
     # A rename that would collide is refused with 409.
@@ -525,7 +531,9 @@ def test_db_path_resolution(monkeypatch, tmp_path):
     base = tmp_path / "root"
     shim = base / "a" / "b" / "c" / "config.py"
     shim.parent.mkdir(parents=True)
-    shim.write_text(Path(config_mod.__file__).read_text(encoding="utf-8"), encoding="utf-8")
+    shim.write_text(
+        Path(config_mod.__file__).read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -558,7 +566,10 @@ def test_load_config_data_variants(monkeypatch, tmp_path):
     monkeypatch.delenv("INCOMING_DIR", raising=False)
 
     # Missing file: env-derived defaults.
-    assert config_mod.load_config_data() == {"recent_destinations": [], "source_dir": ""}
+    assert config_mod.load_config_data() == {
+        "recent_destinations": [],
+        "source_dir": "",
+    }
 
     # Valid file supplies recent destinations and the source dir.
     cfg.write_text(

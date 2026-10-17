@@ -50,9 +50,7 @@ WEBP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 # Extracted animated WebP previews are large (up to 24 frames at 480px) but fully
 # regenerable, so their cache directory is bounded by an LRU ceiling like the
 # extracted-ZIP cache is, instead of growing without limit as videos come and go.
-ANIMATED_CACHE_MAX_SIZE_GB = float(
-    os.environ.get("ANIMATED_CACHE_MAX_SIZE_GB", "5.0")
-)
+ANIMATED_CACHE_MAX_SIZE_GB = float(os.environ.get("ANIMATED_CACHE_MAX_SIZE_GB", "5.0"))
 
 UPLOAD_STAGING_DIR = Path(
     os.environ.get("UPLOAD_STAGING_DIR", DATA_DIR / "upload_staging")
@@ -181,5 +179,7 @@ def save_config_data(current_state: dict[str, Any]):
 
 
 # URL playlist downloading (yt-dlp)
-DOWNLOAD_WORKER_CONCURRENCY = max(1, int(os.environ.get("DOWNLOAD_WORKER_CONCURRENCY", "2")))
+DOWNLOAD_WORKER_CONCURRENCY = max(
+    1, int(os.environ.get("DOWNLOAD_WORKER_CONCURRENCY", "2"))
+)
 DOWNLOAD_COOKIES_FILE = os.environ.get("DOWNLOAD_COOKIES_FILE", "").strip()

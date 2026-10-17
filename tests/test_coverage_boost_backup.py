@@ -82,7 +82,10 @@ def test_sync_thumbnail_db_cache_matches_files(sandbox_env, monkeypatch):
     svc.sync_thumbnail_db_cache()
 
     # A database failure is swallowed rather than raised.
-    with patch("media_library.services.backup_service.db_conn", side_effect=RuntimeError("db down")):
+    with patch(
+        "media_library.services.backup_service.db_conn",
+        side_effect=RuntimeError("db down"),
+    ):
         svc.sync_thumbnail_db_cache()
 
 
@@ -157,7 +160,11 @@ def test_create_backup_success_with_vacuum_fallback(sandbox_env, backup_dir):
             """INSERT INTO folders (path, name, parent_path, file_count,
                    subfolder_count, last_scanned)
                VALUES (?, ?, ?, 1, 0, 0.0)""",
-            (str(media), "media", "",),
+            (
+                str(media),
+                "media",
+                "",
+            ),
         )
     for i in range(2):
         (thumb_dir / f"thumb_existing_{i}.jpg").write_bytes(b"\xff\xd8" * 8)
@@ -249,7 +256,9 @@ def test_create_backup_failure_cleans_staging(sandbox_env, backup_dir):
         return real_copyfile(src, dst, *args, **kwargs)
 
     real_copyfile = bs.shutil.copyfile
-    with patch("media_library.services.backup_service.shutil.copyfile", broken_copyfile):
+    with patch(
+        "media_library.services.backup_service.shutil.copyfile", broken_copyfile
+    ):
         result = bs._create_library_backup_sync()
 
     assert result["success"] is False
@@ -282,7 +291,9 @@ def test_restore_round_trip_with_progress(sandbox_env, backup_dir, monkeypatch):
     media = sandbox_env["media_dir"]
     thumb_dir = sandbox_env["thumb_dir"]
     cfg_tmp = sandbox_env["base_dir"] / "restored_config.json"
-    cfg_tmp.write_text('{"recent_destinations": [], "source_dir": ""}', encoding="utf-8")
+    cfg_tmp.write_text(
+        '{"recent_destinations": [], "source_dir": ""}', encoding="utf-8"
+    )
     monkeypatch.setattr(bs, "CONFIG_FILE", cfg_tmp)
     monkeypatch.setattr("media_library.core.config.CONFIG_FILE", cfg_tmp)
 
@@ -344,8 +355,9 @@ def test_restore_survives_config_and_wal_failures(sandbox_env, backup_dir, monke
             raise OSError("config is locked")
         return real_copyfile(src, dst, *args, **kwargs)
 
-    with patch.object(Path, "unlink", flaky_unlink), patch(
-        "media_library.services.backup_service.shutil.copyfile", broken_copyfile
+    with (
+        patch.object(Path, "unlink", flaky_unlink),
+        patch("media_library.services.backup_service.shutil.copyfile", broken_copyfile),
     ):
         result = bs._restore_library_backup_sync()
 
@@ -422,7 +434,9 @@ def test_auto_restore_reports_failure(sandbox_env, backup_dir):
     with db_conn() as conn, conn:
         conn.execute("DELETE FROM files")
     with patch.object(
-        bs, "_restore_library_backup_sync", return_value={"success": False, "error": "boom"}
+        bs,
+        "_restore_library_backup_sync",
+        return_value={"success": False, "error": "boom"},
     ):
         assert bs.check_and_auto_restore_library_backup() is False
 

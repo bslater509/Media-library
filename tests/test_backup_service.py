@@ -63,7 +63,9 @@ def test_backup_service_error_handling(tmp_path, monkeypatch):
     # 1. Restore when no backup exists returns error
     empty_bck = tmp_path / "empty_backup_dir"
     empty_bck.mkdir()
-    monkeypatch.setattr("media_library.services.backup_service.LIBRARY_BACKUP_DIR", str(empty_bck))
+    monkeypatch.setattr(
+        "media_library.services.backup_service.LIBRARY_BACKUP_DIR", str(empty_bck)
+    )
     res_restore = _restore_library_backup_sync()
     assert res_restore["success"] is False
     assert "no valid database backup found" in res_restore["error"].lower()
@@ -99,20 +101,25 @@ def test_check_and_auto_restore_and_thumb_cache_sync(sandbox_env, sample_media):
     vid1 = sample_media["vid1"]
     stat = vid1.stat()
     import hashlib
-    key = f"{str(vid1)}_{stat.st_mtime}_{stat.st_size}"
+
+    key = f"{vid1!s}_{stat.st_mtime}_{stat.st_size}"
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
     thumb_file = THUMBNAIL_CACHE_DIR / f"thumb_{h}.jpg"
     thumb_file.write_bytes(b"\xff\xd8\xff\xe0" + b"X" * 100)
 
     sync_thumbnail_db_cache()
     with db_conn() as conn:
-        row = conn.execute("SELECT has_thumb FROM files WHERE path = ?", (str(vid1),)).fetchone()
+        row = conn.execute(
+            "SELECT has_thumb FROM files WHERE path = ?", (str(vid1),)
+        ).fetchone()
         assert row is not None
         assert row["has_thumb"] == 1
 
     # Populate 12 thumbnails so local_thumb_count >= 10
     for i in range(12):
-        (THUMBNAIL_CACHE_DIR / f"thumb_{i}.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"T" * 20)
+        (THUMBNAIL_CACHE_DIR / f"thumb_{i}.jpg").write_bytes(
+            b"\xff\xd8\xff\xe0" + b"T" * 20
+        )
 
     # 2. check_and_auto_restore_library_backup when database is wiped
     db_file = sandbox_env["db_path"]
@@ -125,4 +132,3 @@ def test_check_and_auto_restore_and_thumb_cache_sync(sandbox_env, sample_media):
     # Call again when database is already populated and thumbnails >= 10
     second_check = check_and_auto_restore_library_backup()
     assert second_check is False
-

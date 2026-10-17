@@ -216,7 +216,9 @@ def _read_by_extension(conn, total_bytes: int, total_files: int) -> dict[str, An
 def _derive_library_root(meta: dict[str, dict]) -> str:
     """Pick the rollup root: the configured library dir when it is indexed,
     otherwise the shallowest indexed folder (the crawler's own root)."""
-    configured = str(state.get("destination_dir") or DEFAULT_DESTINATION_DIR or "").rstrip("/")
+    configured = str(
+        state.get("destination_dir") or DEFAULT_DESTINATION_DIR or ""
+    ).rstrip("/")
     if configured and configured in meta:
         return configured
     candidates = [p for p in meta if p and not _is_excluded(p)]
@@ -242,10 +244,19 @@ def _rollup_folders(conn, library_root: str) -> dict[str, Any]:
             "is_zip": bool(r["is_zip"]),
         }
     if not meta:
-        return {"root": library_root, "size": {}, "count": {}, "meta": {}, "parent_of": {}, "children": {}}
+        return {
+            "root": library_root,
+            "size": {},
+            "count": {},
+            "meta": {},
+            "parent_of": {},
+            "children": {},
+        }
 
     root = _derive_library_root(meta) or library_root
-    meta.setdefault(root, {"name": os.path.basename(root) or root, "parent": None, "is_zip": False})
+    meta.setdefault(
+        root, {"name": os.path.basename(root) or root, "parent": None, "is_zip": False}
+    )
 
     # Link every folder to its nearest ancestor that is itself included, so a
     # gap in the index (an unindexed intermediate directory) can never orphan a
@@ -346,8 +357,12 @@ def _folder_entry(
     size = int(rollup["size"].get(path, 0) or 0)
     entry: dict[str, Any] = {
         "path": path,
-        "name": rollup["meta"].get(path, {}).get("name") or os.path.basename(path) or path,
-        "rel_path": os.path.relpath(path, root) if path != root else os.path.basename(root),
+        "name": rollup["meta"].get(path, {}).get("name")
+        or os.path.basename(path)
+        or path,
+        "rel_path": os.path.relpath(path, root)
+        if path != root
+        else os.path.basename(root),
         "bytes": size,
         "bytes_formatted": format_size(size),
         "files": int(rollup["count"].get(path, 0) or 0),
@@ -369,7 +384,8 @@ def _folder_entry(
             kids.append(
                 {
                     "path": child,
-                    "name": rollup["meta"].get(child, {}).get("name") or os.path.basename(child),
+                    "name": rollup["meta"].get(child, {}).get("name")
+                    or os.path.basename(child),
                     "rel_path": os.path.relpath(child, root),
                     "bytes": child_size,
                     "bytes_formatted": format_size(child_size),
@@ -561,14 +577,18 @@ def _read_reclaimable(conn) -> dict[str, Any]:
         "duplicate_ignored_pairs": int(ignored["c"] or 0),
         "webp_saved_bytes": saved,
         "webp_saved_formatted": format_size(saved),
-        "webp_converted_count": int((webp_row["converted_count"] if webp_row else 0) or 0),
+        "webp_converted_count": int(
+            (webp_row["converted_count"] if webp_row else 0) or 0
+        ),
         "webp_skipped_count": int((webp_row["skipped_count"] if webp_row else 0) or 0),
         "webp_pending_count": int(webp_pending["c"] or 0),
         "webp_pending_bytes": int(webp_pending["s"] or 0),
         "webp_pending_bytes_formatted": format_size(webp_pending["s"] or 0),
         "zip_eligible_folders": int(zip_candidates.get("total_candidates", 0) or 0),
         "zip_eligible_bytes": int(zip_candidates.get("total_size", 0) or 0),
-        "zip_eligible_bytes_formatted": format_size(zip_candidates.get("total_size", 0) or 0),
+        "zip_eligible_bytes_formatted": format_size(
+            zip_candidates.get("total_size", 0) or 0
+        ),
         "empty_folders": empty_count,
     }
 

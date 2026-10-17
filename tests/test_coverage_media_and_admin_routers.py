@@ -37,13 +37,23 @@ def _insert_file_row(path: Path, folder: str, ftype="video", ext=".mp4") -> None
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted,
                                   mtime, duration, width, height)
                VALUES (?, ?, ?, ?, ?, ?, '1 KB', ?, 60.0, 640, 360)""",
-            (str(path), path.name, folder, ftype, ext, path.stat().st_size, path.stat().st_mtime),
+            (
+                str(path),
+                path.name,
+                folder,
+                ftype,
+                ext,
+                path.stat().st_size,
+                path.stat().st_mtime,
+            ),
         )
 
 
 def _row(path: Path):
     with db_conn() as conn:
-        return conn.execute("SELECT * FROM files WHERE path = ?", (str(path),)).fetchone()
+        return conn.execute(
+            "SELECT * FROM files WHERE path = ?", (str(path),)
+        ).fetchone()
 
 
 # --------------------------------------------------------------------------
@@ -92,7 +102,8 @@ def test_thumbnail_rejects_unsupported_and_missing_files(api_client):
     )
     # Non-image media still streams raw bytes through the range handler.
     assert (
-        api_client.get("/api/backup/media", params={"path": str(txt)}).status_code == 200
+        api_client.get("/api/backup/media", params={"path": str(txt)}).status_code
+        == 200
     )
     assert (
         api_client.get(
@@ -101,7 +112,9 @@ def test_thumbnail_rejects_unsupported_and_missing_files(api_client):
         == 404
     )
     assert (
-        api_client.get("/api/backup/media", params={"path": str(dest / "ghost.mp4")}).status_code
+        api_client.get(
+            "/api/backup/media", params={"path": str(dest / "ghost.mp4")}
+        ).status_code
         == 404
     )
 
@@ -170,11 +183,19 @@ def test_candidates_endpoint_count_interval_and_fallbacks(api_client):
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted,
                                   mtime, duration, width, height)
                VALUES (?, ?, ?, 'video', '.mp4', ?, '1 KB', ?, 7500.0, 1920, 1080)""",
-            (str(video), video.name, str(dest), video.stat().st_size, video.stat().st_mtime),
+            (
+                str(video),
+                video.name,
+                str(dest),
+                video.stat().st_size,
+                video.stat().st_mtime,
+            ),
         )
 
     # Interval mode (default 30s) with an hour-plus duration formats as HH:MM:SS.
-    data = api_client.get("/api/backup/thumbnails/candidates", params={"path": str(video)}).json()
+    data = api_client.get(
+        "/api/backup/thumbnails/candidates", params={"path": str(video)}
+    ).json()
     assert data["duration"] == 7500.0
     assert data["duration_formatted"].startswith("02:05")
     assert data["width"] == 1920
@@ -208,7 +229,8 @@ def test_candidates_endpoint_count_interval_and_fallbacks(api_client):
     )
     assert (
         api_client.get(
-            "/api/backup/thumbnails/candidates", params={"path": str(dest / "ghost.mp4")}
+            "/api/backup/thumbnails/candidates",
+            params={"path": str(dest / "ghost.mp4")},
         ).status_code
         == 404
     )
@@ -219,7 +241,10 @@ def test_candidates_endpoint_probes_when_index_has_no_duration(api_client):
     video = dest / "unindexed_clip.mp4"
     video.write_bytes(b"\x00" * 32)
 
-    with patch("media_library.routers.library_media.db_conn", side_effect=sqlite3.DatabaseError("x")):
+    with patch(
+        "media_library.routers.library_media.db_conn",
+        side_effect=sqlite3.DatabaseError("x"),
+    ):
         data = api_client.get(
             "/api/backup/thumbnails/candidates", params={"path": str(video)}
         ).json()
@@ -295,12 +320,15 @@ def test_animated_preview_falls_back_to_static_thumbnail(api_client):
     video.write_bytes(b"\x00" * 32)
     static_thumb = _write_jpeg(dest / "anim_fallback.jpg")
 
-    with patch(
-        "media_library.routers.library_media.generate_animated_preview",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "media_library.routers.library_media.generate_thumbnail",
-        new=AsyncMock(return_value=static_thumb),
+    with (
+        patch(
+            "media_library.routers.library_media.generate_animated_preview",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "media_library.routers.library_media.generate_thumbnail",
+            new=AsyncMock(return_value=static_thumb),
+        ),
     ):
         res = api_client.get(
             "/api/backup/thumbnails/animated", params={"path": str(video)}
@@ -309,12 +337,15 @@ def test_animated_preview_falls_back_to_static_thumbnail(api_client):
     assert "image/jpeg" in res.headers.get("content-type", "")
 
     # HEAD of the fallback thumbnail.
-    with patch(
-        "media_library.routers.library_media.generate_animated_preview",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "media_library.routers.library_media.generate_thumbnail",
-        new=AsyncMock(return_value=static_thumb),
+    with (
+        patch(
+            "media_library.routers.library_media.generate_animated_preview",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "media_library.routers.library_media.generate_thumbnail",
+            new=AsyncMock(return_value=static_thumb),
+        ),
     ):
         head = api_client.head(
             "/api/backup/thumbnails/animated", params={"path": str(video)}
@@ -323,12 +354,15 @@ def test_animated_preview_falls_back_to_static_thumbnail(api_client):
     assert int(head.headers["content-length"]) > 0
 
     # Without any usable thumbnail the request is a hard failure.
-    with patch(
-        "media_library.routers.library_media.generate_animated_preview",
-        new=AsyncMock(return_value=None),
-    ), patch(
-        "media_library.routers.library_media.generate_thumbnail",
-        new=AsyncMock(return_value=None),
+    with (
+        patch(
+            "media_library.routers.library_media.generate_animated_preview",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "media_library.routers.library_media.generate_thumbnail",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         res = api_client.get(
             "/api/backup/thumbnails/animated", params={"path": str(video)}
@@ -348,10 +382,17 @@ def test_animated_preview_wait_false_enqueue_branches(api_client):
 
     enqueued = []
     worker = MagicMock()
-    worker.enqueue.side_effect = lambda p, priority=False: enqueued.append((p, priority))
+    worker.enqueue.side_effect = lambda p, priority=False: enqueued.append(
+        (p, priority)
+    )
 
-    with patch.object(library_media, "animated_thumb_worker_instance", worker), patch.object(
-        library_media, "generate_thumbnail", new=AsyncMock(return_value=static_thumb)
+    with (
+        patch.object(library_media, "animated_thumb_worker_instance", worker),
+        patch.object(
+            library_media,
+            "generate_thumbnail",
+            new=AsyncMock(return_value=static_thumb),
+        ),
     ):
         res = api_client.get(
             "/api/backup/thumbnails/animated",
@@ -362,8 +403,13 @@ def test_animated_preview_wait_false_enqueue_branches(api_client):
     assert enqueued == [(str(video), True)]
 
     # HEAD on the same path reports the pending generation.
-    with patch.object(library_media, "animated_thumb_worker_instance", worker), patch.object(
-        library_media, "generate_thumbnail", new=AsyncMock(return_value=static_thumb)
+    with (
+        patch.object(library_media, "animated_thumb_worker_instance", worker),
+        patch.object(
+            library_media,
+            "generate_thumbnail",
+            new=AsyncMock(return_value=static_thumb),
+        ),
     ):
         head = api_client.head(
             "/api/backup/thumbnails/animated",
@@ -373,8 +419,11 @@ def test_animated_preview_wait_false_enqueue_branches(api_client):
     assert head.headers["x-thumbnail-status"] == "generating"
 
     # No thumbnail available yet: the client is told to retry later.
-    with patch.object(library_media, "animated_thumb_worker_instance", worker), patch.object(
-        library_media, "generate_thumbnail", new=AsyncMock(return_value=None)
+    with (
+        patch.object(library_media, "animated_thumb_worker_instance", worker),
+        patch.object(
+            library_media, "generate_thumbnail", new=AsyncMock(return_value=None)
+        ),
     ):
         res = api_client.get(
             "/api/backup/thumbnails/animated",
@@ -629,11 +678,14 @@ def test_set_poster_frame_invalidation_and_success(api_client):
     anim_path.write_bytes(b"old animated preview")
     assert _row(video)["has_animated"] == 0
 
-    with patch.object(
-        library_admin, "extract_frame_poster", new=AsyncMock(return_value=poster)
-    ), patch.object(
-        library_admin.animated_thumb_worker_instance, "enqueue"
-    ) as mock_enqueue:
+    with (
+        patch.object(
+            library_admin, "extract_frame_poster", new=AsyncMock(return_value=poster)
+        ),
+        patch.object(
+            library_admin.animated_thumb_worker_instance, "enqueue"
+        ) as mock_enqueue,
+    ):
         res = api_client.post(
             "/api/backup/thumbnails/set-poster",
             json={"path": str(video), "timestamp": 5.0},

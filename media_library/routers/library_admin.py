@@ -253,9 +253,10 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         )
 
     zip_p, inner_p = split_zip_path(real_path)
-    if not (zip_p and inner_p):
-        if not os.path.exists(real_path) or not os.path.isfile(real_path):
-            raise HTTPException(status_code=404, detail="Video file not found")
+    if not (zip_p and inner_p) and (
+        not os.path.exists(real_path) or not os.path.isfile(real_path)
+    ):
+        raise HTTPException(status_code=404, detail="Video file not found")
 
     timestamp = max(0.0, float(req.timestamp))
     thumb = await extract_frame_poster(
@@ -273,6 +274,7 @@ async def set_poster_frame(req: SetPosterFrameRequest):
     fsize = None
     try:
         from media_library.db.connection import db_conn
+
         with db_conn() as conn, conn:
             conn.execute(
                 "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
@@ -299,10 +301,14 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         if anim_path.exists():
             anim_path.unlink()
         with db_conn() as conn, conn:
-            conn.execute("UPDATE files SET has_animated = 0 WHERE path = ?", (real_path,))
+            conn.execute(
+                "UPDATE files SET has_animated = 0 WHERE path = ?", (real_path,)
+            )
         animated_thumb_worker_instance.enqueue(real_path, priority=True)
     except Exception as e:
-        logger.warning(f"Failed to invalidate/recompile animated preview for {real_path}: {e}")
+        logger.warning(
+            f"Failed to invalidate/recompile animated preview for {real_path}: {e}"
+        )
 
     return {
         "success": True,
@@ -337,9 +343,10 @@ async def trigger_animated_thumbnail_generate(req: AnimatedPreviewRequest):
         )
 
     zip_p, inner_p = split_zip_path(real_path)
-    if not (zip_p and inner_p):
-        if not os.path.exists(real_path) or not os.path.isfile(real_path):
-            raise HTTPException(status_code=404, detail="Video file not found")
+    if not (zip_p and inner_p) and (
+        not os.path.exists(real_path) or not os.path.isfile(real_path)
+    ):
+        raise HTTPException(status_code=404, detail="Video file not found")
 
     anim = await generate_animated_preview(real_path)
     if not anim or not anim.exists():
@@ -456,4 +463,3 @@ async def cancel_all_animated_thumbnails() -> dict:
         "cancelled": count,
         "message": f"Cancelled {count} queued animated preview(s)",
     }
-

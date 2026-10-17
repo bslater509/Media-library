@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -13,13 +14,11 @@ from media_library.core.config import (
     UPLOAD_STAGING_DIR,
     UPLOAD_STAGING_TTL_HOURS,
 )
-from media_library.core.state import format_size
 from media_library.core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from media_library.core.state import format_size
 from media_library.db.indexer import index_folder
 from media_library.services.library_manage_service import classify_library_path
 from media_library.services.media_service import validate_backup_path
-
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,12 @@ def get_upload_status(upload_id: str) -> dict[str, Any]:
     if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
     received = _staged_bytes(upload_id)
-    return {"status": "ok", "upload_id": upload_id, "received_bytes": received, "exists": received > 0}
+    return {
+        "status": "ok",
+        "upload_id": upload_id,
+        "received_bytes": received,
+        "exists": received > 0,
+    }
 
 
 async def handle_upload_chunk(
@@ -111,7 +115,10 @@ async def handle_upload_chunk(
     # Check size limit
     if current + chunk_len > MAX_UPLOAD_FILE_SIZE_GB * 1024 * 1024 * 1024:
         staging_file.unlink(missing_ok=True)
-        raise HTTPException(status_code=413, detail=f"File exceeds max size limit of {MAX_UPLOAD_FILE_SIZE_GB} GB")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds max size limit of {MAX_UPLOAD_FILE_SIZE_GB} GB",
+        )
 
     def _write_chunk():
         with open(staging_file, "ab") as f:
@@ -170,7 +177,11 @@ def gc_stale_uploads(max_age_hours: float | None = None) -> dict[str, Any]:
             f"[UploadGC] Removed {removed} abandoned upload staging file(s) "
             f"({format_size(freed)}) older than {ttl}h."
         )
-    return {"removed": removed, "freed_bytes": freed, "freed_formatted": format_size(freed)}
+    return {
+        "removed": removed,
+        "freed_bytes": freed,
+        "freed_formatted": format_size(freed),
+    }
 
 
 def get_unique_filename(target_dir: Path, filename: str) -> Path:
@@ -178,7 +189,7 @@ def get_unique_filename(target_dir: Path, filename: str) -> Path:
     target_path = target_dir / filename
     if not target_path.exists():
         return target_path
-    
+
     base = target_path.stem
     ext = target_path.suffix
     counter = 1
@@ -188,19 +199,20 @@ def get_unique_filename(target_dir: Path, filename: str) -> Path:
             return new_path
         counter += 1
 
+
 async def finalize_upload(
-    upload_id: str, 
-    original_filename: str, 
-    relative_path: str, 
-    destination_dir: str, 
+    upload_id: str,
+    original_filename: str,
+    relative_path: str,
+    destination_dir: str,
     collision_policy: str,
     total_size: int | None = None,
-    mtime: int | None = None
+    mtime: int | None = None,
 ) -> dict[str, Any]:
     """Moves the staged file to its final destination and indexes it."""
     if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
-        
+
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
     if not staging_file.exists():
         raise HTTPException(status_code=404, detail="Upload staging file not found")
@@ -223,31 +235,37 @@ async def finalize_upload(
         dest_path = validate_backup_path(destination_dir)
         kind = classify_library_path(dest_path)
         real_dest = dest_path
-        
+
         if kind == "zip":
-            raise HTTPException(status_code=400, detail="Cannot upload into a virtual ZIP archive")
-            
+            raise HTTPException(
+                status_code=400, detail="Cannot upload into a virtual ZIP archive"
+            )
+
         real_dest_path = Path(real_dest)
         if not real_dest_path.is_dir():
-            raise HTTPException(status_code=400, detail="Destination is not a directory")
-            
+            raise HTTPException(
+                status_code=400, detail="Destination is not a directory"
+            )
+
         # Extension validation
         ext = Path(original_filename).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(status_code=400, detail=f"File extension {ext} is not allowed")
+            raise HTTPException(
+                status_code=400, detail=f"File extension {ext} is not allowed"
+            )
 
         # Determine target file path incorporating relative_path (for folder structure preservation)
         clean_rel_path = Path(relative_path).as_posix()
         if ".." in clean_rel_path or clean_rel_path.startswith("/"):
             raise HTTPException(status_code=400, detail="Invalid relative path")
-            
+
         target_file_path = real_dest_path / clean_rel_path
         target_parent = target_file_path.parent
-        
+
         # Create nested subdirectories if preserving folder structure
         if not target_parent.exists():
             target_parent.mkdir(parents=True, exist_ok=True)
-            
+
         # Collision handling
         if target_file_path.exists():
             if collision_policy == "skip":
@@ -255,24 +273,28 @@ async def finalize_upload(
                 return {"status": "skipped", "path": str(target_file_path)}
             elif collision_policy == "overwrite":
                 pass
-            else: # "auto-rename"
-                target_file_path = get_unique_filename(target_parent, target_file_path.name)
-                
+            else:  # "auto-rename"
+                target_file_path = get_unique_filename(
+                    target_parent, target_file_path.name
+                )
+
         # Atomic move (FUSE safety)
         tmp_final_path = target_parent / f".tmp_{upload_id}_{target_file_path.name}"
-        
+
         def _finalize():
             try:
                 shutil.move(str(staging_file), str(tmp_final_path))
                 os.replace(str(tmp_final_path), str(target_file_path))
-                
+
                 # Apply mtime if provided
                 if mtime is not None:
                     try:
                         os.utime(target_file_path, (time.time(), mtime / 1000.0))
                     except Exception as e:
-                        logger.warning(f"Failed to set mtime on {target_file_path}: {e}")
-                        
+                        logger.warning(
+                            f"Failed to set mtime on {target_file_path}: {e}"
+                        )
+
                 # Index the parent folder
                 index_folder(str(target_parent))
             finally:
@@ -281,11 +303,11 @@ async def finalize_upload(
                         tmp_final_path.unlink()
                     except Exception:
                         pass
-            
+
         await asyncio.to_thread(_finalize)
-        
+
         return {"status": "ok", "path": str(target_file_path)}
-        
+
     except Exception as e:
         staging_file.unlink(missing_ok=True)
         if isinstance(e, HTTPException):
@@ -298,7 +320,7 @@ async def cancel_upload(upload_id: str) -> dict[str, Any]:
     """Cleans up a cancelled upload."""
     if not _is_valid_upload_id(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
-        
+
     staging_file = UPLOAD_STAGING_DIR / f"{upload_id}.part"
     if staging_file.exists():
         staging_file.unlink(missing_ok=True)

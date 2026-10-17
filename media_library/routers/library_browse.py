@@ -339,7 +339,7 @@ def browse_backup_library(
             }
             for rf in root_folders
         ]
-        
+
         if refresh:
             indexing = _schedule_background_index(target_path, base_dir, False)
 
@@ -348,12 +348,12 @@ def browse_backup_library(
                 files = _read_indexed_files(conn, target_path)
             except Exception as e:
                 logger.error(f"Error reading root files: {e}")
-                
+
         try:
             transcode_worker_instance.enqueue_indexed_folder(target_path)
         except Exception as e:
             logger.warning(f"Could not enqueue transcode for root: {e}")
-            
+
         try:
             thumbnail_worker_instance.enqueue_folder(target_path)
         except Exception as e:

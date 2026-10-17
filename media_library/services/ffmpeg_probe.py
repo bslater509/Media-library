@@ -1,31 +1,15 @@
 """FFprobe metadata extraction (dimensions, codecs, duration, capture time)."""
 
 import asyncio
-import base64
-import io
 import json
 import logging
 import os
-import shutil
 import time
-import uuid
-from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
-from media_library.core.config import (
-    WEBP_QUALITY,
-    WEBP_SKIP_LARGER,
-    WEBP_STAGING_DIR,
-)
 from media_library.core.constants import IMAGE_EXTENSIONS
-from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
-)
-from media_library.db.connection import db_conn
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +25,7 @@ def format_eta_str(seconds: float) -> str:
     if m > 0:
         return f"{m}m {s}s"
     return f"{s}s"
+
 
 async def probe_video_meta(file_path: str) -> dict[str, Any]:
     """Probes video duration and codecs using ffprobe."""
@@ -83,6 +68,7 @@ async def probe_video_meta(file_path: str) -> dict[str, Any]:
         logger.error(f"Probe error on {file_path}: {e}")
     return {"duration": 0.0, "video_codec": "", "audio_codec": ""}
 
+
 def _parse_fraction(value: Any) -> float:
     """Parses an ffprobe rational (e.g. ``30000/1001``) into a float."""
     try:
@@ -95,6 +81,7 @@ def _parse_fraction(value: Any) -> float:
         return round(float(value), 3)
     except (TypeError, ValueError, ZeroDivisionError):
         return 0.0
+
 
 def _parse_iso_time(value: Any) -> float | None:
     """Parses an ISO-8601 timestamp (as ffprobe emits) into an epoch float."""
@@ -110,6 +97,7 @@ def _parse_iso_time(value: Any) -> float | None:
         return dt.timestamp()
     except (ValueError, TypeError):
         return None
+
 
 def _parse_exif_capture_time(path: str) -> float | None:
     """Reads an image's EXIF capture timestamp as an epoch float, if present."""
@@ -130,6 +118,7 @@ def _parse_exif_capture_time(path: str) -> float | None:
     except Exception:
         return None
     return None
+
 
 async def probe_media_metadata(file_path: str) -> dict[str, Any] | None:
     """Probes display dimensions and media metadata for a video or image.

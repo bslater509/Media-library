@@ -1,47 +1,29 @@
 """Candidate frame extraction and animated WebP preview generation."""
 
 import asyncio
-import base64
-import io
-import json
 import logging
 import os
-import shutil
-import time
 import uuid
-from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
 
 from PIL import Image
 
-from media_library.core.config import (
-    WEBP_QUALITY,
-    WEBP_SKIP_LARGER,
-    WEBP_STAGING_DIR,
-)
-from media_library.core.constants import IMAGE_EXTENSIONS
-from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
-)
-from media_library.db.connection import db_conn
-
 logger = logging.getLogger(__name__)
 
-from media_library.services.ffmpeg_posters import (  # noqa: E402
+from media_library.services.ffmpeg_posters import (
     generate_thumbnail,
     get_thumbnail_path_fast,
 )
-from media_library.services.ffmpeg_probe import probe_video_meta  # noqa: E402
-
+from media_library.services.ffmpeg_probe import probe_video_meta
 
 candidate_generation_sem = asyncio.Semaphore(4)
 
+
 def get_candidate_cache_path(file_path: str, timestamp: float) -> Path:
     """Returns the persistent disk path for a cached candidate frame."""
-    from media_library.core.config import THUMBNAIL_CACHE_DIR
     import hashlib
+
+    from media_library.core.config import THUMBNAIL_CACHE_DIR
 
     cand_dir = Path(THUMBNAIL_CACHE_DIR) / "candidates"
     cand_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +31,7 @@ def get_candidate_cache_path(file_path: str, timestamp: float) -> Path:
     key = f"{file_path}_{ts:.3f}"
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
     return cand_dir / f"cand_{h}.jpg"
+
 
 async def extract_candidate_frame(
     file_path: str,
@@ -88,7 +71,9 @@ async def extract_candidate_frame(
 
         try:
             ts = max(0.0, float(timestamp))
-            time_str = f"{int(ts // 3600):02d}:{int((ts % 3600) // 60):02d}:{ts % 60:06.3f}"
+            time_str = (
+                f"{int(ts // 3600):02d}:{int((ts % 3600) // 60):02d}:{ts % 60:06.3f}"
+            )
             cmd = [
                 "nice",
                 "-n",
@@ -180,7 +165,9 @@ async def extract_candidate_frame(
                         w, h = rgb_img.size
                         if w > 480:
                             new_h = max(1, int(h * 480 / w))
-                            rgb_img = rgb_img.resize((480, new_h), Image.Resampling.BILINEAR)
+                            rgb_img = rgb_img.resize(
+                                (480, new_h), Image.Resampling.BILINEAR
+                            )
                         rgb_img.save(temp_thumb, "JPEG", quality=85)
                 except Exception:
                     pass
@@ -189,7 +176,9 @@ async def extract_candidate_frame(
                 os.replace(temp_thumb, cand_path)
                 return cand_path
         except Exception as e:
-            logger.error(f"Error extracting candidate frame for {file_path} at {timestamp}: {e}")
+            logger.error(
+                f"Error extracting candidate frame for {file_path} at {timestamp}: {e}"
+            )
         finally:
             if temp_thumb.exists():
                 try:
@@ -198,14 +187,17 @@ async def extract_candidate_frame(
                     pass
         return None
 
+
 animated_generation_sem = asyncio.Semaphore(2)
+
 
 def get_animated_preview_path(
     file_path: str | Path, mtime: float | None = None, size: int | None = None
 ) -> Path:
     """Returns the persistent disk path for an animated WebP preview."""
-    from media_library.core.config import THUMBNAIL_CACHE_DIR
     import hashlib
+
+    from media_library.core.config import THUMBNAIL_CACHE_DIR
 
     anim_dir = Path(THUMBNAIL_CACHE_DIR) / "animated"
     anim_dir.mkdir(parents=True, exist_ok=True)
@@ -230,6 +222,7 @@ def get_animated_preview_path(
 
     h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
     return anim_dir / f"anim_{h}.webp"
+
 
 async def generate_animated_preview(
     file_path: str | Path,
@@ -297,7 +290,9 @@ async def generate_animated_preview(
             if duration <= 30.0:
                 sub_count = max(2, min(6, int(duration // 2) + 1))
                 step = duration / max(1, sub_count - 1)
-                timestamps = [round(min(i * step, max_safe), 3) for i in range(sub_count)]
+                timestamps = [
+                    round(min(i * step, max_safe), 3) for i in range(sub_count)
+                ]
             else:
                 interval = 30.0
                 if (duration / 30.0) > max_frames:
@@ -309,7 +304,9 @@ async def generate_animated_preview(
                     timestamps.append(round(min(curr, max_safe), 3))
                     curr += interval
 
-                if (duration - timestamps[-1]) >= max(5.0, interval * 0.33) and len(timestamps) < max_frames:
+                if (duration - timestamps[-1]) >= max(5.0, interval * 0.33) and len(
+                    timestamps
+                ) < max_frames:
                     end_ts = round(max_safe, 3)
                     if end_ts > timestamps[-1]:
                         timestamps.append(end_ts)
@@ -349,8 +346,14 @@ async def generate_animated_preview(
             else:
                 # If a custom/static thumbnail already exists for this video, ensure it leads the animation
                 try:
-                    custom_thumb = await asyncio.to_thread(get_thumbnail_path_fast, file_path)
-                    if custom_thumb and custom_thumb.exists() and custom_thumb.stat().st_size > 0:
+                    custom_thumb = await asyncio.to_thread(
+                        get_thumbnail_path_fast, file_path
+                    )
+                    if (
+                        custom_thumb
+                        and custom_thumb.exists()
+                        and custom_thumb.stat().st_size > 0
+                    ):
                         with Image.open(custom_thumb) as c_img:
                             c_rgb = c_img.convert("RGB")
                             pil_frames.insert(0, c_rgb)
@@ -378,7 +381,10 @@ async def generate_animated_preview(
             if len(pil_frames) == 1:
                 try:
                     from PIL import ImageEnhance
-                    pil_frames.append(ImageEnhance.Brightness(pil_frames[0]).enhance(0.92))
+
+                    pil_frames.append(
+                        ImageEnhance.Brightness(pil_frames[0]).enhance(0.92)
+                    )
                 except Exception:
                     pil_frames.append(pil_frames[0].copy())
             else:
@@ -386,9 +392,12 @@ async def generate_animated_preview(
                     first_bytes = pil_frames[0].tobytes()
                     if all(f.tobytes() == first_bytes for f in pil_frames[1:]):
                         from PIL import ImageEnhance
+
                         for idx in range(1, len(pil_frames)):
                             factor = 0.92 if idx % 2 == 1 else 1.0
-                            pil_frames[idx] = ImageEnhance.Brightness(pil_frames[idx]).enhance(factor)
+                            pil_frames[idx] = ImageEnhance.Brightness(
+                                pil_frames[idx]
+                            ).enhance(factor)
                 except Exception:
                     pass
 
@@ -408,6 +417,7 @@ async def generate_animated_preview(
                 os.replace(temp_anim, anim_path)
                 try:
                     from media_library.db.connection import db_conn
+
                     with db_conn() as conn, conn:
                         conn.execute(
                             "UPDATE files SET has_animated = 1 WHERE path = ?",

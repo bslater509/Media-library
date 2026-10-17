@@ -385,4 +385,3 @@ def test_suite_never_writes_to_the_configured_database():
 
     assert os.environ.get("DB_PATH")
     assert get_current_db_path() != Path(configured_db_path)
-

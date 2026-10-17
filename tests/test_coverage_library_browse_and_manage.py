@@ -1,15 +1,9 @@
 """Comprehensive tests for library_browse.py and library_manage.py routers."""
 
-import asyncio
-import os
-import shutil
 import threading
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-from fastapi import HTTPException
+from unittest.mock import MagicMock, patch
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
@@ -42,9 +36,11 @@ def test_schedule_background_index_debouncing_and_pruning(tmp_path):
         for i in range(20):
             _browse_index_inflight[f"/path/{i}"] = time.time() - 400.0
 
-    with patch("threading.Thread") as mock_thread, patch(
-        "media_library.routers.library_browse.INDEX_INFLIGHT_CAP", 10
-    ), patch("media_library.routers.library_browse.INDEX_INFLIGHT_PRUNE_S", 10.0):
+    with (
+        patch("threading.Thread") as mock_thread,
+        patch("media_library.routers.library_browse.INDEX_INFLIGHT_CAP", 10),
+        patch("media_library.routers.library_browse.INDEX_INFLIGHT_PRUNE_S", 10.0),
+    ):
         mock_thread.return_value.start = MagicMock()
         assert _schedule_background_index(target, base, False) is True
         # Stale entries should be pruned
@@ -70,7 +66,9 @@ def test_library_browse_path_clamping_and_scandir_fallback(api_client, tmp_path)
     assert res_file.json()["current_path"] == str(sub)
 
     # 3. Browse with refresh=True
-    res_refresh = api_client.get("/api/backup/browse", params={"path": str(sub), "refresh": "true"})
+    res_refresh = api_client.get(
+        "/api/backup/browse", params={"path": str(sub), "refresh": "true"}
+    )
     assert res_refresh.status_code == 200
 
     # 4. Root folders fallback via os.scandir when DB has no root entries
@@ -104,7 +102,9 @@ def test_library_browse_folders_endpoint(api_client):
     # 3. Unindexed folder schedules background index
     unindexed = dest / "unindexed_dir"
     unindexed.mkdir(exist_ok=True)
-    res_unindexed = api_client.get("/api/backup/folders", params={"path": str(unindexed)})
+    res_unindexed = api_client.get(
+        "/api/backup/folders", params={"path": str(unindexed)}
+    )
     assert res_unindexed.status_code == 200
 
 
@@ -211,7 +211,9 @@ def test_library_ops_status_and_cancel(api_client):
     assert res_bad.status_code == 400
 
     # 3. Cancel non-existent
-    res_404 = api_client.post("/api/backup/library-ops/cancel", json={"task_id": "fake_id"})
+    res_404 = api_client.post(
+        "/api/backup/library-ops/cancel", json={"task_id": "fake_id"}
+    )
     assert res_404.status_code == 404
 
     # 4. Cancel existing
@@ -334,7 +336,10 @@ def test_library_bulk_operations(api_client, tmp_path):
     assert res_apply.json()["queued"] == 2
 
     # 4. Bulk delete empty
-    assert api_client.post("/api/backup/bulk/delete", json={"paths": []}).status_code == 400
+    assert (
+        api_client.post("/api/backup/bulk/delete", json={"paths": []}).status_code
+        == 400
+    )
 
     # 5. Bulk webp-optimize
     res_webp = api_client.post(
@@ -353,8 +358,8 @@ def test_library_bulk_operations(api_client, tmp_path):
 
 
 def test_search_limit_and_truncation_behavior(api_client, sandbox_env):
-    from media_library.services.media_service import search_backup_index
     from media_library.core.config import SEARCH_LIMIT
+    from media_library.services.media_service import search_backup_index
 
     # Default query without limit parameter uses SEARCH_LIMIT
     res = api_client.get("/api/backup/search", params={"q": "clip"})
@@ -365,17 +370,22 @@ def test_search_limit_and_truncation_behavior(api_client, sandbox_env):
     assert isinstance(data["truncated"], bool)
 
     # Insert 6 test files matching 'searchlimit_test'
-    with db_conn() as conn:
-        with conn:
-            for i in range(6):
-                conn.execute(
-                    """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, mtime)
+    with db_conn() as conn, conn:
+        for i in range(6):
+            conn.execute(
+                """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, mtime)
                        VALUES (?, ?, ?, 'video', '.mp4', 1024, 100.0)""",
-                    (f"/dest/searchlimit_test_{i}.mp4", f"searchlimit_test_{i}.mp4", "/dest"),
-                )
+                (
+                    f"/dest/searchlimit_test_{i}.mp4",
+                    f"searchlimit_test_{i}.mp4",
+                    "/dest",
+                ),
+            )
 
     # Test direct service call with limit=3 (truncation expected: 6 items in DB, limit 3)
-    results, truncated = search_backup_index("searchlimit_test", limit=3, return_meta=True)
+    results, truncated = search_backup_index(
+        "searchlimit_test", limit=3, return_meta=True
+    )
     assert len(results) == 3
     assert truncated is True
 
@@ -385,7 +395,9 @@ def test_search_limit_and_truncation_behavior(api_client, sandbox_env):
     assert len(plain_results) == 3
 
     # Test API endpoint with limit=3
-    res_lim3 = api_client.get("/api/backup/search", params={"q": "searchlimit_test", "limit": 3})
+    res_lim3 = api_client.get(
+        "/api/backup/search", params={"q": "searchlimit_test", "limit": 3}
+    )
     assert res_lim3.status_code == 200
     data3 = res_lim3.json()
     assert data3["total"] == 3
@@ -394,11 +406,12 @@ def test_search_limit_and_truncation_behavior(api_client, sandbox_env):
     assert len(data3["results"]) == 3
 
     # Test API endpoint with limit=10 (no truncation: 6 items in DB, limit 10)
-    res_lim10 = api_client.get("/api/backup/search", params={"q": "searchlimit_test", "limit": 10})
+    res_lim10 = api_client.get(
+        "/api/backup/search", params={"q": "searchlimit_test", "limit": 10}
+    )
     assert res_lim10.status_code == 200
     data10 = res_lim10.json()
     assert data10["total"] == 6
     assert data10["limit"] == 10
     assert data10["truncated"] is False
     assert len(data10["results"]) == 6
-

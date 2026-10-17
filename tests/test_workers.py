@@ -246,8 +246,9 @@ def test_backup_watcher_worker_status():
 
 
 def test_thumbnail_worker_run_loop(sandbox_env):
-    from media_library.db.connection import db_conn
     from PIL import Image
+
+    from media_library.db.connection import db_conn
 
     media = sandbox_env["media_dir"]
     sub = media / "thumb_loop_test"
@@ -291,8 +292,9 @@ def test_thumbnail_worker_run_loop(sandbox_env):
 
 
 def test_webp_worker_run_loop(sandbox_env):
-    from media_library.db.connection import db_conn
     from PIL import Image
+
+    from media_library.db.connection import db_conn
 
     media = sandbox_env["media_dir"]
     sub = media / "webp_loop_test"
@@ -322,7 +324,10 @@ def test_webp_worker_run_loop(sandbox_env):
             task = asyncio.create_task(worker._run_loop())
             for _ in range(50):
                 await orig_sleep(0.05)
-                if worker.state["converted_count"] >= 1 or not worker.priority_queue.empty():
+                if (
+                    worker.state["converted_count"] >= 1
+                    or not worker.priority_queue.empty()
+                ):
                     break
             task.cancel()
             try:
@@ -331,4 +336,3 @@ def test_webp_worker_run_loop(sandbox_env):
                 pass
 
     asyncio.run(_run())
-

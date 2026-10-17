@@ -1,9 +1,11 @@
 import asyncio
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
 
 from media_library.db.connection import db_conn
-from media_library.workers.duplicate_hash_worker import DuplicateHashWorker, ThumbHashWorker
+from media_library.workers.duplicate_hash_worker import (
+    DuplicateHashWorker,
+    ThumbHashWorker,
+)
 
 
 def test_duplicate_hash_worker_methods(sandbox_env):
@@ -62,7 +64,9 @@ def test_duplicate_hash_worker_run_loop_success(sandbox_env):
     asyncio.run(_test())
 
     with db_conn() as conn:
-        rows = conn.execute("SELECT path, quick_hash FROM files WHERE size = 1024").fetchall()
+        rows = conn.execute(
+            "SELECT path, quick_hash FROM files WHERE size = 1024"
+        ).fetchall()
         assert len(rows) == 2
         for r in rows:
             assert r["quick_hash"] is not None
@@ -130,7 +134,13 @@ def test_duplicate_hash_worker_db_query_error(sandbox_env):
         mock_cm.__enter__.return_value = mock_conn
         mock_cm.__exit__.return_value = False
 
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch("media_library.workers.duplicate_hash_worker.db_conn", return_value=mock_cm):
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch(
+                "media_library.workers.duplicate_hash_worker.db_conn",
+                return_value=mock_cm,
+            ),
+        ):
             try:
                 await worker._run_loop()
             except asyncio.CancelledError:
@@ -174,9 +184,12 @@ def test_thumb_hash_worker_migration(sandbox_env):
                 raise asyncio.CancelledError()
             await real_sleep(0)
 
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch(
-            "media_library.workers.duplicate_hash_worker.compute_thumbnail_phash",
-            return_value="testphash123",
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch(
+                "media_library.workers.duplicate_hash_worker.compute_thumbnail_phash",
+                return_value="testphash123",
+            ),
         ):
             try:
                 await worker._run_loop()
@@ -186,9 +199,13 @@ def test_thumb_hash_worker_migration(sandbox_env):
     asyncio.run(_test())
 
     with db_conn() as conn:
-        meta = conn.execute("SELECT value FROM db_meta WHERE key = 'phash_migration_complete'").fetchone()
+        meta = conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'phash_migration_complete'"
+        ).fetchone()
         assert meta is not None and meta[0] == "1"
-        row = conn.execute("SELECT thumb_hash FROM files WHERE path = ?", (str(vid),)).fetchone()
+        row = conn.execute(
+            "SELECT thumb_hash FROM files WHERE path = ?", (str(vid),)
+        ).fetchone()
         assert row is not None
         assert row[0] == "testphash123"
 
@@ -201,7 +218,9 @@ def test_thumb_hash_worker_hashing_loop(sandbox_env):
 
     with db_conn() as conn, conn:
         # Mark migration complete so it jumps straight to hashing loop
-        conn.execute("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')")
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')"
+        )
         conn.execute(
             "INSERT INTO files (path, name, folder_path, type, has_thumb, thumb_hash, mtime, size) VALUES (?, ?, ?, 'video', 1, NULL, 1234.0, 60)",
             (str(vid), "vid2.mp4", str(media_dir)),
@@ -220,9 +239,12 @@ def test_thumb_hash_worker_hashing_loop(sandbox_env):
                 raise asyncio.CancelledError()
             await real_sleep(0)
 
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch(
-            "media_library.workers.duplicate_hash_worker.compute_thumbnail_phash",
-            return_value="phash999",
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch(
+                "media_library.workers.duplicate_hash_worker.compute_thumbnail_phash",
+                return_value="phash999",
+            ),
         ):
             try:
                 await worker._run_loop()
@@ -232,7 +254,9 @@ def test_thumb_hash_worker_hashing_loop(sandbox_env):
     asyncio.run(_test())
 
     with db_conn() as conn:
-        row = conn.execute("SELECT thumb_hash FROM files WHERE path = ?", (str(vid),)).fetchone()
+        row = conn.execute(
+            "SELECT thumb_hash FROM files WHERE path = ?", (str(vid),)
+        ).fetchone()
         assert row is not None
         assert row[0] == "phash999"
 
@@ -256,14 +280,18 @@ def test_thumb_hash_worker_db_error_handling(sandbox_env):
         # Allow migration check to return migrated
         mock_conn.execute.side_effect = [
             MagicMock(fetchone=lambda: ("1",)),  # db_meta check
-            RuntimeError("Query error"),         # files count error
+            RuntimeError("Query error"),  # files count error
         ]
         mock_cm = MagicMock()
         mock_cm.__enter__.return_value = mock_conn
         mock_cm.__exit__.return_value = False
 
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch(
-            "media_library.workers.duplicate_hash_worker.db_conn", return_value=mock_cm
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch(
+                "media_library.workers.duplicate_hash_worker.db_conn",
+                return_value=mock_cm,
+            ),
         ):
             try:
                 await worker._run_loop()
@@ -310,7 +338,9 @@ def test_duplicate_hash_worker_paused_in_loop(sandbox_env):
 def test_thumb_hash_worker_paused_in_loop(sandbox_env):
     worker = ThumbHashWorker()
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')")
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')"
+        )
 
     worker.pause()
     real_sleep = asyncio.sleep
@@ -340,4 +370,3 @@ def test_thumb_hash_worker_paused_in_loop(sandbox_env):
 
     asyncio.run(_test())
     assert worker.state["is_paused"] is False
-

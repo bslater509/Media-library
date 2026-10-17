@@ -14,12 +14,20 @@ from media_library.services.media_service import search_backup_index
 
 
 def _insert(media_dir, folder, name):
-    path = os.path.join(str(media_dir), folder, name) if folder else os.path.join(str(media_dir), name)
+    path = (
+        os.path.join(str(media_dir), folder, name)
+        if folder
+        else os.path.join(str(media_dir), name)
+    )
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime)
                VALUES (?, ?, ?, 'video', '.mp4', 100, '100 B', 10.0)""",
-            (path, name, os.path.join(str(media_dir), folder) if folder else str(media_dir)),
+            (
+                path,
+                name,
+                os.path.join(str(media_dir), folder) if folder else str(media_dir),
+            ),
         )
     return path
 

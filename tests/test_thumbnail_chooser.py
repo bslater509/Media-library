@@ -2,6 +2,7 @@
 
 import io
 import os
+
 from PIL import Image
 
 
@@ -16,6 +17,7 @@ def _create_mock_video_file(path: str):
 
 def test_candidates_endpoint_valid_video(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "test_clip.mp4")
@@ -23,6 +25,7 @@ def test_candidates_endpoint_valid_video(sandbox_env, api_client):
 
     # Populate in files table with duration
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
@@ -30,7 +33,9 @@ def test_candidates_endpoint_valid_video(sandbox_env, api_client):
             (video_path, "test_clip.mp4", dest),
         )
 
-    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}&count=12")
+    res = api_client.get(
+        f"/api/backup/thumbnails/candidates?path={video_path}&count=12"
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["path"] == video_path
@@ -51,12 +56,14 @@ def test_candidates_endpoint_valid_video(sandbox_env, api_client):
 def test_candidates_endpoint_default_interval_30s(sandbox_env, api_client):
     """Calling without count or interval defaults to candidate frames every 30 seconds."""
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "test_30s_interval.mp4")
     _create_mock_video_file(video_path)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration, width, height)
@@ -88,12 +95,14 @@ def test_candidates_endpoint_default_interval_30s(sandbox_env, api_client):
 def test_candidates_endpoint_explicit_interval(sandbox_env, api_client):
     """Explicit interval=15.0 produces candidates every 15 seconds."""
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "test_15s.mp4")
     _create_mock_video_file(video_path)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
@@ -101,7 +110,9 @@ def test_candidates_endpoint_explicit_interval(sandbox_env, api_client):
             (video_path, "test_15s.mp4", dest),
         )
 
-    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}&interval=15")
+    res = api_client.get(
+        f"/api/backup/thumbnails/candidates?path={video_path}&interval=15"
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["interval"] == 15.0
@@ -118,12 +129,14 @@ def test_candidates_endpoint_explicit_interval(sandbox_env, api_client):
 def test_candidates_endpoint_short_video_fallback(sandbox_env, api_client):
     """Short video (< 30s) produces a reasonable set of evenly spaced candidate frames."""
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "short_clip.mp4")
     _create_mock_video_file(video_path)
 
     from media_library.db.connection import db_conn
+
     with db_conn() as conn, conn:
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, duration)
@@ -131,7 +144,9 @@ def test_candidates_endpoint_short_video_fallback(sandbox_env, api_client):
             (video_path, "short_clip.mp4", dest),
         )
 
-    res = api_client.get(f"/api/backup/thumbnails/candidates?path={video_path}&interval=30")
+    res = api_client.get(
+        f"/api/backup/thumbnails/candidates?path={video_path}&interval=30"
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["count"] >= 3
@@ -143,19 +158,23 @@ def test_candidates_endpoint_short_video_fallback(sandbox_env, api_client):
 
 def test_candidates_endpoint_invalid_file_type(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     photo_path = os.path.join(dest, "sample.jpg")
     with open(photo_path, "wb") as f:
         f.write(b"\x00" * 100)
 
-    res = api_client.get(f"/api/backup/thumbnails/candidates?path={photo_path}&count=12")
+    res = api_client.get(
+        f"/api/backup/thumbnails/candidates?path={photo_path}&count=12"
+    )
     assert res.status_code == 400
     assert "Only video files" in res.json()["detail"]
 
 
 def test_candidates_endpoint_not_found(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     missing = os.path.join(dest, "nonexistent.mp4")
@@ -165,6 +184,7 @@ def test_candidates_endpoint_not_found(sandbox_env, api_client):
 
 def test_candidate_frame_extraction_and_caching(sandbox_env, api_client):
     from media_library.core.state import state
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "test_frame.mp4")
@@ -174,27 +194,37 @@ def test_candidate_frame_extraction_and_caching(sandbox_env, api_client):
     img_path = os.path.join(dest, "photo.png")
     with open(img_path, "wb") as f:
         f.write(b"\x00" * 100)
-    res_bad = api_client.get(f"/api/backup/thumbnails/frame?path={img_path}&timestamp=2.5")
+    res_bad = api_client.get(
+        f"/api/backup/thumbnails/frame?path={img_path}&timestamp=2.5"
+    )
     assert res_bad.status_code == 400
 
     # 2. Reject 404
-    res_404 = api_client.get(f"/api/backup/thumbnails/frame?path={os.path.join(dest, 'ghost.mp4')}&timestamp=2.5")
+    res_404 = api_client.get(
+        f"/api/backup/thumbnails/frame?path={os.path.join(dest, 'ghost.mp4')}&timestamp=2.5"
+    )
     assert res_404.status_code == 404
 
     # 3. Successful extraction (using mock image fallback)
-    res_ok = api_client.get(f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0")
+    res_ok = api_client.get(
+        f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0"
+    )
     assert res_ok.status_code == 200
     assert res_ok.headers["content-type"] == "image/jpeg"
     assert len(res_ok.content) > 0
 
     # 4. HEAD request works
-    res_head = api_client.head(f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0")
+    res_head = api_client.head(
+        f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0"
+    )
     assert res_head.status_code == 200
     assert res_head.headers["content-type"] == "image/jpeg"
     assert "content-length" in res_head.headers
 
     # 5. Subsequent request hits cache
-    res_cached = api_client.get(f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0")
+    res_cached = api_client.get(
+        f"/api/backup/thumbnails/frame?path={video_path}&timestamp=5.0"
+    )
     assert res_cached.status_code == 200
     assert res_cached.content == res_ok.content
 
@@ -202,6 +232,7 @@ def test_candidate_frame_extraction_and_caching(sandbox_env, api_client):
 def test_set_poster_frame_cache_busting_and_persistence(sandbox_env, api_client):
     from media_library.core.state import state
     from media_library.db.connection import db_conn
+
     dest = str(sandbox_env["media_dir"])
     state["destination_dir"] = dest
     video_path = os.path.join(dest, "poster_test.mp4")
@@ -224,7 +255,9 @@ def test_set_poster_frame_cache_busting_and_persistence(sandbox_env, api_client)
 
     # Set custom poster
     import base64
-    img_b64 = "data:image/jpeg;base64," + base64.b64encode(open(video_path, "rb").read()).decode()
+
+    with open(video_path, "rb") as fh:
+        img_b64 = "data:image/jpeg;base64," + base64.b64encode(fh.read()).decode()
     res_set = api_client.post(
         "/api/backup/thumbnails/set-poster",
         json={"path": video_path, "timestamp": 3.0, "image_base64": img_b64},
@@ -236,7 +269,9 @@ def test_set_poster_frame_cache_busting_and_persistence(sandbox_env, api_client)
 
     # Verify DB has thumb_mtime set
     with db_conn() as conn:
-        row = conn.execute("SELECT thumb_mtime, has_thumb FROM files WHERE path = ?", (video_path,)).fetchone()
+        row = conn.execute(
+            "SELECT thumb_mtime, has_thumb FROM files WHERE path = ?", (video_path,)
+        ).fetchone()
         assert row["has_thumb"] == 1
         assert row["thumb_mtime"] is not None
 
@@ -248,4 +283,3 @@ def test_set_poster_frame_cache_busting_and_persistence(sandbox_env, api_client)
     assert "&v=" in target_after["thumb_url"]
     assert f"&v={int(row['thumb_mtime'])}" in target_after["thumb_url"]
     assert target_after["thumb_url"] == set_data["thumb_url"]
-

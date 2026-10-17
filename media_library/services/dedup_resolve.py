@@ -1,25 +1,15 @@
 """Resolving duplicate groups: keep one, delete the rest."""
 
-import hashlib
 import logging
 import os
-import re
-import time
-import urllib.parse
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
-import imagehash
 from fastapi import HTTPException
-from PIL import Image, ImageStat
 
-from media_library.core.config import DEFAULT_DESTINATION_DIR
-from media_library.core.constants import NATIVE_EXTENSIONS
 from media_library.core.state import (
     format_size,
     get_thumbnail_cache_path,
-    state,
 )
 from media_library.db.connection import db_conn
 from media_library.db.indexer import remove_file_from_index
@@ -65,6 +55,7 @@ def resolve_duplicate_group(keep_path: str, delete_paths: list[str]) -> dict[str
             failed.append({"path": dp, "error": str(e)})
 
     return {"success": True, "kept": keep_path, "deleted": deleted, "failed": failed}
+
 
 def autodelete_verified_duplicates() -> dict[str, Any]:
     with db_conn() as conn:

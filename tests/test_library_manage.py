@@ -498,7 +498,9 @@ def test_find_empty_folders_service(api_client):
     assert str(txt_folder) not in candidate_paths
 
     # Verify bottom-up sorting: empty_child comes before empty_parent
-    assert candidate_paths.index(str(empty_child)) < candidate_paths.index(str(empty_parent))
+    assert candidate_paths.index(str(empty_child)) < candidate_paths.index(
+        str(empty_parent)
+    )
 
 
 def test_delete_empty_folder_service(api_client):
@@ -666,12 +668,15 @@ def test_update_file_in_index_updates_both_folders(api_client):
     )
 
     with db_conn() as conn:
-        fa = conn.execute("SELECT file_count, total_size FROM folders WHERE path = ?", (str(folder_a),)).fetchone()
-        fb = conn.execute("SELECT file_count, total_size FROM folders WHERE path = ?", (str(folder_b),)).fetchone()
+        fa = conn.execute(
+            "SELECT file_count, total_size FROM folders WHERE path = ?",
+            (str(folder_a),),
+        ).fetchone()
+        fb = conn.execute(
+            "SELECT file_count, total_size FROM folders WHERE path = ?",
+            (str(folder_b),),
+        ).fetchone()
         assert fa["file_count"] == 0
         assert fa["total_size"] == 0
         assert fb["file_count"] == 1
         assert fb["total_size"] == 500
-
-
-

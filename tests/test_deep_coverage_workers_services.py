@@ -3,9 +3,6 @@
 import asyncio
 import io
 import json
-import os
-import shutil
-import time
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,7 +12,6 @@ from fastapi import HTTPException
 from PIL import Image
 
 from media_library.app_factory import create_app
-from media_library.core.config import UPLOAD_STAGING_DIR, ZIP_STAGING_DIR
 from media_library.db.connection import db_conn
 from media_library.db.indexer import (
     _index_zip_archive,
@@ -36,7 +32,6 @@ from media_library.services.upload_service import (
 )
 from media_library.services.zip.compress import (
     _execute_sync_back_impl,
-    compress_folder_to_zip,
 )
 from media_library.services.zip.core import get_zip_cache_dir
 from media_library.workers.backup_watcher import (
@@ -47,7 +42,6 @@ from media_library.workers.backup_watcher import (
 )
 from media_library.workers.base import BaseWorker
 from media_library.workers.transfer_worker import TransferWorker
-
 
 # ==============================================================================
 # 1. BaseWorker & TransferWorker Tests
@@ -77,7 +71,9 @@ def test_base_worker_methods():
 
         # Simulate RuntimeError in call_soon_threadsafe
         with patch.object(
-            worker._loop, "call_soon_threadsafe", side_effect=RuntimeError("Loop closing")
+            worker._loop,
+            "call_soon_threadsafe",
+            side_effect=RuntimeError("Loop closing"),
         ):
             worker.enqueue_nowait(q, "item2")
             assert await q.get() == "item2"
@@ -130,7 +126,10 @@ def test_transfer_worker_run_loop_and_cleanup(tmp_path):
                 raise RuntimeError("Transfer disk full")
             item["status"] = "completed"
 
-        with patch("media_library.workers.transfer_worker.do_transfer", side_effect=fake_transfer):
+        with patch(
+            "media_library.workers.transfer_worker.do_transfer",
+            side_effect=fake_transfer,
+        ):
             task = asyncio.create_task(worker._run_loop())
             for _ in range(50):
                 await asyncio.sleep(0.01)
@@ -145,8 +144,14 @@ def test_transfer_worker_run_loop_and_cleanup(tmp_path):
     asyncio.run(_run())
 
     assert len(worker.transfers_history) <= 500
-    assert any(h.get("id") == "item1" and h.get("status") == "completed" for h in worker.transfers_history)
-    assert any(h.get("id") == "item3" and h.get("status") == "failed" for h in worker.transfers_history)
+    assert any(
+        h.get("id") == "item1" and h.get("status") == "completed"
+        for h in worker.transfers_history
+    )
+    assert any(
+        h.get("id") == "item3" and h.get("status") == "failed"
+        for h in worker.transfers_history
+    )
 
 
 def test_transfer_worker_map_pruning_and_cancel_event():
@@ -238,19 +243,19 @@ def test_backup_watcher_async_operations(monkeypatch):
 
 
 def test_backup_watcher_run_loop(sandbox_env, monkeypatch):
-    from media_library.services.backup_service import library_backup_state
     from media_library.db.indexer import indexer_state
-    from media_library.workers.thumbnail_worker import thumbnail_worker_instance
+    from media_library.services.backup_service import library_backup_state
+    from media_library.services.zip import zip_tasks_state
     from media_library.workers.duplicate_hash_worker import (
         duplicate_hash_worker_instance,
         thumb_hash_worker_instance,
     )
-    from media_library.workers.webp_worker import webp_worker_instance
-    from media_library.workers.transfer_worker import transfer_worker_instance
-    from media_library.workers.transcode_worker import transcode_worker_instance
     from media_library.workers.library_ops_worker import library_ops_worker_instance
     from media_library.workers.metadata_worker import metadata_worker_instance
-    from media_library.services.zip import zip_tasks_state
+    from media_library.workers.thumbnail_worker import thumbnail_worker_instance
+    from media_library.workers.transcode_worker import transcode_worker_instance
+    from media_library.workers.transfer_worker import transfer_worker_instance
+    from media_library.workers.webp_worker import webp_worker_instance
 
     indexer_state["status"] = "idle"
     thumbnail_worker_instance.state["status"] = "idle"
@@ -310,17 +315,30 @@ def test_backup_watcher_run_loop(sandbox_env, monkeypatch):
         triggered_backup = True
 
     async def _test_loop():
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch(
-            "time.time", side_effect=fake_time
-        ), patch(
-            "media_library.workers.backup_watcher.run_library_backup_async", side_effect=fake_backup
-        ), patch(
-            "media_library.workers.backup_watcher.get_existing_backup_meta",
-            return_value={"file_count": 0, "thumb_count": 0, "max_mtime": 10.0, "total_size": 10, "timestamp": 10.0},
-        ), patch(
-            "media_library.workers.backup_watcher.LIBRARY_BACKUP_AUTO_ENABLED", True
-        ), patch(
-            "media_library.workers.backup_watcher.LIBRARY_BACKUP_AUTO_INTERVAL_HOURS", 0.0
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("time.time", side_effect=fake_time),
+            patch(
+                "media_library.workers.backup_watcher.run_library_backup_async",
+                side_effect=fake_backup,
+            ),
+            patch(
+                "media_library.workers.backup_watcher.get_existing_backup_meta",
+                return_value={
+                    "file_count": 0,
+                    "thumb_count": 0,
+                    "max_mtime": 10.0,
+                    "total_size": 10,
+                    "timestamp": 10.0,
+                },
+            ),
+            patch(
+                "media_library.workers.backup_watcher.LIBRARY_BACKUP_AUTO_ENABLED", True
+            ),
+            patch(
+                "media_library.workers.backup_watcher.LIBRARY_BACKUP_AUTO_INTERVAL_HOURS",
+                0.0,
+            ),
         ):
             task = asyncio.create_task(worker._run_loop())
             for _ in range(60):
@@ -373,7 +391,9 @@ def test_upload_service_validations_and_chunks(sandbox_env, tmp_path):
         assert staging_part.read_bytes() == b"part1_part2"
 
         # Size limit exceeded check
-        with patch("media_library.services.upload_service.MAX_UPLOAD_FILE_SIZE_GB", 0.000001):
+        with patch(
+            "media_library.services.upload_service.MAX_UPLOAD_FILE_SIZE_GB", 0.000001
+        ):
             with pytest.raises(HTTPException) as exc2:
                 await handle_upload_chunk(upload_id, 2, 3, b"x" * 2000)
             assert exc2.value.status_code == 413
@@ -411,12 +431,16 @@ def test_upload_finalize_and_cancel(sandbox_env, tmp_path):
 
         # Invalid ID
         with pytest.raises(HTTPException) as exc:
-            await finalize_upload("../bad_id", "file.jpg", "file.jpg", str(dest_dir), "auto-rename")
+            await finalize_upload(
+                "../bad_id", "file.jpg", "file.jpg", str(dest_dir), "auto-rename"
+            )
         assert exc.value.status_code == 400
 
         # Missing staging file
         with pytest.raises(HTTPException) as exc:
-            await finalize_upload("missing_id", "file.jpg", "file.jpg", str(dest_dir), "auto-rename")
+            await finalize_upload(
+                "missing_id", "file.jpg", "file.jpg", str(dest_dir), "auto-rename"
+            )
         assert exc.value.status_code == 404
 
         # Non-directory destination
@@ -424,26 +448,37 @@ def test_upload_finalize_and_cancel(sandbox_env, tmp_path):
         dest_file.write_text("not a dir")
         staging_part.write_bytes(b"image data content")
         with pytest.raises(HTTPException) as exc:
-            await finalize_upload(upload_id, "file.jpg", "file.jpg", str(dest_file), "auto-rename")
+            await finalize_upload(
+                upload_id, "file.jpg", "file.jpg", str(dest_file), "auto-rename"
+            )
         assert exc.value.status_code == 400
 
         # Disallowed extension
         staging_part.write_bytes(b"image data content")
         with pytest.raises(HTTPException) as exc:
-            await finalize_upload(upload_id, "script.sh", "script.sh", str(dest_dir), "auto-rename")
+            await finalize_upload(
+                upload_id, "script.sh", "script.sh", str(dest_dir), "auto-rename"
+            )
         assert exc.value.status_code == 400
 
         # Path traversal in relative path
         staging_part.write_bytes(b"image data content")
         with pytest.raises(HTTPException) as exc:
-            await finalize_upload(upload_id, "file.jpg", "../traverse.jpg", str(dest_dir), "auto-rename")
+            await finalize_upload(
+                upload_id, "file.jpg", "../traverse.jpg", str(dest_dir), "auto-rename"
+            )
         assert exc.value.status_code == 400
 
         # Successful finalize with mtime
         staging_part.write_bytes(b"image data content")
         target_mtime = 1600000000000
         res = await finalize_upload(
-            upload_id, "photo.jpg", "sub/photo.jpg", str(dest_dir), "auto-rename", mtime=target_mtime
+            upload_id,
+            "photo.jpg",
+            "sub/photo.jpg",
+            str(dest_dir),
+            "auto-rename",
+            mtime=target_mtime,
         )
         assert res["status"] == "ok"
         final_p = Path(res["path"])
@@ -527,7 +562,7 @@ def test_indexer_zip_and_nested_entries(sandbox_env, tmp_path):
         zf.writestr("inside.jpg", b"dummy")
 
     # Test _scan_folder_entries
-    subfolders, files = _scan_folder_entries(str(sub))
+    subfolders, _files = _scan_folder_entries(str(sub))
     assert any(sf["path"] == str(z_file) for sf in subfolders)
 
     # Test _index_zip_archive
@@ -558,7 +593,9 @@ def test_probe_video_meta_parsing():
     async def _test():
         proc_mock = MagicMock()
         proc_mock.communicate = MagicMock(
-            return_value=asyncio.sleep(0.001, result=(json.dumps(mock_payload).encode(), b""))
+            return_value=asyncio.sleep(
+                0.001, result=(json.dumps(mock_payload).encode(), b"")
+            )
         )
         proc_mock.returncode = 0
 
@@ -569,7 +606,9 @@ def test_probe_video_meta_parsing():
             assert meta["audio_codec"] == "aac"
 
         # Test failure/exception path
-        with patch("asyncio.create_subprocess_exec", side_effect=OSError("ffprobe missing")):
+        with patch(
+            "asyncio.create_subprocess_exec", side_effect=OSError("ffprobe missing")
+        ):
             meta_err = await probe_video_meta("/fake/video.mp4")
             assert meta_err["duration"] == 0.0
 
@@ -608,8 +647,9 @@ def test_webp_conversion_comprehensive(sandbox_env, tmp_path):
             return MagicMock(st_size=999999)
         return orig_stat(self, *args, **kwargs)
 
-    with patch("media_library.services.ffmpeg_service.WEBP_SKIP_LARGER", True), patch.object(
-        Path, "stat", fake_stat
+    with (
+        patch("media_library.services.ffmpeg_service.WEBP_SKIP_LARGER", True),
+        patch.object(Path, "stat", fake_stat),
     ):
         res_skip = convert_image_file_to_webp(str(f_small_jpg))
         assert res_skip["status"] == "skipped"
@@ -652,30 +692,49 @@ def test_zip_compress_sync_back(sandbox_env, tmp_path):
     with patch("zipfile.ZipFile", side_effect=RuntimeError("Corrupt zip write")):
         _execute_sync_back_impl(str(z_path))
         from media_library.services.zip import zip_tasks_state
+
         task = zip_tasks_state["active_tasks"].get(str(z_path))
         assert task["status"] == "failed"
 
 
 def test_app_factory_lifespan(sandbox_env):
     async def _test():
-        with patch("media_library.workers.transfer_worker.transfer_worker_instance.start"), patch(
-            "media_library.workers.transcode_worker.transcode_worker_instance.start"
-        ), patch("media_library.workers.thumbnail_worker.thumbnail_worker_instance.start"), patch(
-            "media_library.workers.metadata_worker.metadata_worker_instance.start"
-        ), patch(
-            "media_library.workers.duplicate_hash_worker.duplicate_hash_worker_instance.start"
-        ), patch(
-            "media_library.workers.duplicate_hash_worker.thumb_hash_worker_instance.start"
-        ), patch("media_library.workers.webp_worker.webp_worker_instance.start"), patch(
-            "media_library.workers.backup_watcher.backup_watcher_instance.start"
-        ), patch(
-            "media_library.workers.library_ops_worker.library_ops_worker_instance.start"
-        ), patch(
-            "media_library.app_factory.run_background_crawler", return_value=asyncio.sleep(0.01)
-        ), patch(
-            "media_library.app_factory.check_and_auto_restore_library_backup", return_value=True
-        ), patch(
-            "media_library.app_factory._create_library_backup_sync", return_value={"success": True}
+        with (
+            patch(
+                "media_library.workers.transfer_worker.transfer_worker_instance.start"
+            ),
+            patch(
+                "media_library.workers.transcode_worker.transcode_worker_instance.start"
+            ),
+            patch(
+                "media_library.workers.thumbnail_worker.thumbnail_worker_instance.start"
+            ),
+            patch(
+                "media_library.workers.metadata_worker.metadata_worker_instance.start"
+            ),
+            patch(
+                "media_library.workers.duplicate_hash_worker.duplicate_hash_worker_instance.start"
+            ),
+            patch(
+                "media_library.workers.duplicate_hash_worker.thumb_hash_worker_instance.start"
+            ),
+            patch("media_library.workers.webp_worker.webp_worker_instance.start"),
+            patch("media_library.workers.backup_watcher.backup_watcher_instance.start"),
+            patch(
+                "media_library.workers.library_ops_worker.library_ops_worker_instance.start"
+            ),
+            patch(
+                "media_library.app_factory.run_background_crawler",
+                return_value=asyncio.sleep(0.01),
+            ),
+            patch(
+                "media_library.app_factory.check_and_auto_restore_library_backup",
+                return_value=True,
+            ),
+            patch(
+                "media_library.app_factory._create_library_backup_sync",
+                return_value={"success": True},
+            ),
         ):
             app = create_app(run_startup_workers=True)
             async with app.router.lifespan_context(app):

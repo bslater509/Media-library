@@ -31,9 +31,9 @@ from typing import Any
 
 from media_library.core.config import TRANSCODE_TEMP_DIR
 from media_library.core.state import format_size, get_thumbnail_cache_path
-from media_library.services.anim_cache import unlink_animated_previews
 from media_library.db.connection import db_conn
 from media_library.db.indexer import update_file_in_index
+from media_library.services.anim_cache import unlink_animated_previews
 from media_library.services.ffmpeg_service import format_eta_str, probe_video_meta
 from media_library.workers.base import BaseWorker
 
@@ -84,9 +84,7 @@ class H265ConvertWorker(BaseWorker):
     def enqueue(self, source_path: str) -> dict[str, Any]:
         """Queue ``source_path`` for x265 conversion; raises ``ValueError`` when busy."""
         if self.job_for_path(source_path):
-            raise ValueError(
-                "A conversion for this file is already queued or running"
-            )
+            raise ValueError("A conversion for this file is already queued or running")
         job_id = uuid.uuid4().hex[:10]
         job = {
             "id": job_id,
@@ -244,7 +242,15 @@ class H265ConvertWorker(BaseWorker):
             cmd += ["-c:a", "copy"]
         else:
             cmd += ["-c:a", "aac", "-b:a", X265_AUDIO_BITRATE, "-ac", "2"]
-        cmd += ["-movflags", "+faststart", "-progress", "pipe:1", "-f", "mp4", temp_path]
+        cmd += [
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-f",
+            "mp4",
+            temp_path,
+        ]
         return cmd
 
     async def _convert(self, item: dict[str, Any]):
@@ -325,10 +331,13 @@ class H265ConvertWorker(BaseWorker):
                     try:
                         spd = float(val.replace("x", "").strip())
                         if spd > 0 and duration > 0:
-                            rem = max(
-                                0.0,
-                                duration - (item["percent"] / 100.0 * duration),
-                            ) / spd
+                            rem = (
+                                max(
+                                    0.0,
+                                    duration - (item["percent"] / 100.0 * duration),
+                                )
+                                / spd
+                            )
                             item["eta"] = format_eta_str(rem)
                     except ValueError:
                         pass
@@ -419,10 +428,9 @@ class H265ConvertWorker(BaseWorker):
                 os.replace(temp_path, target_path)
             except OSError:
                 shutil.copy2(temp_path, commit_tmp)
-                if (
-                    not os.path.exists(commit_tmp)
-                    or os.path.getsize(commit_tmp) != os.path.getsize(temp_path)
-                ):
+                if not os.path.exists(commit_tmp) or os.path.getsize(
+                    commit_tmp
+                ) != os.path.getsize(temp_path):
                     raise OSError("Cross-device x265 copy verification failed")
                 os.replace(commit_tmp, target_path)
                 try:

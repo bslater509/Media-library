@@ -1,35 +1,26 @@
 """Comprehensive integration and unit tests for backup watcher, backup router, library admin, and thumbnail worker."""
 
 import asyncio
-import io
-import os
-from pathlib import Path
-import sqlite3
 import zipfile
-from PIL import Image
-from unittest.mock import AsyncMock, patch
+from pathlib import Path
+from unittest.mock import patch
 
-import pytest
+from PIL import Image
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
 from media_library.services.backup_service import library_backup_state
 from media_library.services.zip import index_zip_archive
 from media_library.workers.backup_watcher import (
-    BackupWatcherWorker,
-    library_backup_lock,
     run_library_backup_async,
     run_library_restore_async,
 )
 from media_library.workers.thumbnail_worker import (
     ThumbnailWorker,
-    thumbnail_worker_instance,
 )
 
 
 def test_backup_router_and_watcher_tasks(api_client, tmp_path):
-    dest = Path(state["destination_dir"])
-
     # 1. Status endpoint
     res_st = api_client.get("/api/backup/library-backup/status")
     assert res_st.status_code == 200
@@ -109,15 +100,20 @@ def test_library_admin_rename_endpoints(api_client, tmp_path):
         )
 
     # 1. Invalid names -> 400
-    res_bad1 = api_client.post("/api/backup/rename", json={"path": str(doc), "new_name": ".hidden"})
+    res_bad1 = api_client.post(
+        "/api/backup/rename", json={"path": str(doc), "new_name": ".hidden"}
+    )
     assert res_bad1.status_code == 400
 
-    res_bad2 = api_client.post("/api/backup/rename", json={"path": str(doc), "new_name": "sub/name.mp4"})
+    res_bad2 = api_client.post(
+        "/api/backup/rename", json={"path": str(doc), "new_name": "sub/name.mp4"}
+    )
     assert res_bad2.status_code == 400
 
     # 2. Missing file -> 404
     res_404 = api_client.post(
-        "/api/backup/rename", json={"path": str(dest / "ghost.mp4"), "new_name": "new.mp4"}
+        "/api/backup/rename",
+        json={"path": str(dest / "ghost.mp4"), "new_name": "new.mp4"},
     )
     assert res_404.status_code == 404
 
@@ -157,7 +153,9 @@ def test_library_admin_delete_endpoints(api_client, tmp_path):
         )
 
     # 1. Missing file -> 404
-    res_404 = api_client.post("/api/backup/delete", json={"path": str(dest / "ghost.mp4")})
+    res_404 = api_client.post(
+        "/api/backup/delete", json={"path": str(dest / "ghost.mp4")}
+    )
     assert res_404.status_code == 404
 
     # 2. Directory passed -> 400
@@ -215,13 +213,15 @@ def test_library_admin_thumbnail_controls_and_set_poster(api_client, tmp_path):
     txt_file = dest / "doc.txt"
     txt_file.write_text("not video")
     res_txt = api_client.post(
-        "/api/backup/thumbnails/set-poster", json={"path": str(txt_file), "timestamp": 1.0}
+        "/api/backup/thumbnails/set-poster",
+        json={"path": str(txt_file), "timestamp": 1.0},
     )
     assert res_txt.status_code == 400
 
     # Missing video -> 404
     res_miss_vid = api_client.post(
-        "/api/backup/thumbnails/set-poster", json={"path": str(dest / "ghost.mp4"), "timestamp": 1.0}
+        "/api/backup/thumbnails/set-poster",
+        json={"path": str(dest / "ghost.mp4"), "timestamp": 1.0},
     )
     assert res_miss_vid.status_code == 404
 

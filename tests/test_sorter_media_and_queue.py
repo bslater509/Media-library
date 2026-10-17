@@ -1,13 +1,8 @@
 """Comprehensive integration and unit tests for video sorter media, queue, move, and transfer workers."""
 
-import asyncio
 import os
-from pathlib import Path
 import threading
-from unittest.mock import patch
-
-import pytest
-from fastapi import HTTPException
+from pathlib import Path
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
@@ -103,7 +98,6 @@ def test_sorter_media_streaming_and_duplicate_check(api_client):
 
 def test_sorter_queue_and_browse(api_client, tmp_path):
     source_dir = Path(state["source_dir"])
-    dest_dir = Path(state["destination_dir"])
 
     # 1. Browse directory
     res_browse = api_client.get("/api/browse", params={"path": str(source_dir)})
@@ -114,7 +108,9 @@ def test_sorter_queue_and_browse(api_client, tmp_path):
     assert "video_count_here" in b_data
 
     # Browse 404
-    res_browse_404 = api_client.get("/api/browse", params={"path": str(tmp_path / "ghost")})
+    res_browse_404 = api_client.get(
+        "/api/browse", params={"path": str(tmp_path / "ghost")}
+    )
     assert res_browse_404.status_code == 404
 
     # 2. Quick navigation
@@ -144,10 +140,14 @@ def test_sorter_queue_and_browse(api_client, tmp_path):
     assert res_scan_file.status_code == 400
 
     # 5. Destination creation error branches
-    res_dest_empty = api_client.post("/api/destinations/create", json={"folder_name": " "})
+    res_dest_empty = api_client.post(
+        "/api/destinations/create", json={"folder_name": " "}
+    )
     assert res_dest_empty.status_code == 400
 
-    res_dest_dot = api_client.post("/api/destinations/create", json={"folder_name": ".hidden"})
+    res_dest_dot = api_client.post(
+        "/api/destinations/create", json={"folder_name": ".hidden"}
+    )
     assert res_dest_dot.status_code == 400
 
 
@@ -179,7 +179,6 @@ def test_sorter_move_and_undo_operations(api_client):
     assert res_move.status_code == 200
     m_data = res_move.json()
     assert m_data["success"] is True
-    task_id = m_data["task_id"]
 
     # 3. Transfers status
     res_transfers = api_client.get("/api/transfers")
@@ -286,14 +285,10 @@ def test_sorter_rename_and_delete(api_client):
     assert (source_dir / "brand_new_name.mp4").exists()
 
     # 2. Delete
-    res_del_missing = api_client.post(
-        "/api/delete", json={"file_id": "ghost.mp4"}
-    )
+    res_del_missing = api_client.post("/api/delete", json={"file_id": "ghost.mp4"})
     assert res_del_missing.status_code == 404
 
-    res_del_ok = api_client.post(
-        "/api/delete", json={"file_id": "brand_new_name.mp4"}
-    )
+    res_del_ok = api_client.post("/api/delete", json={"file_id": "brand_new_name.mp4"})
     assert res_del_ok.status_code == 200
     assert not (source_dir / "brand_new_name.mp4").exists()
 

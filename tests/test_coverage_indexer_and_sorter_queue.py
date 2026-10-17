@@ -1,27 +1,25 @@
-import os
-import shutil
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 from fastapi import HTTPException
 
+from media_library.core.state import state
 from media_library.db.connection import db_conn
 from media_library.db.indexer import (
-    move_path_in_index,
-    delete_path_from_index,
-    _path_confirmed_gone,
-    prune_stale_index_entries,
     _clean_orphaned_thumbnails,
+    _path_confirmed_gone,
+    delete_path_from_index,
+    move_path_in_index,
+    prune_stale_index_entries,
 )
 from media_library.routers.sorter_queue import (
+    CreateFolderRequest,
     _resolve_directory_tolerant,
     browse_directory,
+    create_destination_subfolder,
     get_quick_nav,
     list_destinations,
-    create_destination_subfolder,
-    CreateFolderRequest,
 )
-from media_library.core.state import state
 
 
 def test_indexer_move_and_delete_kinds(sandbox_env):
@@ -35,52 +33,101 @@ def test_indexer_move_and_delete_kinds(sandbox_env):
     old_zip = str(sub1 / "archive.zip")
     new_zip = str(sub2 / "archive.zip")
     with db_conn() as conn, conn:
-        conn.execute("INSERT INTO folders (path, name, parent_path, is_zip) VALUES (?, 'archive.zip', ?, 1)", (old_zip, str(sub1)))
-        conn.execute("INSERT INTO files (path, name, folder_path) VALUES (?, 'inner.jpg', ?)", (f"{old_zip}/inner.jpg", old_zip))
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, is_zip) VALUES (?, 'archive.zip', ?, 1)",
+            (old_zip, str(sub1)),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path) VALUES (?, 'inner.jpg', ?)",
+            (f"{old_zip}/inner.jpg", old_zip),
+        )
 
     move_path_in_index(old_zip, new_zip, "zip")
     with db_conn() as conn:
-        f_row = conn.execute("SELECT path, parent_path FROM folders WHERE path = ?", (new_zip,)).fetchone()
+        f_row = conn.execute(
+            "SELECT path, parent_path FROM folders WHERE path = ?", (new_zip,)
+        ).fetchone()
         assert f_row is not None
         assert f_row["parent_path"] == str(sub2)
-        file_row = conn.execute("SELECT path, folder_path FROM files WHERE folder_path = ?", (new_zip,)).fetchone()
+        file_row = conn.execute(
+            "SELECT path, folder_path FROM files WHERE folder_path = ?", (new_zip,)
+        ).fetchone()
         assert file_row is not None
         assert file_row["path"] == f"{new_zip}/inner.jpg"
 
     # Test delete_path_from_index for 'zip'
     delete_path_from_index(new_zip, "zip")
     with db_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM folders WHERE path = ?", (new_zip,)).fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM files WHERE folder_path = ?", (new_zip,)).fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM folders WHERE path = ?", (new_zip,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM files WHERE folder_path = ?", (new_zip,)
+            ).fetchone()[0]
+            == 0
+        )
 
     # 2. Test move_path_in_index for 'folder' with descendants
     f_old = str(sub1 / "parent_fold")
     f_new = str(sub2 / "parent_fold")
     f_descendant = str(sub1 / "parent_fold" / "child_fold")
     with db_conn() as conn, conn:
-        conn.execute("INSERT INTO folders (path, name, parent_path) VALUES (?, 'parent_fold', ?)", (f_old, str(sub1)))
-        conn.execute("INSERT INTO folders (path, name, parent_path) VALUES (?, 'child_fold', ?)", (f_descendant, f_old))
-        conn.execute("INSERT INTO files (path, name, folder_path) VALUES (?, 'child.mp4', ?)", (f"{f_descendant}/child.mp4", f_descendant))
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path) VALUES (?, 'parent_fold', ?)",
+            (f_old, str(sub1)),
+        )
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path) VALUES (?, 'child_fold', ?)",
+            (f_descendant, f_old),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path) VALUES (?, 'child.mp4', ?)",
+            (f"{f_descendant}/child.mp4", f_descendant),
+        )
 
     move_path_in_index(f_old, f_new, "folder")
     with db_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM folders WHERE path = ?", (f_new,)).fetchone()[0] == 1
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM folders WHERE path = ?", (f_new,)
+            ).fetchone()[0]
+            == 1
+        )
         expected_desc = str(sub2 / "parent_fold" / "child_fold")
-        child_row = conn.execute("SELECT path, parent_path FROM folders WHERE path = ?", (expected_desc,)).fetchone()
+        child_row = conn.execute(
+            "SELECT path, parent_path FROM folders WHERE path = ?", (expected_desc,)
+        ).fetchone()
         assert child_row is not None
         assert child_row["parent_path"] == f_new
 
     # Test delete_path_from_index for 'folder'
     delete_path_from_index(f_new, "folder")
     with db_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM folders WHERE path LIKE ?", (f"{f_new}%",)).fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM files WHERE folder_path LIKE ?", (f"{f_new}%",)).fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM folders WHERE path LIKE ?", (f"{f_new}%",)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM files WHERE folder_path LIKE ?", (f"{f_new}%",)
+            ).fetchone()[0]
+            == 0
+        )
 
     # 3. Test move_path_in_index for 'file'
     p1 = str(sub1 / "video.mp4")
     p2 = str(sub2 / "video.mp4")
     with db_conn() as conn, conn:
-        conn.execute("INSERT INTO files (path, name, folder_path, width, height, duration) VALUES (?, 'video.mp4', ?, 1920, 1080, 12.5)", (p1, str(sub1)))
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, width, height, duration) VALUES (?, 'video.mp4', ?, 1920, 1080, 12.5)",
+            (p1, str(sub1)),
+        )
 
     move_path_in_index(p1, p2, "file")
     with db_conn() as conn:
@@ -89,19 +136,43 @@ def test_indexer_move_and_delete_kinds(sandbox_env):
         assert row["width"] == 1920
         assert row["height"] == 1080
         assert row["duration"] == 12.5
-        assert conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (p1,)).fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (p1,)).fetchone()[
+                0
+            ]
+            == 0
+        )
 
     # Test delete_path_from_index for 'file'
     import time
+
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, file_count, total_size) VALUES (?, ?, 1, 100)", (str(sub2), "sub2"))
-        conn.execute("INSERT INTO ignored_duplicates (path1, path2, match_type, created_at) VALUES (?, '/other', 'quick', ?)", (p2, time.time()))
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, file_count, total_size) VALUES (?, ?, 1, 100)",
+            (str(sub2), "sub2"),
+        )
+        conn.execute(
+            "INSERT INTO ignored_duplicates (path1, path2, match_type, created_at) VALUES (?, '/other', 'quick', ?)",
+            (p2, time.time()),
+        )
 
     delete_path_from_index(p2, "file")
     with db_conn() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (p2,)).fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM ignored_duplicates WHERE path1 = ?", (p2,)).fetchone()[0] == 0
-        f_info = conn.execute("SELECT file_count FROM folders WHERE path = ?", (str(sub2),)).fetchone()
+        assert (
+            conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (p2,)).fetchone()[
+                0
+            ]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ignored_duplicates WHERE path1 = ?", (p2,)
+            ).fetchone()[0]
+            == 0
+        )
+        f_info = conn.execute(
+            "SELECT file_count FROM folders WHERE path = ?", (str(sub2),)
+        ).fetchone()
         assert f_info["file_count"] == 0
 
 
@@ -114,7 +185,10 @@ def test_path_confirmed_gone(tmp_path):
     assert _path_confirmed_gone(str(f), attempts=2, delay=0.01) is True
 
     # OSError simulation
-    with patch("os.path.isdir", side_effect=OSError("Network failure")), patch("os.path.isfile", side_effect=OSError("Network failure")):
+    with (
+        patch("os.path.isdir", side_effect=OSError("Network failure")),
+        patch("os.path.isfile", side_effect=OSError("Network failure")),
+    ):
         assert _path_confirmed_gone("/mock/fuse/path", attempts=2, delay=0.01) is True
 
 
@@ -153,9 +227,13 @@ def test_clean_orphaned_thumbnails(sandbox_env):
     f.write_text("v")
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT INTO files (path, name, folder_path, mtime, size) VALUES (?, 'valid.mp4', ?, 100.0, 10)", (str(f), str(media_dir)))
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, mtime, size) VALUES (?, 'valid.mp4', ?, 100.0, 10)",
+            (str(f), str(media_dir)),
+        )
 
     import hashlib
+
     k = f"{f}_100.0_10"
     h = hashlib.sha256(k.encode("utf-8")).hexdigest()[:24]
     valid_thumb = thumb_dir / f"thumb_{h}.jpg"
@@ -242,8 +320,14 @@ def test_get_quick_nav_and_destinations(sandbox_env):
     (media_dir / "CategoryB").mkdir(exist_ok=True)
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, parent_path) VALUES (?, 'CategoryA', ?)", (str(media_dir / "CategoryA"), str(media_dir)))
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, parent_path) VALUES (?, 'CategoryB', ?)", (str(media_dir / "CategoryB"), str(media_dir)))
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, parent_path) VALUES (?, 'CategoryA', ?)",
+            (str(media_dir / "CategoryA"), str(media_dir)),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, parent_path) VALUES (?, 'CategoryB', ?)",
+            (str(media_dir / "CategoryB"), str(media_dir)),
+        )
 
     d_valid = list_destinations()
     assert "CategoryA" in d_valid["folders"]
@@ -265,7 +349,9 @@ def test_create_destination_subfolder(sandbox_env):
     assert exc.value.status_code == 400
 
     # Valid creation
-    res = create_destination_subfolder(CreateFolderRequest(folder_name="New Destination"))
+    res = create_destination_subfolder(
+        CreateFolderRequest(folder_name="New Destination")
+    )
     assert res["success"] is True
     assert res["folder_name"] == "New Destination"
     assert (media_dir / "New Destination").exists()

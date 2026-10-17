@@ -1,8 +1,8 @@
 """Tests for media service, transfers, and deduplication logic."""
 
 import os
-from pathlib import Path
 import threading
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -168,7 +168,12 @@ def test_ffmpeg_service_helpers():
     # relay_process_stdout
     import asyncio
     from unittest.mock import AsyncMock
-    from media_library.services.ffmpeg_service import relay_process_stdout, probe_video_meta, probe_media_metadata
+
+    from media_library.services.ffmpeg_service import (
+        probe_media_metadata,
+        probe_video_meta,
+        relay_process_stdout,
+    )
 
     async def _test_relay():
         mock_proc = AsyncMock()
@@ -194,7 +199,9 @@ def test_extract_frame_poster_base64(sandbox_env):
     import asyncio
     import base64
     import io
+
     from PIL import Image
+
     from media_library.services.ffmpeg_service import extract_frame_poster
 
     media = sandbox_env["media_dir"]
@@ -215,6 +222,7 @@ def test_extract_frame_poster_base64(sandbox_env):
 
 def test_ffmpeg_image_dimensions_and_webp(sandbox_env):
     from PIL import Image
+
     from media_library.services.ffmpeg_service import (
         _parse_exif_capture_time,
         convert_image_file_to_webp,
@@ -262,6 +270,7 @@ def test_ffmpeg_image_dimensions_and_webp(sandbox_env):
 
 def test_deduplication_service_byte_and_hash_checks(sandbox_env):
     from PIL import Image
+
     from media_library.services.deduplication_service import (
         _files_have_identical_content,
         compute_quick_hash,
@@ -322,4 +331,3 @@ def test_deduplication_service_byte_and_hash_checks(sandbox_env):
     # get_ignored_pairs_set
     ignored = get_ignored_pairs_set()
     assert isinstance(ignored, set)
-

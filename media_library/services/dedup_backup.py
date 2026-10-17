@@ -1,29 +1,17 @@
 """Backup-facing duplicate listing (content + visual)."""
 
-import hashlib
 import logging
 import os
-import re
-import time
 import urllib.parse
-from collections import defaultdict
-from pathlib import Path
 from typing import Any
-
-import imagehash
-from fastapi import HTTPException
-from PIL import Image, ImageStat
 
 from media_library.core.config import DEFAULT_DESTINATION_DIR
 from media_library.core.constants import NATIVE_EXTENSIONS
 from media_library.core.state import (
     format_size,
-    get_thumbnail_cache_path,
     state,
 )
 from media_library.db.connection import db_conn
-from media_library.db.indexer import remove_file_from_index
-from media_library.services.media_service import validate_backup_path
 
 logger = logging.getLogger(__name__)
 

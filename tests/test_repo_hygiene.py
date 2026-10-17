@@ -113,8 +113,8 @@ def test_no_forbidden_patterns_in_tracked_files(tracked_files):
             match = pattern.search(text)
             if match:
                 offenders.append(f"{rel_path}: {description} ({match.group(0)!r})")
-    assert not offenders, "Personal or secret data found in tracked files:\n" + "\n".join(
-        offenders
+    assert not offenders, (
+        "Personal or secret data found in tracked files:\n" + "\n".join(offenders)
     )
 
 
@@ -129,8 +129,9 @@ def test_only_generic_email_addresses_in_tracked_files(tracked_files):
         for email in EMAIL_RE.findall(text):
             if not email.lower().endswith(ALLOWED_EMAIL_DOMAINS):
                 offenders.append(f"{rel_path}: {email}")
-    assert not offenders, "Non-generic email addresses found in tracked files:\n" + "\n".join(
-        sorted(set(offenders))
+    assert not offenders, (
+        "Non-generic email addresses found in tracked files:\n"
+        + "\n".join(sorted(set(offenders)))
     )
 
 

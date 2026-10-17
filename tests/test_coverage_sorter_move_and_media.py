@@ -1,15 +1,7 @@
 """Deep coverage tests for sorter_move.py and sorter_media.py routers."""
 
-import asyncio
-import os
-import shutil
 import threading
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-from fastapi import HTTPException
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
@@ -27,18 +19,24 @@ def test_sorter_move_errors_and_collisions(api_client, tmp_path):
     # 1. No source dir
     orig_src = state["source_dir"]
     state["source_dir"] = ""
-    res_no_src = api_client.post("/api/move", json={"file_id": "clip.mp4", "destination_folder": "action"})
+    res_no_src = api_client.post(
+        "/api/move", json={"file_id": "clip.mp4", "destination_folder": "action"}
+    )
     assert res_no_src.status_code == 400
     state["source_dir"] = orig_src
 
     # 2. File not found
-    res_404 = api_client.post("/api/move", json={"file_id": "missing.mp4", "destination_folder": "action"})
+    res_404 = api_client.post(
+        "/api/move", json={"file_id": "missing.mp4", "destination_folder": "action"}
+    )
     assert res_404.status_code == 404
 
     # 3. Empty destination folder
     clip = src_dir / "clip1.mp4"
     clip.write_bytes(b"\x00" * 1024)
-    res_empty_dest = api_client.post("/api/move", json={"file_id": "clip1.mp4", "destination_folder": "   "})
+    res_empty_dest = api_client.post(
+        "/api/move", json={"file_id": "clip1.mp4", "destination_folder": "   "}
+    )
     assert res_empty_dest.status_code == 400
 
     # 4. Target collision renaming with active transfer link
@@ -65,7 +63,10 @@ def test_sorter_move_errors_and_collisions(api_client, tmp_path):
     assert c_data["collision_renamed"] is True
     assert c_data["final_filename"] == "clip1_2.mp4"
     tid = c_data["task_id"]
-    assert transfer_worker_instance.transfer_items_map[tid]["waiting_on_transcode"] == "tc_link_1"
+    assert (
+        transfer_worker_instance.transfer_items_map[tid]["waiting_on_transcode"]
+        == "tc_link_1"
+    )
 
 
 def test_sorter_undo_transferring_and_collisions(api_client, tmp_path):
@@ -141,7 +142,10 @@ def test_sorter_cancel_transfer(api_client, tmp_path):
     t_file.write_bytes(b"\x00" * 100)
 
     # 1. Non-existent task
-    assert api_client.post("/api/transfers/cancel", json={"task_id": "none"}).status_code == 404
+    assert (
+        api_client.post("/api/transfers/cancel", json={"task_id": "none"}).status_code
+        == 404
+    )
 
     # 2. Transferring task
     abort_ev = threading.Event()
@@ -161,7 +165,9 @@ def test_sorter_cancel_transfer(api_client, tmp_path):
 
     # 3. Completed state (cannot cancel)
     transferring_task["status"] = "completed"
-    res_done = api_client.post("/api/transfers/cancel", json={"task_id": "t_cancel_act"})
+    res_done = api_client.post(
+        "/api/transfers/cancel", json={"task_id": "t_cancel_act"}
+    )
     assert res_done.status_code == 200
     assert res_done.json()["success"] is False
 
@@ -172,13 +178,18 @@ def test_sorter_rename_video(api_client, tmp_path):
     v1.write_bytes(b"\x00" * 200)
 
     # 1. Empty new name
-    res_empty = api_client.post("/api/rename", json={"file_id": "video_to_rename.mp4", "new_name": " "})
+    res_empty = api_client.post(
+        "/api/rename", json={"file_id": "video_to_rename.mp4", "new_name": " "}
+    )
     assert res_empty.status_code == 400
 
     # 2. Name collision
     existing = src_dir / "already_exists.mp4"
     existing.write_bytes(b"\x00" * 200)
-    res_col = api_client.post("/api/rename", json={"file_id": "video_to_rename.mp4", "new_name": "already_exists.mp4"})
+    res_col = api_client.post(
+        "/api/rename",
+        json={"file_id": "video_to_rename.mp4", "new_name": "already_exists.mp4"},
+    )
     assert res_col.status_code == 400
 
     # 3. Successful rename with active transcode cancellation
@@ -190,7 +201,10 @@ def test_sorter_rename_video(api_client, tmp_path):
     }
     transcode_worker_instance.transcode_items_map["tc_rename"] = tc_task
 
-    res_ok = api_client.post("/api/rename", json={"file_id": "video_to_rename.mp4", "new_name": "renamed_video"})
+    res_ok = api_client.post(
+        "/api/rename",
+        json={"file_id": "video_to_rename.mp4", "new_name": "renamed_video"},
+    )
     assert res_ok.status_code == 200
     assert res_ok.json()["new_filename"] == "renamed_video.mp4"
     assert tc_task["status"] == "cancelled"
@@ -240,7 +254,12 @@ def test_sorter_media_stream_and_duplicate_check(api_client, sandbox_env, tmp_pa
         conn.execute(
             """INSERT INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, quick_hash)
                VALUES (?, ?, ?, 'video', '.mp4', ?, '3.5 KB', 100.0, NULL)""",
-            (str(lib_file), "library_match.mp4", str(dest_dir), lib_file.stat().st_size),
+            (
+                str(lib_file),
+                "library_match.mp4",
+                str(dest_dir),
+                lib_file.stat().st_size,
+            ),
         )
 
     # Exact content match (quick_hash computed on the fly)
@@ -265,6 +284,8 @@ def test_sorter_media_stream_and_duplicate_check(api_client, sandbox_env, tmp_pa
     # Empty file is not duplicate
     empty_f = src_dir / "empty.mp4"
     empty_f.write_bytes(b"")
-    res_empty = api_client.get("/api/sorter/check-duplicate", params={"path": str(empty_f)})
+    res_empty = api_client.get(
+        "/api/sorter/check-duplicate", params={"path": str(empty_f)}
+    )
     assert res_empty.status_code == 200
     assert res_empty.json()["is_duplicate"] is False

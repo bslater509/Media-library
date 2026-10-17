@@ -1,36 +1,24 @@
 """The background crawler loop."""
 
 import asyncio
-import hashlib
 import logging
 import os
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from media_library.core.config import (
     DEFAULT_DESTINATION_DIR,
-    THUMBNAIL_CACHE_DIR,
-)
-from media_library.core.constants import (
-    IMAGE_EXTENSIONS,
-    NATIVE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
 )
 from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
     state,
 )
 from media_library.db.connection import db_conn
 
 logger = logging.getLogger(__name__)
 
-from media_library.db.indexer_state import indexer_lock, indexer_state  # noqa: F401
-
 from media_library.db.indexer_prune import prune_stale_index_entries
 from media_library.db.indexer_scan import _scan_root_dirs, index_folder
+from media_library.db.indexer_state import indexer_lock, indexer_state
 
 
 async def run_background_crawler(force_full: bool = False):

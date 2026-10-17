@@ -1,12 +1,9 @@
 """Comprehensive integration and unit tests for transcode router and worker."""
 
 import asyncio
-from pathlib import Path
 import threading
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
-
-import pytest
-from fastapi import HTTPException
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
@@ -203,7 +200,11 @@ def test_transcode_task_execution_handling(tmp_path):
         # Mock probe and subprocess to avoid needing real ffmpeg conversion
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = 0
@@ -212,9 +213,11 @@ def test_transcode_task_execution_handling(tmp_path):
             mock_proc.stdout = AsyncMock()
             mock_proc.stdout.readline.return_value = b""
 
-            with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-                with patch("shutil.move"):
-                    await worker._run_transcode_task(item_collision)
+            with (
+                patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+                patch("shutil.move"),
+            ):
+                await worker._run_transcode_task(item_collision)
 
         # Collision target should end with _converted_1.mp4
         assert "_converted_1.mp4" in item_collision["target_path"]

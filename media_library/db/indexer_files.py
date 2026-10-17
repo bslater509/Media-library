@@ -1,18 +1,9 @@
 """Per-file index mutations (add, update, move, remove)."""
 
-import asyncio
-import hashlib
 import logging
 import os
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 
-from media_library.core.config import (
-    DEFAULT_DESTINATION_DIR,
-    THUMBNAIL_CACHE_DIR,
-)
 from media_library.core.constants import (
     IMAGE_EXTENSIONS,
     NATIVE_EXTENSIONS,
@@ -21,7 +12,6 @@ from media_library.core.constants import (
 from media_library.core.state import (
     format_size,
     get_thumbnail_cache_path,
-    state,
 )
 from media_library.db.connection import db_conn
 
@@ -75,6 +65,7 @@ def add_file_to_index(file_path: str):
     except Exception as e:
         logger.error(f"Error adding {file_path} to index: {e}")
 
+
 def remove_file_from_index(file_path: str):
     try:
         folder_path = os.path.dirname(file_path)
@@ -95,6 +86,7 @@ def remove_file_from_index(file_path: str):
             )
     except Exception as e:
         logger.error(f"Error removing {file_path} from index: {e}")
+
 
 def update_file_in_index(
     old_path: str,
@@ -227,6 +219,7 @@ def update_file_in_index(
     except Exception as e:
         logger.error(f"Error updating {old_path} -> {new_path} in index: {e}")
 
+
 def move_path_in_index(old_path: str, new_path: str, kind: str):
     """Rewrites the SQLite index when a library path is moved or renamed.
 
@@ -298,6 +291,7 @@ def move_path_in_index(old_path: str, new_path: str, kind: str):
                 )
     except Exception as e:
         logger.error(f"Error moving {old_path} -> {new_path} in index: {e}")
+
 
 def delete_path_from_index(path: str, kind: str):
     """Removes a path (and, for folders/ZIPs, its contents) from the SQLite index."""

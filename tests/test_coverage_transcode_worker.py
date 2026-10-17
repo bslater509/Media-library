@@ -2,20 +2,14 @@
 
 import asyncio
 import os
-import shutil
 import threading
-import time
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
 from media_library.workers.transcode_worker import (
     TranscodeWorker,
     enqueue_pretranscode_for_source,
-    transcode_worker_instance,
 )
 
 
@@ -30,7 +24,7 @@ def test_enqueue_pretranscode_for_source(tmp_path):
     (src_dir / "clip1.mkv").write_bytes(b"\x00" * 10)
     (src_dir / "clip2.avi").write_bytes(b"\x00" * 10)
     (src_dir / "clip3.mp4").write_bytes(b"\x00" * 10)  # Native, skipped
-    (src_dir / "clip4.txt").write_bytes(b"text")       # Non-video, skipped
+    (src_dir / "clip4.txt").write_bytes(b"text")  # Non-video, skipped
 
     worker = TranscodeWorker()
     with patch(
@@ -161,7 +155,11 @@ def test_transcode_task_remux_flow(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = 0
@@ -169,6 +167,7 @@ def test_transcode_task_remux_flow(tmp_path):
 
             async def fake_proc(*args, **kwargs):
                 from media_library.core.config import TRANSCODE_TEMP_DIR
+
                 temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_clip.mp4"
                 temp_p.write_bytes(b"MP4DATA" * 500)
                 return mock_proc
@@ -200,7 +199,11 @@ def test_transcode_task_remux_abort(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = None
@@ -236,7 +239,11 @@ def test_transcode_task_reencode_progress_and_success(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 20.0, "video_codec": "mpeg4", "audio_codec": "mp3"},
+            return_value={
+                "duration": 20.0,
+                "video_codec": "mpeg4",
+                "audio_codec": "mp3",
+            },
         ):
             progress_lines = [
                 b"out_time_us=10000000\n",
@@ -262,6 +269,7 @@ def test_transcode_task_reencode_progress_and_success(tmp_path):
 
             async def fake_proc(*args, **kwargs):
                 from media_library.core.config import TRANSCODE_TEMP_DIR
+
                 temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_clip_reencode.mp4"
                 temp_p.write_bytes(b"REENCODED" * 500)
                 return mock_proc
@@ -294,7 +302,11 @@ def test_transcode_task_reencode_abort(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 20.0, "video_codec": "mpeg4", "audio_codec": "mp3"},
+            return_value={
+                "duration": 20.0,
+                "video_codec": "mpeg4",
+                "audio_codec": "mp3",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = None
@@ -338,7 +350,11 @@ def test_transcode_task_fallback_and_failure(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 15.0, "video_codec": "wmv2", "audio_codec": "wmav2"},
+            return_value={
+                "duration": 15.0,
+                "video_codec": "wmv2",
+                "audio_codec": "wmav2",
+            },
         ):
             proc_reencode_fail = AsyncMock()
             proc_reencode_fail.returncode = 1
@@ -358,6 +374,7 @@ def test_transcode_task_fallback_and_failure(tmp_path):
                     return proc_reencode_fail
                 else:
                     from media_library.core.config import TRANSCODE_TEMP_DIR
+
                     temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_clip_fallback.mp4"
                     temp_p.write_bytes(b"FALLBACK_DATA" * 500)
                     return proc_fallback_ok
@@ -386,7 +403,11 @@ def test_transcode_commit_cross_device_and_errors(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = 0
@@ -394,6 +415,7 @@ def test_transcode_commit_cross_device_and_errors(tmp_path):
 
             async def fake_proc(*args, **kwargs):
                 from media_library.core.config import TRANSCODE_TEMP_DIR
+
                 temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_cross_dev.mp4"
                 temp_p.write_bytes(b"DATA" * 500)
                 return mock_proc
@@ -408,8 +430,9 @@ def test_transcode_commit_cross_device_and_errors(tmp_path):
                     raise OSError(18, "Invalid cross-device link")
                 return real_replace(src, dst)
 
-            with patch("asyncio.create_subprocess_exec", side_effect=fake_proc), patch(
-                "os.replace", side_effect=fake_replace
+            with (
+                patch("asyncio.create_subprocess_exec", side_effect=fake_proc),
+                patch("os.replace", side_effect=fake_replace),
             ):
                 await worker._run_transcode_task(item)
 
@@ -423,7 +446,11 @@ def test_transcode_worker_run_loop():
     async def _test():
         worker = TranscodeWorker()
 
-        item_cancelled = {"id": "c1", "status": "cancelled", "source_path": "/fake/p.mkv"}
+        item_cancelled = {
+            "id": "c1",
+            "status": "cancelled",
+            "source_path": "/fake/p.mkv",
+        }
         await worker.transcode_queue.put(item_cancelled)
 
         item_missing = {
@@ -487,7 +514,11 @@ def test_transcode_task_reencode_invalid_progress(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "mpeg4", "audio_codec": "mp3"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "mpeg4",
+                "audio_codec": "mp3",
+            },
         ):
             # Invalid progress lines triggering ValueError
             progress_lines = [
@@ -513,6 +544,7 @@ def test_transcode_task_reencode_invalid_progress(tmp_path):
 
             async def fake_proc(*args, **kwargs):
                 from media_library.core.config import TRANSCODE_TEMP_DIR
+
                 temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_clip_inv.mp4"
                 temp_p.write_bytes(b"DATA" * 500)
                 return mock_proc
@@ -540,7 +572,11 @@ def test_transcode_task_commit_failure(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = 0
@@ -548,12 +584,16 @@ def test_transcode_task_commit_failure(tmp_path):
 
             async def fake_proc(*args, **kwargs):
                 from media_library.core.config import TRANSCODE_TEMP_DIR
+
                 temp_p = TRANSCODE_TEMP_DIR / f"temp_{item['id']}_clip_commit_fail.mp4"
                 temp_p.write_bytes(b"DATA" * 500)
                 return mock_proc
 
-            with patch("asyncio.create_subprocess_exec", side_effect=fake_proc), patch(
-                "os.replace", side_effect=PermissionError("Cannot write to target")
+            with (
+                patch("asyncio.create_subprocess_exec", side_effect=fake_proc),
+                patch(
+                    "os.replace", side_effect=PermissionError("Cannot write to target")
+                ),
             ):
                 await worker._run_transcode_task(item)
 
@@ -578,7 +618,11 @@ def test_transcode_task_all_failed(tmp_path):
 
         with patch(
             "media_library.workers.transcode_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
+            return_value={
+                "duration": 10.0,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+            },
         ):
             mock_proc = AsyncMock()
             mock_proc.returncode = 1
@@ -593,4 +637,3 @@ def test_transcode_task_all_failed(tmp_path):
             assert "Conversion failed" in item["error"]
 
     asyncio.run(_test())
-

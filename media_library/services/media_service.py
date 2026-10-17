@@ -35,7 +35,9 @@ def get_lan_ip() -> str:
 def validate_backup_path(path_str: str | None, base_dir: str | None = None) -> str:
     """Validates that a path resides strictly within the destination directory."""
     target_base = os.path.abspath(
-        os.path.normpath(base_dir or state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
+        os.path.normpath(
+            base_dir or state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+        )
     )
     if not path_str or not path_str.strip():
         return target_base
@@ -182,9 +184,7 @@ def search_backup_index(
     filename contains those words.
     """
     effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
-    base_dir = os.path.realpath(
-        state.get("destination_dir") or DEFAULT_DESTINATION_DIR
-    )
+    base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
     rel_offset = len(base_dir) + 1
     with db_conn() as conn:
         try:
@@ -282,8 +282,20 @@ def search_backup_index(
                         else False,
                         "thumb_url": (
                             f"/api/backup/thumbnail?path={urllib.parse.quote(fpath)}"
-                            + (f"&mtime={r['mtime']}&size={r['size']}" if (r["mtime"] is not None and r["size"] is not None) else "")
-                            + (f"&v={int(r['thumb_mtime'])}" if ("thumb_mtime" in r.keys() and r["thumb_mtime"]) else (f"&v={r['thumb_hash']}" if ("thumb_hash" in r.keys() and r["thumb_hash"]) else ""))
+                            + (
+                                f"&mtime={r['mtime']}&size={r['size']}"
+                                if (r["mtime"] is not None and r["size"] is not None)
+                                else ""
+                            )
+                            + (
+                                f"&v={int(r['thumb_mtime'])}"
+                                if ("thumb_mtime" in r.keys() and r["thumb_mtime"])
+                                else (
+                                    f"&v={r['thumb_hash']}"
+                                    if ("thumb_hash" in r.keys() and r["thumb_hash"])
+                                    else ""
+                                )
+                            )
                         ),
                         "media_url": media_url,
                     }
@@ -376,7 +388,9 @@ def do_transfer(
 
     # Across-filesystem chunked copy with cancel support
     temp_target = target_path + f".tmp.{item['id']}"
-    total_size = item.get("total_bytes") or (os.path.getsize(source_path) if os.path.exists(source_path) else 0)
+    total_size = item.get("total_bytes") or (
+        os.path.getsize(source_path) if os.path.exists(source_path) else 0
+    )
     bytes_copied = 0
     chunk_size = 4 * 1024 * 1024
 

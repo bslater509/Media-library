@@ -23,7 +23,7 @@ async def upload_chunk(
     chunk_index: int = Form(...),
     total_chunks: int = Form(...),
     offset: int | None = Form(None),
-    chunk: UploadFile = File(...)
+    chunk: UploadFile = File(...),
 ) -> dict[str, Any]:
     """Receives a chunk of an uploaded file."""
     try:

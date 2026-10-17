@@ -1,27 +1,25 @@
 import json
-import os
-import shutil
 import threading
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
 from media_library.db.connection import db_conn
-from media_library.services.library_manage_service import (
-    move_library_path,
-    delete_library_path,
-    rename_library_path,
-    _apply_rename_rule,
-    compute_bulk_rename,
-    find_empty_folders,
-)
 from media_library.services.backup_service import (
-    get_existing_backup_meta,
+    CONFIG_FILE,
     _create_library_backup_sync,
     _restore_library_backup_sync,
     check_and_auto_restore_library_backup,
+    get_existing_backup_meta,
     get_library_backup_dir,
-    CONFIG_FILE,
+)
+from media_library.services.library_manage_service import (
+    _apply_rename_rule,
+    delete_library_path,
+    find_empty_folders,
+    move_library_path,
+    rename_library_path,
 )
 
 
@@ -99,6 +97,7 @@ def test_rename_library_path_validation_and_kinds(sandbox_env):
     media_dir = sandbox_env["media_dir"]
     sandbox_env["state"] = {"destination_dir": str(media_dir)}
     from media_library.core.state import state
+
     state["destination_dir"] = str(media_dir)
 
     f = media_dir / "rename_me.jpg"
@@ -140,16 +139,44 @@ def test_apply_rename_rules():
     assert _apply_rename_rule("my file", 0, 1, "case", {"case": "title"}) == "My File"
 
     # Find replace mode
-    assert _apply_rename_rule("file_2020", 0, 1, "find_replace", {"find": "2020", "replace": "2026"}) == "file_2026"
+    assert (
+        _apply_rename_rule(
+            "file_2020", 0, 1, "find_replace", {"find": "2020", "replace": "2026"}
+        )
+        == "file_2026"
+    )
     with pytest.raises(ValueError):
         _apply_rename_rule("file", 0, 1, "find_replace", {"find": ""})
 
     # Numbering mode
-    assert _apply_rename_rule("pic", 2, 5, "numbering", {"start": 1, "step": 1, "padding": 3, "position": "prefix"}) == "003pic"
-    assert _apply_rename_rule("pic", 2, 5, "numbering", {"start": 1, "step": 1, "padding": 0, "position": "suffix"}) == "pic3"
+    assert (
+        _apply_rename_rule(
+            "pic",
+            2,
+            5,
+            "numbering",
+            {"start": 1, "step": 1, "padding": 3, "position": "prefix"},
+        )
+        == "003pic"
+    )
+    assert (
+        _apply_rename_rule(
+            "pic",
+            2,
+            5,
+            "numbering",
+            {"start": 1, "step": 1, "padding": 0, "position": "suffix"},
+        )
+        == "pic3"
+    )
 
     # Base counter mode
-    assert _apply_rename_rule("old_name", 0, 10, "base_counter", {"base": "img", "start": 1, "padding": 2}) == "img01"
+    assert (
+        _apply_rename_rule(
+            "old_name", 0, 10, "base_counter", {"base": "img", "start": 1, "padding": 2}
+        )
+        == "img01"
+    )
     with pytest.raises(ValueError):
         _apply_rename_rule("old_name", 0, 10, "base_counter", {"base": ""})
 
@@ -178,10 +205,22 @@ def test_find_empty_library_folders(sandbox_env):
 
     # Index folders in DB
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 0, 0)", (str(empty_f), "empty_dir", str(media_dir)))
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 0, 0)", (str(benign_f), "benign_dir", str(media_dir)))
-        conn.execute("INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 1, 0)", (str(real_f), "real_dir", str(media_dir)))
-        conn.execute("INSERT OR REPLACE INTO files (path, name, folder_path) VALUES (?, ?, ?)", (str(real_f / "video.mp4"), "video.mp4", str(real_f)))
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 0, 0)",
+            (str(empty_f), "empty_dir", str(media_dir)),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 0, 0)",
+            (str(benign_f), "benign_dir", str(media_dir)),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO folders (path, name, parent_path, file_count, subfolder_count) VALUES (?, ?, ?, 1, 0)",
+            (str(real_f), "real_dir", str(media_dir)),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO files (path, name, folder_path) VALUES (?, ?, ?)",
+            (str(real_f / "video.mp4"), "video.mp4", str(real_f)),
+        )
 
     res = find_empty_folders(str(media_dir))
     candidates = [c["path"] for c in res["candidates"]]
@@ -212,6 +251,7 @@ def test_backup_service_get_meta_and_corrupt(sandbox_env):
 def test_backup_service_create_and_restore_cycle(sandbox_env):
     media_dir = sandbox_env["media_dir"]
     from media_library.core.state import state
+
     state["destination_dir"] = str(media_dir)
 
     # Populate some files and thumbnails (>=10 thumbnails so healthy check passes)
@@ -222,15 +262,24 @@ def test_backup_service_create_and_restore_cycle(sandbox_env):
         (thumb_dir / f"thumb_{i}.jpg").write_bytes(b"THUMB")
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT INTO folders (path, name) VALUES (?, ?)", (str(media_dir), "media"))
-        conn.execute("INSERT INTO files (path, name, folder_path, size, has_thumb) VALUES (?, ?, ?, 5, 1)", (str(f1), "vid1.mp4", str(media_dir)))
+        conn.execute(
+            "INSERT INTO folders (path, name) VALUES (?, ?)", (str(media_dir), "media")
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, size, has_thumb) VALUES (?, ?, ?, 5, 1)",
+            (str(f1), "vid1.mp4", str(media_dir)),
+        )
 
     # Save a config file
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps({"source_dir": str(media_dir), "recent_destinations": ["Action"]}))
+    CONFIG_FILE.write_text(
+        json.dumps({"source_dir": str(media_dir), "recent_destinations": ["Action"]})
+    )
 
     progress_create = []
-    res_create = _create_library_backup_sync(progress_cb=lambda msg, pct: progress_create.append(pct))
+    res_create = _create_library_backup_sync(
+        progress_cb=lambda msg, pct: progress_create.append(pct)
+    )
     assert res_create["success"] is True
     assert len(progress_create) > 0
 
@@ -242,7 +291,6 @@ def test_backup_service_create_and_restore_cycle(sandbox_env):
     db_p.unlink()
 
     # Now auto restore check should detect missing db and restore!
-    progress_restore = []
     restored = check_and_auto_restore_library_backup()
     assert restored is True
     assert db_p.exists()
@@ -253,14 +301,20 @@ def test_backup_service_create_and_restore_cycle(sandbox_env):
 
 
 def test_backup_service_create_missing_parent(sandbox_env):
-    with patch("media_library.services.backup_service.get_library_backup_dir", return_value=Path("/nonexistent_drive/unmounted/bck")):
+    with patch(
+        "media_library.services.backup_service.get_library_backup_dir",
+        return_value=Path("/nonexistent_drive/unmounted/bck"),
+    ):
         res = _create_library_backup_sync()
         assert res["success"] is False
         assert "does not exist or is unmounted" in res["error"]
 
 
 def test_backup_service_restore_no_valid_backup(sandbox_env):
-    with patch("media_library.services.backup_service.get_library_backup_dir", return_value=Path("/empty/backup/dir")):
+    with patch(
+        "media_library.services.backup_service.get_library_backup_dir",
+        return_value=Path("/empty/backup/dir"),
+    ):
         res = _restore_library_backup_sync()
         assert res["success"] is False
         assert "No valid database backup found" in res["error"]

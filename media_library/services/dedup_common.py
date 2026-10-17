@@ -4,26 +4,13 @@ import hashlib
 import logging
 import os
 import re
-import time
-import urllib.parse
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import imagehash
-from fastapi import HTTPException
 from PIL import Image, ImageStat
 
-from media_library.core.config import DEFAULT_DESTINATION_DIR
-from media_library.core.constants import NATIVE_EXTENSIONS
-from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
-    state,
-)
 from media_library.db.connection import db_conn
-from media_library.db.indexer import remove_file_from_index
-from media_library.services.media_service import validate_backup_path
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +24,11 @@ visual_duplicates_cache: dict[str, Any] = {
     "ignored_count": 0,
 }
 
+
 def invalidate_visual_cache():
     """Invalidates the in-memory visual duplicates cache."""
     visual_duplicates_cache["timestamp"] = 0
+
 
 def compute_quick_hash(filepath: str, chunk_size: int = 131072) -> str | None:
     """Computes a fast 128KB head SHA-256 hash incorporating exact byte size."""
@@ -58,6 +47,7 @@ def compute_quick_hash(filepath: str, chunk_size: int = 131072) -> str | None:
         logger.error(f"Error computing quick_hash for {filepath}: {e}")
         return None
 
+
 def compute_thumbnail_phash(thumb_path: Path) -> str | None:
     """Computes a 64-bit DCT perceptual hash (pHash) from a cached JPEG thumbnail."""
     try:
@@ -73,7 +63,9 @@ def compute_thumbnail_phash(thumb_path: Path) -> str | None:
     except Exception:
         return None
 
+
 compute_thumbnail_dhash = compute_thumbnail_phash
+
 
 def _files_have_identical_content(a: str, b: str) -> bool:
     """Full-content byte comparison.
@@ -98,8 +90,10 @@ def _files_have_identical_content(a: str, b: str) -> bool:
         return False
     return False
 
+
 def normalize_pair(p1: str, p2: str) -> tuple[str, str]:
     return (p1, p2) if p1 < p2 else (p2, p1)
+
 
 def get_ignored_pairs_set(match_type: str | None = None) -> set[tuple[str, str]]:
     with db_conn() as conn:
@@ -113,6 +107,7 @@ def get_ignored_pairs_set(match_type: str | None = None) -> set[tuple[str, str]]
                 "SELECT path1, path2 FROM ignored_duplicates"
             ).fetchall()
         return {(r["path1"], r["path2"]) for r in rows}
+
 
 def score_duplicate_file(
     name: str, folder_path: str, mtime: float, size: int = 0

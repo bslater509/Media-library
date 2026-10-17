@@ -89,7 +89,13 @@ def _progress_line(**overrides):
 
 
 def test_apply_progress_parses_strings_and_na():
-    item = {"percent": 0.0, "downloaded_bytes": 0, "total_bytes": 0, "speed": "", "eta": ""}
+    item = {
+        "percent": 0.0,
+        "downloaded_bytes": 0,
+        "total_bytes": 0,
+        "speed": "",
+        "eta": "",
+    }
     _apply_progress(item, json.loads(_progress_line()))
     assert item["percent"] == 75.0
     assert item["downloaded_bytes"] == 750
@@ -191,7 +197,9 @@ def test_run_ytdlp_job_handles_full_playlist_skip(sandbox_env, monkeypatch):
     job_dir = _staging() / f"dl_{job_id}"
     job_dir.mkdir(parents=True, exist_ok=True)
     for i in range(3):
-        (job_dir / f"ep{i}.mp4").write_bytes(b"\x00\x00\x00 ftypmp42" + bytes([i]) * 512)
+        (job_dir / f"ep{i}.mp4").write_bytes(
+            b"\x00\x00\x00 ftypmp42" + bytes([i]) * 512
+        )
 
     monkeypatch.setattr(
         "subprocess.Popen",
@@ -280,7 +288,9 @@ def test_apply_gallerydl_line_tracks_completed_files(tmp_path):
 def test_run_job_falls_back_to_gallery_dl(sandbox_env, monkeypatch):
     dest = sandbox_env["media_dir"] / "dest"
     dest.mkdir()
-    job_id = url_download_worker_instance.enqueue("https://bunkr.cr/a/DaMdNcS9", str(dest))
+    job_id = url_download_worker_instance.enqueue(
+        "https://bunkr.cr/a/DaMdNcS9", str(dest)
+    )
     item = url_download_worker_instance.jobs_map[job_id]
     job_dir = _staging() / f"dl_{job_id}"
 
@@ -373,11 +383,14 @@ def test_enqueue_rejects_bad_inputs(api_client, monkeypatch):
     dest = api_client._transport.app.state  # noqa - app reachable via environment
     # Invalid URL schemes
     for bad in ["ftp://example.com/v.mp4", "notaurl", "javascript:alert(1)"]:
-        r = api_client.post("/api/backup/upload/url", json={"url": bad, "destination_dir": "/"})
+        r = api_client.post(
+            "/api/backup/upload/url", json={"url": bad, "destination_dir": "/"}
+        )
         assert r.status_code == 400, (bad, r.text)
     # Missing destination
     r = api_client.post(
-        "/api/backup/upload/url", json={"url": "https://example.com/v", "destination_dir": ""}
+        "/api/backup/upload/url",
+        json={"url": "https://example.com/v", "destination_dir": ""},
     )
     assert r.status_code == 400
 
@@ -399,7 +412,10 @@ def test_enqueue_rejects_zip_and_missing_dest(api_client, monkeypatch, tmp_path)
 
     r = api_client.post(
         "/api/backup/upload/url",
-        json={"url": "https://example.com/v", "destination_dir": str(Path(dest_dir) / "nope")},
+        json={
+            "url": "https://example.com/v",
+            "destination_dir": str(Path(dest_dir) / "nope"),
+        },
     )
     assert r.status_code == 400
 
@@ -412,7 +428,10 @@ def test_enqueue_status_cancel_flow(api_client, monkeypatch):
 
     r = api_client.post(
         "/api/backup/upload/url",
-        json={"url": "https://example.com/playlist?list=1", "destination_dir": state.get("destination_dir")},
+        json={
+            "url": "https://example.com/playlist?list=1",
+            "destination_dir": state.get("destination_dir"),
+        },
     )
     assert r.status_code == 200
     job_id = r.json()["job_id"]
@@ -441,7 +460,10 @@ def test_enqueue_503_when_ytdlp_missing(api_client, monkeypatch):
 
     r = api_client.post(
         "/api/backup/upload/url",
-        json={"url": "https://example.com/v", "destination_dir": state.get("destination_dir")},
+        json={
+            "url": "https://example.com/v",
+            "destination_dir": state.get("destination_dir"),
+        },
     )
     assert r.status_code == 503
     assert "yt-dlp" in r.json()["detail"]
@@ -455,7 +477,10 @@ def test_enqueue_allows_gallery_dl_only(api_client, monkeypatch):
 
     r = api_client.post(
         "/api/backup/upload/url",
-        json={"url": "https://bunkr.cr/a/abc123", "destination_dir": state.get("destination_dir")},
+        json={
+            "url": "https://bunkr.cr/a/abc123",
+            "destination_dir": state.get("destination_dir"),
+        },
     )
     assert r.status_code == 200
     assert r.json()["job_id"].startswith("dl_")
@@ -581,21 +606,30 @@ def test_retry_endpoint_clones_failed_job(api_client, monkeypatch):
     assert body["job_id"].startswith("dl_")
 
     # Bad id -> 400; unknown -> 404; completed -> 409.
-    assert api_client.post(
-        "/api/backup/upload/url/retry", json={"job_id": "nope"}
-    ).status_code == 400
-    assert api_client.post(
-        "/api/backup/upload/url/retry", json={"job_id": "dl_missing"}
-    ).status_code == 404
+    assert (
+        api_client.post(
+            "/api/backup/upload/url/retry", json={"job_id": "nope"}
+        ).status_code
+        == 400
+    )
+    assert (
+        api_client.post(
+            "/api/backup/upload/url/retry", json={"job_id": "dl_missing"}
+        ).status_code
+        == 404
+    )
 
     done_id = api_client.post(
         "/api/backup/upload/url",
         json={"url": "https://example.com/done", "destination_dir": dest},
     ).json()["job_id"]
     _finish(url_download_worker_instance, done_id, "completed")
-    assert api_client.post(
-        "/api/backup/upload/url/retry", json={"job_id": done_id}
-    ).status_code == 409
+    assert (
+        api_client.post(
+            "/api/backup/upload/url/retry", json={"job_id": done_id}
+        ).status_code
+        == 409
+    )
 
 
 def test_history_and_clear_endpoints(api_client, monkeypatch):
@@ -605,10 +639,12 @@ def test_history_and_clear_endpoints(api_client, monkeypatch):
     dest = state.get("destination_dir")
     ids = []
     for i in range(3):
-        ids.append(api_client.post(
-            "/api/backup/upload/url",
-            json={"url": f"https://example.com/{i}", "destination_dir": dest},
-        ).json()["job_id"])
+        ids.append(
+            api_client.post(
+                "/api/backup/upload/url",
+                json={"url": f"https://example.com/{i}", "destination_dir": dest},
+            ).json()["job_id"]
+        )
     for jid in ids:
         _finish(url_download_worker_instance, jid, "completed")
 
@@ -618,13 +654,11 @@ def test_history_and_clear_endpoints(api_client, monkeypatch):
     assert body["total"] == 3
     assert [e["id"] for e in body["history"]] == [ids[2], ids[1]]
 
-    assert api_client.get(
-        "/api/backup/upload/url/history?limit=0"
-    ).status_code == 422  # FastAPI range validation
+    assert (
+        api_client.get("/api/backup/upload/url/history?limit=0").status_code == 422
+    )  # FastAPI range validation
 
     cleared = api_client.post("/api/backup/upload/url/clear-history")
     assert cleared.status_code == 200
     assert cleared.json()["cleared"] == 3
-    assert api_client.get(
-        "/api/backup/upload/url/history"
-    ).json()["total"] == 0
+    assert api_client.get("/api/backup/upload/url/history").json()["total"] == 0

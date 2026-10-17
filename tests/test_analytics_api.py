@@ -144,7 +144,9 @@ def test_analytics_overview_shape(analytics_client):
     assert types["image"]["count"] == 2
     assert types["video"]["bytes"] == 10000
     assert types["image"]["bytes"] == 750
-    assert round(types["video"]["percent_bytes"] + types["image"]["percent_bytes"]) == 100
+    assert (
+        round(types["video"]["percent_bytes"] + types["image"]["percent_bytes"]) == 100
+    )
 
     exts = {e["ext"]: e for e in data["by_extension"]["items"]}
     assert exts[".mp4"]["count"] == 2
@@ -235,8 +237,14 @@ def test_analytics_respects_limits_and_refresh_bypasses_cache(analytics_client):
     assert len(limited["largest_files"]) == 2
     assert len(limited["folders"]["largest"]) == 1
 
-    assert client.get("/api/analytics/overview", params={"file_limit": 0}).status_code == 422
-    assert client.get("/api/analytics/overview", params={"file_limit": 500}).status_code == 422
+    assert (
+        client.get("/api/analytics/overview", params={"file_limit": 0}).status_code
+        == 422
+    )
+    assert (
+        client.get("/api/analytics/overview", params={"file_limit": 500}).status_code
+        == 422
+    )
 
     # Warm the default-limits memo, then add a row. Indexing one folder does not
     # bump indexer_state["revision"], so the memo legitimately still serves the

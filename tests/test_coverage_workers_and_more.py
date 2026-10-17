@@ -1,17 +1,8 @@
 """Deep coverage tests for webp_worker, duplicate_hash_worker, and library_media router."""
 
-import asyncio
-import io
-import os
-import shutil
-import tempfile
-import threading
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import pytest
-from fastapi import HTTPException
 from PIL import Image
 
 from media_library.core.state import state
@@ -22,7 +13,6 @@ from media_library.workers.duplicate_hash_worker import (
 )
 from media_library.workers.webp_worker import (
     WebPOptimizerWorker,
-    _available_memory_mb,
     _cgroup_headroom_mb,
     _host_available_memory_mb,
     _release_memory,
@@ -85,57 +75,79 @@ def test_duplicate_hash_worker_pause_and_error(sandbox_env):
     assert thumb_worker.is_paused() is False
 
 
-def test_library_media_thumbnail_and_candidate_routes(api_client, sandbox_env, tmp_path):
+def test_library_media_thumbnail_and_candidate_routes(
+    api_client, sandbox_env, tmp_path
+):
     dest = Path(state["destination_dir"])
 
     # 1. /api/backup/thumbnail with invalid extension -> 400
     doc_file = dest / "document.txt"
     doc_file.write_text("not media")
-    res_bad_ext = api_client.get("/api/backup/thumbnail", params={"path": str(doc_file)})
+    res_bad_ext = api_client.get(
+        "/api/backup/thumbnail", params={"path": str(doc_file)}
+    )
     assert res_bad_ext.status_code == 400
 
     # 2. /api/backup/thumbnail with non-existent file -> 404
-    res_404 = api_client.get("/api/backup/thumbnail", params={"path": str(dest / "ghost.jpg")})
+    res_404 = api_client.get(
+        "/api/backup/thumbnail", params={"path": str(dest / "ghost.jpg")}
+    )
     assert res_404.status_code == 404
 
     # 3. Image thumbnail generation failure serves raw image fallback
     img_fallback = dest / "raw_fallback.jpg"
     Image.new("RGB", (20, 20), color="blue").save(img_fallback)
 
-    with patch(
-        "media_library.routers.library_media.generate_thumbnail",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch(
-        "media_library.routers.library_media.get_thumbnail_path_fast",
-        return_value=Path("/fake/no_thumb.jpg"),
+    with (
+        patch(
+            "media_library.routers.library_media.generate_thumbnail",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "media_library.routers.library_media.get_thumbnail_path_fast",
+            return_value=Path("/fake/no_thumb.jpg"),
+        ),
     ):
-        res_raw = api_client.get("/api/backup/thumbnail", params={"path": str(img_fallback)})
+        res_raw = api_client.get(
+            "/api/backup/thumbnail", params={"path": str(img_fallback)}
+        )
         assert res_raw.status_code == 200
         # HEAD request on raw image
-        res_raw_head = api_client.head("/api/backup/thumbnail", params={"path": str(img_fallback)})
+        res_raw_head = api_client.head(
+            "/api/backup/thumbnail", params={"path": str(img_fallback)}
+        )
         assert res_raw_head.status_code == 200
 
     # 4. Video thumbnail generation failure -> 500
     vid_p = dest / "fail_thumb.mp4"
     vid_p.write_bytes(b"\x00" * 100)
-    with patch(
-        "media_library.routers.library_media.generate_thumbnail",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch(
-        "media_library.routers.library_media.get_thumbnail_path_fast",
-        return_value=Path("/fake/no_thumb.jpg"),
+    with (
+        patch(
+            "media_library.routers.library_media.generate_thumbnail",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "media_library.routers.library_media.get_thumbnail_path_fast",
+            return_value=Path("/fake/no_thumb.jpg"),
+        ),
     ):
-        res_fail_vid = api_client.get("/api/backup/thumbnail", params={"path": str(vid_p)})
+        res_fail_vid = api_client.get(
+            "/api/backup/thumbnail", params={"path": str(vid_p)}
+        )
         assert res_fail_vid.status_code == 500
 
     # 5. /api/backup/thumbnails/candidates on non-video -> 400
-    res_cand_bad = api_client.get("/api/backup/thumbnails/candidates", params={"path": str(img_fallback)})
+    res_cand_bad = api_client.get(
+        "/api/backup/thumbnails/candidates", params={"path": str(img_fallback)}
+    )
     assert res_cand_bad.status_code == 400
 
     # 6. /api/backup/thumbnails/candidates on missing video -> 404
-    res_cand_404 = api_client.get("/api/backup/thumbnails/candidates", params={"path": str(dest / "ghost.mp4")})
+    res_cand_404 = api_client.get(
+        "/api/backup/thumbnails/candidates", params={"path": str(dest / "ghost.mp4")}
+    )
     assert res_cand_404.status_code == 404
 
     # 7. /api/backup/thumbnails/candidates valid video with 0 duration fallback
@@ -156,17 +168,22 @@ def test_library_media_thumbnail_and_candidate_routes(api_client, sandbox_env, t
         assert data["duration"] == 1.0
 
     # 8. /api/backup/thumbnails/frame on non-video -> 400
-    res_frame_bad = api_client.get("/api/backup/thumbnails/frame", params={"path": str(img_fallback)})
+    res_frame_bad = api_client.get(
+        "/api/backup/thumbnails/frame", params={"path": str(img_fallback)}
+    )
     assert res_frame_bad.status_code == 400
 
     # 9. /api/backup/thumbnails/frame frame extraction failure -> 500
-    with patch(
-        "media_library.routers.library_media.extract_candidate_frame",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch(
-        "media_library.routers.library_media.get_candidate_cache_path",
-        return_value=Path("/fake/no_cand.jpg"),
+    with (
+        patch(
+            "media_library.routers.library_media.extract_candidate_frame",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "media_library.routers.library_media.get_candidate_cache_path",
+            return_value=Path("/fake/no_cand.jpg"),
+        ),
     ):
         res_frame_fail = api_client.get(
             "/api/backup/thumbnails/frame",

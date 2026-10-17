@@ -6,6 +6,7 @@ folder-tree endpoints. All reads are index-only (never stats remote files).
 """
 
 import logging
+import os
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -54,12 +55,20 @@ def _build_file_entry(r: Any) -> dict[str, Any]:
         "audio_codec": r["audio_codec"] if "audio_codec" in r.keys() else None,
         "fps": r["fps"] if "fps" in r.keys() else None,
         "capture_time": r["capture_time"] if "capture_time" in r.keys() else None,
-        "has_animated": bool(r["has_animated"]) if ("has_animated" in r.keys() and r["has_animated"]) else False,
+        "has_animated": bool(r["has_animated"])
+        if ("has_animated" in r.keys() and r["has_animated"])
+        else False,
         "thumb_url": f"/api/backup/thumbnail{thumb_query}",
-        "animated_url": f"/api/backup/thumbnails/animated?path={urllib.parse.quote(fpath)}{f'&v={v_tag}' if v_tag is not None else ''}" if is_vid else None,
+        "animated_url": f"/api/backup/thumbnails/animated?path={urllib.parse.quote(fpath)}{f'&v={v_tag}' if v_tag is not None else ''}"
+        if is_vid
+        else None,
         "media_url": media_url,
-        "is_favorite": bool(r["is_favorite"]) if ("is_favorite" in r.keys() and r["is_favorite"]) else False,
-        "folder_path": r["folder_path"] if "folder_path" in r.keys() else os.path.dirname(fpath),
+        "is_favorite": bool(r["is_favorite"])
+        if ("is_favorite" in r.keys() and r["is_favorite"])
+        else False,
+        "folder_path": r["folder_path"]
+        if "folder_path" in r.keys()
+        else os.path.dirname(fpath),
     }
 
 

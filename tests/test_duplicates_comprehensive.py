@@ -1,45 +1,41 @@
 """Comprehensive integration and unit tests for duplicates router, service, and workers."""
 
 import asyncio
-import os
 from pathlib import Path
-from PIL import Image
 from unittest.mock import patch
 
-import pytest
-from fastapi import HTTPException
+from PIL import Image
 
 from media_library.core.state import state
 from media_library.db.connection import db_conn
 from media_library.services.deduplication_service import (
-    _files_have_identical_content,
     autodelete_verified_duplicates,
     compute_quick_hash,
     filter_and_prune_groups,
     get_backup_duplicates,
-    get_ignored_pairs_set,
     invalidate_visual_cache,
-    normalize_pair,
-    resolve_duplicate_group,
     score_duplicate_file,
-    visual_duplicates_cache,
 )
 from media_library.workers.duplicate_hash_worker import (
     DuplicateHashWorker,
     ThumbHashWorker,
-    duplicate_hash_worker_instance,
-    thumb_hash_worker_instance,
 )
 
 
 def test_score_duplicate_file_heuristics():
     # Test scoring with date, space, copy indicator, and depth
-    s1 = score_duplicate_file("My Vacation 2026-05-01.mp4", "/media/folder/sub", 1000.0, 50 * 1024 * 1024)
-    s2 = score_duplicate_file("My Vacation (1).mp4", "/media/folder", 1000.0, 10 * 1024 * 1024)
+    s1 = score_duplicate_file(
+        "My Vacation 2026-05-01.mp4", "/media/folder/sub", 1000.0, 50 * 1024 * 1024
+    )
+    s2 = score_duplicate_file(
+        "My Vacation (1).mp4", "/media/folder", 1000.0, 10 * 1024 * 1024
+    )
     assert s1 > s2
 
     # Source pattern penalty
-    s_source = score_duplicate_file("abcdef1234567890_source.mp4", "/media", 1000.0, 1000)
+    s_source = score_duplicate_file(
+        "abcdef1234567890_source.mp4", "/media", 1000.0, 1000
+    )
     s_normal = score_duplicate_file("normal.mp4", "/media", 1000.0, 1000)
     assert s_normal > s_source
 
@@ -240,7 +236,9 @@ def test_duplicates_api_routes(api_client, tmp_path):
     assert res_th.status_code == 200
 
     # 3. Ignore duplicate pair
-    res_bad_ignore = api_client.post("/api/backup/duplicates/ignore", json={"paths": [str(f1)]})
+    res_bad_ignore = api_client.post(
+        "/api/backup/duplicates/ignore", json={"paths": [str(f1)]}
+    )
     assert res_bad_ignore.status_code == 400
 
     res_ignore = api_client.post(
@@ -267,7 +265,9 @@ def test_duplicates_api_routes(api_client, tmp_path):
     res_unignore_bad = api_client.post("/api/backup/duplicates/unignore", json={})
     assert res_unignore_bad.status_code == 400
 
-    res_unignore_id = api_client.post("/api/backup/duplicates/unignore", json={"id": item_id})
+    res_unignore_id = api_client.post(
+        "/api/backup/duplicates/unignore", json={"id": item_id}
+    )
     assert res_unignore_id.status_code == 200
     assert res_unignore_id.json()["success"] is True
 

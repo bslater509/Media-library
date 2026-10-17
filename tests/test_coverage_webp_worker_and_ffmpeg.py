@@ -1,20 +1,19 @@
 import asyncio
 import base64
 import io
-import os
 import zipfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
+
 from PIL import Image
 
 from media_library.db.connection import db_conn
-from media_library.workers.webp_worker import WebPOptimizerWorker
 from media_library.services.ffmpeg_service import (
-    convert_image_to_webp_bytes,
     convert_image_file_to_webp,
+    convert_image_to_webp_bytes,
     extract_frame_poster,
 )
+from media_library.workers.webp_worker import WebPOptimizerWorker
 
 
 def test_convert_image_to_webp_bytes_formats():
@@ -76,7 +75,10 @@ def test_convert_image_file_to_webp_statuses(sandbox_env):
     im.save(jpg_file, "JPEG", quality=95)
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'convertible.jpg', ?, 'image', '.jpg', ?, 0)", (str(jpg_file), str(media_dir), jpg_file.stat().st_size))
+        conn.execute(
+            "INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'convertible.jpg', ?, 'image', '.jpg', ?, 0)",
+            (str(jpg_file), str(media_dir), jpg_file.stat().st_size),
+        )
 
     res_conv = convert_image_file_to_webp(str(jpg_file))
     assert res_conv["status"] == "converted"
@@ -97,7 +99,10 @@ def test_convert_image_file_to_webp_statuses(sandbox_env):
             return mock
         return st
 
-    with patch("media_library.services.ffmpeg_service.WEBP_SKIP_LARGER", True), patch("pathlib.Path.stat", mock_stat):
+    with (
+        patch("media_library.services.ffmpeg_service.WEBP_SKIP_LARGER", True),
+        patch("pathlib.Path.stat", mock_stat),
+    ):
         res_skip = convert_image_file_to_webp(str(jpg_tiny))
         assert res_skip["status"] == "skipped"
         assert res_skip["reason"] == "webp_larger_or_equal"
@@ -109,13 +114,18 @@ def test_extract_frame_poster_image_base64_and_zip(sandbox_env):
     target_vid.write_bytes(b"fake_video_bytes")
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO files (path, name, folder_path, type, has_thumb) VALUES (?, 'poster_test.mp4', ?, 'video', 0)", (str(target_vid), str(media_dir)))
+        conn.execute(
+            "INSERT OR REPLACE INTO files (path, name, folder_path, type, has_thumb) VALUES (?, 'poster_test.mp4', ?, 'video', 0)",
+            (str(target_vid), str(media_dir)),
+        )
 
     # Create dummy 400x200 image and encode to base64 data URI
     pil_im = Image.new("RGB", (400, 200), color=(50, 100, 150))
     buf = io.BytesIO()
     pil_im.save(buf, format="JPEG")
-    b64_str = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+    b64_str = (
+        f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+    )
 
     async def _test():
         thumb_path = await extract_frame_poster(str(target_vid), image_base64=b64_str)
@@ -128,7 +138,9 @@ def test_extract_frame_poster_image_base64_and_zip(sandbox_env):
     asyncio.run(_test())
 
     with db_conn() as conn:
-        row = conn.execute("SELECT has_thumb, thumb_hash FROM files WHERE path = ?", (str(target_vid),)).fetchone()
+        row = conn.execute(
+            "SELECT has_thumb, thumb_hash FROM files WHERE path = ?", (str(target_vid),)
+        ).fetchone()
         assert row["has_thumb"] == 1
         assert row["thumb_hash"] is not None
 
@@ -147,16 +159,24 @@ def test_webp_worker_run_loop(sandbox_env):
         zf.writestr("in_zip.png", b"PNGfake")
 
     with db_conn() as conn, conn:
-        conn.execute("INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'loose.jpg', ?, 'image', '.jpg', 500, 0)", (str(loose_img), str(media_dir)))
-        conn.execute("INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'in_zip.png', ?, 'image', '.png', 300, 0)", (f"{zip_img}/in_zip.png", str(zip_img)))
+        conn.execute(
+            "INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'loose.jpg', ?, 'image', '.jpg', 500, 0)",
+            (str(loose_img), str(media_dir)),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, webp_optimized) VALUES (?, 'in_zip.png', ?, 'image', '.png', 300, 0)",
+            (f"{zip_img}/in_zip.png", str(zip_img)),
+        )
 
     # Queue zip item in priority queue
-    worker.priority_queue.put_nowait({
-        "path": f"{zip_img}/in_zip.png",
-        "name": "in_zip.png",
-        "folder_path": str(zip_img),
-        "is_zip": 1,
-    })
+    worker.priority_queue.put_nowait(
+        {
+            "path": f"{zip_img}/in_zip.png",
+            "name": "in_zip.png",
+            "folder_path": str(zip_img),
+            "is_zip": 1,
+        }
+    )
 
     real_sleep = asyncio.sleep
     iteration = 0
@@ -171,12 +191,16 @@ def test_webp_worker_run_loop(sandbox_env):
                 raise asyncio.CancelledError()
             await real_sleep(0)
 
-        with patch("asyncio.sleep", side_effect=fast_sleep), patch(
-            "media_library.workers.webp_worker.convert_image_file_to_webp",
-            return_value={"status": "converted", "converted_count": 1},
-        ), patch(
-            "media_library.workers.webp_worker.optimize_zip_images_to_webp",
-            return_value={"status": "converted", "converted_count": 1},
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch(
+                "media_library.workers.webp_worker.convert_image_file_to_webp",
+                return_value={"status": "converted", "converted_count": 1},
+            ),
+            patch(
+                "media_library.workers.webp_worker.optimize_zip_images_to_webp",
+                return_value={"status": "converted", "converted_count": 1},
+            ),
         ):
             try:
                 await worker._run_loop()

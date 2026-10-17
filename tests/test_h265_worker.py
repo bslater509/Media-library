@@ -142,17 +142,20 @@ def test_convert_success_replaces_and_indexes(sandbox_env):
             temp_path.write_bytes(b"ENCODED" * 1000)
             return mock_proc
 
-        with patch(
-            "media_library.workers.h265_worker.probe_video_meta",
-            return_value={
-                "duration": 10.0,
-                "video_codec": "h264",
-                "audio_codec": "aac",
-                "width": 1920,
-                "height": 1080,
-                "fps": 30.0,
-            },
-        ), patch("asyncio.create_subprocess_exec", side_effect=fake_proc):
+        with (
+            patch(
+                "media_library.workers.h265_worker.probe_video_meta",
+                return_value={
+                    "duration": 10.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": 30.0,
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", side_effect=fake_proc),
+        ):
             await worker._convert(item)
 
         assert item["status"] == "completed"
@@ -195,10 +198,17 @@ def test_convert_failure_preserves_original(tmp_path):
 
         mock_proc.stdout = FakeStdout()
 
-        with patch(
-            "media_library.workers.h265_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with (
+            patch(
+                "media_library.workers.h265_worker.probe_video_meta",
+                return_value={
+                    "duration": 10.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
             await worker._convert(item)
 
         assert item["status"] == "failed"
@@ -226,10 +236,17 @@ def test_convert_abort_cancels(tmp_path):
 
         mock_proc.wait = fake_wait
 
-        with patch(
-            "media_library.workers.h265_worker.probe_video_meta",
-            return_value={"duration": 10.0, "video_codec": "h264", "audio_codec": "aac"},
-        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with (
+            patch(
+                "media_library.workers.h265_worker.probe_video_meta",
+                return_value={
+                    "duration": 10.0,
+                    "video_codec": "h264",
+                    "audio_codec": "aac",
+                },
+            ),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
             await worker._convert(item)
 
         assert item["status"] == "cancelled"
@@ -267,13 +284,13 @@ def test_x265_routes(api_client):
     dup = api_client.post("/api/backup/transcode/x265", json={"path": vid})
     assert dup.status_code == 409
 
-    status = api_client.get(
-        "/api/backup/transcode/x265/status", params={"path": vid}
-    )
+    status = api_client.get("/api/backup/transcode/x265/status", params={"path": vid})
     assert status.status_code == 200
     assert status.json()["job"]["id"] == job_id
 
-    cancel = api_client.post("/api/backup/transcode/x265/cancel", json={"job_id": job_id})
+    cancel = api_client.post(
+        "/api/backup/transcode/x265/cancel", json={"job_id": job_id}
+    )
     assert cancel.status_code == 200
     assert h265_worker_instance.jobs[job_id]["status"] == "cancelled"
 

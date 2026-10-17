@@ -144,9 +144,11 @@ def test_compress_integrity_failure_marks_task_failed(sandbox_env):
     def corrupted_testzip(self):
         return "pic.webp"
 
-    with patch.object(zipfile.ZipFile, "testzip", corrupted_testzip):
-        with pytest.raises(RuntimeError, match="integrity check failed"):
-            zc.compress_folder_to_zip(str(folder))
+    with (
+        patch.object(zipfile.ZipFile, "testzip", corrupted_testzip),
+        pytest.raises(RuntimeError, match="integrity check failed"),
+    ):
+        zc.compress_folder_to_zip(str(folder))
 
     assert folder.exists()
     task = zip_tasks_state["active_tasks"].get(str(folder))
@@ -164,11 +166,11 @@ def test_compress_transfer_failure_cleans_staging(sandbox_env):
     def broken_copyfile(src, dst, *args, **kwargs):
         raise OSError("remote mount went away")
 
-    with patch(
-        "media_library.services.zip.compress.shutil.copyfile", broken_copyfile
+    with (
+        patch("media_library.services.zip.compress.shutil.copyfile", broken_copyfile),
+        pytest.raises(OSError),
     ):
-        with pytest.raises(OSError):
-            zc.compress_folder_to_zip(str(folder))
+        zc.compress_folder_to_zip(str(folder))
 
     staging = Path(os.environ["ZIP_STAGING_DIR"])
     leftovers = [p.name for p in staging.iterdir() if "xferfail" in p.name]
@@ -230,9 +232,7 @@ def test_sync_back_transfer_failure_cleans_temp(sandbox_env):
     def broken_copyfile(src, dst, *args, **kwargs):
         raise OSError("sync copy failed")
 
-    with patch(
-        "media_library.services.zip.compress.shutil.copyfile", broken_copyfile
-    ):
+    with patch("media_library.services.zip.compress.shutil.copyfile", broken_copyfile):
         # The impl swallows the failure after marking the task failed.
         zc._execute_sync_back_impl(str(zip_path))
 
@@ -323,9 +323,12 @@ def test_optimize_skips_larger_when_configured(sandbox_env):
     def oversized_webp(data, quality=None):
         return b"w" * (len(data) + 1024)
 
-    with patch.object(zo, "WEBP_SKIP_LARGER", True), patch(
-        "media_library.services.ffmpeg_service.convert_image_to_webp_bytes",
-        oversized_webp,
+    with (
+        patch.object(zo, "WEBP_SKIP_LARGER", True),
+        patch(
+            "media_library.services.ffmpeg_service.convert_image_to_webp_bytes",
+            oversized_webp,
+        ),
     ):
         res = zo.optimize_zip_images_to_webp(str(zip_path))
 
@@ -365,9 +368,11 @@ def test_optimize_verification_failure_marks_task_failed(sandbox_env):
     def corrupted_testzip(self):
         return "pic.webp"
 
-    with patch.object(zipfile.ZipFile, "testzip", corrupted_testzip):
-        with pytest.raises(RuntimeError, match="verification failed"):
-            zo.optimize_zip_images_to_webp(str(zip_path))
+    with (
+        patch.object(zipfile.ZipFile, "testzip", corrupted_testzip),
+        pytest.raises(RuntimeError, match="verification failed"),
+    ):
+        zo.optimize_zip_images_to_webp(str(zip_path))
 
     task = zip_tasks_state["active_tasks"].get(str(zip_path))
     assert task["status"] == "failed"
@@ -397,14 +402,16 @@ def test_optimize_transfer_failure_cleans_staging(sandbox_env):
     def broken_copyfile(src, dst, *args, **kwargs):
         raise OSError("remote mount went away")
 
-    with patch(
-        "media_library.services.zip.optimize.shutil.copyfile", broken_copyfile
+    with (
+        patch("media_library.services.zip.optimize.shutil.copyfile", broken_copyfile),
+        pytest.raises(OSError),
     ):
-        with pytest.raises(OSError):
-            zo.optimize_zip_images_to_webp(str(zip_path))
+        zo.optimize_zip_images_to_webp(str(zip_path))
 
     staging = Path(os.environ["ZIP_STAGING_DIR"])
-    assert [p.name for p in staging.iterdir() if "webp_opt" in p.name or "webp_dl" in p.name] == []
+    assert [
+        p.name for p in staging.iterdir() if "webp_opt" in p.name or "webp_dl" in p.name
+    ] == []
     task = zip_tasks_state["active_tasks"].get(str(zip_path))
     assert task["status"] == "failed"
     assert "remote mount went away" in task["error"]

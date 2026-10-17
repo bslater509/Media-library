@@ -42,8 +42,9 @@ def test_system_status_transcode_matches_transfers_shape(api_client):
         }
     ]
 
-    with patch.object(status_mod, "transfer_worker_instance", transfer), patch.object(
-        status_mod, "transcode_worker_instance", transcode
+    with (
+        patch.object(status_mod, "transfer_worker_instance", transfer),
+        patch.object(status_mod, "transcode_worker_instance", transcode),
     ):
         res = api_client.get("/api/system/status")
 
@@ -75,12 +76,18 @@ def test_system_status_is_active_with_queued_transcode(api_client):
     transcode.transcode_paused = False
     transcode.get_status.return_value = {"active": None}
     transcode.transcode_items_map = {
-        "tq": {"id": "tq", "filename": "clip.mkv", "status": "queued", "created_at": 1.0}
+        "tq": {
+            "id": "tq",
+            "filename": "clip.mkv",
+            "status": "queued",
+            "created_at": 1.0,
+        }
     }
     transcode.transcode_history = []
 
-    with patch.object(status_mod, "transfer_worker_instance", transfer), patch.object(
-        status_mod, "transcode_worker_instance", transcode
+    with (
+        patch.object(status_mod, "transfer_worker_instance", transfer),
+        patch.object(status_mod, "transcode_worker_instance", transcode),
     ):
         res = api_client.get("/api/system/status")
 
