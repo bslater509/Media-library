@@ -35,6 +35,9 @@ yarn-error.log*
 # Ephemeral AI working plans (delete each file once its issue is fixed)
 plans/
 
+# Local log of improvement suggestions considered and deliberately not done
+REJECTED_IMPROVEMENTS.md
+
 # Operating system & editor temporary files
 .DS_Store
 Thumbs.db

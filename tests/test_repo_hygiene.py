@@ -67,6 +67,7 @@ IGNORED_LOCAL_PATHS = (
     "data/library.db",
     "data/thumbnails/thumb_deadbeef.jpg",
     "plans/some-ephemeral-plan.md",
+    "REJECTED_IMPROVEMENTS.md",
 )
 
 

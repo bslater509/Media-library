@@ -999,7 +999,7 @@ All test modules must use the sandboxed environment fixtures defined in `tests/c
 
 Two cross-cutting guards run with the suite and should stay green:
 - `tests/test_version.py` enforces the single-source version contract (`media_library.__version__` vs `package.json`, `README.md`, `CHANGELOG.md`, the FastAPI metadata, the `/api/system/status` payload and the served-page `{{VERSION}}` token).
-- `tests/test_repo_hygiene.py` fails if any tracked file contains this machine's home path, a real email address or a credential-shaped string, if local state (`data/`, `*.db`, `.env`, `config.json`, `plans/`) becomes tracked, or if the `.gitignore` rules covering them are removed.
+- `tests/test_repo_hygiene.py` fails if any tracked file contains this machine's home path, a real email address or a credential-shaped string, if local state (`data/`, `*.db`, `.env`, `config.json`, `plans/`, `REJECTED_IMPROVEMENTS.md`) becomes tracked, or if the `.gitignore` rules covering them are removed.
 
 Example test pattern:
 ```python
