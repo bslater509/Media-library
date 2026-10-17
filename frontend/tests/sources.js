@@ -48,3 +48,6 @@ export const sorterSource = [
   sorterVideo, sorterDuplicates, sorterMoves, sorterPolling, sorterEmptyFolders,
   sorterBrowser, sorterModals, sorterEvents,
 ].join('\n');
+
+// Individual modules some tests assert against on their own.
+export const sorterStateSource = sorterState;

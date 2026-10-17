@@ -6,7 +6,22 @@ export function showToast(message, type = 'info') {
       info: 'bg-slate-900/90 border-slate-700 text-slate-200',
     };
     toast.className = `p-3 rounded-xl border text-xs font-medium backdrop-blur-md shadow-2xl flex items-center gap-2 pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0 ${colors[type] || colors.info}`;
-    toast.innerHTML = `<span>${type === 'success' ? '✓' : type === 'error' ? '⚠️' : 'ℹ️'}</span><span class="truncate">${message}</span>`;
+    // Each toast is its own live region: errors announce assertively, everything
+    // else politely (role=status carries an implicit aria-live=polite).
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+    const iconSpan = document.createElement('span');
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.textContent = type === 'success' ? '✓' : type === 'error' ? '⚠️' : 'ℹ️';
+
+    // Built with textContent, never innerHTML: toast messages carry
+    // user-controlled names (filenames, folder names, download titles) that
+    // must never be parsed as markup.
+    const textSpan = document.createElement('span');
+    textSpan.className = 'truncate';
+    textSpan.textContent = message == null ? '' : String(message);
+
+    toast.append(iconSpan, textSpan);
     const container = document.getElementById('toastContainer') || document.body;
     container.appendChild(toast);
 

@@ -115,6 +115,32 @@ describe('library/utils.js unit tests', () => {
       expect(toast.textContent).toContain('Action successful');
       expect(toast.textContent).toContain('✓');
     });
+
+    it('renders messages as text so a filename can never inject markup', () => {
+      const toastContainer = document.createElement('div');
+      toastContainer.id = 'toastContainer';
+      document.body.appendChild(toastContainer);
+
+      showToast('Deleted "<img src=x onerror=alert(1)>.mp4"', 'error');
+
+      const toast = toastContainer.querySelector('div');
+      expect(toast.textContent).toContain('<img src=x onerror=alert(1)>.mp4');
+      expect(toast.querySelector('img')).toBeNull();
+      expect(toast.innerHTML).toContain('&lt;img src=x');
+    });
+
+    it('announces errors assertively and everything else politely', () => {
+      const toastContainer = document.createElement('div');
+      toastContainer.id = 'toastContainer';
+      document.body.appendChild(toastContainer);
+
+      showToast('boom', 'error');
+      showToast('fine', 'info');
+
+      const toasts = toastContainer.querySelectorAll('div');
+      expect(toasts[0].getAttribute('role')).toBe('alert');
+      expect(toasts[1].getAttribute('role')).toBe('status');
+    });
   });
 
   describe('formatTimestamp', () => {

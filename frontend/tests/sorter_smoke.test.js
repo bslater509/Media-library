@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { sorterStateSource as sorterState } from './sources.js';
+
 // The sorter entrypoint was split from one large module into several feature
 // modules. This smoke test loads the real page markup (partials expanded, as
 // the server does) and imports the entrypoint, so a broken import, a missing
@@ -57,5 +59,13 @@ describe('sorter entrypoint smoke test', () => {
 
     const fatal = errors.filter((e) => /is not defined|is not a function|Cannot read/.test(e));
     expect(fatal).toEqual([]);
+  });
+
+  it('renders toast messages as text, never as markup', () => {
+    // The sorter toast is the error surface, and its messages embed filenames
+    // and server error text; inserting them as HTML would be stored XSS.
+    expect(sorterState).not.toMatch(/toast\.innerHTML/);
+    expect(sorterState).toContain('text.textContent = message');
+    expect(sorterState).toContain('toast.setAttribute("role", "alert")');
   });
 });

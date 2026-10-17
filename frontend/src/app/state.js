@@ -76,7 +76,13 @@ const toast = document.createElement("div");
 const bg = "bg-red-950/95 border-red-700/80 text-red-200";
 
 toast.className = `p-3 rounded-xl border shadow-2xl text-xs font-medium flex items-center gap-2 backdrop-blur-md toast-animate pointer-events-auto transition-all ${bg}`;
-toast.innerHTML = `<span>${message}</span>`;
+// Assertive live region so a failure is announced by screen readers.
+toast.setAttribute("role", "alert");
+// textContent, not innerHTML: messages embed filenames and server error text
+// that must never be parsed as markup.
+const text = document.createElement("span");
+text.textContent = message == null ? "" : String(message);
+toast.appendChild(text);
 toastContainer.appendChild(toast);
 
 setTimeout(() => {
