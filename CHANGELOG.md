@@ -9,6 +9,21 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.5] - 2026-10-17
+
+### Added
+
+- **The `/people` merge picker's filter box searches folder paths.** With the
+  collection filed per folder, "the duplicate from this folder" is the fastest way
+  to find it, so the box (previously a client-side match on the cluster id and
+  counts of the ~60 loaded rows) now runs a debounced server query
+  (`GET /api/people?named=false&near=…&folder=…`) that narrows the candidates to
+  the clusters with a face in a folder whose path contains what you typed —
+  case-insensitive, `%`/`_` treated literally, and covering every unnamed cluster
+  rather than one page. Matching rows are labelled with the folder that matched
+  (relative to the library root, e.g. `Iceland 2023/Day 4`), and `total` follows
+  the filter so "Show more" stays honest.
+
 ## [1.1.4] - 2026-10-17
 
 ### Added

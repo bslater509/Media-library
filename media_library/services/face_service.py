@@ -1012,22 +1012,58 @@ def _face_entry(row: Any) -> dict[str, Any]:
     }
 
 
-def _people_name_clause(named: bool | None) -> str:
-    """SQL fragment filtering clusters by whether the user named them.
+def _people_name_condition(named: bool | None) -> str:
+    """The bare ``p.name`` condition, for composing into a larger WHERE.
 
     An empty name is never stored (``rename_person`` writes NULL instead), so
     ``name IS NULL`` is exactly "unnamed". ``None`` matches every cluster.
     """
     if named is None:
         return ""
-    return "WHERE p.name IS NOT NULL" if named else "WHERE p.name IS NULL"
-
-
-def _people_name_condition(named: bool | None) -> str:
-    """The bare ``p.name`` condition, for composing into a larger WHERE."""
-    if named is None:
-        return ""
     return "p.name IS NOT NULL" if named else "p.name IS NULL"
+
+
+def _folder_filter_condition(folder: str | None) -> tuple[str, list[Any]]:
+    """Condition (plus its LIKE pattern) for "this cluster has a face in <folder>".
+
+    A substring match on the folder path, case-insensitive (SQLite's ``LIKE``
+    folds ASCII case), with the user's ``%``/``_`` escaped so a literal folder
+    name cannot turn into a wildcard.
+    """
+    text = (folder or "").strip()
+    if not text:
+        return "", []
+    escaped = text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    condition = (
+        "EXISTS (SELECT 1 FROM faces fa3 JOIN files f3 ON f3.path = fa3.file_path"
+        " WHERE fa3.person_id = p.id AND f3.folder_path LIKE ? ESCAPE '\\')"
+    )
+    return condition, [f"%{escaped}%"]
+
+
+def _folder_label(path: str) -> str:
+    """A short, still-disambiguating label for a folder path.
+
+    Relative to the library root when the folder is inside it, keeping the last
+    two segments ("Iceland 2023/Day 4") — so a folder whose own name is just a
+    date or a number does not read as noise, and the library's own parent
+    directories never leak into the label.
+    """
+    from media_library.core.config import DEFAULT_DESTINATION_DIR
+    from media_library.core.state import state
+
+    text = str(path or "").replace("\\", "/").rstrip("/")
+    if not text:
+        return ""
+    root = (
+        str(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
+        .replace("\\", "/")
+        .rstrip("/")
+    )
+    if root and text.startswith(root + "/"):
+        text = text[len(root) + 1 :]
+    parts = [p for p in text.split("/") if p]
+    return "/".join(parts[-2:]) if parts else ""
 
 
 def _folders_of_files(conn: Any, person_ids: list[int]) -> dict[int, set[str]]:
@@ -1057,6 +1093,7 @@ def read_people(
     offset: int = 0,
     named: bool | None = None,
     near: int | None = None,
+    folder: str | None = None,
 ) -> list[dict[str, Any]]:
     """Clusters with derived counts and a cover face, biggest first.
 
@@ -1073,8 +1110,17 @@ def read_people(
     so a folder this person is all over counts for more than one they merely pass
     through — otherwise a busy folder shared with other people would outrank the
     duplicate.
+
+    ``folder`` narrows the list to clusters with a face in a folder whose path
+    contains that text (case-insensitive), annotating the matches with
+    ``match_folders``. That is the picker's folder box: with the collection filed
+    per folder, "the ones from this folder" is the fastest way to find the
+    duplicate.
     """
+    folder_cond, folder_params = _folder_filter_condition(folder)
     if near is None:
+        conditions = [c for c in (_people_name_condition(named), folder_cond) if c]
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = conn.execute(
             f"""
             SELECT p.id AS person_id,
@@ -1085,17 +1131,18 @@ def read_people(
                    MAX(fa.frame_time) AS last_seen
             FROM people p
             LEFT JOIN faces fa ON fa.person_id = p.id
-            {_people_name_clause(named)}
+            {where}
             GROUP BY p.id
             HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
             ORDER BY face_count DESC, p.id ASC
             LIMIT ? OFFSET ?
             """,
-            (max(1, int(limit)), max(0, int(offset))),
+            (*folder_params, max(1, int(limit)), max(0, int(offset))),
         ).fetchall()
     else:
         target = int(near)
-        name_cond = _people_name_condition(named)
+        conditions = [c for c in (_people_name_condition(named), folder_cond) if c]
+        extra = "".join(f" AND {c}" for c in conditions)
         rows = conn.execute(
             f"""
             WITH target_folders AS (
@@ -1120,29 +1167,41 @@ def read_people(
             JOIN faces fa ON fa.person_id = p.id
             LEFT JOIN files f ON f.path = fa.file_path
             LEFT JOIN target_folders tf ON tf.folder_path = f.folder_path
-            WHERE p.id <> ? {f"AND {name_cond}" if name_cond else ""}
+            WHERE p.id <> ?{extra}
             GROUP BY p.id
             ORDER BY affinity DESC, face_count DESC, p.id ASC
             LIMIT ? OFFSET ?
             """,
-            (target, target, max(1, int(limit)), max(0, int(offset))),
+            (target, target, *folder_params, max(1, int(limit)), max(0, int(offset))),
         ).fetchall()
 
     shared_names: dict[int, list[str]] = {}
-    if near is not None and rows:
+    match_names: dict[int, list[str]] = {}
+    if rows and (near is not None or folder):
         candidates = [int(r["person_id"]) for r in rows]
-        target_folders = sorted(
-            _folders_of_files(conn, [int(near)]).get(int(near), set())
-        )
         per_person = _folders_of_files(conn, candidates)
-        for person_id in candidates:
-            names = [
-                Path(p).name or p
-                for p in target_folders
-                if p in per_person.get(person_id, ())
-            ]
-            if names:
-                shared_names[person_id] = names
+        if near is not None:
+            target_folders = sorted(
+                _folders_of_files(conn, [int(near)]).get(int(near), set())
+            )
+            for person_id in candidates:
+                names = [
+                    _folder_label(p)
+                    for p in target_folders
+                    if p in per_person.get(person_id, ())
+                ]
+                if names:
+                    shared_names[person_id] = names
+        needle = (folder or "").strip().lower()
+        if needle:
+            for person_id in candidates:
+                names = [
+                    _folder_label(p)
+                    for p in sorted(per_person.get(person_id, ()))
+                    if needle in p.lower()
+                ]
+                if names:
+                    match_names[person_id] = names[:3]
 
     people: list[dict[str, Any]] = []
     for r in rows:
@@ -1168,23 +1227,31 @@ def read_people(
             entry["shared_faces"] = int(r["shared_faces"] or 0)
             entry["affinity"] = int(r["affinity"] or 0)
             entry["shared_folder_names"] = (shared_names.get(person_id) or [])[:3]
+        if match_names:
+            entry["match_folders"] = match_names.get(person_id, [])
         people.append(entry)
     return people
 
 
-def count_people(conn: Any, named: bool | None = None) -> int:
+def count_people(
+    conn: Any, named: bool | None = None, folder: str | None = None
+) -> int:
     """How many clusters a matching ``read_people`` call could return in total."""
+    folder_cond, folder_params = _folder_filter_condition(folder)
+    conditions = [c for c in (_people_name_condition(named), folder_cond) if c]
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return int(
         conn.execute(
             f"""
             SELECT COUNT(*) FROM (
                 SELECT p.id FROM people p
                 LEFT JOIN faces fa ON fa.person_id = p.id
-                {_people_name_clause(named)}
+                {where}
                 GROUP BY p.id
                 HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
             )
-            """
+            """,
+            folder_params,
         ).fetchone()[0]
     )
 

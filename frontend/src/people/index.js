@@ -585,6 +585,9 @@ async function rescanPersonFiles() {
 // the grid's current page) so the choices are not limited to what happens to be
 // loaded behind the sheet, and pages with "Show more".
 const MERGE_PAGE = 60;
+// Typing in the folder box re-queries the server; wait for a pause so a phone
+// keyboard does not fire a request per character.
+const MERGE_FILTER_DEBOUNCE_MS = 250;
 
 const mergeState = {
   selected: new Set(),
@@ -593,6 +596,7 @@ const mergeState = {
   total: 0,
   hasMore: false,
   loading: false,
+  timer: null,
 };
 
 function mergeRowHtml(p) {
@@ -605,9 +609,13 @@ function mergeRowHtml(p) {
   const crops = faces.length
     ? faces.map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" class="w-16 h-16 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0">`).join('')
     : '<span class="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 shrink-0"></span>';
-  const folders = p.shared_folder_names || [];
-  const shared = p.shared_folders
-    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-900/40 text-[10px] text-emerald-300 font-mono max-w-full truncate" title="Already seen in ${escapeHtml(folders.join(', '))}">${icon('folder', 'w-3 h-3')}${escapeHtml(folders[0] || `${p.shared_folders} shared folder(s)`)}</span>`
+  // "Filed next to the cluster you opened" (emerald) beats "matches what you
+  // typed" (neutral) — the row says which folder put it here either way.
+  const shared = p.shared_folder_names || [];
+  const matched = p.match_folders || [];
+  const label = shared[0] || matched[0] || '';
+  const badge = label
+    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono max-w-full truncate ${shared.length ? 'bg-emerald-500/10 border-emerald-900/40 text-emerald-300' : 'bg-slate-800/60 border-slate-700 text-slate-400'}" title="${escapeHtml([...shared, ...matched].join(', '))}">${icon('folder', 'w-3 h-3')}${escapeHtml(label)}</span>`
     : '';
   return `
     <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"
@@ -616,7 +624,7 @@ function mergeRowHtml(p) {
       <span class="min-w-0 flex flex-1 flex-col gap-0.5">
         <span class="text-[11px] font-mono text-slate-300 truncate">${fmtInt(p.face_count)} faces · ${fmtInt(p.media_count)} files</span>
         <span class="text-[10px] text-slate-500 font-mono truncate">cluster ${p.id}</span>
-        ${shared}
+        ${badge}
       </span>
       ${on ? '<span class="ml-auto text-emerald-400 text-xs font-bold">✓</span>' : ''}
     </button>
@@ -625,24 +633,20 @@ function mergeRowHtml(p) {
 
 function renderMergeList() {
   if (!els.mergeList || !state.person) return;
-  const needle = mergeState.filter.trim().toLowerCase();
-  const shown = mergeState.people.filter((p) => {
-    if (!needle) return true;
-    return `${p.id} ${p.face_count} ${p.media_count}`.includes(needle);
-  });
   const left = Math.max(0, mergeState.total - mergeState.people.length);
   const more = mergeState.hasMore
-    ? `<button type="button" data-merge-more="1" class="w-full px-3 py-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-200 transition">Show more${left ? ` (${fmtInt(left)} unnamed)` : ''}</button>`
+    ? `<button type="button" data-merge-more="1" class="w-full px-3 py-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-200 transition">Show more${left ? ` (${fmtInt(left)} more)` : ''}</button>`
     : '';
-  if (!shown.length) {
-    const empty = mergeState.people.length
-      ? 'No unnamed cluster matches that filter.'
-      : (mergeState.loading
-        ? 'Loading unnamed clusters…'
+  const needle = mergeState.filter.trim();
+  if (!mergeState.people.length) {
+    const empty = mergeState.loading
+      ? 'Searching unnamed clusters…'
+      : (needle
+        ? `No unnamed cluster in a folder matching “${escapeHtml(needle)}”.`
         : 'No other unnamed cluster to merge — every other cluster is named.');
     els.mergeList.innerHTML = `<p class="text-[11px] text-slate-500 p-3">${empty}</p>${more}`;
   } else {
-    els.mergeList.innerHTML = shown.map(mergeRowHtml).join('') + more;
+    els.mergeList.innerHTML = mergeState.people.map(mergeRowHtml).join('') + more;
   }
   if (els.mergeCount) els.mergeCount.textContent = `${mergeState.selected.size} selected`;
 }
@@ -653,7 +657,6 @@ async function loadMergeCandidates(reset = false) {
     mergeState.people = [];
     mergeState.total = 0;
     mergeState.hasMore = false;
-    mergeState.selected = new Set();
   }
   mergeState.loading = true;
   renderMergeList();
@@ -662,10 +665,17 @@ async function loadMergeCandidates(reset = false) {
     // `near` ranks the clusters filed in the same folders as this person's faces
     // first — with per-folder media, the duplicate of a cluster is nearly always
     // filed next to it, so the right choice is at the top instead of buried
-    // under thousands of unrelated unnamed clusters.
-    const data = await getJson(
-      `/api/people?limit=${MERGE_PAGE}&offset=${offset}&named=false&near=${state.person.id}`
-    );
+    // under thousands of unrelated unnamed clusters. `folder` narrows to the
+    // folders the user typed in the box.
+    const filter = mergeState.filter.trim();
+    const query = [
+      `limit=${MERGE_PAGE}`,
+      `offset=${offset}`,
+      'named=false',
+      `near=${state.person.id}`,
+      filter ? `folder=${encodeURIComponent(filter)}` : '',
+    ].filter(Boolean).join('&');
+    const data = await getJson(`/api/people?${query}`);
     const raw = data.people || [];
     const target = state.person.id;
     const seen = new Set(mergeState.people.map((p) => p.id));
@@ -687,7 +697,9 @@ async function loadMergeCandidates(reset = false) {
 
 function openMergeModal() {
   if (!state.person) return;
+  clearTimeout(mergeState.timer);
   mergeState.filter = '';
+  mergeState.selected = new Set();
   if (els.mergeSearch) els.mergeSearch.value = '';
   const label = state.person.name ? `“${state.person.name}”` : 'this cluster';
   if (els.mergeSubtitle) {
@@ -701,6 +713,7 @@ function openMergeModal() {
 }
 
 function closeMergeModal() {
+  clearTimeout(mergeState.timer);
   els.mergeModal.classList.add('hidden');
   els.mergeModal.classList.remove('flex');
   document.body.classList.remove('modal-scroll-lock');
@@ -980,9 +993,12 @@ function initEvents() {
   if (els.mergeCancelBtn) els.mergeCancelBtn.addEventListener('click', closeMergeModal);
   if (els.mergeConfirmBtn) els.mergeConfirmBtn.addEventListener('click', confirmMerge);
   if (els.mergeSearch) {
+    // The folder box is a server query (it must search every unnamed cluster,
+    // not just the loaded page), debounced so typing does not fire per key.
     els.mergeSearch.addEventListener('input', () => {
       mergeState.filter = els.mergeSearch.value;
-      renderMergeList();
+      clearTimeout(mergeState.timer);
+      mergeState.timer = setTimeout(() => loadMergeCandidates(true), MERGE_FILTER_DEBOUNCE_MS);
     });
   }
   if (els.mergeList) {

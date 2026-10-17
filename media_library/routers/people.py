@@ -44,6 +44,11 @@ async def list_people(
         ge=1,
         description="Rank clusters sharing folders with this person's faces first",
     ),
+    folder: str | None = Query(
+        None,
+        max_length=200,
+        description="Only clusters with a face in a folder whose path contains this text",
+    ),
 ) -> dict[str, Any]:
     """Person clusters with derived counts and cover crops, biggest first.
 
@@ -52,14 +57,15 @@ async def list_people(
     plus ``near=<the cluster it was opened from>``: media is filed per folder, so
     the cluster it is really the same person as is usually filed right next to
     it, and ranking same-folder clusters first surfaces it instead of burying it
-    under thousands of unrelated ones.
+    under thousands of unrelated ones. ``folder=<text>`` is its folder box, which
+    narrows the candidates to the folders the user types.
     """
     with db_conn() as conn:
         people = face_service.read_people(
-            conn, limit=limit, offset=offset, named=named, near=near
+            conn, limit=limit, offset=offset, named=named, near=near, folder=folder
         )
         counts = face_service.people_counts(conn)
-        total = face_service.count_people(conn, named=named)
+        total = face_service.count_people(conn, named=named, folder=folder)
     return {
         "people": people,
         "counts": counts,

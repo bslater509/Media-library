@@ -384,6 +384,53 @@ describe('people page publisher', () => {
     expect(document.querySelector('#ppMergeList [data-merge-more]')).toBeNull();
   });
 
+  it('filters the merge candidates by folder path, through the server', async () => {
+    const target = {
+      id: 1, name: 'Anna', face_count: 3, media_count: 2, is_named: true,
+      cover_url: null, sample_urls: [],
+    };
+    const inFolder = {
+      id: 7, name: null, face_count: 4, media_count: 3, is_named: false,
+      cover_url: '/api/people/crop?face_id=7&v=g.jpg',
+      sample_urls: ['/api/people/crop?face_id=7&v=g.jpg'],
+      match_folders: ['Iceland 2023/Day 4'],
+    };
+    const calls = stubFetch({ people: { ...PEOPLE, people: [target, inFolder], total: 2 } });
+    installPage();
+    await import('../src/people/index.js');
+    await flush();
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+    document.getElementById('ppMergeBtn').click();
+    await flush();
+
+    const box = document.getElementById('ppMergeSearch');
+    expect(box.getAttribute('placeholder')).toContain('folder path');
+    box.value = 'Iceland 2023/Day 4';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    // Debounced: no request fires while the typing is still going.
+    expect(calls.some((u) => u.includes('folder='))).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await flush();
+    const filtered = calls.filter((u) => u.includes('folder='));
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toContain(`folder=${encodeURIComponent('Iceland 2023/Day 4')}`);
+    expect(filtered[0]).toContain('near=1');
+    expect(filtered[0]).toContain('named=false');
+    // The matched folder is shown on the row, so the result explains itself.
+    expect(document.querySelector('#ppMergeList [data-merge="7"]').textContent)
+      .toContain('Iceland 2023/Day 4');
+
+    // Clearing the box searches the whole unnamed set again.
+    box.value = '';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await flush();
+    expect(calls[calls.length - 1]).not.toContain('folder=');
+    expect(calls[calls.length - 1]).toContain('near=1');
+  });
+
   it('says so when every other cluster is named', async () => {
     const onlyNamed = [
       { id: 1, name: 'Anna', face_count: 3, media_count: 2, is_named: true, cover_url: null, sample_urls: [] },

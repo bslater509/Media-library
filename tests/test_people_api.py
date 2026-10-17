@@ -256,6 +256,84 @@ def test_listing_weights_the_folders_the_target_is_all_over(people_client, sandb
     assert ranked["people"][0]["affinity"] > ranked["people"][1]["affinity"]
 
 
+def test_listing_filters_by_folder_path(people_client, sandbox_env):
+    """The picker's folder box: a substring match on the folder path."""
+    import time
+
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer_files import add_file_to_index
+
+    media = Path(sandbox_env["media_dir"])
+
+    def add_file(folder: str, name: str) -> str:
+        path = media / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        add_file_to_index(str(path))
+        return str(path)
+
+    folders = {
+        1: ["Iceland 2023/Day 1"],  # the target, and named
+        2: ["Iceland 2023/Day 1"],
+        3: ["Norway 2023/Day 1"],
+        4: ["Iceland 2022/Day 9"],
+    }
+    now = time.time()
+    # Index the files first: add_file_to_index() opens its own connection, so it
+    # must not run inside the write transaction below.
+    paths_by_person = {
+        person_id: [add_file(folder, f"p{person_id}_{i}.jpg") for i in range(2)]
+        for person_id, (folder,) in folders.items()
+    }
+    with db_conn() as conn, conn:
+        for person_id in folders:
+            conn.execute(
+                "INSERT INTO people (id, name, created_at) VALUES (?, ?, ?)",
+                (person_id, "Anna" if person_id == 1 else None, now),
+            )
+            for path in paths_by_person[person_id]:
+                conn.execute(
+                    "INSERT INTO faces (file_path, frame_time, x, y, w, h, score,"
+                    " embedding, person_id, crop, created_at)"
+                    " VALUES (?, -1.0, 10, 10, 60, 60, 0.9, NULL, ?, NULL, ?)",
+                    (path, person_id, now),
+                )
+
+    def ids(query: str) -> list[int]:
+        return [
+            p["id"] for p in people_client.get(f"/api/people?{query}").json()["people"]
+        ]
+
+    assert ids("named=false") == [2, 3, 4]
+    assert ids("named=false&folder=Iceland") == [2, 4]
+    # Case-insensitive, and a substring at any depth matches.
+    assert ids("named=false&folder=iceland") == [2, 4]
+    assert ids("named=false&folder=2023") == [2, 3]
+    assert ids("named=false&folder=Iceland%202023/Day%201") == [2]
+    assert ids("named=false&folder=Iceland%202022") == [4]
+    assert ids("named=false&folder=nothing here") == []
+
+    # `total` follows the filter, so "Show more" stays honest, and each row says
+    # which folder matched (last two segments, so a bare date is not shown alone).
+    body = people_client.get("/api/people?named=false&folder=Iceland").json()
+    assert body["total"] == 2
+    assert body["people"][0]["match_folders"] == ["Iceland 2023/Day 1"]
+
+    # It composes with `near`, which still ranks the shared folder first.
+    ranked = people_client.get("/api/people?named=false&folder=iceland&near=1").json()
+    assert [p["id"] for p in ranked["people"]] == [2, 4]
+    assert ranked["people"][0]["shared_folder_names"] == ["Iceland 2023/Day 1"]
+    assert ranked["total"] == 2
+
+    # A folder filter never leaks a named cluster.
+    assert people_client.get("/api/people?folder=Iceland").json()["total"] == 3
+    assert ids("folder=Iceland") == [1, 2, 4]
+
+    # Leading/trailing space and a bare wildcard are treated literally.
+    assert ids("named=false&folder=%20Iceland%20") == [2, 4]
+    assert ids("named=false&folder=%25") == []
+
+
 def test_crop_endpoint_serves_jpeg_and_404s(
     people_client, face_image_factory, scan_face_batch
 ):
