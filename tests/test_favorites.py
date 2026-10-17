@@ -193,6 +193,56 @@ def test_favorites_list_and_media_type_filter(api_client: TestClient):
     assert i_files[0]["path"] == img_path
 
 
+def test_favorites_count_endpoint(api_client: TestClient):
+    """GET /api/backup/favorites/count answers the badge without shaping rows."""
+    vid_path = "/media/action/hero.mp4"
+    img_path = "/media/action/hero.jpg"
+    unindexed_path = "/media/action/not_indexed.mp4"
+
+    with db_conn() as conn, conn:
+        _insert_indexed_file(
+            conn, vid_path, "hero.mp4", "/media/action", "video", ".mp4", 10240
+        )
+        _insert_indexed_file(
+            conn, img_path, "hero.jpg", "/media/action", "image", ".jpg", 5120
+        )
+
+    res = api_client.get("/api/backup/favorites/count")
+    assert res.status_code == 200
+    assert res.json()["counts"] == {"all": 0, "videos": 0, "images": 0}
+
+    # The toggle response carries the fresh totals (no second request needed).
+    res = api_client.post("/api/backup/favorites/toggle", json={"path": vid_path})
+    assert res.json()["counts"] == {"all": 1, "videos": 1, "images": 0}
+
+    api_client.post("/api/backup/favorites/toggle", json={"path": img_path})
+    counts = api_client.get("/api/backup/favorites/count").json()["counts"]
+    assert counts == {"all": 2, "videos": 1, "images": 1}
+
+    # The filtered list still reports global totals, and the count endpoint
+    # agrees with the counts the list endpoint returns.
+    listed = api_client.get("/api/backup/favorites", params={"type": "video"}).json()
+    assert listed["counts"] == counts
+    assert [f["path"] for f in listed["files"]] == [vid_path]
+
+    # A favorite whose file is not indexed is not counted (same join semantics
+    # the list endpoint has always had).
+    res = api_client.post("/api/backup/favorites/toggle", json={"path": unindexed_path})
+    assert res.json()["counts"] == {"all": 2, "videos": 1, "images": 1}
+
+    # Batch responses carry them too, and unstarring decrements.
+    res = api_client.post(
+        "/api/backup/favorites/batch",
+        json={"paths": [vid_path], "action": "remove"},
+    )
+    assert res.json()["counts"] == {"all": 1, "videos": 0, "images": 1}
+
+    res = api_client.post(
+        "/api/backup/favorites/batch", json={"paths": [], "action": "add"}
+    )
+    assert res.json()["counts"] == {"all": 1, "videos": 0, "images": 1}
+
+
 def test_library_query_joins_is_favorite(sandbox_env):
     """Verify _read_indexed_files attaches is_favorite boolean."""
     folder = "/media/scifi"

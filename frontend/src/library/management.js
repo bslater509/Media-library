@@ -2,7 +2,7 @@ import { els, state } from './state.js';
 import { escapeHtml, showToast } from './utils.js';
 import { generateAnimatedPreviewForTarget } from './animations.js';
 import { loadFolder } from './folders.js';
-import { applyFiltersAndSort, toggleFavorite, updateFavoritesBadgeCount } from './gallery.js';
+import { applyFavoriteCounts, applyFiltersAndSort, toggleFavorite, updateFavoritesBadgeCount } from './gallery.js';
 import { downloadMediaFile, openFancybox, openMediaInfoModal } from './lightbox.js';
 
 // File/folder management: rename, delete, new folder, move, selection and bulk operations.
@@ -699,7 +699,7 @@ async function bulkFavoriteToggle() {
     });
 
     applyFiltersAndSort();
-    updateFavoritesBadgeCount();
+    if (!applyFavoriteCounts(data.counts)) updateFavoritesBadgeCount();
     clearSelection();
     showToast(`${isFav ? 'Added' : 'Removed'} ${data.updated ?? targetPaths.length} item(s) ${isFav ? 'to' : 'from'} favorites`, 'success');
   } catch (err) {

@@ -39,6 +39,14 @@ snapshot metadata.
   an LRU ceiling (`ANIMATED_CACHE_MAX_SIZE_GB`, default 5 GB — evicted previews
   are regenerated on the next view), and the Background Tasks modal's Animated
   Preview Generator card now reports the cache's size against its cap.
+- **Favorites count endpoint** (`GET /api/backup/favorites/count`): the Library
+  sidebar badge asked for the full favorites list — every favorite shaped into a
+  browse entry with its thumbnail/media URLs — and read only `counts.all` from
+  it, on every page load and every star toggle. The new endpoint answers with a
+  single aggregate (~3 ms and a few bytes for 6,000 favorites, against ~130 ms
+  and ~4.2 MB for the list), the `toggle` and `batch` responses now carry the
+  fresh totals so a star updates the badge with no extra request at all, and the
+  `type`-filtered list read only fetches the rows it returns.
 
 ### Fixed
 

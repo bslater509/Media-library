@@ -109,6 +109,32 @@ def read_largest_files(conn, limit: int = 25) -> list[dict[str, Any]]:
     return [_build_file_entry(r) for r in cur.fetchall()]
 
 
+def read_favorites_counts(conn) -> dict[str, int]:
+    """Count favorited files index-only, without shaping a single row.
+
+    The Library sidebar badge only needs the totals. Materializing every
+    favorite through :func:`read_indexed_favorites` (``SELECT f.*`` plus URL
+    building for each row) costs ~100 ms and a multi-MB payload on a large
+    collection, and it runs on every page load and every star toggle just to
+    render a one-digit count; this is a single aggregate over the join. Same
+    semantics as the list: a favorite whose file is not indexed is not counted.
+    """
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(f.type = 'video') AS videos,
+               SUM(f.type = 'image') AS images
+        FROM files f
+        JOIN favorites fav ON f.path = fav.path
+        """
+    ).fetchone()
+    return {
+        "all": row["total"] or 0,
+        "videos": row["videos"] or 0,
+        "images": row["images"] or 0,
+    }
+
+
 def read_indexed_favorites(conn, media_type: str | None = None) -> list[dict[str, Any]]:
     """Returns all favorited files in the library, sorted by favorited timestamp descending."""
     sql = """

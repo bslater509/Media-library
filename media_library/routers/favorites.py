@@ -8,7 +8,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from media_library.db.connection import db_conn
-from media_library.services.library_query import read_indexed_favorites
+from media_library.services.library_query import (
+    read_favorites_counts,
+    read_indexed_favorites,
+)
 
 router = APIRouter()
 
@@ -43,15 +46,30 @@ def toggle_favorite(req: FavoriteToggleRequest) -> dict[str, Any]:
                 (path, time.time()),
             )
             is_fav = True
+        # The new totals ride along so the client can update its badge without a
+        # second request (the whole reason the count stays cheap).
+        counts = read_favorites_counts(conn)
 
-    return {"status": "success", "path": path, "is_favorite": is_fav}
+    return {
+        "status": "success",
+        "path": path,
+        "is_favorite": is_fav,
+        "counts": counts,
+    }
 
 
 @router.post("/api/backup/favorites/batch")
 def batch_favorites(req: FavoriteBatchRequest) -> dict[str, Any]:
     """Batch star, unstar, or toggle favorite status on multiple files."""
     if not req.paths:
-        return {"status": "success", "updated": 0, "action": req.action}
+        with db_conn() as conn:
+            counts = read_favorites_counts(conn)
+        return {
+            "status": "success",
+            "updated": 0,
+            "action": req.action,
+            "counts": counts,
+        }
 
     now = time.time()
     updated = 0
@@ -84,7 +102,28 @@ def batch_favorites(req: FavoriteBatchRequest) -> dict[str, Any]:
                     )
                 updated += 1
 
-    return {"status": "success", "updated": updated, "action": req.action}
+        counts = read_favorites_counts(conn)
+
+    return {
+        "status": "success",
+        "updated": updated,
+        "action": req.action,
+        "counts": counts,
+    }
+
+
+@router.get("/api/backup/favorites/count")
+def get_favorites_count() -> dict[str, Any]:
+    """Favorites totals only (`all`/`videos`/`images`), index-only.
+
+    The sidebar badge refreshes on page load and after every star toggle; a
+    single aggregate over the ``favorites`` join answers it in milliseconds,
+    where the full ``GET /api/backup/favorites`` list would shape and ship every
+    favorite just to read a count. The Library falls back to the list endpoint
+    when it actually needs the rows (the Favorites view).
+    """
+    with db_conn() as conn:
+        return {"counts": read_favorites_counts(conn)}
 
 
 @router.get("/api/backup/favorites")
@@ -92,26 +131,12 @@ def get_favorites(type: str | None = Query(None)) -> dict[str, Any]:
     """Returns all favorited files in the library, sorted by favorited timestamp descending."""
     media_type = type if type in ("video", "image") else None
     with db_conn() as conn:
-        # Get all favorites to calculate type counts
-        all_favs = read_indexed_favorites(conn, None)
-        total_count = len(all_favs)
-        video_count = sum(1 for f in all_favs if f.get("type") == "video")
-        image_count = sum(1 for f in all_favs if f.get("type") == "image")
+        # Only the requested media type is read; the totals still cover all
+        # favorites so the badge counts do not change with the filter.
+        files = read_indexed_favorites(conn, media_type)
+        counts = read_favorites_counts(conn)
 
-        files = (
-            all_favs
-            if media_type is None
-            else [f for f in all_favs if f.get("type") == media_type]
-        )
-
-    return {
-        "files": files,
-        "counts": {
-            "all": total_count,
-            "videos": video_count,
-            "images": image_count,
-        },
-    }
+    return {"files": files, "counts": counts}
 
 
 @router.get("/api/backup/favorites/status")

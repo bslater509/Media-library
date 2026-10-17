@@ -646,8 +646,8 @@ async function toggleFavorite(path, cardEl = null) {
       }
     }
 
-    // Refresh favorite badge counts
-    updateFavoritesBadgeCount();
+    // Update favorites badge counts
+    if (!applyFavoriteCounts(data.counts)) updateFavoritesBadgeCount();
 
     // If currently filtering favorites or in global favorites view and item was unfavorited, re-render
     if (state.activeFilter === 'favorite' || state.isFavoritesView) {
@@ -662,23 +662,34 @@ async function toggleFavorite(path, cardEl = null) {
   }
 }
 
-// Refresh the global favorites count badge
+// Apply favorite totals ({all, videos, images}) returned by the toggle/batch
+// endpoints or the cheap count endpoint. Returns false when no usable count was
+// handed in, so the caller can fall back to fetching one.
+function applyFavoriteCounts(counts) {
+  if (!counts || typeof counts.all !== 'number') return false;
+  state.favoritesCount = counts.all;
+  if (els.sidebarFavoritesBadge) {
+    els.sidebarFavoritesBadge.textContent = counts.all;
+  }
+  return true;
+}
+
+// Refresh the global favorites count badge. Reads the COUNT-only endpoint: the
+// full favorites list would shape and ship every favorite (megabytes on a large
+// collection) just to render one number.
 async function updateFavoritesBadgeCount() {
   try {
-    const res = await fetch('/api/backup/favorites');
+    const res = await fetch('/api/backup/favorites/count', { cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
-    const count = data.counts ? data.counts.all : (data.files ? data.files.length : 0);
-    state.favoritesCount = count;
-    if (els.sidebarFavoritesBadge) {
-      els.sidebarFavoritesBadge.textContent = count;
-    }
+    applyFavoriteCounts(data.counts);
   } catch (err) {
     // best-effort
   }
 }
 
 export {
+  applyFavoriteCounts,
   applyFiltersAndSort,
   parentDirectoryOf,
   renderCards,

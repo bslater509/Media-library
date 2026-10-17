@@ -281,7 +281,7 @@ media-library/
 │   │   │                            #   zip.js, animations.js, theme.js, sheet.js, uploads.js, shortcuts.js
 │   │   │                            #   plus shared state.js, utils.js, url_downloads.js, recent_targets.js, service_worker.js
 │   │   └── shared/                  # Cross-page modules (icons.js, tasks_badge.js)
-│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_shortcuts, uploads_resume, library_smoke, sorter_smoke, analytics_smoke)
+│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_shortcuts, library_favorites_badge, uploads_resume, library_smoke, sorter_smoke, analytics_smoke)
 │
 ├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
 ├── static/                          # Static assets and built bundles
@@ -847,9 +847,10 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `POST /api/backup/folders/empty/delete` — Delete empty folders bottom-up (cleans benign OS junk like `.DS_Store`/`Thumbs.db` prior to `rmdir`, updates SQLite index, protects against deleting folders with user files)
 
 ### Favorites & Bookmarking (`media_library.routers.favorites`)
-- `POST /api/backup/favorites/toggle` — Toggle favorite status for a single media file (`path`); returns `{status: "success", path, is_favorite: bool}`
-- `POST /api/backup/favorites/batch` — Bulk star, unstar, or toggle favorite status on multiple files (`paths`, `action`: `"add"` | `"remove"` | `"toggle"`); returns `{status: "success", action, updated: int}`
-- `GET /api/backup/favorites?type={video|image}` — List all favorited media files library-wide sorted by favorited timestamp descending, with total, video, and image counts
+- `POST /api/backup/favorites/toggle` — Toggle favorite status for a single media file (`path`); returns `{status: "success", path, is_favorite: bool, counts}` where `counts` is the fresh `{all, videos, images}` totals so the client badge needs no extra request
+- `POST /api/backup/favorites/batch` — Bulk star, unstar, or toggle favorite status on multiple files (`paths`, `action`: `"add"` | `"remove"` | `"toggle"`); returns `{status: "success", action, updated: int, counts}`
+- `GET /api/backup/favorites/count` — Favorites totals only (`{counts: {all, videos, images}}`) from a single aggregate over the `favorites` join (`services/library_query.read_favorites_counts`), index-only and row-free. This is what the Library sidebar badge polls on page load; the full list endpoint is reserved for the Favorites view, which actually needs the rows
+- `GET /api/backup/favorites?type={video|image}` — List favorited media files library-wide sorted by favorited timestamp descending, with `files` (only the requested type is read) and global `counts` (`all`/`videos`/`images`, independent of the filter)
 - `GET /api/backup/favorites/status?path={path}` — Check favorite status for a single file; returns `{path, is_favorite: bool}`
 
 ### Sorter Workflow (`media_library.routers.sorter_queue` + `sorter_move` + `sorter_media`)
