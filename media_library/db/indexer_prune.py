@@ -1,6 +1,5 @@
 """Index pruning, health reconciliation and the deep-clean sweep."""
 
-import asyncio
 import hashlib
 import logging
 import os
@@ -13,27 +12,22 @@ from media_library.core.config import (
     DEFAULT_DESTINATION_DIR,
     THUMBNAIL_CACHE_DIR,
 )
-from media_library.core.constants import (
-    IMAGE_EXTENSIONS,
-    NATIVE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-)
 from media_library.core.state import (
-    format_size,
-    get_thumbnail_cache_path,
     state,
 )
 from media_library.db.connection import db_conn
-from media_library.services.anim_cache import (
-    clean_orphaned_animated_previews,
-    unlink_animated_previews,
-)
+from media_library.db.indexer_files import remove_file_from_index
+from media_library.db.indexer_state import indexer_lock, indexer_state  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-from media_library.db.indexer_state import indexer_lock, indexer_state  # noqa: F401
-
-from media_library.db.indexer_files import remove_file_from_index
+# The animated-preview cache helpers live in ``services.anim_cache`` and are
+# imported lazily inside the functions that use them. Importing that package at
+# module level pulls in ``media_library.services.__init__``, which eagerly
+# imports the dedup facades, which import back from ``media_library.db.indexer``
+# — a cycle that turns ``import media_library.db.indexer`` into an ImportError
+# as soon as the import order inside the indexer facade changes. Keeping the DB
+# layer free of service imports at import time removes the cycle for good.
 
 
 def _path_confirmed_gone(path: str, attempts: int = 3, delay: float = 0.15) -> bool:
@@ -55,13 +49,14 @@ def _path_confirmed_gone(path: str, attempts: int = 3, delay: float = 0.15) -> b
             time.sleep(delay)
     return True
 
-def _get_stale_folders(db_folders: list[str], resolved_base: str, visited_folders: set[str] | None) -> tuple[list[str], list[str]]:
+
+def _get_stale_folders(
+    db_folders: list[str], resolved_base: str, visited_folders: set[str] | None
+) -> tuple[list[str], list[str]]:
     candidate_stale = []
     under_base_folders = []
     for fp in db_folders:
-        is_under_base = fp == resolved_base or fp.startswith(
-            resolved_base + os.sep
-        )
+        is_under_base = fp == resolved_base or fp.startswith(resolved_base + os.sep)
         if not is_under_base:
             continue
         under_base_folders.append(fp)
@@ -74,6 +69,7 @@ def _get_stale_folders(db_folders: list[str], resolved_base: str, visited_folder
         if appears_gone:
             candidate_stale.append(fp)
     return candidate_stale, under_base_folders
+
 
 def _remove_stale_folders(conn: Any, stale_folders: list[str]) -> tuple[int, int]:
     pruned_folders = 0
@@ -102,10 +98,13 @@ def _remove_stale_folders(conn: Any, stale_folders: list[str]) -> tuple[int, int
         with conn:
             conn.execute("DELETE FROM files WHERE folder_path = ?", (sf,))
             conn.execute("DELETE FROM folders WHERE path = ?", (sf,))
+        from media_library.services.anim_cache import unlink_animated_previews
+
         unlink_animated_previews(rows)
         pruned_folders += 1
         pruned_files += len(rows)
     return pruned_folders, pruned_files
+
 
 def _clean_orphaned_thumbnails(conn: Any, thumb_dir: Any) -> int:
     pruned_orphaned_thumbs = 0
@@ -134,6 +133,7 @@ def _clean_orphaned_thumbnails(conn: Any, thumb_dir: Any) -> int:
                     pass
     return pruned_orphaned_thumbs
 
+
 def _count_files_in_folders(conn: Any, folders: list[str]) -> int:
     """Count indexed file rows belonging to the given folders (chunked for SQLite)."""
     total = 0
@@ -144,6 +144,7 @@ def _count_files_in_folders(conn: Any, folders: list[str]) -> int:
             f"SELECT COUNT(*) FROM files WHERE folder_path IN ({placeholders})", chunk
         ).fetchone()[0]
     return total
+
 
 def _record_index_health(conn: Any, stale_folders: list[str]) -> None:
     """Record how many indexed folders (and files) no longer exist on the mount.
@@ -160,6 +161,7 @@ def _record_index_health(conn: Any, stale_folders: list[str]) -> None:
             indexer_state["stale_files"] = 0
     else:
         indexer_state["stale_files"] = 0
+
 
 def prune_stale_index_entries(
     base_dir: str | None = None,
@@ -201,7 +203,9 @@ def prune_stale_index_entries(
             cur = conn.execute("SELECT path FROM folders")
             db_folders = [r["path"] for r in cur.fetchall()]
 
-            candidate_stale, under_base_folders = _get_stale_folders(db_folders, resolved_base, visited_folders)
+            candidate_stale, under_base_folders = _get_stale_folders(
+                db_folders, resolved_base, visited_folders
+            )
 
             max_safe_prune = max(25, int(len(under_base_folders) * 0.10))
             if len(candidate_stale) > max_safe_prune and not force:
@@ -249,13 +253,20 @@ def prune_stale_index_entries(
                 pruned_stale_duplicates = cur.rowcount
 
             if clean_orphaned_thumbnails:
-                pruned_orphaned_thumbs = _clean_orphaned_thumbnails(conn, THUMBNAIL_CACHE_DIR)
+                pruned_orphaned_thumbs = _clean_orphaned_thumbnails(
+                    conn, THUMBNAIL_CACHE_DIR
+                )
+                from media_library.services.anim_cache import (
+                    clean_orphaned_animated_previews,
+                )
+
                 pruned_orphaned_anims = clean_orphaned_animated_previews(conn)
 
             try:
                 from media_library.services.deduplication_service import (
                     invalidate_visual_cache,
                 )
+
                 invalidate_visual_cache()
             except ImportError:
                 pass
@@ -288,6 +299,7 @@ def prune_stale_index_entries(
         "pruned_stale_duplicates": pruned_stale_duplicates,
     }
 
+
 def deep_clean_database():
     from media_library.services.zip.core import split_zip_path
 
@@ -299,7 +311,9 @@ def deep_clean_database():
             rows = conn.execute("SELECT path FROM files").fetchall()
             paths = [r["path"] for r in rows]
 
-        logger.info(f"[Deep Clean] Checking existence of {len(paths)} files concurrently...")
+        logger.info(
+            f"[Deep Clean] Checking existence of {len(paths)} files concurrently..."
+        )
         missing = []
         checked = 0
         lock = threading.Lock()
@@ -319,13 +333,17 @@ def deep_clean_database():
                     missing.append(p)
                 checked += 1
                 if checked % 1000 == 0:
-                    indexer_state["current_folder"] = f"Deep cleaning DB (checked {checked}/{len(paths)})..."
+                    indexer_state["current_folder"] = (
+                        f"Deep cleaning DB (checked {checked}/{len(paths)})..."
+                    )
 
         with ThreadPoolExecutor(max_workers=16) as ex:
             ex.map(_check, paths)
 
         logger.info(f"[Deep Clean] Found {len(missing)} potentially missing files.")
-        indexer_state["current_folder"] = f"Deep cleaning DB (verifying {len(missing)} missing files)..."
+        indexer_state["current_folder"] = (
+            f"Deep cleaning DB (verifying {len(missing)} missing files)..."
+        )
 
         removed = 0
         for i, p in enumerate(missing):
@@ -335,9 +353,13 @@ def deep_clean_database():
                 remove_file_from_index(p)
                 removed += 1
             if i % 50 == 0:
-                indexer_state["current_folder"] = f"Deep cleaning DB (verified {i}/{len(missing)} missing files)..."
+                indexer_state["current_folder"] = (
+                    f"Deep cleaning DB (verified {i}/{len(missing)} missing files)..."
+                )
 
-        logger.info(f"[Deep Clean] Removed {removed} confirmed missing files. Running stale index prune...")
+        logger.info(
+            f"[Deep Clean] Removed {removed} confirmed missing files. Running stale index prune..."
+        )
         indexer_state["current_folder"] = "Deep cleaning DB (pruning stale entries)..."
         prune_stale_index_entries(clean_orphaned_thumbnails=True, force=True)
         logger.info("[Deep Clean] Deep clean finished.")
