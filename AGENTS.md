@@ -939,7 +939,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 # Clone the repository and enter directory
 cd /path/to/media-library
 
-# Ensure Python 3.9+ is available
+# Ensure Python 3.10+ is available
 python3 --version
 
 # Use existing venv or create a new one

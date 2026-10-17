@@ -73,7 +73,7 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 ## 🚀 Quickstart Guide
 
 ### 1. Prerequisites
-- **Python 3.9+**
+- **Python 3.10+** (PEP 604 union syntax is evaluated at runtime, so 3.9 cannot import the package)
 - **FFmpeg** and **FFprobe** (for video poster extraction and transcoding):
   ```bash
   # Debian / Ubuntu
