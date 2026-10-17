@@ -13,6 +13,13 @@ snapshot metadata.
 
 ### Added
 
+- **Liveness probe** `GET /api/health`: a cheap, credential-free check for
+  systemd, uptime monitors and container healthchecks — reachability and worker
+  liveness only, never a library path, count or filename — returning `503` when
+  the database cannot be read.
+- **Continuous integration** (`.github/workflows/ci.yml`): `ruff check` +
+  `ruff format --check`, `pytest`, and `npm test` + `npm run build` on every push
+  and pull request.
 - **Keyboard shortcut reference** (`?`, or the Shortcuts button in the desktop
   header / the mobile Controls sheet's *System Status* tab): a full-height sheet
   listing every grid and viewer binding, rendered from one `SHORTCUT_GROUPS`
@@ -30,8 +37,28 @@ snapshot metadata.
   are regenerated on the next view), and the Background Tasks modal's Animated
   Preview Generator card now reports the cache's size against its cap.
 
+### Fixed
+
+- **Toast markup injection**: both toast helpers (`frontend/src/library/utils.js`,
+  `frontend/src/app/state.js`) inserted their message with `innerHTML` while call
+  sites interpolated filenames, folder names and server error text, so a file
+  named `<img src=x onerror=...>.mp4` could execute script in the UI when it was
+  renamed, moved or deleted. Messages are now inserted as text, and each toast is
+  its own live region (`role="alert"` for errors, `role="status"` otherwise).
+- **Import cycle in the DB layer**: `db/indexer_prune.py` no longer imports
+  `services.anim_cache` at import time (it is imported inside the functions that
+  use it), which removes the `db.indexer` ⇄ `services` ⇄ dedup cycle that turned
+  `import media_library.db.indexer` into an `ImportError` as soon as the indexer
+  facade's import order changed.
+
 ### Changed
 
+- Removed the wildcard `CORSMiddleware` from `create_app` (the app is
+  same-origin only; the wildcard-plus-credentials pair is rejected by browsers
+  anyway).
+- Applied `ruff check --fix` and `ruff format` across the tree, and the docs now
+  state the real floor: Python 3.10+ (PEP 604 union syntax is evaluated at
+  runtime), not 3.9.
 - **Library search now matches folder names**: each query word may appear in the
   filename *or* in the file's folder path inside the library, so "iceland 2023"
   finds the clips in `…/Iceland 2023/`. The root and its ancestors are excluded

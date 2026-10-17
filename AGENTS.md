@@ -75,7 +75,7 @@
 
 
 ### Tech Stack
-- **Language & Runtime**: Python 3.9+ (tested on Python 3.13)
+- **Language & Runtime**: Python 3.10+ (PEP 604 union syntax in annotations is evaluated at runtime, so 3.9 cannot import the package; tested on Python 3.13)
 - **Web Framework**: FastAPI (v0.110+) with Uvicorn ASGI server and Starlette
 - **Concurrency & Threads**: AnyIO (expanded threadpool tokens to 100), asyncio, Python `threading`
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
@@ -113,6 +113,7 @@ The target media collection may reside on a remote FUSE filesystem (such as pClo
 - Always close database connections in a `finally` block: `conn.close()`.
 - Never hold a database connection open across `await` points or long-running network/disk operations.
 - Schema migrations must be idempotent: modify `init_backup_db()` in `media_library/db/schema.py` using `ALTER TABLE ... ADD COLUMN ...` wrapped in `try...except sqlite3.OperationalError: pass`.
+- **Never import a `media_library.services.*` module at import time from `media_library/db/*`.** `services/__init__.py` eagerly imports the dedup facades, which import back from `media_library.db.indexer`; a module-level service import inside the DB layer therefore creates an import cycle that makes `import media_library.db.indexer` an `ImportError` as soon as the facade's import order changes (this broke once when a naive import sort moved `indexer_crawl` above `indexer_files`). Service helpers needed by the DB layer (`db.indexer_prune`'s animated-cache cleanup, the dedup cache invalidation) are imported **lazily inside the functions** that use them.
 
 ### Rule 4: Test Suite Verification
 Before completing any task, execute the backend and frontend test suites:
@@ -121,6 +122,11 @@ Before completing any task, execute the backend and frontend test suites:
 npm test
 ```
 All existing tests must pass, and new features must include unit or integration tests under `tests/` or `frontend/tests/`.
+
+The same three gates run on every push and pull request in `.github/workflows/ci.yml` (job `lint`: `ruff check` + `ruff format --check`; job `backend`: `pytest`; job `frontend`: `npm test` + `npm run build`). Run them locally before pushing so CI stays green:
+```bash
+./venv/bin/ruff check . && ./venv/bin/ruff format --check .   # lint + formatting gate
+```
 
 ### Rule 5: Keep Live Server Running Latest Code
 Because HTML templates are cached in memory for the process lifetime (`media_library.core.templating.load_template`) and Python modules require process reloading, **always restart the systemd service** whenever making code, template, or asset changes so the live server serves the latest code:
@@ -159,6 +165,8 @@ media-library/
 ├── start.sh                         # Shell launcher: auto-creates venv, detects LAN IP, starts app
 ├── requirements.txt                 # Pinned dependencies
 ├── pytest.ini                       # Pytest configuration (pythonpath = ., basetemp = data/pytest_tmp)
+├── ruff.toml                        # Ruff lint configuration (with the rules intentionally excluded, and why)
+├── .github/workflows/ci.yml         # CI gates: ruff lint + format check, pytest, vitest + Vite build
 ├── config.json                      # Persistent runtime user preferences (recent destinations, source dir)
 ├── config.example.json              # Example configuration file
 ├── .env.example                     # Reference environment variables
@@ -727,7 +735,8 @@ The entire web UI and API can optionally be gated behind a **single shared passw
 - **Login flow**: `GET /login` renders `templates/login.html` (a raw `HTMLResponse`, no Jinja2). `POST /login` accepts an `application/x-www-form-urlencoded` `password` (plus an optional same-site `next` target) and, on success, sets a signed session cookie and redirects to `next` (validated to an absolute same-site path to prevent open redirects; falls back to `/`). A wrong password re-renders the page with an inline error and issues no cookie.
 - **Signed cookie (stateless)**: the cookie (`ml_auth`) is `base64url(issued_epoch "." HMAC-SHA256)`, keyed by a SHA-256 derivation of the password (`media_library/core/auth.py`). There is **no server-side session store and no DB writes**, so sessions survive restarts, and changing `APP_PASSWORD` automatically invalidates every previously issued cookie. The password itself is compared with `hmac.compare_digest` (constant time).
 - **Remember-forever (sliding expiry)**: the cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, with a ~400-day `Max-Age` (browsers cap cookie lifetime there). It is re-issued (slid forward) only when the embedded issue time is older than 30 days, so an actively used browser effectively never has to sign in again. There is no logout button — logging out means clearing cookies.
-- **Coverage & enforcement**: `auth_middleware` (registered in `app_factory.create_app`, active only when a password is set) gates **every** route — all pages, all `/api/...` endpoints, and all media/thumbnail/stream endpoints. Only `GET`/`HEAD` `POST /login` and `/static/*` stay public so the login page can render. Unauthenticated `/api/*` requests receive `401 JSON`, while page requests are `302`-redirected to `/login?next=...`. Because the cookie is sent automatically on same-origin `fetch()` and `<video>`/`<img>` src requests, no frontend JavaScript changes are required.
+- **Coverage & enforcement**: `auth_middleware` (registered in `app_factory.create_app`, active only when a password is set) gates **every** route — all pages, all `/api/...` endpoints, and all media/thumbnail/stream endpoints. Only `GET`/`HEAD`/`POST /login`, `/favicon.ico`, `/sw.js`, `/api/health` (the credential-free liveness probe, which exposes reachability and worker liveness only) and `/static/*` stay public so the login page can render. Unauthenticated `/api/*` requests receive `401 JSON`, while page requests are `302`-redirected to `/login?next=...`. Because the cookie is sent automatically on same-origin `fetch()` and `<video>`/`<img>` src requests, no frontend JavaScript changes are required.
+- **No CORS**: the app is same-origin only (pages, media streaming, thumbnails and the API are all served by it), so `create_app` installs no `CORSMiddleware`. A wildcard `allow_origins` combined with credentialed requests is rejected by browsers anyway and would only widen the surface for third-party pages. `tests/test_api_routes.py::test_no_cors_middleware_is_installed` guards this.
 - **Not covered**: no rate limiting/lockout on failed logins, and the cookie is not marked `Secure` (the app is typically served over plain LAN HTTP).
 
 ---
@@ -917,6 +926,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 
 ### Unified System Status (`media_library.routers.system`)
 - `GET /api/system/status` — Consolidated status for all background subsystems
+- `GET /api/health` — Cheap, **credential-free** liveness probe for systemd, uptime monitors and container healthchecks. Returns `{status, version, uptime_s, database, workers: {running, total}}` — reachability and worker liveness only, never a library path, count or filename — and `503` with `status: "degraded"` when the database cannot be read (`SELECT 1`). It is listed in `_PUBLIC_PATHS` in `media_library/routers/auth.py` so it stays reachable when `APP_PASSWORD` is set.
 - `POST /api/system/clean-db` — Trigger background deep database scan and thumbnail cleanup
 
 ---
@@ -970,6 +980,16 @@ The test suite is powered by Pytest with automatic PYTHONPATH configuration in `
 ./venv/bin/pytest tests/test_zip_service.py
 ```
 
+### Linting, Formatting & CI
+`ruff.toml` is the lint configuration (default rules minus the three intentionally excluded ones documented in its header). The tree is kept lint-clean **and** format-clean, and `.github/workflows/ci.yml` fails the build if either drifts:
+```bash
+./venv/bin/ruff check .            # lint
+./venv/bin/ruff check --fix .      # apply the safe fixes
+./venv/bin/ruff format .           # apply formatting
+./venv/bin/ruff format --check .   # what CI runs
+```
+The workflow's three jobs are `lint` (ruff check + format check), `backend` (`pytest`, after `ffmpeg -version` confirms FFmpeg is present) and `frontend` (`npm ci` + `npm test` + `npm run build`).
+
 ### Writing New Tests
 All test modules must use the sandboxed environment fixtures defined in `tests/conftest.py`:
 - `isolate_index_database` (autouse): pins `DB_PATH` to a per-test throwaway database. `get_current_db_path()` otherwise falls back to the configured (production) index DB, so a test that never requests `sandbox_env` would write real folder/file rows into the live `backup_index.db` — `test_db_indexer.py::test_suite_never_writes_to_the_configured_database` guards this.
@@ -1001,3 +1021,5 @@ Before concluding your turn or submitting your work, complete this verification 
 5. [ ] **System Status Sync**: Any new background task or worker state is exposed in `/api/system/status`.
 6. [ ] **Automated Tests**: Ran `./venv/bin/pytest` and confirmed all tests pass without errors.
 7. [ ] **AGENTS.md Updated**: Verified that `AGENTS.md` accurately reflects any changes made to endpoints, schema, workers, or configuration.
+8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass (CI gates on them).
+9. [ ] **Frontend Escaping**: Every user-controlled string rendered into the DOM (filename, folder name, download title, server error text) goes through `textContent` or `escapeHtml()`; the toast helpers (`frontend/src/library/utils.js`, `frontend/src/app/state.js`) are text-only by construction and must stay that way — a filename is not trusted input.
