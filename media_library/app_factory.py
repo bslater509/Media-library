@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
+from media_library import __version__
 from media_library.core.config import STATIC_DIR
 from media_library.core.state import state
 from media_library.db.indexer import run_background_crawler
@@ -155,7 +156,11 @@ def create_app(
                 resp.headers["Cache-Control"] = "no-cache"
             return resp
 
-    app = FastAPI(title="Video Sorter", version="2.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title="Media Library & Video Sorter",
+        version=__version__,
+        lifespan=lifespan,
+    )
 
     app.add_middleware(
         CORSMiddleware,

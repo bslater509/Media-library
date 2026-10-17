@@ -17,6 +17,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from media_library import __version__
 from media_library.core.config import (
     BACKUP_STAGING_DIR,
     CONFIG_FILE,
@@ -254,7 +255,7 @@ def _create_library_backup_sync(
             "thumbnails_tar_size_bytes": tar_size,
             "total_size_bytes": total_size,
             "total_size_formatted": format_size(total_size),
-            "app_version": "2.0.0",
+            "app_version": __version__,
         }
         meta_tmp = bck_dir / f"backup_meta.{uuid.uuid4().hex[:6]}.tmp"
         with open(meta_tmp, "w", encoding="utf-8") as f:

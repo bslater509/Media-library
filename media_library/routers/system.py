@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks
 
+from media_library import __version__
 from media_library.db.indexer import deep_clean_database, indexer_state
 from media_library.services.backup_service import library_backup_state
 from media_library.services.status import (
@@ -128,6 +129,7 @@ async def get_all_system_status() -> dict[str, Any]:
 
     return {
         "is_active": is_active,
+        "version": __version__,
         "transfers": transfers_data,
         "transcode": transcode_data,
         "index": index_data,

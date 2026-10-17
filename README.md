@@ -2,6 +2,8 @@
 
 A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
 
+**Current release: v1.0.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+
 ---
 
 ## ⚡ Key Features
@@ -117,6 +119,7 @@ Now open your browser:
 - **Media Library**: `http://localhost:8888`
 - **Incoming Sorter**: `http://localhost:8888/sorter`
 - **Downloads**: `http://localhost:8888/downloads`
+- **Analytics**: `http://localhost:8888/analytics`
 
 ---
 
@@ -186,6 +189,18 @@ To run the media library continuously in the background on Linux:
    systemctl status media-library
    journalctl -u media-library -f
    ```
+
+---
+
+## ⚠️ Known Limitations
+
+- **Single shared password, single user.** `APP_PASSWORD` gates the whole app for everyone; there are no accounts, roles or per-user permissions, and no rate limiting or lockout on failed logins. The session cookie is `HttpOnly`/`SameSite=Lax` but not `Secure`.
+- **No built-in TLS.** The server speaks plain HTTP on your LAN. Put it behind a reverse proxy (Caddy, nginx, Traefik) before exposing it beyond a trusted network.
+- **Deletions and moves are immediate and permanent.** There is no trash or recycle bin, and bulk actions cannot be rolled back beyond the move-only undo stack.
+- **Snapshots cover the index and thumbnails, not your media.** `library/.media_library_backup/` restores the database and poster cache after a rebuild; it is not a backup of the media files themselves.
+- **Heavy encodes are serialised.** x265 re-encodes and pre-transcoding run one job at a time (CPU-bound); a large queue drains slowly by design.
+- **The library must be mounted before start.** FUSE/network mounts are actively tolerated (the indexer protects itself against transient `stat` failures), but an unmounted destination at startup looks like an empty library.
+- **No container image yet.** Run it with `./start.sh` or the provided `media-library.service` unit; Docker packaging is future work.
 
 ---
 

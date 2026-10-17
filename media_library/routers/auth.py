@@ -7,6 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from media_library import __version__
 from media_library.core.auth import (
     AUTH_COOKIE_MAX_AGE,
     AUTH_COOKIE_NAME,
@@ -102,7 +103,12 @@ def _render_login(next_url: str, error: str = "") -> HTMLResponse:
         SafeHTML(f'<p class="login-error">{html.escape(error)}</p>') if error else ""
     )
     return HTMLResponse(
-        content=render(body, ERROR_BLOCK=error_block, NEXT=_safe_next(next_url))
+        content=render(
+            body,
+            ERROR_BLOCK=error_block,
+            NEXT=_safe_next(next_url),
+            VERSION=__version__,
+        )
     )
 
 

@@ -96,6 +96,7 @@ Whenever you touch code in this repository:
 3. **Worker or Background Tasks**: Update the **Background Workers** section.
 4. **Configuration / Environment Variables**: Update the **Configuration Reference** section and `.env.example`.
 5. **Operational Workflows**: Update relevant architecture sections.
+6. **Version or Release Changes**: `media_library/__init__.py`'s `__version__` is the **only** place the version is written down. Bump it there and nowhere else (the FastAPI app metadata, the `/api/system/status` payload, the served-page `{{VERSION}}` token and the backup snapshot metadata all read it), then update `CHANGELOG.md` and the `**Current release: vX.Y.Z**` line in `README.md`. `tests/test_version.py` fails if any of those drift, and `tests/test_repo_hygiene.py` fails if personal data, credentials or local state can reach a commit.
 
 ### Rule 2: FUSE & Remote Filesystem Discipline
 The target media collection may reside on a remote FUSE filesystem (such as pCloud or NFS). Remote FUSE mounts have high round-trip latency:
@@ -164,6 +165,7 @@ media-library/
 ├── media-library.service.example    # Systemd service unit template
 ├── LICENSE                          # MIT License
 ├── README.md                        # User-facing project documentation
+├── CHANGELOG.md                     # Release history (Keep a Changelog / SemVer)
 ├── AGENTS.md                        # THIS FILE: Comprehensive agent reference & architecture
 │
 ├── media_library/                   # Core application Python package
@@ -320,6 +322,8 @@ media-library/
 │   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
 │   ├── test_url_download.py         # URL download worker (mocked subprocess), gallery-dl fallback, retry/clear-history/paginated history, tools status, router validations
 │   ├── test_system_status_transcode.py # /api/system/status transcode payload shape (queued/is_paused/target_filename) shared with transfers.transcode
+│   ├── test_version.py              # Single-source version contract (__version__ vs package.json/README/FastAPI/status/pages)
+│   ├── test_repo_hygiene.py         # No personal paths/emails/credentials in tracked files; local state stays gitignored
 │   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
 │
 └── data/                            # Runtime data directory (git-ignored)
@@ -728,6 +732,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 ```json
 {
   "is_active": true,
+  "version": "1.0.0",
   "transfers": { "active": null, "queued": [], "completed": [] },
   "transcode": { "active": null, "queued": [], "queued_count": 0, "history": [], "is_paused": false, "total_pending": 0 },
   "index": { "status": "idle", "scanned_folders": 243, "skipped_folders": 242, "total_folders": 243, "percent": 100, "stale_folders": 0, "stale_files": 0, "prune_aborted": false, "prune_reason": "", "is_complete": true },
@@ -746,6 +751,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
   "h265": { "status": "idle", "active": null, "job": null, "queue_length": 0, "active_count": 0, "queued_count": 0, "queued": [], "jobs": [], "history": [] }
 }
 ```
+- The top-level `version` key reports `media_library.__version__` — the single source of truth for the release version (see Rule 1.6). It is the quickest way to confirm which build a running server is on.
 - The frontend uses `is_active` to adjust polling frequency: **2000 ms** when active background work is in flight, **6000 ms** when idle, **8000 ms** on error.
 - `url_downloads.active_count > 0` or `queued_count > 0` also sets `is_active`.
 - The top-level `h265` key is built by `H265ConvertWorker.get_status()`: the serial in-place HEVC re-encode queue driving the lightbox's "Convert to x265" action. It carries the `active` job, the `queued` list, `active_count`/`queued_count`, and a sanitized `jobs`/`history` (the threading `abort_event` is stripped). Either an active or queued x265 job also sets `is_active`.
@@ -757,6 +763,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 ## 13. Complete API Routing & Endpoint Map
 
 ### HTML Views (`media_library.routers.views`)
+- All four page routes are served through `_serve_page()`, which loads the cached template from `core/templating.load_template` and substitutes the `{{VERSION}}` token with `media_library.__version__`; the Library page's sidebar footer and the login page render it (the login page does the same substitution in `routers/auth._render_login`).
 - `GET /` — Serves Media Library UI (`templates/library.html`)
 - `GET /sorter` / `GET /sort` — Serves Incoming Video Sorter UI (`templates/index.html`)
 - `GET /downloads` — Serves the URL/playlist Downloads page (`templates/downloads.html`; bundle `static/dist/downloads.js`)
@@ -909,7 +916,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 ### Setting Up the Environment
 ```bash
 # Clone the repository and enter directory
-cd /root/media-library
+cd /path/to/media-library
 
 # Ensure Python 3.9+ is available
 python3 --version
@@ -931,7 +938,7 @@ python3 -m venv venv
 
 **Restarting to apply changes**: The server runs *without* `--reload`, and Python modules are loaded once at startup. `static/*` assets are served fresh from disk on each request, but HTML templates are read once and cached in memory (`core/templating.load_template`) — so any backend change (routers, services, workers, schema) **and any `templates/*.html` edit** require a server **restart** to take effect; only `static/` edits need a browser refresh.
 
-In production the app is managed by the `media-library.service` systemd unit (`ExecStart=/root/media-library/venv/bin/python /root/media-library/app.py --host 0.0.0.0 --port 8888`, `Restart=always`). **Never start a second instance by hand** — doing so races for port `8888` and can make systemd crash-loop. Restart the service instead; SIGTERM triggers a clean worker shutdown and shutdown snapshot (can take ~15s):
+In production the app is managed by the `media-library.service` systemd unit (`ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/app.py --host 0.0.0.0 --port 8888`, `Restart=always`). **Never start a second instance by hand** — doing so races for port `8888` and can make systemd crash-loop. Restart the service instead; SIGTERM triggers a clean worker shutdown and shutdown snapshot (can take ~15s):
 
 ```bash
 systemctl restart media-library     # graceful restart; the unit auto-restarts on exit
@@ -958,6 +965,10 @@ All test modules must use the sandboxed environment fixtures defined in `tests/c
 - `isolate_index_database` (autouse): pins `DB_PATH` to a per-test throwaway database. `get_current_db_path()` otherwise falls back to the configured (production) index DB, so a test that never requests `sandbox_env` would write real folder/file rows into the live `backup_index.db` — `test_db_indexer.py::test_suite_never_writes_to_the_configured_database` guards this.
 - `sandbox_env`: Creates isolated temporary directories for `media`, `incoming`, `thumbnails`, and a dedicated SQLite database. Never touches production directories.
 - `sample_media`: Pre-populates the sandbox with sample category directories, video clips, and poster images.
+
+Two cross-cutting guards run with the suite and should stay green:
+- `tests/test_version.py` enforces the single-source version contract (`media_library.__version__` vs `package.json`, `README.md`, `CHANGELOG.md`, the FastAPI metadata, the `/api/system/status` payload and the served-page `{{VERSION}}` token).
+- `tests/test_repo_hygiene.py` fails if any tracked file contains this machine's home path, a real email address or a credential-shaped string, if local state (`data/`, `*.db`, `.env`, `config.json`, `plans/`) becomes tracked, or if the `.gitignore` rules covering them are removed.
 
 Example test pattern:
 ```python

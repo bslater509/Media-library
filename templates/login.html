@@ -118,6 +118,14 @@
     color: #ff9a9a;
     font-size: 0.85rem;
   }
+  .login-version {
+    margin: 1.1rem 0 0;
+    text-align: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    color: #6b7280;
+  }
+  .login-version span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #9ca3af; }
 </style>
 </head>
 <body>
@@ -134,6 +142,7 @@
     <input type="password" id="password" name="password" placeholder="Enter password" autofocus autocomplete="current-password">
     <input type="hidden" name="next" value="{{NEXT}}">
     <button type="submit">Unlock</button>
+    <p class="login-version">Media Library &amp; Video Sorter <span>v{{VERSION}}</span></p>
   </form>
 </body>
 </html>
