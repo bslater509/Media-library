@@ -71,19 +71,25 @@ _ENGINE: Any = None
 _VERIFY_CACHE: dict[str, dict[str, Any]] = {}
 
 
-def get_model_dir() -> Path:
-    """Return (creating it if needed) the directory holding the ONNX models."""
+def get_model_dir(create: bool = True) -> Path:
+    """Return the directory holding the ONNX models.
+
+    ``create`` is only set where a file is actually about to be written: a plain
+    status read must never create directories (a sandboxed test would otherwise
+    leave an empty ``models/`` behind in the real data directory).
+    """
     configured = getattr(config, "FACE_MODEL_DIR", "") or ""
     base = (
         Path(configured).resolve() if configured else Path(config.DATA_DIR) / "models"
     )
-    base.mkdir(parents=True, exist_ok=True)
+    if create:
+        base.mkdir(parents=True, exist_ok=True)
     return base
 
 
 def model_paths() -> dict[str, Path]:
     """Absolute paths the engine expects for both models."""
-    model_dir = get_model_dir()
+    model_dir = get_model_dir(create=False)
     return {
         "detector": model_dir / YUNET_FILENAME,
         "recognizer": model_dir / SFACE_FILENAME,
@@ -221,7 +227,7 @@ def engine_status() -> dict[str, Any]:
             "available": False,
             "ready": False,
             "reason": "OpenCV is not installed (pip install opencv-contrib-python-headless)",
-            "model_dir": str(get_model_dir()),
+            "model_dir": str(get_model_dir(create=False)),
         }
     paths = model_paths()
     if not models_ready():
@@ -235,13 +241,13 @@ def engine_status() -> dict[str, Any]:
             "available": False,
             "ready": False,
             "reason": f"Face models not downloaded ({', '.join(sorted(missing))})",
-            "model_dir": str(get_model_dir()),
+            "model_dir": str(get_model_dir(create=False)),
         }
     return {
         "available": True,
         "ready": True,
         "reason": "",
-        "model_dir": str(get_model_dir()),
+        "model_dir": str(get_model_dir(create=False)),
     }
 
 

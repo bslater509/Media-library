@@ -154,15 +154,16 @@ def is_enabled() -> bool:
     return bool(getattr(config, "FACE_RECOGNITION_ENABLED", False))
 
 
-def get_face_crop_dir() -> Path:
-    """Return (creating it if needed) the face crop cache directory."""
+def get_face_crop_dir(create: bool = False) -> Path:
+    """Return the face crop cache directory (created only when writing)."""
     configured = getattr(config, "FACE_CROP_DIR", "") or ""
     base = (
         Path(configured).resolve()
         if configured
         else Path(config.THUMBNAIL_CACHE_DIR) / "faces"
     )
-    base.mkdir(parents=True, exist_ok=True)
+    if create:
+        base.mkdir(parents=True, exist_ok=True)
     return base
 
 
@@ -333,7 +334,7 @@ def face_crop_name(file_path: str, frame_time: float, x: int, y: int) -> str:
 
 def write_face_crop(image: Any, box: dict[str, Any], name: str) -> bool:
     """Cut ``box`` out of ``image`` (PIL) and store it atomically as ``name``."""
-    crop_dir = get_face_crop_dir()
+    crop_dir = get_face_crop_dir(create=True)
     target = crop_dir / name
     if target.exists() and target.stat().st_size > 0:
         return True

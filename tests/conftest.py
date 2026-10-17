@@ -52,6 +52,8 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     zip_staging = data_dir / "zip_staging"
     zip_cache = data_dir / "cache" / "zips"
     upload_staging = data_dir / "upload_staging"
+    face_models = data_dir / "models"
+    face_crops = thumb_dir / "faces"
     for d in (
         transcode_dir,
         webp_staging,
@@ -59,6 +61,8 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
         zip_staging,
         zip_cache,
         upload_staging,
+        face_models,
+        face_crops,
     ):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -68,6 +72,8 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setenv("ZIP_STAGING_DIR", str(zip_staging))
     monkeypatch.setenv("ZIP_CACHE_DIR", str(zip_cache))
     monkeypatch.setenv("UPLOAD_STAGING_DIR", str(upload_staging))
+    monkeypatch.setenv("FACE_MODEL_DIR", str(face_models))
+    monkeypatch.setenv("FACE_CROP_DIR", str(face_crops))
 
     monkeypatch.setattr(config_mod, "TRANSCODE_TEMP_DIR", transcode_dir)
     monkeypatch.setattr(config_mod, "THUMBNAIL_CACHE_DIR", thumb_dir)
@@ -76,6 +82,11 @@ def patch_runtime_directories(monkeypatch, data_dir: Path, thumb_dir: Path):
     monkeypatch.setattr(config_mod, "ZIP_STAGING_DIR", zip_staging)
     monkeypatch.setattr(config_mod, "ZIP_CACHE_DIR", zip_cache)
     monkeypatch.setattr(config_mod, "UPLOAD_STAGING_DIR", upload_staging)
+    # The face feature resolves its directories at call time from core.config
+    # (like anim_cache), so pinning the module attributes is enough — and it
+    # keeps a test that triggers a model download inside the sandbox.
+    monkeypatch.setattr(config_mod, "FACE_MODEL_DIR", str(face_models))
+    monkeypatch.setattr(config_mod, "FACE_CROP_DIR", str(face_crops))
 
     upload_service_mod = importlib.import_module(
         "media_library.services.upload_service"

@@ -44,6 +44,27 @@ def test_engine_status_reports_missing_models(monkeypatch, sandbox_env):
     assert "models not downloaded" in status["reason"]
 
 
+def test_engine_status_never_creates_directories(monkeypatch, tmp_path):
+    """A status read must not mkdir: only an actual download writes."""
+    face_engine.reset_engine()
+    target = tmp_path / "not-created" / "models"
+    monkeypatch.setattr(config, "FACE_MODEL_DIR", str(target))
+    assert face_engine.engine_status()["available"] is False
+    assert not target.exists()
+    assert not target.parent.exists()
+
+
+def test_suite_keeps_face_paths_inside_the_sandbox(sandbox_env):
+    """Models and crops must resolve into the sandbox for every test.
+
+    A test that triggered a model download or wrote a crop used to be able to
+    land in the real ``data/`` directory (and leave an empty ``data/models``
+    behind); ``patch_runtime_directories`` now pins both.
+    """
+    assert face_engine.get_model_dir(create=False) == sandbox_env["data_dir"] / "models"
+    assert face_service.get_face_crop_dir() == sandbox_env["thumb_dir"] / "faces"
+
+
 def test_engine_status_accepts_an_injected_engine(fake_face_engine):
     assert face_engine.engine_status()["available"] is True
     assert face_engine.get_engine() is fake_face_engine
