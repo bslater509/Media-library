@@ -24,11 +24,11 @@ VERSION_REPORTERS = (
 
 # Pages served through ``routers/views._serve_page`` (the version token is
 # substituted for all of them, even where a template does not use it yet).
-SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics")
+SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics", "/people")
 
 
 def test_version_is_the_release_version():
-    assert __version__ == "1.0.0"
+    assert __version__ == "1.1.0"
 
 
 def test_package_json_matches_python_version():

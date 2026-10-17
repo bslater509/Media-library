@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -23,6 +24,7 @@ from media_library.db.indexer import (
     prune_stale_index_entries,
     run_background_crawler,
 )
+from media_library.services import face_service
 from media_library.services.library_query import (
     _attach_folder_covers,
     _read_indexed_files,
@@ -30,6 +32,7 @@ from media_library.services.library_query import (
 )
 from media_library.services.media_service import (
     search_backup_index,
+    split_person_tokens,
     validate_backup_path,
 )
 from media_library.services.status import (
@@ -451,8 +454,55 @@ def search_backup(
     limit: int | None = Query(None),
 ):
     effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
+    # `person:anna` filters the results to the files that person appears in; the
+    # remaining words keep matching filenames and relative folder paths.
+    text_query, person_terms = split_person_tokens(q)
+    person_info: dict[str, Any] | None = None
+    person_ids: list[int] | None = None
+    if person_terms:
+        person_ids = []
+        resolved: list[dict[str, Any]] = []
+        try:
+            with db_conn() as conn:
+                for term in person_terms:
+                    ids = face_service.resolve_person_ids(conn, term)
+                    if not ids:
+                        continue
+                    person_ids.extend(ids)
+                    rows = conn.execute(
+                        "SELECT id, name FROM people WHERE id IN ("
+                        + ",".join("?" for _ in ids)
+                        + ") ORDER BY LOWER(name) ASC",
+                        ids,
+                    ).fetchall()
+                    resolved.extend(
+                        {"id": int(r["id"]), "name": r["name"]} for r in rows
+                    )
+        except Exception as e:
+            logger.error(f"Error resolving person search token: {e}")
+        person_ids = sorted(set(person_ids))
+        person_info = {
+            "terms": person_terms,
+            "matched": bool(person_ids),
+            "people": resolved,
+        }
+        if not person_ids:
+            return {
+                "query": q,
+                "total": 0,
+                "limit": effective_limit,
+                "truncated": False,
+                "results": [],
+                "person": person_info,
+            }
+
     results, truncated = search_backup_index(
-        query=q, type_filter=type, sort_by=sort, limit=effective_limit, return_meta=True
+        query=text_query,
+        type_filter=type,
+        sort_by=sort,
+        limit=effective_limit,
+        return_meta=True,
+        person_ids=person_ids,
     )
     return {
         "query": q,
@@ -460,6 +510,7 @@ def search_backup(
         "limit": effective_limit,
         "truncated": truncated,
         "results": results,
+        "person": person_info,
     }
 
 

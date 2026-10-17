@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>People - Media Library</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  {{include 'partials/theme_head.html'}}
+  <!-- Fancybox 5 (media lightbox) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css" />
+  <link rel="stylesheet" href="/static/dist/styles.css?v=43">
+  <style>
+    /* Person cards: a square face crop with the cluster's counts under it. */
+    .pp-card { position: relative; overflow: hidden; }
+    .pp-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: #0c0a09; }
+    /* Face review chips: selectable, so a cluster can be pruned by hand. */
+    .pp-face { position: relative; cursor: pointer; }
+    .pp-face img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
+    .pp-face[aria-pressed="true"] { outline: 3px solid var(--accent, #f59e0b); outline-offset: -3px; }
+    .pp-face[aria-pressed="true"]::after {
+      content: "✓"; position: absolute; top: 2px; right: 2px;
+      width: 16px; height: 16px; border-radius: 9999px; font-size: 11px; line-height: 16px;
+      text-align: center; background: var(--accent, #f59e0b); color: #0c0a09; font-weight: 700;
+    }
+    .pp-media { position: relative; }
+    .pp-media img, .pp-media video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+    .fancybox__caption { background: rgba(12, 10, 9, .86) !important; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen h-[100dvh] overflow-hidden flex flex-col font-sans antialiased">
+
+  <!-- Mobile Top Bar -->
+  <header class="md:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 h-12 flex items-center justify-between" style="padding-top: var(--sat, env(safe-area-inset-top, 0px)); height: calc(3rem + var(--sat, env(safe-area-inset-top, 0px)));">
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <a href="/" class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white border border-slate-700 shrink-0" title="Back to Library" aria-label="Back to Library">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+      </a>
+      <span class="text-base shrink-0"><span data-lb-icon="scan-face" data-lb-icon-class="w-5 h-5"></span></span>
+      <div class="min-w-0">
+        <h1 class="text-xs font-bold text-white truncate">People</h1>
+        <p id="ppMobileSubtitle" class="text-[10px] text-slate-400 font-mono truncate">Loading…</p>
+      </div>
+    </div>
+    <button id="themeModalBtnMobile" data-theme-modal-btn type="button" title="Appearance & Mobile Settings" class="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 flex items-center justify-center transition shrink-0">
+      <span class="text-sm leading-none">🎨</span>
+    </button>
+  </header>
+
+  <!-- Desktop Top Navigation Bar -->
+  <header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 px-2.5 sm:px-4 md:px-5 h-12 sm:h-[52px] hidden md:flex items-center shrink-0">
+    <div class="w-full mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
+      <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
+        <span class="text-base sm:text-xl shrink-0">📁</span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1">
+            <h1 class="text-xs sm:text-sm md:text-base font-bold tracking-tight text-white truncate">Media Library</h1>
+            <span class="hidden sm:inline text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">People</span>
+          </div>
+          <p class="text-[10px] md:text-xs text-slate-400 font-mono truncate hidden sm:block">Face clusters, names &amp; search by person</p>
+        </div>
+      </div>
+
+      <nav class="flex items-center bg-slate-950/80 p-0.5 sm:p-1 rounded-xl border border-slate-800 shrink-0">
+        <a href="/" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>📁</span><span class="hidden xs:inline sm:inline">Library</span>
+        </a>
+        <a href="/sorter" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>🎬</span><span class="hidden xs:inline sm:inline">Sorter</span>
+        </a>
+        <a href="/downloads" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>🔗</span><span class="hidden xs:inline sm:inline">Downloads</span>
+        </a>
+        <a href="/people" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow-sm flex items-center gap-1 sm:gap-1.5 transition">
+          <span>🧑</span><span class="hidden xs:inline sm:inline">People</span>
+        </a>
+        <a href="/analytics" class="px-2 sm:px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-1 sm:gap-1.5 transition">
+          <span>📊</span><span class="hidden xs:inline sm:inline">Analytics</span>
+        </a>
+      </nav>
+
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <a href="/" title="Return to the Library & background tasks" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0">
+          <span class="text-xs leading-none">⚙️</span>
+          <span class="hidden xl:inline">Library</span>
+        </a>
+        <button id="themeModalBtn" data-theme-modal-btn title="Appearance & Mobile Settings (T)" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+          <span class="text-xs leading-none">🎨</span>
+          <span class="hidden xl:inline">Theme</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="md:hidden shrink-0" aria-hidden="true" style="height: calc(3rem + var(--sat, env(safe-area-inset-top, 0px)));"></div>
+
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-[70] flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <main class="flex-1 min-h-0 overflow-y-auto relative">
+    <div class="max-w-[1500px] w-full mx-auto px-3.5 sm:px-5 md:px-6 pt-2 sm:pt-2.5 md:pt-6 pb-24 md:pb-10 flex flex-col gap-4">
+
+      <!-- Intro + scan controls -->
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div class="flex flex-col gap-1 min-w-0">
+            <h2 class="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span data-lb-icon="scan-face" data-lb-icon-class="w-4 h-4"></span> People &amp; Faces
+            </h2>
+            <p class="text-[11px] sm:text-xs text-slate-400 leading-relaxed max-w-2xl">
+              Faces are detected in loose images (from the cached thumbnails) and in videos (sampled frames,
+              keeping each moment's timestamp), clustered into people, and kept on this machine only.
+              Name a cluster and the Library search box understands <code class="px-1 rounded bg-slate-800 text-slate-300 font-mono">person:name</code>.
+            </p>
+          </div>
+          <div id="ppCounts" class="flex flex-wrap items-center gap-1.5 shrink-0"></div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 bg-slate-900/50 border border-slate-800/70 rounded-2xl p-2.5">
+          <button id="ppScanAllBtn" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[11px] sm:text-xs font-semibold shadow-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none">
+            <span data-lb-icon="scan-face" data-lb-icon-class="w-3.5 h-3.5"></span><span>Scan library</span>
+          </button>
+          <div class="flex items-center gap-1">
+            <input id="ppScanFolder" type="text" placeholder="…or a folder path" spellcheck="false" class="w-44 sm:w-64 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-emerald-600">
+            <button id="ppScanFolderBtn" type="button" title="Queue just this folder" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Scan folder</button>
+          </div>
+          <div class="flex items-center gap-1">
+            <button id="ppReclusterBtn" type="button" title="Re-group every face (existing names are kept)" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition flex items-center gap-1.5">
+              <span data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span><span>Re-group all</span>
+            </button>
+            <button id="ppPauseBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Pause</button>
+          </div>
+          <div class="flex items-center gap-1.5 ml-auto" role="group" aria-label="Match strictness">
+            <span class="text-[10px] uppercase tracking-wider text-slate-500">Match</span>
+            <div id="ppPresets" class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800"></div>
+          </div>
+        </div>
+
+        <div id="ppProgress" class="hidden flex items-center gap-2.5 text-[11px] text-slate-400">
+          <div class="flex-1 min-w-0 h-1.5 bg-slate-800 rounded-full overflow-hidden"><div id="ppProgressBar" class="h-full bg-emerald-500 transition-all duration-200" style="width: 0%"></div></div>
+          <span id="ppProgressText" class="font-mono shrink-0">—</span>
+        </div>
+      </div>
+
+      <!-- Disabled / engine notice -->
+      <div id="ppNotice" class="hidden p-4 sm:p-5 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col gap-2"></div>
+
+      <div id="ppLoading" class="p-10 sm:p-14 text-center text-xs text-slate-400 bg-slate-900/50 border border-slate-800/70 rounded-2xl">
+        <span class="inline-block w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin align-middle mr-2"></span>
+        Loading people…
+      </div>
+      <div id="ppError" class="hidden p-6 sm:p-8 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-2xl"></div>
+
+      <!-- View 1: clusters -->
+      <section id="ppPeopleView" class="hidden flex-col gap-3">
+        <div id="ppGrid" class="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2.5 sm:gap-3"></div>
+        <div id="ppGridEmpty" class="hidden p-10 text-center text-xs text-slate-400 bg-slate-900/50 border border-slate-800/70 rounded-2xl"></div>
+        <div class="flex justify-center">
+          <button id="ppMorePeopleBtn" type="button" class="hidden px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Load more people</button>
+        </div>
+      </section>
+
+      <!-- View 2: one person -->
+      <section id="ppPersonView" class="hidden flex-col gap-4">
+        <button id="ppBackBtn" type="button" class="self-start px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">← All people</button>
+
+        <div class="flex flex-wrap items-start gap-3 sm:gap-4 bg-slate-900/50 border border-slate-800/70 rounded-2xl p-3.5 sm:p-5">
+          <img id="ppPersonCover" alt="" class="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover bg-slate-950 border border-slate-800 shrink-0">
+          <div class="flex-1 min-w-0 flex flex-col gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <input id="ppPersonName" type="text" placeholder="Name this person" maxlength="120" spellcheck="false" class="flex-1 min-w-[10rem] px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-sm font-semibold text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-600">
+              <button id="ppSaveNameBtn" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition flex items-center gap-1.5">
+                <span data-lb-icon="check" data-lb-icon-class="w-3.5 h-3.5"></span><span>Save name</span>
+              </button>
+            </div>
+            <div id="ppPersonMeta" class="text-[11px] text-slate-400 font-mono"></div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="ppMergeBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition flex items-center gap-1.5">
+                <span data-lb-icon="arrow-right-left" data-lb-icon-class="w-3.5 h-3.5"></span><span>Merge into…</span>
+              </button>
+              <button id="ppRescanBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition flex items-center gap-1.5">
+                <span data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span><span>Re-scan their files</span>
+              </button>
+              <button id="ppDismissPersonBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/50 border border-rose-900/50 text-rose-300 text-[11px] font-semibold transition flex items-center gap-1.5">
+                <span data-lb-icon="ban" data-lb-icon-class="w-3.5 h-3.5"></span><span>Not a person</span>
+              </button>
+              <button id="ppOpenInLibraryBtn" type="button" class="hidden px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Search in Library →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Face review strip -->
+        <div class="flex flex-col gap-2.5 bg-slate-900/50 border border-slate-800/70 rounded-2xl p-3.5 sm:p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <span data-lb-icon="users" data-lb-icon-class="w-3.5 h-3.5"></span> Faces in this cluster
+              </h3>
+              <p class="text-[11px] text-slate-500 mt-1">Tap faces to select the ones that don't belong, then split them off or dismiss them.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="ppFaceSelCount" class="text-[10px] text-slate-400 font-mono">0 selected</span>
+              <button id="ppSplitBtn" type="button" disabled class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition disabled:opacity-40 disabled:pointer-events-none">Split selected</button>
+              <button id="ppDismissFacesBtn" type="button" disabled class="px-2.5 py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/50 border border-rose-900/50 text-rose-300 text-[11px] font-semibold transition disabled:opacity-40 disabled:pointer-events-none">Not a person</button>
+            </div>
+          </div>
+          <div id="ppFaces" class="grid grid-cols-4 xs:grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2"></div>
+        </div>
+
+        <!-- Media -->
+        <div class="flex flex-col gap-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <span data-lb-icon="images" data-lb-icon-class="w-3.5 h-3.5"></span> Their media
+              </h3>
+              <p id="ppMediaMeta" class="text-[11px] text-slate-500 mt-1">—</p>
+            </div>
+            <label class="flex items-center gap-1.5 text-[11px] text-slate-400">
+              Sort
+              <select id="ppMediaSort" class="px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-600">
+                <option value="count">Most frames</option>
+                <option value="name">Name</option>
+                <option value="date">Newest</option>
+                <option value="size">Largest</option>
+              </select>
+            </label>
+          </div>
+          <div id="ppMedia" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-2.5 sm:gap-3"></div>
+          <div class="flex justify-center">
+            <button id="ppMoreMediaBtn" type="button" class="hidden px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Load more media</button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Merge modal -->
+  <div id="ppMergeModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[95] hidden items-center justify-center p-3 sm:p-6">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div class="min-w-0">
+          <h3 class="text-xs sm:text-sm font-bold text-white truncate">Merge people</h3>
+          <p id="ppMergeSubtitle" class="text-[10px] text-slate-400 font-mono truncate">Choose the clusters to fold into this one</p>
+        </div>
+        <button id="ppMergeCloseBtn" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition shrink-0" title="Close">✕</button>
+      </div>
+      <div class="p-3 flex flex-col gap-2 shrink-0">
+        <input id="ppMergeSearch" type="text" placeholder="Filter people…" spellcheck="false" class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-600">
+      </div>
+      <div id="ppMergeList" class="flex-1 min-h-0 overflow-y-auto px-3 pb-3 flex flex-col gap-2"></div>
+      <div class="px-4 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0">
+        <span id="ppMergeCount" class="text-[11px] text-slate-400 font-mono">0 selected</span>
+        <div class="flex items-center gap-2">
+          <button id="ppMergeCancelBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Cancel</button>
+          <button id="ppMergeConfirmBtn" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition">Merge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{include 'partials/theme_modal.html'}}
+
+  <!-- Fancybox 5 JS (media lightbox) -->
+  <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+  <script type="module" src="/static/dist/people.js?v=1"></script>
+</body>
+</html>

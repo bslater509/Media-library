@@ -9,10 +9,39 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
-## [Unreleased]
+## [1.1.0] - 2026-10-17
 
 ### Added
 
+- **Face recognition ("People")** — opt-in via `FACE_RECOGNITION_ENABLED=true`,
+  off by default. A background worker detects faces in loose images (read from
+  the already-cached thumbnails, so no source file crosses the FUSE mount) and in
+  videos (480px sampled frames, one every `FACE_VIDEO_SAMPLE_INTERVAL` seconds,
+  each hit keeping its timestamp as a "moment"), embeds each face with the
+  dependency-light OpenCV pair YuNet + SFace (no torch, no onnxruntime; the two
+  ONNX files are downloaded once into `DATA_DIR/models` and pinned by SHA-256),
+  and groups them into person clusters. Faces join the nearest existing person
+  within a cosine-distance threshold (`FACE_MATCH_THRESHOLD`, or the
+  Strict/Balanced/Loose control on the new page, stored in the DB so it applies
+  without a restart) and otherwise start a new cluster.
+- **`/people` page** (nav tab in the Library, Sorter, Downloads and Analytics
+  headers, plus a Library sidebar drawer link): cluster grid with cover crops and
+  counts, per-person view with their media (a video appears once, with
+  jump-to-moment chips that open the lightbox at that second), a face review
+  strip for selecting faces, and curation — rename, merge clusters, split faces
+  out, dismiss faces or a whole cluster as "not a person" (persisted so a re-scan
+  never re-adds them), re-scan one person's files, and a "Re-group all"
+  maintenance action that re-clusters everything (scipy, chunked so memory stays
+  bounded) while keeping existing names by nearest centroid.
+- **Search by person**: the Library search box understands `person:anna` (and
+  `person:"anna smith"`), composing with the existing filename/folder words, and
+  reports an unknown name instead of looking like an empty search. The person
+  page deep-links into it (`/?q=person:Anna`).
+- **Face Scanning card** in both Background Tasks modals (progress, current
+  file, people/faces totals, crop-cache usage, "Scan all", "Open →"), plus the
+  `faces` block in `/api/system/status` and the worker in `/api/health`'s
+  liveness count. Face scans, cluster edits and crop-cache evictions are all
+  covered by `GET /api/people/status`.
 - **Liveness probe** `GET /api/health`: a cheap, credential-free check for
   systemd, uptime monitors and container healthchecks — reachability and worker
   liveness only, never a library path, count or filename — returning `503` when
@@ -50,6 +79,11 @@ snapshot metadata.
 
 ### Fixed
 
+- **Face rows follow their files**: moves, renames and deletes now rewrite the
+  `faces`/`face_scans`/`dismissed_faces` rows (and a folder or ZIP move rewrites
+  the whole subtree), so a person's media list survives sorting the library, and
+  a restore that replaces the index drops the stale cluster centroids instead of
+  assigning new faces to people that no longer exist.
 - **Toast markup injection**: both toast helpers (`frontend/src/library/utils.js`,
   `frontend/src/app/state.js`) inserted their message with `innerHTML` while call
   sites interpolated filenames, folder names and server error text, so a file

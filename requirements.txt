@@ -19,3 +19,10 @@ yt-dlp>=2025.1.15
 # Fallback downloader for sites yt-dlp does not support (image boards / file hosts
 # such as bunkr); runs as an isolated subprocess via "python -m gallery_dl"
 gallery-dl>=1.28.0
+
+# Face recognition ("People", opt-in via FACE_RECOGNITION_ENABLED) — the only
+# inference runtime the project needs: FaceDetectorYN (YuNet) + FaceRecognizerSF
+# (SFace) come from OpenCV itself, so there is no torch/onnxruntime dependency.
+# Imported lazily by media_library/services/face_engine.py, so an install without
+# it still starts and simply reports the engine as unavailable.
+opencv-contrib-python-headless>=4.8.0

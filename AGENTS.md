@@ -74,12 +74,24 @@
    - Read-only by design: no mutation endpoints, so duplicate resolution, WebP, ZIP and empty-folder cleanup stay in the Library's existing panels. The page is a single entrypoint (`static/dist/analytics.js?v=4`) with its own version string in `templates/analytics.html`, plus `frontend/tests/analytics_smoke.test.js` (ECharts mocked) asserting the KPI/table/pill rendering, HTML escaping of filenames, the treemap's clickable-vs-aggregate data, that every top-level folder stays in the chart with roam/scale limits set, the zoom-in / zoom-out / reset button maths (centre fixed, limits held), the pan-does-not-navigate guard, the `refresh=1` reload, the preview modal, and the error state.
 
 
+11. **Face Recognition & People (`/people`, `templates/people.html`, `frontend/src/people/index.js`)** — opt-in (`FACE_RECOGNITION_ENABLED`, default `false`), off by default and entirely local:
+   - **Scanning**: `FaceWorker` sweeps the index and detects faces in **loose images** (read from the already-cached 360px thumbnail, so no source file ever crosses the FUSE mount) and **videos** (the cached 480px candidate frames, one every `FACE_VIDEO_SAMPLE_INTERVAL` seconds up to `FACE_VIDEO_MAX_FRAMES`, each hit keeping its timestamp as a "moment"). Images inside ZIP archives are skipped entirely (detecting on them would force an archive extraction). Each file is scanned at most once per `mtime`/`size` (`face_scans`), so a re-run resumes instead of restarting, and a changed file has its detections replaced.
+   - **Engine**: OpenCV only — `cv2.FaceDetectorYN` (YuNet) + `cv2.FaceRecognizerSF` (SFace, 128-d embeddings), imported lazily, so there is no torch/onnxruntime dependency. The two ONNX files are downloaded once into `FACE_MODEL_DIR` (default `DATA_DIR/models`) and accepted only when they match a pinned SHA-256 + size; a failed download retries every ten minutes and the card explains why. `opencv-contrib-python-headless` is in `requirements.txt` but a missing install simply reports the engine as unavailable.
+   - **Clustering**: a new face joins the nearest person within `FACE_MATCH_THRESHOLD` cosine distance (default 0.36) and otherwise starts a new unnamed cluster; centroids are cached in-process (one pass over the embeddings, keyed on the database path + a revision bumped by every external mutation) and updated incrementally as the worker assigns. "Re-group all" re-clusters every face with a chunked agglomerative pass (scipy, bounded memory) and re-attaches existing names by nearest centroid, so naming work is never lost.
+   - **Curation**: rename, merge clusters, split faces out, dismiss faces or a whole cluster as "not a person" (`dismissed_faces` — a persisted rejection, so a re-scan never re-adds them), re-scan one person's files, and a Strict/Balanced/Loose strictness control whose choice is stored in `db_meta` and therefore applies to the next scan without a restart (it wins over the env default).
+   - **Face crops**: one ~160px square JPEG per face under `FACE_CROP_DIR` (default `THUMBNAIL_CACHE_DIR/faces`), so covers and review grids need no source reads. Crops are orphan-swept with the prune/deep clean and LRU-trimmed to `FACE_CROP_MAX_SIZE_GB` (default 2 GB), evicted faces being re-queued for re-scan.
+   - **Person pages**: a video is listed once (not once per sampled frame) with its hit timestamps, and each moment chip opens the lightbox at that second; rows are shaped like Library browse entries so the page reuses the same thumbnails, media URLs and Fancybox gallery.
+   - **Search by person**: the Library search box understands `person:anna` / `person:"anna smith"` (composing with the existing filename and relative-folder words), reports an unknown name instead of looking like an empty search, and the person page deep-links into it as `/?q=person:Anna`.
+   - **Storage & privacy**: embeddings (128 float32), boxes, crops and names live in the local SQLite DB and thumbnail cache only. Nothing is uploaded, and no analytics/cloud service is involved. Moves, renames and deletes rewrite the `faces`/`face_scans`/`dismissed_faces` rows through the same index hooks favourites use, so a person's media list survives sorting the library; a backup restore drops the centroid cache rather than serving the previous index's clusters.
+
+
 ### Tech Stack
 - **Language & Runtime**: Python 3.10+ (PEP 604 union syntax in annotations is evaluated at runtime, so 3.9 cannot import the package; tested on Python 3.13)
 - **Web Framework**: FastAPI (v0.110+) with Uvicorn ASGI server and Starlette
 - **Concurrency & Threads**: AnyIO (expanded threadpool tokens to 100), asyncio, Python `threading`
 - **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
 - **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
+- **Face Recognition (opt-in)**: OpenCV (`opencv-contrib-python-headless`) — `FaceDetectorYN` (YuNet ONNX detector) + `FaceRecognizerSF` (SFace 128-d embeddings) — with scipy agglomerative clustering. Imported lazily by `services/face_engine.py`; no torch and no onnxruntime anywhere in the tree. The two ONNX weights are downloaded once into `DATA_DIR/models` and verified by SHA-256.
 - **URL Playlist Downloading**: yt-dlp (run as an isolated subprocess: `python -m yt_dlp`, never imported in-process) with an automatic **gallery-dl** fallback (`python -m gallery_dl`) for sites yt-dlp does not support (image boards / file hosts such as bunkr album links)
 - **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video. Icons are inline SVGs inlined at build time from `lucide-static` (ISC, a devDependency) via Vite `?raw` imports into the shared registry `frontend/src/shared/icons.js` (`icon(name, class)` for JS-rendered markup, `hydrateIcons()` for static `[data-lb-icon]` placeholders) — no icon font, no runtime icon library, and no CDN request; only the icons actually imported are bundled, and both entrypoints (`library.js`, `app.js`) share the one registry. The only other build-time dependency is **ECharts 6** (a devDependency, tree-shaken into the `analytics.js` bundle only: Bar/Pie/Treemap charts, Grid/Tooltip components, `LegacyGridContainLabel`, canvas renderer) — the `/analytics` dashboard's charts, still with no runtime dependency and no CDN request on any page.
 - **Testing**: Backend: Pytest (v8.0+) with `pytest-cov` and `conftest.py` sandboxing fixtures; Frontend: Vitest (v1.6+) with `happy-dom` DOM simulation under `frontend/tests/`.
@@ -142,6 +154,7 @@ When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember tha
 - If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`. The Library UI is split into feature modules under `frontend/src/library/` (entrypoint `index.js` plus `layout`, `folders`, `search`, `gallery`, `lightbox`, `thumbnail_chooser`, `management`, `duplicates`, `tasks`, `workers`, `zip`, `animations`, `theme`, `sheet`, `uploads`); editing any of them still needs only the single `library.js` bump.
 - If you modify Downloads JS (`frontend/src/downloads/*`), increment `src="/static/dist/downloads.js?v=XX"` in `templates/downloads.html`. (Modules under `frontend/src/library/` are shared: `url_downloads.js` and `recent_targets.js` feed both `library.js` and `downloads.js`, and `frontend/src/shared/tasks_badge.js` plus `frontend/src/shared/icons.js` feed both `library.js` and `app.js` — touching either shared module means bumping **both** entrypoint versions. `templates/partials/tasks_modal.html` / `sorter_tasks_modal.html` edits land in `library.js` / `app.js` respectively.)
 - If you modify Analytics JS (`frontend/src/analytics/*`), increment `src="/static/dist/analytics.js?v=XX"` in `templates/analytics.html`. It imports the shared `frontend/src/library/utils.js` (`showToast`/`escapeHtml`/formatting), so a change to that helper affects `library.js`, `downloads.js` and `analytics.js` alike — bump every entrypoint whose bundle you rebuilt.
+- If you modify People JS (`frontend/src/people/*`), increment `src="/static/dist/people.js?v=XX"` in `templates/people.html`. It imports the shared `frontend/src/library/utils.js` and `frontend/src/shared/icons.js`, so touching either means bumping **every** entrypoint whose bundle contains it (`library.js`, `app.js`, `people.js`).
 
 ### Rule 7: Always Commit & Push Changes (Zero Personal Data & Secrets)
 Every task involving code, template, configuration, or documentation changes must be committed and pushed to the remote repository (`origin`) upon completion:
@@ -205,7 +218,7 @@ media-library/
 │   │
 │   ├── routers/                     # FastAPI route modules
 │   │   ├── __init__.py              # Export of all_routers list
-│   │   ├── views.py                 # HTML page endpoints (/, /sorter, /downloads, /analytics, /library)
+│   │   ├── views.py                 # HTML page endpoints (/, /sorter, /downloads, /analytics, /people, /library)
 │   │   ├── auth.py                  # Shared-password login page/routes and auth middleware
 │   │   ├── analytics.py             # Library analytics overview API (index-only, read-only)
 │   │   ├── library_browse.py        # Library browsing, folder tree, search, index controls
@@ -213,6 +226,7 @@ media-library/
 │   │   ├── library_admin.py         # Library rename/delete + thumbnail controls
 │   │   ├── library_manage.py        # Library page file/folder management (move, folders, undo)
 │   │   ├── library_upload.py        # Web browser chunked file and folder uploading
+│   │   ├── people.py                # Face recognition / People API (clusters, curation, crops, scans)
 │   │   ├── url_download.py           # URL/playlist video download endpoints (yt-dlp + gallery-dl, retry/history/clear, tools)
 │   │   ├── sorter_queue.py          # Sorter config, scan, queue, browse, destinations
 │   │   ├── sorter_move.py           # Sorter moves, undo, transfers, rename, delete
@@ -232,6 +246,8 @@ media-library/
 │   │   ├── library_query.py         # Index-only row→dict shaping for library browsing (+ largest-files reader)
 │   │   ├── anim_cache.py            # Animated WebP preview cache: orphan sweep, LRU ceiling, size payload
 │   │   ├── analytics_service.py     # Index-only analytics rollups: recursive folder rollup, quality, reclaimable, health
+│   │   ├── face_engine.py           # YuNet + SFace engine, model download/SHA-256 verification (lazy OpenCV)
+│   │   ├── face_service.py          # Face storage, clustering/curation, crop cache, People queries
 │   │   ├── status.py                # Shared worker/index/transfer/ZIP status payload builders
 │   │   ├── ffmpeg_service.py        # FFmpeg facade: re-exports the helpers below + WebP conversion
 │   │   ├── ffmpeg_probe.py          # FFprobe metadata (dimensions, codecs, duration, capture time)
@@ -260,6 +276,7 @@ media-library/
 │       ├── animated_thumb_worker.py # Background animated WebP video preview generation
 │       ├── metadata_worker.py       # MediaMetadataWorker: dimensions/duration/codec/capture-time probing
 │       ├── duplicate_hash_worker.py # DuplicateHashWorker (quick) & ThumbHashWorker (visual)
+│       ├── face_worker.py           # FaceWorker: image/video face detection, clustering, crops
 │       ├── webp_worker.py           # WebPOptimizerWorker for background image conversion
 │       ├── library_ops_worker.py    # LibraryOpsWorker for queued moves/deletes/renames + undo
 │       ├── url_download_worker.py   # URLDownloadWorker: queued yt-dlp/gallery-dl playlist downloads
@@ -274,6 +291,7 @@ media-library/
 │   │   │                            #   polling.js, empty_folders.js, browser.js, modals.js, events.js
 │   │   ├── downloads/               # Downloads page UI logic (index.js)
 │   │   ├── analytics/               # Analytics dashboard UI logic (index.js: ECharts treemap/donut/bars, cards, preview)
+│   │   ├── people/                  # People page UI logic (index.js: cluster grid, curation, person media)
 │   │   ├── library/                 # Media Library UI logic, split into feature modules:
 │   │   │                            #   index.js (entrypoint: shortcuts, initEvents, bootstrap, window.libraryApp)
 │   │   │                            #   layout.js, folders.js, search.js, gallery.js, lightbox.js,
@@ -281,7 +299,7 @@ media-library/
 │   │   │                            #   zip.js, animations.js, theme.js, sheet.js, uploads.js, shortcuts.js
 │   │   │                            #   plus shared state.js, utils.js, url_downloads.js, recent_targets.js, service_worker.js
 │   │   └── shared/                  # Cross-page modules (icons.js, tasks_badge.js)
-│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_shortcuts, library_favorites_badge, uploads_resume, library_smoke, sorter_smoke, analytics_smoke)
+│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_shortcuts, library_favorites_badge, uploads_resume, library_smoke, sorter_smoke, analytics_smoke, people_smoke)
 │
 ├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
 ├── static/                          # Static assets and built bundles
@@ -293,6 +311,7 @@ media-library/
 │   ├── login.html                   # Shared-password sign-in page
 │   ├── downloads.html               # URL/playlist Downloads page user interface
 │   ├── analytics.html               # Library Analytics dashboard user interface (bundle analytics.js)
+│   ├── people.html                  # Face clusters / People page user interface (bundle people.js)
 │   ├── library.html                 # Media Library & Gallery user interface
 │   └── partials/                    # HTML fragments (modals, sidebar, tasks_modal.html, sorter_tasks_modal.html,
 │                                    #   library_shortcuts_modal.html) used via {{include}}
@@ -322,6 +341,8 @@ media-library/
 │   ├── test_db_indexer.py           # SQLite indexer & pruning tests
 │   ├── test_deep_coverage_workers_services.py # Worker loops, upload service, deep clean, WebP/FFmpeg
 │   ├── test_duplicates_comprehensive.py # Quick & visual deduplication, cliques, auto-delete, worker loops
+│   ├── test_face_service.py         # Face engine/model verification, clustering, crop cache/LRU, curation, index propagation
+│   ├── test_people_api.py           # /api/people clusters, curation, scans, crops, person: search token, status block
 │   ├── test_library_manage.py       # File management, empty folder cleanup & undo operations
 │   ├── test_library_upload.py       # Chunked upload: offset-verified chunks, resume status, duplicate/gap handling, incomplete finalize, staging GC
 │   ├── test_library_media_and_http_stream.py # Byte-range streaming, ETag 304 caching, thumbnail candidate frames
@@ -390,6 +411,16 @@ All settings can be provided via `.env` file, environment variables, or CLI para
 | `ZIP_CACHE_MAX_SIZE_GB`| N/A | `5.0` | Maximum disk size in GB for extracted ZIP cache before LRU eviction |
 | `QUICK_NAV_DIRS` | N/A | Auto-detected | Comma-separated quick navigation directory paths |
 | `SEARCH_LIMIT` | N/A | `1000` | Global library search result limit (maximum matches returned in a single search query before truncation) |
+| `FACE_RECOGNITION_ENABLED` | N/A | `false` | Master switch for the opt-in face recognition worker, `/people` page and scan endpoints. Off pays nothing (OpenCV is imported lazily) |
+| `FACE_MODEL_DIR` | N/A | `${DATA_DIR}/models` | Where the YuNet + SFace `.onnx` weights live; downloaded once and verified by SHA-256 |
+| `FACE_CROP_DIR` | N/A | `${THUMBNAIL_CACHE_DIR}/faces` | Face crop cache directory (one ~160px JPEG per detected face) |
+| `FACE_DETECTION_CONFIDENCE` | N/A | `0.7` | YuNet detection score floor (0.1–0.99) |
+| `FACE_MATCH_THRESHOLD` | N/A | `0.36` | Cosine **distance** ceiling for joining an existing person (0.05–1.2, lower is stricter). The `/people` Strict/Balanced/Loose control stores its own value in the database, which wins over this default without a restart |
+| `FACE_MIN_FACE_PX` | N/A | `48` | Faces smaller than this (on the 480px scan image) are ignored |
+| `FACE_MAX_PER_FRAME` | N/A | `20` | Maximum faces kept per image/frame (largest first) |
+| `FACE_VIDEO_SAMPLE_INTERVAL` | N/A | `30` | Seconds between sampled frames per video |
+| `FACE_VIDEO_MAX_FRAMES` | N/A | `24` | Cap on sampled frames per video |
+| `FACE_CROP_MAX_SIZE_GB` | N/A | `2.0` | LRU ceiling for the face crop cache; evicted faces are re-queued for re-scan |
 | `APP_PASSWORD` | N/A | *(empty — auth disabled)* | Single shared password gating the entire web UI and API; empty/unset disables authentication |
 | `GIT_COMMIT` / `BUILD_COMMIT` | N/A | *(empty — read from `.git`)* | Build revision reported as `commit` by `/api/health`; set it for a container/packaged deploy with no `.git` directory (a plain checkout is detected automatically) |
 
@@ -502,6 +533,62 @@ CREATE TABLE favorites (
 - Automatically synchronized during file and folder renames/moves (`move_path_in_index`), and cleaned up upon file deletion (`delete_path_from_index`).
 - Transferred video files sorted via the Video Sorter preserve their favorite state on move.
 
+#### 7. `people`
+Face clusters (created by the opt-in face recognition worker), optionally named by the user.
+```sql
+CREATE TABLE people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,                 -- NULL until named
+    created_at REAL NOT NULL,
+    updated_at REAL
+);
+```
+- Cluster counts and cover crops are **derived** (`GROUP BY` / largest-box face) rather than stored, so a move, delete or re-scan cannot leave a stale counter behind.
+
+#### 8. `faces`
+One detected face: box on the scan image, its 128-d embedding, and the cluster it was assigned to.
+```sql
+CREATE TABLE faces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,        -- rewritten on move/rename, deleted with the file
+    frame_time REAL NOT NULL DEFAULT -1.0,  -- -1.0 for images, seconds for a video hit
+    x INTEGER, y INTEGER, w INTEGER, h INTEGER,
+    score REAL,
+    embedding BLOB,                 -- 128 little-endian float32 (512 bytes), L2-normalised
+    person_id INTEGER,              -- NULL until clustered
+    distance REAL,                  -- distance to the assigned centroid at assignment time
+    crop TEXT,                      -- face_<24 hex>.jpg in FACE_CROP_DIR
+    created_at REAL NOT NULL,
+    UNIQUE(file_path, frame_time, x, y)
+);
+```
+- `frame_time` is never NULL (SQLite treats NULLs as distinct in a UNIQUE key, so an image's `-1.0` is what makes the tuple unique and prevents duplicate rows on a re-scan).
+
+#### 9. `face_scans`
+Which files have already been scanned, for the mtime/size the result is valid for — including files where **no** face was found (they have no `faces` rows and would otherwise be re-scanned forever).
+```sql
+CREATE TABLE face_scans (
+    file_path TEXT PRIMARY KEY,
+    mtime REAL,
+    size INTEGER,
+    faces_found INTEGER DEFAULT 0,
+    scanned_at REAL NOT NULL
+);
+```
+
+#### 10. `dismissed_faces`
+Faces the user rejected as "not a person", kept as a rejection so a later re-scan of the same file does not re-cluster them.
+```sql
+CREATE TABLE dismissed_faces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,
+    frame_time REAL NOT NULL DEFAULT -1.0,
+    x INTEGER, y INTEGER,
+    created_at REAL NOT NULL,
+    UNIQUE(file_path, frame_time, x, y)
+);
+```
+
 ### Essential Indexes
 - `idx_files_folder ON files(folder_path)`
 - `idx_files_folder_lower_name ON files(folder_path, LOWER(name))`
@@ -516,6 +603,9 @@ CREATE TABLE favorites (
 - `idx_files_width ON files(width)`
 - `idx_folders_parent ON folders(parent_path)`
 - `idx_folders_parent_lower_name ON folders(parent_path, LOWER(name))`
+- `idx_faces_person ON faces(person_id)`
+- `idx_faces_file ON faces(file_path)`
+- `idx_dismissed_file ON dismissed_faces(file_path)`
 - `idx_ignored_p1_p2 ON ignored_duplicates(path1, path2)`
 - `idx_favorites_created_at ON favorites(created_at DESC)`
 
@@ -544,8 +634,9 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
 | `webp_worker_instance` | `WebPOptimizerWorker` | `workers.webp_worker` | Background conversion of loose (non-ZIP) images to WebP. ZIP archives are excluded from the automatic sweep and are optimized on demand only — as a single archive-level unit when browsed or via the Optimize WebP button. Backs off when memory is low (measured against the tighter of host RAM and the service cgroup cap) and returns freed heap between conversions. |
 | `url_download_worker_instance` | `URLDownloadWorker` | `workers.url_download_worker` | Queued URL/playlist downloads into `UPLOAD_STAGING_DIR` then the library folder; runs yt-dlp first and falls back to gallery-dl for unsupported sites (bunkr, image boards); up to 2 parallel slots, skip-and-continue per playlist item, live/premiere filtering, per-job cancel; retains a 500-row terminal history with newest-first pagination (`get_history`), clone-retry for failed/cancelled jobs (`retry`), and clear-finished (`clear_history`). |
 | `library_ops_worker_instance` | `LibraryOpsWorker` | `workers.library_ops_worker` | Sequentially executes queued Library page operations — moves (file/folder/ZIP), recursive deletes, and renames — off the request thread, with per-item cancel and a move-only undo stack. |
+| `face_worker_instance` | `FaceWorker` | `workers.face_worker` | Opt-in face detection + clustering ("People"). Sweeps loose images (from cached thumbnails) and videos (480px sampled frames, each hit keeping its timestamp), embeds via the lazily-imported OpenCV YuNet + SFace pair, writes a small crop per face, and assigns each face to the nearest person centroid or a new cluster. Scans each file once per `mtime`/`size`, retries a failed model download every ten minutes, pauses itself below `MEMORY_GUARD_MB` (host *or* cgroup headroom), trims the crop cache to `FACE_CROP_MAX_SIZE_GB` after every batch, and reports `disabled`/`unavailable` instead of spinning when the feature is off or the engine is missing. |
 | `h265_worker_instance` | `H265ConvertWorker` | `workers.h265_worker` | Serial in-place H.265 (x265/HEVC) re-encode of a single library video (`libx265 -preset medium -crf 18`, audio stream-copied when MP4-compatible, else AAC 192k, `-tag:v hvc1`). Replaces the original atomically (a `.mp4` sibling for non-MP4 sources, original removed), rewrites the SQLite row (`video_codec='hevc'`, content hashes cleared, `has_thumb=0` for poster regeneration), reports live percent/fps/speed/ETA, and supports per-job cancel. Skips files that are already HEVC. |
-| `backup_watcher_instance` | `BackupWatcherWorker` | `workers.backup_watcher` | Manages scheduled and shutdown snapshot backups to library folder. Triggers a snapshot only after **every** background subsystem is idle — crawler, thumbnails, duplicate/visual hashing, metadata probing, WebP, transfers, transcodes, library ops, animated previews, URL downloads, x265 conversions, single + batch ZIP jobs, and backups themselves. |
+| `backup_watcher_instance` | `BackupWatcherWorker` | `workers.backup_watcher` | Manages scheduled and shutdown snapshot backups to library folder. Triggers a snapshot only after **every** background subsystem is idle — crawler, thumbnails, duplicate/visual hashing, metadata probing, WebP, transfers, transcodes, library ops, animated previews, URL downloads, x265 conversions, face scanning, single + batch ZIP jobs, and backups themselves. |
 | *Batch ZIP Runner* | *Thread-based* | `services.zip_service` | Sequential batch compression of leaf image folders into ZIPs. |
 | *Batch Unpack Runner* | *Thread-based* | `services.zip_service` | Sequential batch extraction of indexed ZIP archives back into folders (start/pause/resume/cancel), reusing `unpack_zip_to_folder`. |
 | *Background Crawler* | *Async task* | `db.indexer` | Crawls library folder hierarchy, updates SQLite, prunes stale items. **Incremental on startup**: a folder whose recorded `dir_mtime` still matches is skipped without re-stat-ing/rewriting its files, though its known child folders are still traversed (so deep changes and pruning stay correct, and a transient `stat` failure protects rather than prunes the subtree). A manual sync forces a full re-scan. Prune is skipped for incomplete crawls and aborts when an implausibly large share of folders appears missing (transient mount protection) — it then records the shortfall (`indexer_state["stale_folders"]`/`stale_files`, `prune_aborted`, `prune_reason`) so the status panel reports the stale index instead of a false 100%. A genuinely large remote deletion is cleared by the explicit forced prune (`POST /api/backup/index/prune`, or the indexer card's prune button). |
@@ -555,7 +646,7 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
    - AnyIO thread limiter set to `100` tokens for concurrent FUSE I/O.
    - `check_and_auto_restore_library_backup()`: Detects if database or thumbnails are missing, restoring snapshot if found.
    - `init_backup_db()`: Initializes database schema and runs idempotent migrations.
-   - Workers started: `transfer`, `transcode`, `crawler`, `thumbnail`, `animated_thumb`, `metadata`, `duplicate_hash`, `thumb_hash`, `webp`, `library_ops`, `backup_watcher`, `h265`.
+   - Workers started: `transfer`, `transcode`, `crawler`, `thumbnail`, `animated_thumb`, `metadata`, `duplicate_hash`, `thumb_hash`, `webp`, `library_ops`, `backup_watcher`, `h265`, `face`.
    - If `source_dir` configured, enqueues pre-transcoding in background thread.
 2. **Shutdown Sequence**:
    - All workers gracefully stopped (`await worker.stop()`).
@@ -611,6 +702,15 @@ Implemented in `media_library.routers.library_media.stream_backup_media` and `me
 - `width IS NULL` marks a file as not-yet-probed; the worker fills all probe columns together and writes `0 x 0` on failure so the file is not retried until the indexer sees it change (carry-over in `index_folder`/`update_file_in_index` keeps results across crawls).
 - ZIP members are probed separately: rather than force archive extraction over FUSE, the worker reads their dimensions from the cached local thumbnail (`_backfill_zip_batch`, one batch per loop alongside loose probing, with a 60s sweep cooldown). Members without a thumbnail yet fall back to a 1:1 box filled with `object-cover` (the justified grid no longer re-flows on image load). The ZIP-member sweep keeps `status: probing` until every batch is walked, and its `zip_total`/`zip_pending_count` are reported separately so the Library's Media Metadata Probe card can show it.
 - Progress is exposed under `metadata` in `/api/system/status`.
+
+### Face Detection, Clustering & People
+`FaceWorker` (`workers.face_worker`) drives the opt-in People feature through `services/face_engine.py` (detection + embeddings) and `services/face_service.py` (storage, clustering, crops, queries):
+- **Scan sources**: loose images resolve to their **cached 360px thumbnail** (an image whose thumbnail has not been generated yet stays pending — the worker never reads a source file over the mount); videos resolve to the **cached 480px candidate frames** the animated previews and the thumbnail chooser already use (one every `FACE_VIDEO_SAMPLE_INTERVAL` seconds, capped at `FACE_VIDEO_MAX_FRAMES`, plus the final safe frame). Images inside ZIP archives are excluded from the eligible set entirely.
+- **Detection & embeddings**: `cv2.FaceDetectorYN` (YuNet, score floor `FACE_DETECTION_CONFIDENCE`, faces smaller than `FACE_MIN_FACE_PX` dropped, at most `FACE_MAX_PER_FRAME` largest kept) then `cv2.FaceRecognizerSF.alignCrop` + `.feature` for a 128-d embedding, L2-normalised before storage so cosine distance is a plain dot product (the table stores 512 bytes of float32 per face). The engine is built once per process and imported lazily; missing OpenCV or missing/unverified models report `unavailable` with a reason instead of failing.
+- **Grouping**: `assign_person` finds the nearest person centroid within the effective threshold (a one-row cosine dot product over cached centroids) and otherwise a new unnamed cluster is created. The centroid cache is one pass over the embeddings, keyed on the database path + a revision bumped by merge/split/dismiss/re-cluster/restore, and updated incrementally as the worker assigns. `recluster_people` re-groups everything with `scipy.cluster.hierarchy` in `_CLUSTER_CHUNK`-sized blocks (so a 50k-face library never materialises one huge distance matrix) and re-attaches names by nearest centroid — one new cluster per person at most, best match first.
+- **Curation**: rename (name `NULL` = unnamed), merge (`UPDATE faces SET person_id`, empty unnamed clusters dropped), split (new cluster from selected faces), dismiss (faces copied to `dismissed_faces` and removed, crops deleted, and a re-scan skips exactly those boxes), and the strictness control (`db_meta['face_match_threshold']`, read with a 10s memo so it applies to the next scan without a restart).
+- **Crops & housekeeping**: `FACE_CROP_DIR` holds one `face_<sha256(path|frame|box)[:24]>.jpg` per face (stable across re-scans, so an unchanged detection reuses the file), written atomically via a `.tmp` sibling; `clean_orphaned_face_crops` runs with the prune/deep clean, `manage_face_crop_lru` trims to `FACE_CROP_MAX_SIZE_GB` after each batch and re-queues the drained files' `face_scans` rows so a later sweep rebuilds them, and the strict `face_<24 hex>.jpg` pattern keeps an in-flight temp file safe.
+- **Store & index discipline**: `record_scan` replaces a file's rows in one transaction (upsert on the `UNIQUE(file_path, frame_time, x, y)` key), never resurrects a dismissal, and always writes the `face_scans` marker (including `faces_found = 0`). Moves/renames/deletes rewrite the three tables through `move_path_in_index`/`delete_path_from_index` (folder and ZIP moves rewrite the whole subtree), the prune reports `pruned_orphaned_crops`, and a backup restore calls `invalidate_centroids()` so the previous index's clusters can never be served.
 
 ### In-place H.265 (x265) Conversion
 Drives the Library lightbox's "Convert to x265 / HEVC" action via `H265ConvertWorker` (`workers.h265_worker`):
@@ -770,9 +870,11 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
   "batch_unzip": { "status": "idle", "succeeded": 0, "failed": 0, "errors": [], "overall_percent": 0.0 },
   "library_ops": { "status": "idle", "active": null, "queued": [], "undo_count": 0 },
   "url_downloads": { "status": "idle", "concurrency": 2, "active": [], "queued": [], "history": [], "tools": { "ytdlp": true, "gallery_dl": true } },
-  "h265": { "status": "idle", "active": null, "job": null, "queue_length": 0, "active_count": 0, "queued_count": 0, "queued": [], "jobs": [], "history": [] }
+  "h265": { "status": "idle", "active": null, "job": null, "queue_length": 0, "active_count": 0, "queued_count": 0, "queued": [], "jobs": [], "history": [] },
+  "faces": { "status": "idle", "enabled": false, "engine": { "available": false, "ready": false, "reason": "Face models not downloaded (…)", "model_dir": "…/models" }, "total_files": 0, "pending_count": 0, "processed_count": 0, "percent": 100.0, "current_file": "", "faces_total": 0, "people_total": 0, "unnamed_people": 0, "dismissed_faces": 0, "is_paused": false, "cache_files": 0, "cache_bytes": 0, "cache_size_formatted": "0 B", "cache_max_bytes": 2147483648, "cache_max_size_formatted": "2.0 GB" }
 }
 ```
+- The top-level `faces` key is the opt-in face recognition worker (off by default). It carries the scan coverage (`total_files`/`pending_count`/`percent`/`current_file`), the engine's availability and *why* it is unavailable, the cluster totals (`faces_total`/`people_total`/`unnamed_people`/`dismissed_faces`) and the face crop cache's usage against its cap. `status == "scanning"` also sets `is_active`. Only image and video files that can actually be scanned are counted (`total_files` excludes ZIP members and images without a cached thumbnail).
 - The top-level `version` key reports `media_library.__version__` — the single source of truth for the release version (see Rule 1.6). The liveness probe's `commit` key reports the checkout's short git SHA, which is the finer-grained check of *which* build a running server is on.
 - The frontend uses `is_active` to adjust polling frequency: **2000 ms** when active background work is in flight, **6000 ms** when idle, **8000 ms** on error.
 - `url_downloads.active_count > 0` or `queued_count > 0` also sets `is_active`.
@@ -785,11 +887,12 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 ## 13. Complete API Routing & Endpoint Map
 
 ### HTML Views (`media_library.routers.views`)
-- All four page routes are served through `_serve_page()`, which loads the cached template from `core/templating.load_template` and substitutes the `{{VERSION}}` token with `media_library.__version__`; the Library page's sidebar footer and the login page render it (the login page does the same substitution in `routers/auth._render_login`).
+- All five page routes are served through `_serve_page()`, which loads the cached template from `core/templating.load_template` and substitutes the `{{VERSION}}` token with `media_library.__version__`; the Library page's sidebar footer and the login page render it (the login page does the same substitution in `routers/auth._render_login`).
 - `GET /` — Serves Media Library UI (`templates/library.html`)
 - `GET /sorter` / `GET /sort` — Serves Incoming Video Sorter UI (`templates/index.html`)
 - `GET /downloads` — Serves the URL/playlist Downloads page (`templates/downloads.html`; bundle `static/dist/downloads.js`)
 - `GET /analytics` — Serves the Library Analytics dashboard (`templates/analytics.html`; bundle `static/dist/analytics.js`)
+- `GET /people` — Serves the Face clusters / People page (`templates/people.html`; bundle `static/dist/people.js`)
 - `GET /library` — 302 Redirect to `/`
 - `GET /sw.js` — Serves Service Worker script (`static/sw.js`) with `Service-Worker-Allowed: /` and `Cache-Control: no-cache, no-store, must-revalidate` for client-side animated WebP thumbnail interception and CacheStorage caching
 
@@ -800,7 +903,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 ### Media Library & Browser (`media_library.routers.library_browse` + `library_media` + `library_admin`)
 - `GET /api/backup/browse?path={folder_path}&refresh={bool}` — List subfolders, files, breadcrumbs, ZIP indicators. Never indexes inline: for a folder not yet in the index it schedules indexing on a background thread and returns the cached view with `indexing: true` (the client re-polls). Returns per-file `thumb_url`/`media_url` plus probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time` (dimensions drive natural-aspect-ratio tiles). Each subfolder entry carries `file_count`/`subfolder_count`/`total_size`, a representative cover `thumb_url` (alphabetically-first direct-child image by `LOWER(name)`, falling back to the first direct-child video's poster, index-only), the cover's `width`/`height`, and `has_thumb`; folders with no media get `thumb_url: null`, and the client card falls back to an icon until the on-demand thumbnail is generated. (`library_browse`)
 - `GET /api/backup/folders?path={folder_path}` — List only a folder's immediate child folders (index-only, FUSE-safe) with `file_count`/`subfolder_count`/`is_zip`. Powers the sidebar folder tree's lazy expansion; never reads file entries nor triggers ZIP extraction, and schedules background indexing with `indexing: true` for unindexed folders. (`library_browse`)
-- `GET /api/backup/search?q={query}&type={type}&sort={sort}&limit={limit}` — Search media files by multi-word query across SQLite index; respects `limit` (defaults to `SEARCH_LIMIT`, default 1000) and returns `limit`, `total`, `truncated` (bool indicating if results exceeded limit), and matching `results` with probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time`. Truncated searches display a visual indicator (`1,000+` badge) and query refinement notice. (`library_browse`)
+- `GET /api/backup/search?q={query}&type={type}&sort={sort}&limit={limit}` — Search media files by multi-word query across SQLite index; respects `limit` (defaults to `SEARCH_LIMIT`, default 1000) and returns `limit`, `total`, `truncated` (bool indicating if results exceeded limit), and matching `results` with probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time`. Truncated searches display a visual indicator (`1,000+` badge) and query refinement notice. The query may also carry `person:<name>` / `person:"<full name>"` tokens: they are stripped from the free-text words, resolved against named face clusters, and returned in a `person` key (`{terms, matched, people}`), so an unknown name reads as "no such person" rather than an empty search. (`library_browse`)
 - `GET /api/backup/media?path={file_path}` — Stream video/image with byte-range headers and caching (`library_media`)
 - `GET /api/backup/thumbnail?path={file_path}` — Stream thumbnail image (`library_media`)
 - `GET /api/backup/thumbnails/animated?path={file_path}&wait={bool}` — Stream looping animated WebP video preview (480px, 2 fps). If not yet cached and `wait=false`, immediately returns static thumbnail with `X-Thumbnail-Status: generating` header while enqueuing video to `AnimatedThumbWorker` priority queue (`library_media`)
@@ -819,6 +922,21 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 - `POST /api/backup/index/sync` — Trigger a manual **full** library crawler re-index (startup crawls are incremental, keyed on per-folder `dir_mtime`) (`library_browse`)
 - `GET /api/backup/index/status` — Crawler progress status (`library_browse`)
 - `POST /api/backup/index/prune` — Explicit forced prune: removes index rows for folders/files that no longer exist on the mount (bypasses the crawler's mount-safety limit, which aborts when >10% of the index looks missing) plus orphaned thumbnails; the status panel's "Remove missing folders from index" button calls it (`library_browse`)
+
+### Face Recognition / People (`media_library.routers.people`)
+- `GET /api/people` — Person clusters with derived counts (faces, files) and cover crops, biggest first (`limit` 1–2000, `offset`); the body also carries `counts`, `total` and the full status payload
+- `GET /api/people/{person_id}` — One person: their media, grouped by file (a video appears once with its `moments` — the sampled timestamps that person appears at — and `first_frame_time`), shaped like Library browse rows so the page reuses the same thumbnails/media URLs; plus their first faces for the cover and review strip (`limit`, `offset`, `sort=count|name|date|size`). `404` for an unknown cluster
+- `GET /api/people/{person_id}/faces` — The review grid: that cluster's faces, best score first (`limit`, `offset`)
+- `GET /api/people/crop?face_id={n}&v={crop}` — Streams one face crop from the local cache (never touches the mount). `404` when the face or its crop is gone
+- `GET /api/people/status` — Worker + engine + cluster + crop-cache summary (the same body embedded in `/api/system/status` as `faces`)
+- `POST /api/people/rename` — Name (or clear the name of) a cluster (`person_id`, `name`); `404` for an unknown cluster, `422` without `person_id`
+- `POST /api/people/merge` — Fold clusters into a target (`target_id`, `source_ids`); empty unnamed sources are removed, named ones are kept
+- `POST /api/people/split` — Move selected faces into a new (optionally named) cluster (`face_ids`, `name`)
+- `POST /api/people/dismiss` — Mark faces (`face_ids`) or a whole cluster (`person_id`) as "not a person": they are recorded in `dismissed_faces` so no future scan re-adds them
+- `POST /api/people/threshold` — Set match strictness (`preset=strict|balanced|loose` or an explicit `threshold`), stored in `db_meta` so it applies to the next scan/re-cluster without a restart
+- `POST /api/people/recluster` — Re-group every face and re-attach existing names by nearest centroid (optional `threshold`); `409` when the face count exceeds the one-pass cap
+- `POST /api/people/scan` — Queue (or re-queue) a `folder`, a `paths` list, or the whole library (`all: true`) by dropping the matching `face_scans` markers; `409` while `FACE_RECOGNITION_ENABLED` is off, `422` without a scope
+- `POST /api/people/pause` — Pause or resume the face-scanning sweep (`paused`)
 
 ### Library File & Folder Management (`media_library.routers.library_manage` + `library_upload`)
 - `POST /api/backup/upload/chunk` — Receive a chunk of a browser upload file (staged locally). The optional `offset` form field is the chunk's byte position; the server appends only there, acks an already-held chunk as a duplicate (`duplicate: true`), rejects a chunk that starts past the staged end with `409`, and truncates a partial tail from a crash before rewriting it
@@ -1000,6 +1118,7 @@ All test modules must use the sandboxed environment fixtures defined in `tests/c
 - `isolate_index_database` (autouse): pins `DB_PATH` to a per-test throwaway database. `get_current_db_path()` otherwise falls back to the configured (production) index DB, so a test that never requests `sandbox_env` would write real folder/file rows into the live `backup_index.db` — `test_db_indexer.py::test_suite_never_writes_to_the_configured_database` guards this.
 - `sandbox_env`: Creates isolated temporary directories for `media`, `incoming`, `thumbnails`, and a dedicated SQLite database. Never touches production directories.
 - `sample_media`: Pre-populates the sandbox with sample category directories, video clips, and poster images.
+- `fake_face_engine` / `faces_enabled` / `face_image_factory` / `scan_face_batch` / `people_client`: the face recognition doubles. A deterministic `FakeFaceEngine` (colour-coded detections, one-hot embeddings) replaces YuNet/SFace so the clustering, crop cache, curation and API paths are all covered **without** OpenCV, ONNX models or a network fetch; `face_image_factory` writes an indexed image plus the cached thumbnail the worker actually reads, and `people_client` is a `TestClient` with the feature enabled.
 
 Two cross-cutting guards run with the suite and should stay green:
 - `tests/test_version.py` enforces the single-source version contract (`media_library.__version__` vs `package.json`, `README.md`, `CHANGELOG.md`, the FastAPI metadata, the `/api/system/status` payload and the served-page `{{VERSION}}` token).
@@ -1028,3 +1147,4 @@ Before concluding your turn or submitting your work, complete this verification 
 7. [ ] **AGENTS.md Updated**: Verified that `AGENTS.md` accurately reflects any changes made to endpoints, schema, workers, or configuration.
 8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass (CI gates on them).
 9. [ ] **Frontend Escaping**: Every user-controlled string rendered into the DOM (filename, folder name, download title, server error text) goes through `textContent` or `escapeHtml()`; the toast helpers (`frontend/src/library/utils.js`, `frontend/src/app/state.js`) are text-only by construction and must stay that way — a filename is not trusted input.
+10. [ ] **Opt-in Heavy Features Stay Local**: Anything that adds an inference runtime, a downloaded model or real CPU cost (face recognition is the current example) stays **off by default** behind its env switch, imports its dependency lazily so a missing install degrades to a clear status instead of a crash, verifies any downloaded artefact, and keeps its data (embeddings, crops, names) on this machine.

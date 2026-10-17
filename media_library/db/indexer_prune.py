@@ -187,6 +187,7 @@ def prune_stale_index_entries(
             "pruned_files": 0,
             "pruned_orphaned_thumbs": 0,
             "pruned_orphaned_anims": 0,
+            "pruned_orphaned_crops": 0,
             "pruned_stale_duplicates": 0,
             "aborted": True,
             "reason": "Base directory unmounted or missing",
@@ -196,6 +197,7 @@ def prune_stale_index_entries(
     pruned_files = 0
     pruned_orphaned_thumbs = 0
     pruned_orphaned_anims = 0
+    pruned_orphaned_crops = 0
     pruned_stale_duplicates = 0
 
     try:
@@ -224,6 +226,7 @@ def prune_stale_index_entries(
                     "pruned_files": 0,
                     "pruned_orphaned_thumbs": 0,
                     "pruned_orphaned_anims": 0,
+                    "pruned_orphaned_crops": 0,
                     "pruned_stale_duplicates": 0,
                     "aborted": True,
                     "reason": f"Too many folders reported missing ({len(candidate_stale)}); aborted to protect the index",
@@ -261,6 +264,15 @@ def prune_stale_index_entries(
                 )
 
                 pruned_orphaned_anims = clean_orphaned_animated_previews(conn)
+                # A deleted, renamed or re-encoded file orphans its face crops
+                # too (they are keyed on path + box), so sweep them together.
+                from media_library.services.face_service import (
+                    clean_orphaned_face_crops,
+                    invalidate_centroids,
+                )
+
+                pruned_orphaned_crops = clean_orphaned_face_crops(conn)
+                invalidate_centroids()
 
             try:
                 from media_library.services.deduplication_service import (
@@ -282,10 +294,11 @@ def prune_stale_index_entries(
                 or pruned_files > 0
                 or pruned_orphaned_thumbs > 0
                 or pruned_orphaned_anims > 0
+                or pruned_orphaned_crops > 0
                 or pruned_stale_duplicates > 0
             ):
                 logger.info(
-                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, {pruned_orphaned_anims} orphaned animated previews, and {pruned_stale_duplicates} stale duplicate records."
+                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, {pruned_orphaned_anims} orphaned animated previews, {pruned_orphaned_crops} orphaned face crops, and {pruned_stale_duplicates} stale duplicate records."
                 )
 
     except Exception as e:
@@ -296,6 +309,7 @@ def prune_stale_index_entries(
         "pruned_files": pruned_files,
         "pruned_orphaned_thumbs": pruned_orphaned_thumbs,
         "pruned_orphaned_anims": pruned_orphaned_anims,
+        "pruned_orphaned_crops": pruned_orphaned_crops,
         "pruned_stale_duplicates": pruned_stale_duplicates,
     }
 

@@ -1,8 +1,11 @@
 """Pytest fixtures for isolated media library tests."""
 
+import asyncio
 from pathlib import Path
 
+import numpy as np
 import pytest
+from PIL import Image
 
 from media_library.db.schema import init_backup_db
 
@@ -196,6 +199,158 @@ def sample_media(sandbox_env):
         "img1": img1,
         "vid3": vid3,
     }
+
+
+# ---------------------------------------------------------------------------
+# Face recognition ("People") test doubles.
+#
+# The real pipeline needs OpenCV plus two ONNX models (~37 MB) and would be
+# non-deterministic to assert on, so the engine is a stand-in: detection is
+# driven by the scan image's mean colour (red = person A, blue = person B, black
+# = no face), and embeddings are one-hot vectors. Everything else — clustering,
+# crops, the cache, the API — is the production code path.
+# ---------------------------------------------------------------------------
+
+
+class FakeFaceEngine:
+    """Deterministic stand-in for the YuNet + SFace engine."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def detect(self, image, max_faces=None):
+        self.calls += 1
+        arr = np.asarray(image)
+        if arr.ndim != 3:
+            return []
+        mean = arr.reshape(-1, 3).mean(axis=0)
+        b, g, r = float(mean[0]), float(mean[1]), float(mean[2])
+        if r > 150 and max(r, g, b) > 150:
+            seed = 1
+        elif b > 150:
+            seed = 2
+        else:
+            return []
+        embedding = np.zeros(128, dtype="float32")
+        embedding[seed % 128] = 1.0
+        return [
+            {
+                "x": 10,
+                "y": 10,
+                "w": 60,
+                "h": 60,
+                "score": 0.9,
+                "embedding": embedding,
+            }
+        ]
+
+
+@pytest.fixture
+def fake_face_engine():
+    """Install the deterministic face engine and reset the clustering caches."""
+    from media_library.services import face_engine, face_service
+
+    engine = FakeFaceEngine()
+    face_engine.set_engine(engine)
+    face_service.invalidate_centroids()
+    yield engine
+    face_engine.reset_engine()
+    face_service.invalidate_centroids()
+
+
+@pytest.fixture
+def faces_enabled(monkeypatch):
+    """Turn face recognition on with test-friendly thresholds."""
+    import importlib
+
+    config_mod = importlib.import_module("media_library.core.config")
+    face_service_mod = importlib.import_module("media_library.services.face_service")
+    monkeypatch.setattr(config_mod, "FACE_RECOGNITION_ENABLED", True)
+    monkeypatch.setattr(config_mod, "FACE_MATCH_THRESHOLD", 0.36)
+    monkeypatch.setattr(config_mod, "FACE_MIN_FACE_PX", 8)
+    monkeypatch.setattr(config_mod, "FACE_CROP_MAX_SIZE_GB", 2.0)
+    face_service_mod._THRESHOLD_CACHE.update(value=None, at=0.0)
+    yield
+    face_service_mod._THRESHOLD_CACHE.update(value=None, at=0.0)
+
+
+@pytest.fixture
+def face_image_factory(sandbox_env):
+    """``factory(name, color)`` -> an indexed image with a cached thumbnail.
+
+    The thumbnail is what the worker actually reads, so the fixture writes the
+    image's own bytes there (no FFmpeg, no remote reads).
+    """
+    from media_library.core.state import get_thumbnail_cache_path
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer_files import add_file_to_index
+
+    media_dir = sandbox_env["media_dir"]
+
+    def _make(name: str, color: tuple[int, int, int]):
+        target = media_dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), color).save(target, "JPEG")
+        add_file_to_index(str(target))
+        stat = target.stat()
+        thumb = get_thumbnail_cache_path(str(target), stat.st_mtime, stat.st_size)
+        Path(thumb).write_bytes(target.read_bytes())
+        with db_conn() as conn, conn:
+            conn.execute(
+                "UPDATE files SET type='image', has_thumb=1 WHERE path = ?",
+                (str(target),),
+            )
+        return target
+
+    return _make
+
+
+@pytest.fixture
+def scan_face_batch():
+    """``scan(worker)`` — drive the worker's internals once over a batch."""
+
+    def _scan(worker) -> int:
+        from media_library.services import face_engine, face_service
+
+        engine = face_engine.get_engine()
+        batch = asyncio.run(worker._next_batch())
+        centroids = face_service.get_centroids()
+        processed = 0
+        for row in batch:
+            if row["type"] == "video":
+                faces = asyncio.run(worker._scan_video(engine, row))
+            else:
+                faces = asyncio.run(worker._scan_image(engine, row))
+            if faces is None:
+                continue
+            face_service.record_scan(
+                row["path"], row["mtime"], row["size"], faces, centroids
+            )
+            processed += 1
+        return processed
+
+    return _scan
+
+
+@pytest.fixture
+def people_client(sandbox_env, fake_face_engine, faces_enabled):
+    """A TestClient over the sandbox library, with faces enabled and faked."""
+    from starlette.testclient import TestClient
+
+    from media_library.app_factory import create_app
+    from media_library.core.state import state
+
+    state.reset_runtime()
+    state["destination_dir"] = str(sandbox_env["media_dir"])
+    state["source_dir"] = str(sandbox_env["incoming_dir"])
+
+    app = create_app(
+        source_dir=str(sandbox_env["incoming_dir"]),
+        destination_dir=str(sandbox_env["media_dir"]),
+        run_startup_workers=False,
+    )
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture

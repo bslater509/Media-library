@@ -111,6 +111,38 @@ ZIP_CACHE_DIR = Path(
 ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_CACHE_MAX_SIZE_GB = float(os.environ.get("ZIP_CACHE_MAX_SIZE_GB", "5.0"))
 
+# Face recognition ("People"). Off by default: it is the only feature that loads
+# an inference runtime (opencv-contrib, lazily) and a pair of ONNX models, so an
+# untouched install pays nothing. Empty *_DIR values mean "derive from DATA_DIR /
+# THUMBNAIL_CACHE_DIR at call time", so a sandboxed DATA_DIR/THUMBNAIL_DIR is
+# honoured (the face modules read these at call time, never at import).
+FACE_RECOGNITION_ENABLED = os.environ.get(
+    "FACE_RECOGNITION_ENABLED", "false"
+).lower() in ("true", "1", "yes")
+FACE_MODEL_DIR = os.environ.get("FACE_MODEL_DIR", "").strip()
+FACE_CROP_DIR = os.environ.get("FACE_CROP_DIR", "").strip()
+# YuNet detection score floor (0.1-0.99).
+FACE_DETECTION_CONFIDENCE = min(
+    0.99, max(0.1, float(os.environ.get("FACE_DETECTION_CONFIDENCE", "0.7")))
+)
+# Cosine *distance* ceiling for joining an existing person (SFace embeddings).
+# Lower is stricter; 0.36 is "balanced" for SFace.
+FACE_MATCH_THRESHOLD = min(
+    1.2, max(0.05, float(os.environ.get("FACE_MATCH_THRESHOLD", "0.36")))
+)
+# Faces smaller than this (in pixels, on the 480px-wide scan image) are ignored:
+# in a crowd or a wide shot they are too small to cluster reliably.
+FACE_MIN_FACE_PX = max(8, int(os.environ.get("FACE_MIN_FACE_PX", "48")))
+FACE_MAX_PER_FRAME = max(1, int(os.environ.get("FACE_MAX_PER_FRAME", "20")))
+# Video sampling: one frame every N seconds, capped at FACE_VIDEO_MAX_FRAMES.
+FACE_VIDEO_SAMPLE_INTERVAL = max(
+    1.0, float(os.environ.get("FACE_VIDEO_SAMPLE_INTERVAL", "30"))
+)
+FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "24")))
+# Face crops are regenerable, so their cache gets the same LRU ceiling the
+# animated-preview and extracted-ZIP caches have.
+FACE_CROP_MAX_SIZE_GB = float(os.environ.get("FACE_CROP_MAX_SIZE_GB", "2.0"))
+
 
 def detect_default_destination() -> str:
     env_dest = os.environ.get("LIBRARY_DIR", "").strip()

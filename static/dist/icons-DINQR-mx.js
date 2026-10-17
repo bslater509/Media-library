@@ -1,4 +1,4 @@
-const T=`<!-- @license lucide-static v1.57.0 - ISC -->
+const s=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-archive"
   xmlns="http://www.w3.org/2000/svg"
@@ -15,7 +15,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
   <path d="M10 12h4" />
 </svg>
-`,Z=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,l=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-arrow-right-left"
   xmlns="http://www.w3.org/2000/svg"
@@ -33,7 +33,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m8 21-4-4 4-4" />
   <path d="M4 17h16" />
 </svg>
-`,D=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,r=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-ban"
   xmlns="http://www.w3.org/2000/svg"
@@ -49,7 +49,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="10" />
   <path d="M4.929 4.929 19.07 19.071" />
 </svg>
-`,N=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,c=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-camera"
   xmlns="http://www.w3.org/2000/svg"
@@ -65,7 +65,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
   <circle cx="12" cy="13" r="3" />
 </svg>
-`,U=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,d=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-check"
   xmlns="http://www.w3.org/2000/svg"
@@ -80,7 +80,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M20 6 9 17l-5-5" />
 </svg>
-`,E=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,h=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-circle-check"
   xmlns="http://www.w3.org/2000/svg"
@@ -96,7 +96,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="10" />
   <path d="m16 9-5.5 5.5L8 12" />
 </svg>
-`,O=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,a=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-circle-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -113,7 +113,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m15 9-6 6" />
   <path d="m9 9 6 6" />
 </svg>
-`,P=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,w=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-clapperboard"
   xmlns="http://www.w3.org/2000/svg"
@@ -131,7 +131,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
   <path d="m6.18 5.276 3.1 3.899" />
 </svg>
-`,R=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,u=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-clock"
   xmlns="http://www.w3.org/2000/svg"
@@ -147,7 +147,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="10" />
   <path d="M12 6v6l4 2" />
 </svg>
-`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,v=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-cog"
   xmlns="http://www.w3.org/2000/svg"
@@ -175,7 +175,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="2" />
   <circle cx="12" cy="12" r="8" />
 </svg>
-`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,g=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-copy"
   xmlns="http://www.w3.org/2000/svg"
@@ -191,7 +191,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
 </svg>
-`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,p=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-database"
   xmlns="http://www.w3.org/2000/svg"
@@ -208,7 +208,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 5V19A9 3 0 0 0 21 19V5" />
   <path d="M3 12A9 3 0 0 0 21 12" />
 </svg>
-`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,k=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-download"
   xmlns="http://www.w3.org/2000/svg"
@@ -225,7 +225,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
   <path d="m7 10 5 5 5-5" />
 </svg>
-`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,x=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-archive"
   xmlns="http://www.w3.org/2000/svg"
@@ -245,7 +245,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M8 7V6" />
   <circle cx="8" cy="20" r="2" />
 </svg>
-`,K=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,M=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-up"
   xmlns="http://www.w3.org/2000/svg"
@@ -263,7 +263,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 12v6" />
   <path d="m15 15-3-3-3 3" />
 </svg>
-`,J=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,C=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-video"
   xmlns="http://www.w3.org/2000/svg"
@@ -280,7 +280,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M14 2v5a1 1 0 0 0 1 1h5" />
   <path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z" />
 </svg>
-`,Y=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,f=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-film"
   xmlns="http://www.w3.org/2000/svg"
@@ -302,7 +302,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M17 7.5h4" />
   <path d="M17 16.5h4" />
 </svg>
-`,nn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,m=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder"
   xmlns="http://www.w3.org/2000/svg"
@@ -317,7 +317,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
 </svg>
-`,en=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,I=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder-input"
   xmlns="http://www.w3.org/2000/svg"
@@ -334,7 +334,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M2 13h10" />
   <path d="m9 16 3-3-3-3" />
 </svg>
-`,tn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,S=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder-plus"
   xmlns="http://www.w3.org/2000/svg"
@@ -351,7 +351,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M9 13h6" />
   <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
 </svg>
-`,sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,j=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder-tree"
   xmlns="http://www.w3.org/2000/svg"
@@ -369,7 +369,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 5a2 2 0 0 0 2 2h3" />
   <path d="M3 3v13a2 2 0 0 0 2 2h3" />
 </svg>
-`,rn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,y=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder-up"
   xmlns="http://www.w3.org/2000/svg"
@@ -386,7 +386,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 10v6" />
   <path d="m9 13 3-3 3 3" />
 </svg>
-`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,B=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-gauge"
   xmlns="http://www.w3.org/2000/svg"
@@ -402,7 +402,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m12 14 4-4" />
   <path d="M3.34 19a10 10 0 1 1 17.32 0" />
 </svg>
-`,cn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,H=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-globe"
   xmlns="http://www.w3.org/2000/svg"
@@ -419,7 +419,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
   <path d="M2 12h20" />
 </svg>
-`,ln=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,V=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-hard-drive"
   xmlns="http://www.w3.org/2000/svg"
@@ -437,7 +437,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21.946 12.013H2.054" />
   <path d="M6 16h.01" />
 </svg>
-`,an=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,L=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-image"
   xmlns="http://www.w3.org/2000/svg"
@@ -454,7 +454,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="9" cy="9" r="2" />
   <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
 </svg>
-`,dn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,z=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-images"
   xmlns="http://www.w3.org/2000/svg"
@@ -472,7 +472,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="13" cy="7" r="1" fill="currentColor" />
   <rect x="8" y="2" width="14" height="14" rx="2" />
 </svg>
-`,hn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,A=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-info"
   xmlns="http://www.w3.org/2000/svg"
@@ -489,7 +489,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 16v-4" />
   <path d="M12 8h.01" />
 </svg>
-`,un=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,b=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-keyboard"
   xmlns="http://www.w3.org/2000/svg"
@@ -512,7 +512,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M8 12h.01" />
   <rect width="20" height="16" x="2" y="4" rx="2" />
 </svg>
-`,wn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Z=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-layout-grid"
   xmlns="http://www.w3.org/2000/svg"
@@ -530,7 +530,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <rect width="7" height="7" x="14" y="14" rx="1" />
   <rect width="7" height="7" x="3" y="14" rx="1" />
 </svg>
-`,vn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,O=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-link"
   xmlns="http://www.w3.org/2000/svg"
@@ -546,7 +546,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
 </svg>
-`,pn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,T=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-loader-circle"
   xmlns="http://www.w3.org/2000/svg"
@@ -561,7 +561,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
 </svg>
-`,gn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,U=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-monitor"
   xmlns="http://www.w3.org/2000/svg"
@@ -578,7 +578,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <line x1="8" x2="16" y1="21" y2="21" />
   <line x1="12" x2="12" y1="17" y2="21" />
 </svg>
-`,kn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,q=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-package-open"
   xmlns="http://www.w3.org/2000/svg"
@@ -596,7 +596,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M20 13v3.87a2.06 2.06 0 0 1-1.11 1.83l-6 3.08a1.93 1.93 0 0 1-1.78 0l-6-3.08A2.06 2.06 0 0 1 4 16.87V13" />
   <path d="M21 12.43a1.93 1.93 0 0 0 0-3.36L8.83 2.2a1.64 1.64 0 0 0-1.63 0L3 4.57a1.93 1.93 0 0 0 0 3.36l12.18 6.86a1.636 1.636 0 0 0 1.63 0z" />
 </svg>
-`,xn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,D=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-palette"
   xmlns="http://www.w3.org/2000/svg"
@@ -615,7 +615,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
   <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
 </svg>
-`,Mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,E=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-pencil"
   xmlns="http://www.w3.org/2000/svg"
@@ -631,7 +631,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
   <path d="m15 5 4 4" />
 </svg>
-`,fn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-refresh-cw"
   xmlns="http://www.w3.org/2000/svg"
@@ -649,7 +649,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
   <path d="M8 16H3v5" />
 </svg>
-`,mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,N=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-repeat-2"
   xmlns="http://www.w3.org/2000/svg"
@@ -667,7 +667,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m22 15-3 3-3-3" />
   <path d="M11 6h6a2 2 0 0 1 2 2v10" />
 </svg>
-`,Cn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,_=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-rocket"
   xmlns="http://www.w3.org/2000/svg"
@@ -685,7 +685,28 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z" />
   <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05" />
 </svg>
-`,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-scan-face"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+  <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+  <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+  <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+  <path d="M9 9h.01" />
+  <path d="M15 9h.01" />
+</svg>
+`,P=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-search"
   xmlns="http://www.w3.org/2000/svg"
@@ -701,7 +722,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m21 21-4.34-4.34" />
   <circle cx="11" cy="11" r="8" />
 </svg>
-`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,R=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-settings"
   xmlns="http://www.w3.org/2000/svg"
@@ -717,7 +738,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
   <circle cx="12" cy="12" r="3" />
 </svg>
-`,In=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-shrink"
   xmlns="http://www.w3.org/2000/svg"
@@ -735,7 +756,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M15 4.2V9m0 0h4.8M15 9l6-6" />
   <path d="M9 4.2V9m0 0H4.2M9 9 3 3" />
 </svg>
-`,Bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,$=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-sliders-horizontal"
   xmlns="http://www.w3.org/2000/svg"
@@ -758,7 +779,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M8 10v4" />
   <path d="M8 12H3" />
 </svg>
-`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,J=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-smartphone"
   xmlns="http://www.w3.org/2000/svg"
@@ -774,7 +795,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
   <path d="M12 18h.01" />
 </svg>
-`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,K=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-sparkles"
   xmlns="http://www.w3.org/2000/svg"
@@ -792,7 +813,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M22 4h-4" />
   <circle cx="4" cy="20" r="2" />
 </svg>
-`,An=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-star"
   xmlns="http://www.w3.org/2000/svg"
@@ -807,7 +828,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
 </svg>
-`,$n=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-trash-2"
   xmlns="http://www.w3.org/2000/svg"
@@ -826,7 +847,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 6h18" />
   <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 </svg>
-`,Hn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Y=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-upload"
   xmlns="http://www.w3.org/2000/svg"
@@ -843,7 +864,42 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m17 8-5-5-5 5" />
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 </svg>
-`,Ln=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,nn=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-user-check"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m16 11 2 2 4-4" />
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+  <circle cx="9" cy="7" r="4" />
+</svg>
+`,en=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-users"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+  <path d="M16 3.128a4 4 0 0 1 0 7.744" />
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+  <circle cx="9" cy="7" r="4" />
+</svg>
+`,tn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-video"
   xmlns="http://www.w3.org/2000/svg"
@@ -859,7 +915,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
   <rect x="2" y="6" width="14" height="12" rx="2" />
 </svg>
-`,Vn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-wrench"
   xmlns="http://www.w3.org/2000/svg"
@@ -874,7 +930,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
 </svg>
-`,zn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,sn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -890,7 +946,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M18 6 6 18" />
   <path d="m6 6 12 12" />
 </svg>
-`,qn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,ln=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-zap"
   xmlns="http://www.w3.org/2000/svg"
@@ -905,4 +961,4 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z" />
 </svg>
-`,_n=Object.freeze({archive:T,"arrow-right-left":Z,ban:D,camera:N,check:U,"circle-check":E,"circle-x":O,clapperboard:P,clock:R,cog:G,copy:Q,database:W,download:X,"file-archive":F,"file-up":K,"file-video":J,film:Y,folder:nn,"folder-input":en,"folder-plus":tn,"folder-tree":sn,"folder-up":rn,gauge:on,globe:cn,"hard-drive":ln,image:an,images:dn,info:hn,keyboard:un,"layout-grid":wn,link:vn,"loader-circle":pn,monitor:gn,"package-open":kn,palette:xn,pencil:Mn,"refresh-cw":fn,"repeat-2":mn,rocket:Cn,search:yn,settings:Sn,shrink:In,"sliders-horizontal":Bn,smartphone:jn,sparkles:bn,star:An,"trash-2":$n,upload:Hn,video:Ln,wrench:Vn,x:zn,zap:qn}),_="lb-icon";function Tn(t,e=_){const r=_n[t];return r?r.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function Dn(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(r=>{const l=Tn(r.dataset.lbIcon,r.dataset.lbIconClass||_);l&&(r.innerHTML=l,e+=1)}),e}const q=99,Zn={move:"Moving",delete:"Deleting",rename:"Renaming"},C=new Set(["running","processing"]);function Nn(t){const e=Number(t)||0;return e<=0?"":e>q?`${q}+`:String(e)}function c(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Un(t={}){const{transfers:e,libraryOps:r,transcode:l,animated:o,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:M,batchUnpack:f,urlDownloads:i,uploads:p,metadata:m,thumbHash:w,h265:g}=t,k=e?(e.active?1:0)+c(e):0,n=r?(r.active?1:0)+c(r):0,s=l?(l.active?1:0)+c(l):0,d=g?(g.active?1:0)+c(g):0,y=o?Number(o.total_queued)||0||(o.active?1:0)+c(o):0,S=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,I=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,B=v&&v.status==="crawling"?1:0,j=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,b=x&&x.is_active?1:0,A=M&&C.has(M.status)?1:0,$=f&&C.has(f.status)?1:0,H=m&&m.status==="probing"?1:0,L=w&&(w.status==="hashing"||w.status==="migrating")?1:0,V=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,z=p?(p.active||0)+(p.queued||0):0;return{count:k+n+s+d+y+S+I+B+j+b+A+$+H+L+V+z,active:k+n+s+d+y+S+I+B+j+b+A+$+H+L+V+z>0}}function En(t={}){const{transfers:e,libraryOps:r,transcode:l,animated:o,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:M,batchUnpack:f,urlDownloads:i,uploads:p,metadata:m,thumbHash:w,h265:g}=t,k=n=>n&&(n.active||c(n)>0);if(k(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${c(e)} transfer${c(e)>1?"s":""}`}if(k(r)){const n=r.active,s=c(r),d=n?Zn[n.op]||"Working":"Queued";return n?`${d}${s?` +${s}`:""}`:`${s} op${s>1?"s":""}`}if(v&&v.status==="crawling")return`Indexing ${typeof v.percent=="number"?Math.round(v.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(k(l)){const n=l.active,s=c(l);return n?`${Math.round(n.percent||0)}% (${s+1})`:`${s} queued`}if(k(g)){const n=g.active,s=c(g);return n?`x265 ${Math.round(n.percent||0)}%`:`${s} x265 queued`}if(o&&(o.active||(o.total_queued||0)>0)){const n=Math.round(o.percent||0);return o.active?`Anim ${n}%`:`${o.total_queued||c(o)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(m&&m.status==="probing")return`Probing ${Math.round(m.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(M&&C.has(M.status))return`Batch Zip ${Math.round(M.percent||0)}%`;if(f&&C.has(f.status))return`Extract ${Math.round(f.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,s=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${s?` +${s}`:""}`}if(x&&x.is_active){const n=(x.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:p&&(p.active||0)>0?`Uploading ${Math.round(p.percent||0)}%`:""}export{Un as c,En as d,Nn as f,Dn as h,Tn as i};
+`,rn=Object.freeze({archive:s,"arrow-right-left":l,ban:r,camera:c,check:d,"circle-check":h,"circle-x":a,clapperboard:w,clock:u,cog:v,copy:g,database:p,download:k,"file-archive":x,"file-up":M,"file-video":C,film:f,folder:m,"folder-input":I,"folder-plus":S,"folder-tree":j,"folder-up":y,gauge:B,globe:H,"hard-drive":V,image:L,images:z,info:A,keyboard:b,"layout-grid":Z,link:O,"loader-circle":T,monitor:U,"package-open":q,palette:D,pencil:E,"refresh-cw":F,"repeat-2":N,rocket:_,"scan-face":G,search:P,settings:R,shrink:X,"sliders-horizontal":$,smartphone:J,sparkles:K,star:Q,"trash-2":W,upload:Y,"user-check":nn,users:en,video:tn,wrench:on,x:sn,zap:ln}),o="lb-icon";function cn(e,t=o){const n=rn[e];return n?n.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${t}" aria-hidden="true" focusable="false"`).trim():""}function dn(e=typeof document>"u"?null:document){if(!e||typeof e.querySelectorAll!="function")return 0;let t=0;return e.querySelectorAll("[data-lb-icon]").forEach(n=>{const i=cn(n.dataset.lbIcon,n.dataset.lbIconClass||o);i&&(n.innerHTML=i,t+=1)}),t}export{dn as h,cn as i};

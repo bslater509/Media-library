@@ -455,6 +455,45 @@
             </div>
           </div>
 
+          <!-- Worker Card 3d: Face Recognition (People) -->
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5 sm:col-span-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base"><span data-lb-icon="scan-face" data-lb-icon-class="w-5 h-5"></span></span>
+                <div class="min-w-0">
+                  <h4 class="text-xs font-bold text-white truncate">Face Recognition (People)</h4>
+                  <span id="faceWorkerSummaryText" class="text-[10px] text-slate-400 font-mono">Idle</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button id="triggerFaceScanAllBtn" title="Queue every eligible image and video for face scanning" class="px-2 py-1 bg-amber-950/50 hover:bg-amber-900/60 text-amber-300 hover:text-white border border-amber-800/40 rounded-lg text-[10px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none">
+                  Scan all
+                </button>
+                <button id="openPeoplePageBtn" title="Open the People page" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-[10px] font-semibold transition cursor-pointer">
+                  Open →
+                </button>
+              </div>
+            </div>
+            <div id="faceWorkerProgressBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1.5 shadow-inner">
+              <div class="flex items-center justify-between text-[11px] gap-2">
+                <span class="text-slate-300 font-mono truncate flex-1 min-w-0" id="faceWorkerCurrentFile">Idle</span>
+                <span class="text-amber-400 font-mono text-[10px] font-bold shrink-0" id="faceWorkerPercentText">0%</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div id="faceWorkerProgressBar" class="bg-amber-500 h-1.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                <span id="faceWorkerCountsText">0 / 0 scanned</span>
+                <span id="faceWorkerStatusLabel" class="text-slate-500">Idle</span>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono border-t border-slate-800/70 pt-1.5">
+                <span id="faceWorkerPeopleText">—</span>
+                <span id="faceWorkerCacheText" class="text-slate-400" title="Face crops on disk. Regenerable, so the oldest are evicted past the cap.">—</span>
+              </div>
+              <p id="faceWorkerHintText" class="text-[10px] text-slate-500 leading-snug"></p>
+            </div>
+          </div>
+
           <!-- Worker Card 4: Library Indexer -->
           <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2">

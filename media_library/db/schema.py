@@ -194,4 +194,61 @@ def init_backup_db(custom_path: str | Path | None = None):
             "CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON favorites(created_at DESC)"
         )
 
+        # ---- Face recognition ("People") -------------------------------------
+        # A cluster of visually-similar faces the user can name. Counts are never
+        # stored: they are derived with GROUP BY so a move/delete/re-scan cannot
+        # leave a stale counter behind.
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS people (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL
+        )""")
+        # One detected face. ``frame_time`` is -1.0 for images and the seconds
+        # offset for a video hit (never NULL, so the UNIQUE key below is exact:
+        # SQLite treats NULLs as distinct and would accept duplicates).
+        # ``embedding`` is 128 little-endian float32 (512 bytes), L2-normalised.
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS faces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL,
+            frame_time REAL NOT NULL DEFAULT -1.0,
+            x INTEGER, y INTEGER, w INTEGER, h INTEGER,
+            score REAL,
+            embedding BLOB,
+            person_id INTEGER,
+            distance REAL,
+            crop TEXT,
+            created_at REAL NOT NULL,
+            UNIQUE(file_path, frame_time, x, y)
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_faces_file ON faces(file_path)")
+        # Which files have already been scanned (including ones with no faces at
+        # all, which have no rows in ``faces`` and would otherwise be re-scanned
+        # forever). Keyed on path + the mtime/size the result is valid for.
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS face_scans (
+            file_path TEXT PRIMARY KEY,
+            mtime REAL,
+            size INTEGER,
+            faces_found INTEGER DEFAULT 0,
+            scanned_at REAL NOT NULL
+        )""")
+        # Faces the user rejected as "not a person": kept as a rejection so a
+        # later re-scan of the same file does not re-cluster them.
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS dismissed_faces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL,
+            frame_time REAL NOT NULL DEFAULT -1.0,
+            x INTEGER, y INTEGER,
+            created_at REAL NOT NULL,
+            UNIQUE(file_path, frame_time, x, y)
+        )""")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dismissed_file ON dismissed_faces(file_path)"
+        )
+
         conn.commit()

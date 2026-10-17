@@ -18,8 +18,9 @@ const LIGHTBOX_ICONS = [
 const TASKS_MODAL_ICONS = [
   'archive', 'arrow-right-left', 'ban', 'check', 'circle-check', 'circle-x',
   'clapperboard', 'cog', 'database', 'folder', 'folder-tree', 'hard-drive',
-  'images', 'loader-circle', 'package-open', 'refresh-cw', 'rocket', 'search',
-  'settings', 'sparkles', 'trash-2', 'upload', 'wrench', 'x', 'zap',
+  'images', 'loader-circle', 'package-open', 'refresh-cw', 'rocket',
+  'scan-face', 'search', 'settings', 'sparkles', 'trash-2', 'upload', 'wrench',
+  'x', 'zap',
 ];
 
 describe('icon()', () => {

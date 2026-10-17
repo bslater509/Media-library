@@ -9,7 +9,7 @@ import { renderIndexStatus } from './search.js';
 import { renderListExpander, sheetListSlice } from './sheet.js';
 import { updateMobileControlsBadge } from './theme.js';
 import { uploadState } from './uploads.js';
-import { pollDuplicateHashStatus, renderBatchUnpackStatus, renderBatchZipStatus, renderDuplicateHashStatus, renderLibBackupStatus, renderMetadataStatus, renderThumbnailStatus, renderVisualHashStatus, renderWebpStatus, renderZipStatus } from './workers.js';
+import { pollDuplicateHashStatus, renderBatchUnpackStatus, renderBatchZipStatus, renderDuplicateHashStatus, renderFaceStatus, renderLibBackupStatus, renderMetadataStatus, renderThumbnailStatus, renderVisualHashStatus, renderWebpStatus, renderZipStatus } from './workers.js';
 import { handleZipStatusUpdate } from './zip.js';
 
 // Unified system status polling, transfers, transcodes and URL downloads.
@@ -199,6 +199,10 @@ async function pollSystemStatus(immediate = false) {
       if (data.h265) {
         state.latestH265Data = data.h265;
         renderH265Status(data.h265);
+      }
+      if (data.faces) {
+        state.latestFacesData = data.faces;
+        renderFaceStatus(data.faces);
       }
 
       updateHeaderTaskBadge();

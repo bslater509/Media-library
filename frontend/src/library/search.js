@@ -39,6 +39,25 @@ async function performGlobalSearch() {
     state.searchLimit = data.limit || 1000;
     state.displayedCount = 50;
 
+    // `person:name` filters the search to a named face cluster; an unknown name
+    // returns nothing, which the empty state has to explain (otherwise it looks
+    // like a broken search).
+    const person = data.person || null;
+    if (person && !person.matched) {
+      const terms = (person.terms || []).join(', ');
+      els.emptyState.classList.remove('hidden');
+      els.emptyStateMsg.textContent = `No person called "${terms}". Name a cluster on the People page first, then search person:${terms}.`;
+      els.mediaGrid.innerHTML = '';
+      els.infiniteScrollSentinel.classList.add('hidden');
+      if (els.countAllBadge) els.countAllBadge.textContent = '0';
+      if (els.mobileCountAllBadge) els.mobileCountAllBadge.textContent = '0';
+      updateSelectAllBtn();
+      return;
+    }
+    if (person && person.matched && (person.people || []).length) {
+      showToast(`Filtering to ${person.people.map(p => p.name).join(', ')}`, 'info');
+    }
+
     const videoCount = state.filteredFiles.filter(f => f.type === 'video').length;
     const imageCount = state.filteredFiles.filter(f => f.type === 'image').length;
     const plusSuffix = state.searchTruncated ? '+' : '';

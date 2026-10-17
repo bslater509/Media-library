@@ -57,6 +57,7 @@ import pencil from 'lucide-static/icons/pencil.svg?raw';
 import refreshCw from 'lucide-static/icons/refresh-cw.svg?raw';
 import repeat2 from 'lucide-static/icons/repeat-2.svg?raw';
 import rocket from 'lucide-static/icons/rocket.svg?raw';
+import scanFace from 'lucide-static/icons/scan-face.svg?raw';
 import search from 'lucide-static/icons/search.svg?raw';
 import settings from 'lucide-static/icons/settings.svg?raw';
 import shrink from 'lucide-static/icons/shrink.svg?raw';
@@ -66,6 +67,8 @@ import sparkles from 'lucide-static/icons/sparkles.svg?raw';
 import star from 'lucide-static/icons/star.svg?raw';
 import trash2 from 'lucide-static/icons/trash-2.svg?raw';
 import upload from 'lucide-static/icons/upload.svg?raw';
+import userCheck from 'lucide-static/icons/user-check.svg?raw';
+import users from 'lucide-static/icons/users.svg?raw';
 import video from 'lucide-static/icons/video.svg?raw';
 import wrench from 'lucide-static/icons/wrench.svg?raw';
 import x from 'lucide-static/icons/x.svg?raw';
@@ -111,6 +114,7 @@ export const ICONS = Object.freeze({
   'refresh-cw': refreshCw,
   'repeat-2': repeat2,
   rocket,
+  'scan-face': scanFace,
   search,
   settings,
   shrink,
@@ -120,6 +124,8 @@ export const ICONS = Object.freeze({
   star,
   'trash-2': trash2,
   upload,
+  'user-check': userCheck,
+  users,
   video,
   wrench,
   x,

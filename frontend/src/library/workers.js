@@ -283,11 +283,111 @@ function renderVisualHashStatus(data) {
     els.vhashCountsText.textContent = `${hashed.toLocaleString()} / ${total.toLocaleString()} hashed`;
   }
 }
+// Trigger a whole-library face scan ("Scan all" on the Face Recognition card).
+async function triggerFaceScanAll() {
+  try {
+    if (els.triggerFaceScanAllBtn) els.triggerFaceScanAllBtn.disabled = true;
+    showToast('Queueing the library for face scanning...', 'info');
+    const res = await fetch('/api/people/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+    showToast(`Queued ${data.queued} file(s) for face scanning`, 'success');
+  } catch (e) {
+    showToast('Could not start the face scan: ' + e.message, 'error');
+  } finally {
+    // renderFaceStatus() owns the button's disabled state on the next poll.
+    pollSystemStatus(true);
+  }
+}
+
+// Render Face Recognition / People worker status (opt-in, off by default).
+function renderFaceStatus(data) {
+  if (!els.faceWorkerSummaryText) return;
+  const status = data.status || 'idle';
+  const enabled = data.enabled !== false;
+  const engineReady = data.engine_available !== false && !(data.engine && data.engine.available === false);
+  const isPaused = data.is_paused || status === 'paused';
+  const isScanning = status === 'scanning';
+  const pending = data.pending_count || 0;
+  const total = data.total_files || 0;
+  const isDone = !isScanning && pending === 0 && total > 0;
+  const faces = data.faces_total || 0;
+  const people = data.people_total || 0;
+
+  if (!enabled) {
+    els.faceWorkerSummaryText.textContent = 'Off';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Off';
+  } else if (!engineReady || status === 'unavailable') {
+    els.faceWorkerSummaryText.textContent = 'Engine unavailable';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Blocked';
+  } else if (isPaused) {
+    els.faceWorkerSummaryText.textContent = 'Paused';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Paused';
+  } else if (isScanning) {
+    els.faceWorkerSummaryText.textContent = 'Scanning';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Active';
+  } else if (isDone) {
+    els.faceWorkerSummaryText.textContent = '100% Scanned';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Complete';
+  } else {
+    els.faceWorkerSummaryText.textContent = 'Idle';
+    if (els.faceWorkerStatusLabel) els.faceWorkerStatusLabel.textContent = 'Idle';
+  }
+
+  if (els.faceWorkerCurrentFile) {
+    if (isScanning && data.current_file) {
+      els.faceWorkerCurrentFile.textContent = data.current_file;
+      els.faceWorkerCurrentFile.title = data.current_file;
+    } else if (isPaused) {
+      els.faceWorkerCurrentFile.textContent = 'Face scanning paused';
+      els.faceWorkerCurrentFile.title = '';
+    } else if (!enabled) {
+      els.faceWorkerCurrentFile.textContent = 'Face recognition disabled';
+      els.faceWorkerCurrentFile.title = '';
+    } else if (isDone) {
+      els.faceWorkerCurrentFile.textContent = `All ${total.toLocaleString()} files scanned`;
+      els.faceWorkerCurrentFile.title = '';
+    } else {
+      els.faceWorkerCurrentFile.textContent = 'Idle';
+      els.faceWorkerCurrentFile.title = '';
+    }
+  }
+
+  const pct = typeof data.percent === 'number' ? data.percent : (total > 0 ? 100 : 0);
+  if (els.faceWorkerPercentText) els.faceWorkerPercentText.textContent = `${pct.toFixed(1)}%`;
+  if (els.faceWorkerProgressBar) els.faceWorkerProgressBar.style.width = `${pct}%`;
+  if (els.faceWorkerCountsText) {
+    const processed = Math.max(0, total - pending);
+    els.faceWorkerCountsText.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} scanned`;
+  }
+  if (els.faceWorkerPeopleText) {
+    els.faceWorkerPeopleText.textContent = `${people.toLocaleString()} people · ${faces.toLocaleString()} faces`;
+  }
+  if (els.faceWorkerCacheText) {
+    els.faceWorkerCacheText.textContent = `${data.cache_size_formatted || '0 B'} / ${data.cache_max_size_formatted || '—'} crops`;
+  }
+  if (els.faceWorkerHintText) {
+    if (!enabled) {
+      els.faceWorkerHintText.textContent = 'Set FACE_RECOGNITION_ENABLED=true and restart to scan faces. ZIP members are skipped.';
+    } else if (!engineReady) {
+      els.faceWorkerHintText.textContent = data.engine_reason || 'Waiting for the face models to download.';
+    } else {
+      els.faceWorkerHintText.textContent = 'Images are read from cached thumbnails, videos from sampled frames (each hit keeps its timestamp).';
+    }
+  }
+  if (els.triggerFaceScanAllBtn) {
+    els.triggerFaceScanAllBtn.disabled = !enabled || !engineReady;
+  }
+}
+
 // Poll WebP Optimizer Status
 function pollWebpStatus() {
   pollSystemStatus(true);
-}
-// Render WebP Optimizer Status
+}// Render WebP Optimizer Status
 function renderWebpStatus(data) {
   if (!els.webpSummaryText) return;
   const isPaused = data.is_paused || data.status === 'paused';
@@ -725,4 +825,4 @@ function pollBatchUnpackStatus() {
   pollSystemStatus(true);
 }
 
-export { pollBatchUnpackStatus, pollBatchZipStatus, pollDuplicateHashStatus, pollLibBackupStatus, pollThumbnailStatus, pollWebpStatus, pollZipTasksStatus, renderBatchUnpackStatus, renderBatchZipStatus, renderDuplicateHashStatus, renderLibBackupStatus, renderMetadataStatus, renderThumbnailStatus, renderVisualHashStatus, renderWebpStatus, renderZipStatus, toggleThumbPause, toggleWebpPause, triggerFolderThumbnails, triggerFolderWebp, triggerLibBackup, triggerLibRestore };
+export { pollBatchUnpackStatus, pollBatchZipStatus, pollDuplicateHashStatus, pollLibBackupStatus, pollThumbnailStatus, pollWebpStatus, pollZipTasksStatus, renderBatchUnpackStatus, renderBatchZipStatus, renderDuplicateHashStatus, renderFaceStatus, renderLibBackupStatus, renderMetadataStatus, renderThumbnailStatus, renderVisualHashStatus, renderWebpStatus, renderZipStatus, toggleThumbPause, toggleWebpPause, triggerFaceScanAll, triggerFolderThumbnails, triggerFolderWebp, triggerLibBackup, triggerLibRestore };

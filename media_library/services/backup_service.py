@@ -334,6 +334,17 @@ def _restore_library_backup_sync(progress_cb=None) -> dict[str, Any]:
 
         init_backup_db()
 
+        # The index was just replaced wholesale: any centroid/crop-cache state
+        # built from the previous file (or from this process's earlier runs) is
+        # meaningless now — a stale centroid would assign new faces to people
+        # that no longer exist.
+        try:
+            from media_library.services.face_service import invalidate_centroids
+
+            invalidate_centroids()
+        except Exception as e:
+            logger.warning(f"[Library Restore] Could not reset face caches: {e}")
+
         if source_tar.exists() and source_tar.stat().st_size > 0:
             if progress_cb:
                 progress_cb("Extracting thumbnails archive...", 40.0)

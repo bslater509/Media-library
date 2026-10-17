@@ -19,7 +19,7 @@ import { applySelectedThumbnail, closeThumbnailChooser, onThumbChooserScrub, ope
 import { initUploadEvents, uploadState } from './uploads.js';
 import { urlDownloadRowHtml, urlDownloadRowsHtml, urlDownloadsActivityCount, urlDownloadsSummaryText } from './url_downloads.js';
 import { escapeHtml, formatBitrate, formatBytes, formatDuration, formatTimestamp, getAspectRatio, getResolutionLabel, safeAttrEscape, shouldPlayAnimatedThumb, showToast } from './utils.js';
-import { toggleThumbPause, toggleWebpPause, triggerFolderThumbnails, triggerFolderWebp, triggerLibBackup, triggerLibRestore } from './workers.js';
+import { toggleThumbPause, toggleWebpPause, triggerFaceScanAll, triggerFolderThumbnails, triggerFolderWebp, triggerLibBackup, triggerLibRestore } from './workers.js';
 import { cancelBatchUnpack, cancelBatchZip, closeBatchUnpackModal, closeBatchZipModal, closeCompressZipModal, closeEmptyFoldersModal, closeUnpackZipModal, openBatchUnpackModal, openBatchZipModal, openCompressZipModal, openEmptyFoldersModal, openUnpackZipModal, renderBatchUnpackCandidates, renderBatchZipCandidates, renderEmptyFoldersCandidates, submitBatchUnpack, submitBatchZip, submitCompressZip, submitDeleteEmptyFolders, submitUnpackZip, toggleBatchUnpackPause, toggleBatchZipPause } from './zip.js';
 
 
@@ -393,6 +393,12 @@ function initEvents() {
   }
   if (els.triggerAllAnimWorkerBtn) {
     els.triggerAllAnimWorkerBtn.addEventListener('click', triggerAllAnimatedPreviews);
+  }
+  if (els.triggerFaceScanAllBtn) {
+    els.triggerFaceScanAllBtn.addEventListener('click', triggerFaceScanAll);
+  }
+  if (els.openPeoplePageBtn) {
+    els.openPeoplePageBtn.addEventListener('click', () => { window.location.href = '/people'; });
   }
   if (els.triggerQueueAllAnimBtn) {
     els.triggerQueueAllAnimBtn.addEventListener('click', triggerAllAnimatedPreviews);
@@ -1114,11 +1120,22 @@ async function init() {
   initServiceWorker();
   updateBrowserCacheBadge();
 
-  // Check if URL has ?folder=...
+  // Check if URL has ?folder=... or ?q=... (the People page deep-links a named
+  // person as /?q=person:Anna, and the gallery then opens on that filter).
   const urlParams = new URLSearchParams(window.location.search);
   const initialFolder = urlParams.get('folder');
+  const initialQuery = (urlParams.get('q') || '').trim();
 
-  await loadFolder(initialFolder || '', false);
+  if (initialQuery && els.fileSearchInput) {
+    els.fileSearchInput.value = initialQuery;
+    els.clearFileSearchBtn.classList.remove('hidden');
+    state.searchQuery = initialQuery;
+    await loadFolder(initialFolder || '', false);
+    // setSearchScope('global') runs the search itself for a non-empty query.
+    setSearchScope('global');
+  } else {
+    await loadFolder(initialFolder || '', false);
+  }
   pollSystemStatus();
   fetchDuplicateSummary();
   updateIgnoredCountBadge();

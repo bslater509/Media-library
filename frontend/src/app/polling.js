@@ -1,7 +1,7 @@
 import { icon } from '../shared/icons.js';
 import { computeTaskSummary, describePrimaryTask, formatTaskCount } from '../shared/tasks_badge.js';
 import { currentVideo, refreshQueue } from './config.js';
-import { activeTranscodeBox, activeTranscodeEta, activeTranscodeFilename, activeTranscodeMethodBadge, activeTranscodePercent, activeTranscodeProgressBar, activeTranscodeSpeed, activeTransferBox, activeTransferFilename, activeTransferPercent, activeTransferProgressBar, activeTransferSize, activeTransferTarget, cleanDbBtn, currentVideoTitle, hashCountsText, hashCurrentFile, hashPercentText, hashProgressBar, hashStatusLabel, hashSummaryText, indexCountsText, indexCurrentFolder, indexFilesText, indexForcePruneBtn, indexPercentText, indexProgressBar, indexStaleText, indexStaleWarning, indexSummaryText, indexSyncDropdownIcon, metaWorkerCountsText, metaWorkerCurrentFile, metaWorkerPercentText, metaWorkerProgressBar, metaWorkerStatusLabel, metaWorkerSummaryText, queuedTranscodesContainer, queuedTranscodesList, queuedTransfersList, thumbCountsText, thumbCurrentFile, thumbPercentText, thumbProgressBar, thumbStatusLabel, thumbSummaryText, toggleHashPauseBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transcodeStatusBadge, transcodeSummaryText, transferBadgeBtn, transferCountText, transferDropdownSummary, transferHistoryList, transferIcon, transferSpinner, triggerIndexSyncDropdownBtn, vhashCountsText, vhashCurrentFile, vhashPercentText, vhashProgressBar, vhashStatusLabel, vhashSummaryText, videoPlayer, webpCountsText, webpCurrentFile, webpPercentText, webpProgressBar, webpSavedText, webpSummaryText } from './elements.js';
+import { activeTranscodeBox, activeTranscodeEta, activeTranscodeFilename, activeTranscodeMethodBadge, activeTranscodePercent, activeTranscodeProgressBar, activeTranscodeSpeed, activeTransferBox, activeTransferFilename, activeTransferPercent, activeTransferProgressBar, activeTransferSize, activeTransferTarget, cleanDbBtn, currentVideoTitle, faceWorkerCacheText, faceWorkerCountsText, faceWorkerCurrentFile, faceWorkerHintText, faceWorkerPeopleText, faceWorkerPercentText, faceWorkerProgressBar, faceWorkerStatusLabel, faceWorkerSummaryText, hashCountsText, hashCurrentFile, hashPercentText, hashProgressBar, hashStatusLabel, hashSummaryText, indexCountsText, indexCurrentFolder, indexFilesText, indexForcePruneBtn, indexPercentText, indexProgressBar, indexStaleText, indexStaleWarning, indexSummaryText, indexSyncDropdownIcon, metaWorkerCountsText, metaWorkerCurrentFile, metaWorkerPercentText, metaWorkerProgressBar, metaWorkerStatusLabel, metaWorkerSummaryText, queuedTranscodesContainer, queuedTranscodesList, queuedTransfersList, thumbCountsText, thumbCurrentFile, thumbPercentText, thumbProgressBar, thumbStatusLabel, thumbSummaryText, toggleHashPauseBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transcodeStatusBadge, transcodeSummaryText, transferBadgeBtn, transferCountText, transferDropdownSummary, transferHistoryList, transferIcon, transferSpinner, triggerIndexSyncDropdownBtn, vhashCountsText, vhashCurrentFile, vhashPercentText, vhashProgressBar, vhashStatusLabel, vhashSummaryText, videoPlayer, webpCountsText, webpCurrentFile, webpPercentText, webpProgressBar, webpSavedText, webpSummaryText } from './elements.js';
 import { escapeHtml, showToast, state } from './state.js';
 import { loadVideoSource } from './video.js';
 
@@ -93,6 +93,10 @@ try {
   if (sysData.metadata) {
     state.latestMetadataData = sysData.metadata;
     renderMetadataUI(sysData.metadata);
+  }
+  if (sysData.faces) {
+    state.latestFacesData = sysData.faces;
+    renderFacesUI(sysData.faces);
   }
   if (sysData.library_backup) {
     state.latestLibBackupData = sysData.library_backup;
@@ -539,6 +543,80 @@ if (vhashPercentText) vhashPercentText.textContent = `${pct.toFixed(1)}%`;
 if (vhashProgressBar) vhashProgressBar.style.width = `${pct}%`;
 if (vhashCountsText) {
   vhashCountsText.textContent = `${(data.hashed_count || 0).toLocaleString()} / ${total.toLocaleString()} hashed`;
+}
+}
+// Face Recognition / People (opt-in; dormant until FACE_RECOGNITION_ENABLED)
+function renderFacesUI(data) {
+if (!faceWorkerSummaryText) return;
+const status = data.status || "idle";
+const enabled = data.enabled !== false;
+const engineReady = data.engine_available !== false && !(data.engine && data.engine.available === false);
+const isPaused = data.is_paused || status === "paused";
+const isScanning = status === "scanning";
+const pending = data.pending_count || 0;
+const total = data.total_files || 0;
+const isDone = !isScanning && pending === 0 && total > 0;
+
+if (!enabled) {
+  faceWorkerSummaryText.textContent = "Off";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Off";
+} else if (!engineReady || status === "unavailable") {
+  faceWorkerSummaryText.textContent = "Engine unavailable";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Blocked";
+} else if (isPaused) {
+  faceWorkerSummaryText.textContent = "Paused";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Paused";
+} else if (isScanning) {
+  faceWorkerSummaryText.textContent = "Scanning";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Active";
+} else if (isDone) {
+  faceWorkerSummaryText.textContent = "100% Scanned";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Complete";
+} else {
+  faceWorkerSummaryText.textContent = "Idle";
+  if (faceWorkerStatusLabel) faceWorkerStatusLabel.textContent = "Idle";
+}
+
+if (faceWorkerCurrentFile) {
+  if (isScanning && data.current_file) {
+    faceWorkerCurrentFile.textContent = data.current_file;
+    faceWorkerCurrentFile.title = data.current_file;
+  } else if (!enabled) {
+    faceWorkerCurrentFile.textContent = "Face recognition disabled";
+    faceWorkerCurrentFile.title = "";
+  } else if (isPaused) {
+    faceWorkerCurrentFile.textContent = "Face scanning paused";
+    faceWorkerCurrentFile.title = "";
+  } else if (isDone) {
+    faceWorkerCurrentFile.textContent = `All ${total.toLocaleString()} files scanned`;
+    faceWorkerCurrentFile.title = "";
+  } else {
+    faceWorkerCurrentFile.textContent = "Idle";
+    faceWorkerCurrentFile.title = "";
+  }
+}
+
+const pct = typeof data.percent === "number" ? data.percent : (total > 0 ? 100 : 0);
+if (faceWorkerPercentText) faceWorkerPercentText.textContent = `${pct.toFixed(1)}%`;
+if (faceWorkerProgressBar) faceWorkerProgressBar.style.width = `${pct}%`;
+if (faceWorkerCountsText) {
+  const processed = Math.max(0, total - pending);
+  faceWorkerCountsText.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} scanned`;
+}
+if (faceWorkerPeopleText) {
+  faceWorkerPeopleText.textContent = `${(data.people_total || 0).toLocaleString()} people · ${(data.faces_total || 0).toLocaleString()} faces`;
+}
+if (faceWorkerCacheText) {
+  faceWorkerCacheText.textContent = `${data.cache_size_formatted || "0 B"} / ${data.cache_max_size_formatted || "—"} crops`;
+}
+if (faceWorkerHintText) {
+  if (!enabled) {
+    faceWorkerHintText.textContent = "Set FACE_RECOGNITION_ENABLED=true and restart to scan faces. ZIP members are skipped.";
+  } else if (!engineReady) {
+    faceWorkerHintText.textContent = data.engine_reason || "Waiting for the face models to download.";
+  } else {
+    faceWorkerHintText.textContent = "Open the People page to name clusters and search by person.";
+  }
 }
 }
 function startWebpPolling() {

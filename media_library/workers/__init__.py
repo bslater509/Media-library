@@ -17,6 +17,7 @@ from media_library.workers.duplicate_hash_worker import (
     duplicate_hash_worker_instance,
     thumb_hash_worker_instance,
 )
+from media_library.workers.face_worker import FaceWorker, face_worker_instance
 from media_library.workers.h265_worker import (
     H265ConvertWorker,
     h265_worker_instance,
@@ -55,6 +56,7 @@ __all__ = [
     "BackupWatcherWorker",
     "BaseWorker",
     "DuplicateHashWorker",
+    "FaceWorker",
     "H265ConvertWorker",
     "LibraryOpsWorker",
     "MediaMetadataWorker",
@@ -68,6 +70,7 @@ __all__ = [
     "backup_watcher_instance",
     "duplicate_hash_worker_instance",
     "enqueue_pretranscode_for_source",
+    "face_worker_instance",
     "h265_worker_instance",
     "is_gallery_dl_available",
     "is_ytdlp_available",

@@ -2,7 +2,7 @@
 
 A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
 
-**Current release: v1.0.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v1.1.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 
@@ -60,6 +60,12 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 - **Content Hashing**: Fast 128 KB head-chunk + byte size matching with full verification prior to any deletion.
 - **Visual Duplicate Detection**: 64-bit perceptual hashing (`pHash`) to identify resized, re-encoded, or visually similar images.
 - **Interactive Resolution**: Group review interface with side-by-side comparison and false-positive ignore rules.
+
+### 🧑 Face Recognition & People
+- **Opt-in & Local**: Enable with `FACE_RECOGNITION_ENABLED=true`. Detection and embeddings run on this machine with OpenCV's YuNet + SFace models (no torch, no cloud, no upload) — images, embeddings, names and face crops never leave the host.
+- **Images & Videos**: Faces are found in loose images (read from the cached thumbnails) and in videos, sampling a frame every 30s and keeping each hit's timestamp as a jump-to "moment".
+- **Clusters You Name**: Similar faces are grouped automatically; rename, merge, split or dismiss clusters ("not a person"), then search the Library with `person:anna`.
+- **Dedicated People Page** (`/people`): cluster grid, per-person media, a face review strip, and a strictness control (Strict/Balanced/Loose) you can re-group with at any time.
 
 ### 💾 Zero-Work Live Backups & Recovery
 - **Hot SQLite Backups**: Non-destructive `sqlite3_backup` snapshotting of the index directly to `<LIBRARY_DIR>/.media_library_backup/`.
@@ -119,6 +125,7 @@ Now open your browser:
 - **Media Library**: `http://localhost:8888`
 - **Incoming Sorter**: `http://localhost:8888/sorter`
 - **Downloads**: `http://localhost:8888/downloads`
+- **People**: `http://localhost:8888/people` (after `FACE_RECOGNITION_ENABLED=true`)
 - **Analytics**: `http://localhost:8888/analytics`
 
 ---
