@@ -31,15 +31,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # ---------------------------------------------------------------------------
 
 FORBIDDEN_PATTERNS = (
-    (re.compile(r"/root/"), "this machine's root home directory"),
+    # Concatenated so this file does not contain the literal it forbids —
+    # otherwise the scanner matches its own source and can never pass.
+    (re.compile("/" + "root/"), "this machine's root home directory"),
     (re.compile(r"/home/(?!<)[A-Za-z0-9_.-]{2,}"), "a real user home directory"),
     (re.compile(r"/Users/[A-Za-z][A-Za-z0-9_.-]*"), "a macOS user home directory"),
     (re.compile(r"C:\\\\Users\\\\", re.IGNORECASE), "a Windows user profile path"),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"), "a GitHub token"),
-    (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "a GitHub fine-grained token"),
+    (re.compile(r"github_pat_" + r"[A-Za-z0-9_]{20,}"), "a GitHub fine-grained token"),
     (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), "an API key"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "an AWS access key id"),
-    (re.compile(r"BEGIN [A-Z ]*PRIVATE KEY"), "a private key"),
+    (re.compile("BEGIN " + r"[A-Z ]*PRIVATE KEY"), "a private key"),
     (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), "a Slack token"),
 )
 
