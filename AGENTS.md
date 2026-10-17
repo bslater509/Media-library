@@ -123,11 +123,11 @@ npm test
 ```
 All existing tests must pass, and new features must include unit or integration tests under `tests/` or `frontend/tests/`.
 
-The tree is kept lint-clean **and** format-clean, and the same three gates must pass for any change to be considered done — run them locally before committing:
+The tree is kept lint-clean **and** format-clean, and the same three gates run on every push and pull request in `.github/workflows/ci.yml` (job `lint`: `ruff check` + `ruff format --check`; job `backend`: `pytest`; job `frontend`: `npm ci` + `npm test` + `npm run build`). Run them locally before pushing so CI stays green:
 ```bash
 ./venv/bin/ruff check . && ./venv/bin/ruff format --check .   # lint + formatting gate
 ```
-`.github/workflows/ci.yml` is intentionally **not** in this repository (pushing a workflow file needs a GitHub token with the `workflow` scope, which the deploy token does not carry). If a pipeline or a local pre-commit hook is added later, these are the commands it should run: `ruff check`, `ruff format --check`, `pytest`, `npm test`, `npm run build`.
+Note: adding or changing a file under `.github/workflows/` requires the pushing credential to carry the `workflow` scope (`gh auth refresh -s workflow`); without it GitHub rejects the push with "refusing to allow an OAuth App to create or update workflow".
 
 ### Rule 5: Keep Live Server Running Latest Code
 Because HTML templates are cached in memory for the process lifetime (`media_library.core.templating.load_template`) and Python modules require process reloading, **always restart the systemd service** whenever making code, template, or asset changes so the live server serves the latest code:
@@ -167,6 +167,7 @@ media-library/
 ├── requirements.txt                 # Pinned dependencies
 ├── pytest.ini                       # Pytest configuration (pythonpath = ., basetemp = data/pytest_tmp)
 ├── ruff.toml                        # Ruff lint configuration (with the rules intentionally excluded, and why)
+├── .github/workflows/ci.yml         # CI gates: ruff lint + format check, pytest, vitest + Vite build
 ├── config.json                      # Persistent runtime user preferences (recent destinations, source dir)
 ├── config.example.json              # Example configuration file
 ├── .env.example                     # Reference environment variables
@@ -980,15 +981,15 @@ The test suite is powered by Pytest with automatic PYTHONPATH configuration in `
 ./venv/bin/pytest tests/test_zip_service.py
 ```
 
-### Linting & Formatting
-`ruff.toml` is the lint configuration (default rules minus the three intentionally excluded ones documented in its header). The tree is kept lint-clean **and** format-clean:
+### Linting, Formatting & CI
+`ruff.toml` is the lint configuration (default rules minus the three intentionally excluded ones documented in its header, with `target-version = "py310"` matching the package's real floor). The tree is kept lint-clean **and** format-clean, and `.github/workflows/ci.yml` fails the push/PR when either drifts:
 ```bash
 ./venv/bin/ruff check .            # lint
 ./venv/bin/ruff check --fix .      # apply the safe fixes
 ./venv/bin/ruff format .           # apply formatting
-./venv/bin/ruff format --check .   # verify formatting
+./venv/bin/ruff format --check .   # what CI runs
 ```
-There is no CI workflow in the repository (adding one requires a GitHub token with the `workflow` scope). Treat the gates as a manual pre-commit step: `ruff check`, `ruff format --check`, `./venv/bin/pytest`, `npm test`, `npm run build`.
+The workflow's three jobs are `lint` (ruff check + format check), `backend` (`pytest`, after `apt-get install ffmpeg` — the runner image no longer ships FFmpeg — and an `ffmpeg -version` sanity check) and `frontend` (`npm ci` + `npm test` + `npm run build`). The lint job installs **the ruff version pinned in `requirements.txt`** (`ruff==`), never a floating one: an unpinned ruff once failed CI on rules its older local counterpart did not know (`UP041`, which newer ruff applies because its default target version is 3.11+ while this package targets 3.10).
 
 ### Writing New Tests
 All test modules must use the sandboxed environment fixtures defined in `tests/conftest.py`:
@@ -1021,5 +1022,5 @@ Before concluding your turn or submitting your work, complete this verification 
 5. [ ] **System Status Sync**: Any new background task or worker state is exposed in `/api/system/status`.
 6. [ ] **Automated Tests**: Ran `./venv/bin/pytest` and confirmed all tests pass without errors.
 7. [ ] **AGENTS.md Updated**: Verified that `AGENTS.md` accurately reflects any changes made to endpoints, schema, workers, or configuration.
-8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass.
+8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass (CI gates on them).
 9. [ ] **Frontend Escaping**: Every user-controlled string rendered into the DOM (filename, folder name, download title, server error text) goes through `textContent` or `escapeHtml()`; the toast helpers (`frontend/src/library/utils.js`, `frontend/src/app/state.js`) are text-only by construction and must stay that way — a filename is not trusted input.

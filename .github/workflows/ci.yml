@@ -19,8 +19,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install ruff
-        run: pip install "ruff>=0.6.0"
+      - name: Install ruff (the version pinned in requirements.txt)
+        run: pip install "$(grep -E '^ruff==' requirements.txt)"
       - name: Lint
         run: ruff check --output-format=github .
       - name: Format check
@@ -39,6 +39,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Install FFmpeg (not preinstalled on the runner image)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Verify FFmpeg is available
         run: ffmpeg -version && ffprobe -version
       - name: Run test suite

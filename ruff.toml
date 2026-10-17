@@ -15,6 +15,12 @@
 #   always be false. The flagged `key in row.keys()` guards are correct and
 #   must not be rewritten.
 
+# The package needs Python 3.10 (PEP 604 union syntax in annotations is
+# evaluated at runtime). Stating it here keeps rules that only make sense on a
+# newer target — e.g. UP041 rewriting `asyncio.TimeoutError`, whose builtin
+# alias only exists from 3.11 — from firing.
+target-version = "py310"
+
 [lint]
 ignore = ["BLE001", "S110", "SIM118"]
 
