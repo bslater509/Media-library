@@ -9,6 +9,29 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.1] - 2026-10-17
+
+### Fixed
+
+- **`/people` cards and covers were all showing broken images**: the crop and
+  thumbnail URLs built by `frontend/src/people/index.js` were run through
+  `safeAttrEscape` (which percent-encodes the whole string, `/` and `?`
+  included) before landing in an `<img src>` attribute, so every request went to
+  a mangled relative path and 404'd. URLs in `src` attributes are now
+  HTML-escaped (`escapeHtml`), which leaves the URL intact; only the arguments
+  interpolated into inline JS strings keep percent-encoding.
+- **`/people` opened scrolled down, hiding the top of the view behind the
+  mobile top bar**: the page scrolls inside `<main>` (the body is a
+  viewport-locked column), but switching views called `window.scrollTo(0, 0)`,
+  which does nothing there — so opening a person from a scrolled list, or
+  returning with "All people", kept the previous scroll offset and clipped the
+  new view's top. Both switches now reset the stage's `scrollTop`.
+- **`/people` could be dragged sideways on a phone**: the status chip row was
+  `shrink-0` and the progress line's filename did not truncate, so the content
+  was ~46px wider than the viewport. The chips now shrink and wrap, the progress
+  file name truncates with an ellipsis, and the stage clips horizontal
+  overflow.
+
 ## [1.1.0] - 2026-10-17
 
 ### Added

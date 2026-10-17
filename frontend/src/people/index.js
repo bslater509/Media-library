@@ -10,7 +10,7 @@
 // stored server-side (db_meta) so a choice applies to the very next scan.
 
 import '../../../static/styles.css';
-import { escapeHtml, formatDuration, getResolutionLabel, safeAttrEscape, showToast } from '../library/utils.js';
+import { escapeHtml, formatDuration, getResolutionLabel, showToast } from '../library/utils.js';
 import { hydrateIcons } from '../shared/icons.js';
 
 const PEOPLE_PAGE = 120;
@@ -140,6 +140,15 @@ function chip(label, extra = '') {
   return `<span class="px-2 py-1 rounded-lg bg-slate-900/70 border border-slate-800 text-[10px] font-mono text-slate-300 ${extra}">${label}</span>`;
 }
 
+// The page scrolls inside <main>, not the document (the body is a fixed
+// viewport-locked column), so a view switch must reset that element — calling
+// window.scrollTo() leaves the new view scrolled down under the top bar.
+function scrollStageToTop() {
+  const stage = document.querySelector('main');
+  if (stage) stage.scrollTop = 0;
+  else window.scrollTo(0, 0);
+}
+
 // -------------------------------------------------------------------- status
 
 function renderCounts() {
@@ -257,7 +266,7 @@ async function refreshStatus() {
 
 function personCardHtml(p) {
   const cover = p.cover_url
-    ? `<img src="${safeAttrEscape(p.cover_url)}" alt="" loading="lazy" class="transition duration-200 group-hover:scale-[1.03]">`
+    ? `<img src="${escapeHtml(p.cover_url)}" alt="" loading="lazy" class="transition duration-200 group-hover:scale-[1.03]">`
     : '<div class="aspect-square flex items-center justify-center text-slate-600 text-2xl">🧑</div>';
   const name = p.name
     ? `<span class="text-[11px] font-semibold text-white truncate">${escapeHtml(p.name)}</span>`
@@ -340,7 +349,7 @@ function renderFaces() {
       const title = `${f.name || ''}${when}`;
       return `
         <button type="button" data-face="${f.id}" class="pp-face rounded-lg overflow-hidden border border-slate-800" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(title)}">
-          ${f.crop_url ? `<img src="${safeAttrEscape(f.crop_url)}" alt="" loading="lazy">` : '<span class="block aspect-square bg-slate-900"></span>'}
+          ${f.crop_url ? `<img src="${escapeHtml(f.crop_url)}" alt="" loading="lazy">` : '<span class="block aspect-square bg-slate-900"></span>'}
         </button>
       `;
     }).join('');
@@ -362,7 +371,7 @@ function mediaCardHtml(f, index) {
   return `
     <div class="pp-media bg-slate-900/50 border border-slate-800/70 rounded-xl overflow-hidden flex flex-col">
       <button type="button" data-media="${index}" class="relative block w-full aspect-video bg-black">
-        <img src="${safeAttrEscape(f.thumb_url)}" alt="" loading="lazy">
+        <img src="${escapeHtml(f.thumb_url)}" alt="" loading="lazy">
         ${dur ? `<span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-slate-950/85 text-[10px] font-mono text-slate-200">${dur}</span>` : ''}
         ${isVid ? `<span class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-slate-950/85 text-[9px] font-mono text-violet-300">${fmtInt(f.frames)} frames</span>` : ''}
         ${res ? `<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-slate-950/85 text-[9px] font-mono text-emerald-300">${res}</span>` : ''}
@@ -411,7 +420,7 @@ async function openPerson(personId) {
   els.personView.classList.remove('hidden');
   els.personView.classList.add('flex');
   renderPerson();
-  window.scrollTo(0, 0);
+  scrollStageToTop();
 }
 
 function showPeopleView() {
@@ -420,6 +429,7 @@ function showPeopleView() {
   els.personView.classList.remove('flex');
   els.peopleView.classList.remove('hidden');
   els.peopleView.classList.add('flex');
+  scrollStageToTop();
 }
 
 async function loadMoreFaces() {
@@ -584,7 +594,7 @@ function renderMergeList() {
     ? shown.map((p) => {
       const on = mergeState.selected.has(p.id);
       const cover = p.cover_url
-        ? `<img src="${safeAttrEscape(p.cover_url)}" alt="" class="w-11 h-11 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0">`
+        ? `<img src="${escapeHtml(p.cover_url)}" alt="" class="w-11 h-11 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0">`
         : '<span class="w-11 h-11 rounded-lg bg-slate-950 border border-slate-800 shrink-0"></span>';
       return `
         <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"

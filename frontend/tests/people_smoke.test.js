@@ -213,6 +213,41 @@ describe('people page publisher', () => {
     expect(() => moments[1].click()).not.toThrow();
   });
 
+  it('renders crop and thumbnail URLs verbatim (never percent-encoded)', async () => {
+    await boot();
+
+    const cover = document.querySelector('#ppGrid [data-person="1"] img');
+    expect(cover).toBeTruthy();
+    expect(cover.getAttribute('src')).toBe('/api/people/crop?face_id=1&v=face_abc.jpg');
+    expect(cover.getAttribute('src')).not.toContain('%2F');
+
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+
+    const faceImg = document.querySelector('#ppFaces [data-face="1"] img');
+    expect(faceImg.getAttribute('src')).toBe('/api/people/crop?face_id=1&v=a.jpg');
+    const mediaImg = document.querySelector('#ppMedia [data-media="0"] img');
+    expect(mediaImg.getAttribute('src')).toBe('/api/backup/thumbnail?path=%2Fmedia%2Ftrips%2Fclip.mp4');
+  });
+
+  it('resets the stage scroll when switching between views', async () => {
+    await boot();
+    const stage = document.querySelector('main');
+    const scrollSpy = vi.spyOn(stage, 'scrollTop', 'set');
+
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+    expect(scrollSpy).toHaveBeenCalledWith(0);
+
+    scrollSpy.mockClear();
+    document.getElementById('ppBackBtn').click();
+    await flush();
+    expect(scrollSpy).toHaveBeenCalledWith(0);
+    // The document does not scroll on this page (the body is viewport-locked).
+    expect(document.getElementById('ppPeopleView').classList.contains('hidden')).toBe(false);
+    scrollSpy.mockRestore();
+  });
+
   it('names a cluster through the API and repaints the grid', async () => {
     const calls = await boot();
     document.querySelector('#ppGrid [data-person="2"]').click();
@@ -305,6 +340,19 @@ describe('people page publisher', () => {
     } finally {
       window.history.replaceState({}, '', `/people${original}`);
     }
+  });
+
+  it('keeps the mobile layout from overflowing sideways', () => {
+    const html = fs.readFileSync(path.join(templatesDir, 'people.html'), 'utf8');
+    // The stage clips horizontal overflow, and the counts chips shrink/wrap
+    // instead of pushing the page wider than the phone.
+    expect(html).toMatch(/<main class="[^"]*overflow-x-hidden/);
+    const counts = html.match(/<div id="ppCounts" class="([^"]*)"/);
+    expect(counts).toBeTruthy();
+    expect(counts[1]).not.toContain('shrink-0');
+    expect(counts[1]).toContain('min-w-0');
+    const progress = html.match(/<span id="ppProgressText" class="([^"]*)"/);
+    expect(progress[1]).toContain('truncate');
   });
 
   it('shows an error state instead of a blank page when the API fails', async () => {
