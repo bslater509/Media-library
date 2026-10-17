@@ -594,8 +594,8 @@ function renderMergeList() {
     ? shown.map((p) => {
       const on = mergeState.selected.has(p.id);
       const cover = p.cover_url
-        ? `<img src="${escapeHtml(p.cover_url)}" alt="" class="w-11 h-11 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0">`
-        : '<span class="w-11 h-11 rounded-lg bg-slate-950 border border-slate-800 shrink-0"></span>';
+        ? `<img src="${escapeHtml(p.cover_url)}" alt="" class="w-16 h-16 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0">`
+        : '<span class="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 shrink-0"></span>';
       return `
         <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"
           class="flex items-center gap-3 p-2 rounded-xl border text-left transition ${on ? 'border-emerald-600 bg-emerald-600/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
@@ -630,6 +630,70 @@ function closeMergeModal() {
   els.mergeModal.classList.add('hidden');
   els.mergeModal.classList.remove('flex');
   document.body.classList.remove('modal-scroll-lock');
+}
+
+// Swipe-to-dismiss for the merge sheet, mirroring the Library's mobile sheets:
+// the drag starts on the grabber handle or the header background (never on a
+// button or the filter input, so tapping and typing keep working), and a pull
+// past the threshold closes the sheet. No-ops on desktop and under
+// prefers-reduced-motion, where the sheet is a plain centred dialog.
+const MERGE_SHEET_DISMISS_PX = 120;
+
+function initMergeSheetDrag() {
+  if (!window.matchMedia('(max-width: 767px)').matches) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const card = els.mergeModal && els.mergeModal.querySelector('.ml-sheet-card');
+  if (!card) return;
+  const grabber = card.querySelector('[data-sheet-grabber]');
+  const header = grabber ? grabber.nextElementSibling : null;
+  let startY = 0;
+  let dragging = false;
+
+  const onPointerDown = (e) => {
+    if (dragging) return;
+    const el = e.target;
+    const interactive = el.closest
+      && el.closest('button, input, select, textarea, a, label, [role="button"]');
+    const inHeader = header && !interactive
+      && (el === header || (header.contains && header.contains(el)));
+    if (!(grabber && el.closest('[data-sheet-grabber]')) && !inHeader) return;
+    startY = e.clientY;
+    dragging = true;
+    card.classList.add('ml-dragging');
+    try { card.setPointerCapture(e.pointerId); } catch (err) { /* unsupported */ }
+  };
+
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    card.style.transform = `translateY(${Math.max(0, e.clientY - startY)}px)`;
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = Math.max(0, (e.clientY || 0) - startY);
+    card.classList.remove('ml-dragging');
+    card.classList.add('ml-snap-back');
+    if (dy > MERGE_SHEET_DISMISS_PX) {
+      card.style.transform = 'translateY(105%)';
+      setTimeout(() => {
+        card.classList.remove('ml-snap-back');
+        card.style.transform = '';
+        closeMergeModal();
+      }, 240);
+    } else {
+      card.style.transform = 'translateY(0)';
+      setTimeout(() => {
+        card.classList.remove('ml-snap-back');
+        card.style.transform = '';
+      }, 280);
+    }
+  };
+
+  card.addEventListener('pointerdown', onPointerDown);
+  card.addEventListener('pointermove', onPointerMove);
+  card.addEventListener('pointerup', onPointerUp);
+  card.addEventListener('pointercancel', onPointerUp);
 }
 
 async function confirmMerge() {
@@ -916,6 +980,7 @@ async function init() {
   hydrateIcons(document);
   initThemeCustomizer();
   initEvents();
+  initMergeSheetDrag();
 
   // ?folder= prefills the "scan folder" box, so the Library can deep-link here.
   const folderParam = new URLSearchParams(window.location.search).get('folder');

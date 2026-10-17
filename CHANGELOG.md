@@ -9,6 +9,21 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.2] - 2026-10-17
+
+### Fixed
+
+- **The `/people` "Merge into…" picker was clipped top and bottom on a phone**
+  and its cover thumbnails were too small to recognise. The dialog was a centred
+  box sized in `vh`, which on a phone lays out against the *large* viewport, so
+  its header sat under the mobile top bar and its Merge/Cancel footer under the
+  browser's bottom bar. It is now a bottom-anchored full-height sheet
+  (`.ml-sheet` / `.ml-sheet-card`, `100dvh`), matching the Library's other tall
+  panels: the grabber and header are pinned at the top, the list is the single
+  scroll region, and the footer stays clear of the bottom of the screen
+  (safe-area aware). The sheet can also be swiped down to dismiss, and each row's
+  cover crop grew from 44px to 64px.
+
 ## [1.1.1] - 2026-10-17
 
 ### Fixed

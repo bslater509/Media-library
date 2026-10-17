@@ -63,7 +63,7 @@ const PEOPLE = {
       sample_urls: ['/api/people/crop?face_id=1&v=face_abc.jpg'],
       is_named: true,
     },
-    { id: 2, name: null, face_count: 1, media_count: 1, cover_url: null, sample_urls: [], is_named: false },
+    { id: 2, name: null, face_count: 1, media_count: 1, cover_url: '/api/people/crop?face_id=2&v=face_def.jpg', sample_urls: [], is_named: false },
   ],
   counts: { people: 2, named: 1, unnamed: 1, faces: 4, dismissed: 1, files: 3 },
   total: 2,
@@ -353,6 +353,63 @@ describe('people page publisher', () => {
     expect(counts[1]).toContain('min-w-0');
     const progress = html.match(/<span id="ppProgressText" class="([^"]*)"/);
     expect(progress[1]).toContain('truncate');
+  });
+
+  it('renders the merge sheet with a grabber and big cover thumbnails', async () => {
+    await boot();
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+    document.getElementById('ppMergeBtn').click();
+
+    const wrap = document.getElementById('ppMergeModal');
+    expect(wrap.classList.contains('ml-sheet')).toBe(true);
+    const card = wrap.querySelector('.ml-sheet-card');
+    expect(card).toBeTruthy();
+    expect(card.querySelector('[data-sheet-grabber]')).toBeTruthy();
+    // Covers are readable on a phone, not 44px specks.
+    const cover = card.querySelector('#ppMergeList img');
+    expect(cover.className).toContain('w-16');
+    expect(cover.className).toContain('h-16');
+  });
+
+  it('dismisses the merge sheet with a downward swipe on the grabber', async () => {
+    const originalMM = window.matchMedia;
+    // Happy-dom reports no media matches by default; the sheet is a phone-only
+    // behaviour, so answer the width query as a 412px viewport would.
+    window.matchMedia = (query) => ({
+      matches: String(query).includes('max-width'),
+      media: String(query),
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+    });
+    try {
+      await boot();
+      document.querySelector('#ppGrid [data-person="1"]').click();
+      await flush();
+      document.getElementById('ppMergeBtn').click();
+      const wrap = document.getElementById('ppMergeModal');
+      const card = wrap.querySelector('.ml-sheet-card');
+      const grabber = card.querySelector('[data-sheet-grabber]');
+
+      const fire = (type, clientY) => card.dispatchEvent(
+        new MouseEvent(type, { clientY, bubbles: true, cancelable: true })
+      );
+
+      fire('pointerdown', 100); // not on the grabber: ignored
+      fire('pointerup', 400);
+      expect(wrap.classList.contains('hidden')).toBe(false);
+
+      grabber.dispatchEvent(new MouseEvent('pointerdown', { clientY: 100, bubbles: true, cancelable: true }));
+      fire('pointermove', 300);
+      expect(card.style.transform).toBe('translateY(200px)');
+      fire('pointerup', 300);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(wrap.classList.contains('hidden')).toBe(true);
+    } finally {
+      window.matchMedia = originalMM;
+    }
   });
 
   it('shows an error state instead of a blank page when the API fails', async () => {
