@@ -16,7 +16,10 @@ snapshot metadata.
 - **Liveness probe** `GET /api/health`: a cheap, credential-free check for
   systemd, uptime monitors and container healthchecks — reachability and worker
   liveness only, never a library path, count or filename — returning `503` when
-  the database cannot be read.
+  the database cannot be read. It also reports the running build's short git SHA
+  (`commit`, from `media_library/core/build_info.py`, or a `GIT_COMMIT`/
+  `BUILD_COMMIT` env value), so "is the live server on the latest commit?" is a
+  one-line check instead of comparing file mtimes.
 - **Continuous integration** (`.github/workflows/ci.yml`): `ruff check` +
   `ruff format --check`, `pytest`, and `npm test` + `npm run build` run on every
   push and pull request.

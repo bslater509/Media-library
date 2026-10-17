@@ -618,6 +618,12 @@ def test_health_probe_is_cheap_and_leaks_nothing(api_client):
     assert body["version"] == __version__
     assert isinstance(body["uptime_s"], (int, float))
     assert body["workers"]["total"] > 0
+    # The build revision is a checkout's short commit, or absent when unknown.
+    assert "commit" not in body or (
+        isinstance(body["commit"], str)
+        and len(body["commit"]) == 12
+        and all(c in "0123456789abcdef" for c in body["commit"].lower())
+    )
     # A health probe must not expose the library layout.
     serialized = res.text
     assert "media_dest" not in serialized

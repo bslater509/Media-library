@@ -1,5 +1,6 @@
 """Core module exports."""
 
+from media_library.core.build_info import get_commit
 from media_library.core.config import (
     BACKUP_STAGING_DIR,
     BASE_DIR,
@@ -68,6 +69,7 @@ __all__ = [
     "detect_default_destination",
     "format_size",
     "get_app_state",
+    "get_commit",
     "get_thumbnail_cache_path",
     "load_config_data",
     "make_video_meta",

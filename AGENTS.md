@@ -186,6 +186,7 @@ media-library/
 │   │   ├── __init__.py
 │   │   ├── config.py                # Path resolutions, env loading, defaults
 │   │   ├── auth.py                  # Shared-password helpers, signed session cookie
+│   │   ├── build_info.py            # Best-effort git commit SHA for the /api/health probe
 │   │   ├── constants.py             # File extension sets, default folder candidates
 │   │   ├── http_stream.py           # HTTP byte-range and media streaming response helpers
 │   │   ├── state.py                 # In-memory state, AppState container, stat cache
@@ -306,6 +307,7 @@ media-library/
 │   ├── test_auth.py                 # Shared-password authentication & session protection
 │   ├── test_backup_and_admin_operations.py # Backup snapshot/restore, rename/delete, poster capture
 │   ├── test_backup_service.py       # Backup snapshot & restore tests
+│   ├── test_build_info.py           # Build revision resolution (git HEAD/refs/packed-refs, env override, linked worktrees)
 │   ├── test_core_config.py          # Configuration loading & path resolution
 │   ├── test_coverage_duplicate_hash_worker.py # Candidate quick hashing, pHash migration, worker loops, pause/resume, DB error resilience
 │   ├── test_coverage_ffmpeg_and_media_service.py # FFmpeg/probe helpers, rotation, candidate frame caching, WebP rollback, scanner errors
@@ -389,6 +391,7 @@ All settings can be provided via `.env` file, environment variables, or CLI para
 | `QUICK_NAV_DIRS` | N/A | Auto-detected | Comma-separated quick navigation directory paths |
 | `SEARCH_LIMIT` | N/A | `1000` | Global library search result limit (maximum matches returned in a single search query before truncation) |
 | `APP_PASSWORD` | N/A | *(empty — auth disabled)* | Single shared password gating the entire web UI and API; empty/unset disables authentication |
+| `GIT_COMMIT` / `BUILD_COMMIT` | N/A | *(empty — read from `.git`)* | Build revision reported as `commit` by `/api/health`; set it for a container/packaged deploy with no `.git` directory (a plain checkout is detected automatically) |
 
 ---
 
@@ -736,7 +739,7 @@ The entire web UI and API can optionally be gated behind a **single shared passw
 - **Login flow**: `GET /login` renders `templates/login.html` (a raw `HTMLResponse`, no Jinja2). `POST /login` accepts an `application/x-www-form-urlencoded` `password` (plus an optional same-site `next` target) and, on success, sets a signed session cookie and redirects to `next` (validated to an absolute same-site path to prevent open redirects; falls back to `/`). A wrong password re-renders the page with an inline error and issues no cookie.
 - **Signed cookie (stateless)**: the cookie (`ml_auth`) is `base64url(issued_epoch "." HMAC-SHA256)`, keyed by a SHA-256 derivation of the password (`media_library/core/auth.py`). There is **no server-side session store and no DB writes**, so sessions survive restarts, and changing `APP_PASSWORD` automatically invalidates every previously issued cookie. The password itself is compared with `hmac.compare_digest` (constant time).
 - **Remember-forever (sliding expiry)**: the cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, with a ~400-day `Max-Age` (browsers cap cookie lifetime there). It is re-issued (slid forward) only when the embedded issue time is older than 30 days, so an actively used browser effectively never has to sign in again. There is no logout button — logging out means clearing cookies.
-- **Coverage & enforcement**: `auth_middleware` (registered in `app_factory.create_app`, active only when a password is set) gates **every** route — all pages, all `/api/...` endpoints, and all media/thumbnail/stream endpoints. Only `GET`/`HEAD`/`POST /login`, `/favicon.ico`, `/sw.js`, `/api/health` (the credential-free liveness probe, which exposes reachability and worker liveness only) and `/static/*` stay public so the login page can render. Unauthenticated `/api/*` requests receive `401 JSON`, while page requests are `302`-redirected to `/login?next=...`. Because the cookie is sent automatically on same-origin `fetch()` and `<video>`/`<img>` src requests, no frontend JavaScript changes are required.
+- **Coverage & enforcement**: `auth_middleware` (registered in `app_factory.create_app`, active only when a password is set) gates **every** route — all pages, all `/api/...` endpoints, and all media/thumbnail/stream endpoints. Only `GET`/`HEAD`/`POST /login`, `/favicon.ico`, `/sw.js`, `/api/health` (the credential-free liveness probe, which exposes reachability, the build revision and worker liveness only) and `/static/*` stay public so the login page can render. Unauthenticated `/api/*` requests receive `401 JSON`, while page requests are `302`-redirected to `/login?next=...`. Because the cookie is sent automatically on same-origin `fetch()` and `<video>`/`<img>` src requests, no frontend JavaScript changes are required.
 - **No CORS**: the app is same-origin only (pages, media streaming, thumbnails and the API are all served by it), so `create_app` installs no `CORSMiddleware`. A wildcard `allow_origins` combined with credentialed requests is rejected by browsers anyway and would only widen the surface for third-party pages. `tests/test_api_routes.py::test_no_cors_middleware_is_installed` guards this.
 - **Not covered**: no rate limiting/lockout on failed logins, and the cookie is not marked `Secure` (the app is typically served over plain LAN HTTP).
 
@@ -770,7 +773,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
   "h265": { "status": "idle", "active": null, "job": null, "queue_length": 0, "active_count": 0, "queued_count": 0, "queued": [], "jobs": [], "history": [] }
 }
 ```
-- The top-level `version` key reports `media_library.__version__` — the single source of truth for the release version (see Rule 1.6). It is the quickest way to confirm which build a running server is on.
+- The top-level `version` key reports `media_library.__version__` — the single source of truth for the release version (see Rule 1.6). The liveness probe's `commit` key reports the checkout's short git SHA, which is the finer-grained check of *which* build a running server is on.
 - The frontend uses `is_active` to adjust polling frequency: **2000 ms** when active background work is in flight, **6000 ms** when idle, **8000 ms** on error.
 - `url_downloads.active_count > 0` or `queued_count > 0` also sets `is_active`.
 - The top-level `h265` key is built by `H265ConvertWorker.get_status()`: the serial in-place HEVC re-encode queue driving the lightbox's "Convert to x265" action. It carries the `active` job, the `queued` list, `active_count`/`queued_count`, and a sanitized `jobs`/`history` (the threading `abort_event` is stripped). Either an active or queued x265 job also sets `is_active`.
@@ -927,7 +930,7 @@ To eliminate excessive polling across multiple widgets in the frontend, all back
 
 ### Unified System Status (`media_library.routers.system`)
 - `GET /api/system/status` — Consolidated status for all background subsystems
-- `GET /api/health` — Cheap, **credential-free** liveness probe for systemd, uptime monitors and container healthchecks. Returns `{status, version, uptime_s, database, workers: {running, total}}` — reachability and worker liveness only, never a library path, count or filename — and `503` with `status: "degraded"` when the database cannot be read (`SELECT 1`). It is listed in `_PUBLIC_PATHS` in `media_library/routers/auth.py` so it stays reachable when `APP_PASSWORD` is set.
+- `GET /api/health` — Cheap, **credential-free** liveness probe for systemd, uptime monitors and container healthchecks. Returns `{status, version, uptime_s, database, workers: {running, total}}` plus `commit` (the checkout's short git SHA, or the `GIT_COMMIT`/`BUILD_COMMIT` env value; omitted when unknown) — reachability, the build revision and worker liveness only, never a library path, count or filename — and `503` with `status: "degraded"` when the database cannot be read (`SELECT 1`). It is listed in `_PUBLIC_PATHS` in `media_library/routers/auth.py` so it stays reachable when `APP_PASSWORD` is set. The revision is resolved by `media_library/core/build_info.py` at first call (following a linked worktree's `gitdir:`/`commondir` and `packed-refs`, no git binary and no per-request I/O) and cached for the process lifetime, so it answers "is the live server on today's commit?" without an mtime comparison.
 - `POST /api/system/clean-db` — Trigger background deep database scan and thumbnail cleanup
 
 ---

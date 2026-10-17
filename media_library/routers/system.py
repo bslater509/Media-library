@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse
 
 from media_library import __version__
+from media_library.core.build_info import get_commit
 from media_library.db.connection import db_conn
 from media_library.db.indexer import deep_clean_database, indexer_state
 from media_library.services.backup_service import library_backup_state
@@ -65,9 +66,10 @@ async def health() -> JSONResponse:
     """Cheap liveness probe for systemd, uptime monitors and container healthchecks.
 
     Deliberately minimal and unauthenticated (see AGENTS.md §11): it reports
-    reachability and worker liveness only — never library paths, counts or
-    filenames — so a monitor needs no credentials. ``503`` signals a degraded
-    process (the database cannot be read) for orchestrators to act on.
+    reachability, the build revision and worker liveness only — never library
+    paths, counts or filenames — so a monitor needs no credentials. ``503``
+    signals a degraded process (the database cannot be read) for orchestrators
+    to act on.
     """
     database_ok = True
     try:
@@ -84,6 +86,8 @@ async def health() -> JSONResponse:
         "database": "ok" if database_ok else "error",
         "workers": {"running": running, "total": len(_HEALTH_WORKERS)},
     }
+    if (commit := get_commit()) is not None:
+        body["commit"] = commit
     return JSONResponse(body, status_code=200 if database_ok else 503)
 
 
