@@ -17,9 +17,6 @@ snapshot metadata.
   systemd, uptime monitors and container healthchecks — reachability and worker
   liveness only, never a library path, count or filename — returning `503` when
   the database cannot be read.
-- **Continuous integration** (`.github/workflows/ci.yml`): `ruff check` +
-  `ruff format --check`, `pytest`, and `npm test` + `npm run build` on every push
-  and pull request.
 - **Keyboard shortcut reference** (`?`, or the Shortcuts button in the desktop
   header / the mobile Controls sheet's *System Status* tab): a full-height sheet
   listing every grid and viewer binding, rendered from one `SHORTCUT_GROUPS`
