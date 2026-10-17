@@ -22,6 +22,7 @@ from media_library.services.backup_service import (
     _create_library_backup_sync,
     check_and_auto_restore_library_backup,
 )
+from media_library.services.upload_service import gc_stale_uploads
 from media_library.workers import (
     animated_thumb_worker_instance,
     url_download_worker_instance,
@@ -75,6 +76,18 @@ def create_app(
             logger.warning(
                 f"[Auto-Restore] Warning during startup auto-restore check: {e}"
             )
+
+        # Garbage-collect abandoned browser-upload staging files (closed tabs,
+        # dropped connections) so they cannot accumulate on the data disk.
+        try:
+            gc_result = await asyncio.to_thread(gc_stale_uploads)
+            if gc_result.get("removed"):
+                logger.info(
+                    f"[Startup] Removed {gc_result['removed']} stale upload staging file(s) "
+                    f"({gc_result.get('freed_formatted', '0 B')})."
+                )
+        except Exception as e:
+            logger.warning(f"[Startup] Warning during upload staging GC: {e}")
 
         # Initialize SQLite backup index
         init_backup_db()

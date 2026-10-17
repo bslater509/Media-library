@@ -147,7 +147,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="10" />
   <path d="M12 6v6l4 2" />
 </svg>
-`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-cog"
   xmlns="http://www.w3.org/2000/svg"
@@ -175,7 +175,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="12" cy="12" r="2" />
   <circle cx="12" cy="12" r="8" />
 </svg>
-`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Q=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-copy"
   xmlns="http://www.w3.org/2000/svg"
@@ -191,7 +191,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
 </svg>
-`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,W=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-database"
   xmlns="http://www.w3.org/2000/svg"
@@ -208,7 +208,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 5V19A9 3 0 0 0 21 19V5" />
   <path d="M3 12A9 3 0 0 0 21 12" />
 </svg>
-`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,X=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-download"
   xmlns="http://www.w3.org/2000/svg"
@@ -225,7 +225,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
   <path d="m7 10 5 5 5-5" />
 </svg>
-`,G=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,F=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-file-archive"
   xmlns="http://www.w3.org/2000/svg"
@@ -369,7 +369,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 5a2 2 0 0 0 2 2h3" />
   <path d="M3 3v13a2 2 0 0 0 2 2h3" />
 </svg>
-`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,rn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-folder-up"
   xmlns="http://www.w3.org/2000/svg"
@@ -386,7 +386,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M12 10v6" />
   <path d="m9 13 3-3 3 3" />
 </svg>
-`,rn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,on=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-gauge"
   xmlns="http://www.w3.org/2000/svg"
@@ -491,6 +491,47 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 </svg>
 `,un=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
+  class="lucide lucide-keyboard"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10 8h.01" />
+  <path d="M12 12h.01" />
+  <path d="M14 8h.01" />
+  <path d="M16 12h.01" />
+  <path d="M18 8h.01" />
+  <path d="M6 8h.01" />
+  <path d="M7 16h10" />
+  <path d="M8 12h.01" />
+  <rect width="20" height="16" x="2" y="4" rx="2" />
+</svg>
+`,wn=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-layout-grid"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect width="7" height="7" x="3" y="3" rx="1" />
+  <rect width="7" height="7" x="14" y="3" rx="1" />
+  <rect width="7" height="7" x="14" y="14" rx="1" />
+  <rect width="7" height="7" x="3" y="14" rx="1" />
+</svg>
+`,vn=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
   class="lucide lucide-link"
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -505,7 +546,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
 </svg>
-`,wn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,pn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-loader-circle"
   xmlns="http://www.w3.org/2000/svg"
@@ -520,7 +561,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M21 12a9 9 0 1 1-6.219-8.56" />
 </svg>
-`,vn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,gn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-monitor"
   xmlns="http://www.w3.org/2000/svg"
@@ -537,7 +578,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <line x1="8" x2="16" y1="21" y2="21" />
   <line x1="12" x2="12" y1="17" y2="21" />
 </svg>
-`,pn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,kn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-package-open"
   xmlns="http://www.w3.org/2000/svg"
@@ -555,7 +596,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M20 13v3.87a2.06 2.06 0 0 1-1.11 1.83l-6 3.08a1.93 1.93 0 0 1-1.78 0l-6-3.08A2.06 2.06 0 0 1 4 16.87V13" />
   <path d="M21 12.43a1.93 1.93 0 0 0 0-3.36L8.83 2.2a1.64 1.64 0 0 0-1.63 0L3 4.57a1.93 1.93 0 0 0 0 3.36l12.18 6.86a1.636 1.636 0 0 0 1.63 0z" />
 </svg>
-`,gn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,xn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-palette"
   xmlns="http://www.w3.org/2000/svg"
@@ -574,7 +615,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
   <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
 </svg>
-`,kn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Mn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-pencil"
   xmlns="http://www.w3.org/2000/svg"
@@ -590,7 +631,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
   <path d="m15 5 4 4" />
 </svg>
-`,xn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,fn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-refresh-cw"
   xmlns="http://www.w3.org/2000/svg"
@@ -608,7 +649,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
   <path d="M8 16H3v5" />
 </svg>
-`,fn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,mn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-repeat-2"
   xmlns="http://www.w3.org/2000/svg"
@@ -626,7 +667,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m22 15-3 3-3-3" />
   <path d="M11 6h6a2 2 0 0 1 2 2v10" />
 </svg>
-`,mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Cn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-rocket"
   xmlns="http://www.w3.org/2000/svg"
@@ -644,7 +685,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z" />
   <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05" />
 </svg>
-`,Mn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-search"
   xmlns="http://www.w3.org/2000/svg"
@@ -660,7 +701,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m21 21-4.34-4.34" />
   <circle cx="11" cy="11" r="8" />
 </svg>
-`,Cn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-settings"
   xmlns="http://www.w3.org/2000/svg"
@@ -676,7 +717,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
   <circle cx="12" cy="12" r="3" />
 </svg>
-`,Sn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,In=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-shrink"
   xmlns="http://www.w3.org/2000/svg"
@@ -694,7 +735,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M15 4.2V9m0 0h4.8M15 9l6-6" />
   <path d="M9 4.2V9m0 0H4.2M9 9 3 3" />
 </svg>
-`,yn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Bn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-sliders-horizontal"
   xmlns="http://www.w3.org/2000/svg"
@@ -717,7 +758,23 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M8 10v4" />
   <path d="M8 12H3" />
 </svg>
-`,In=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
+<svg
+  class="lucide lucide-smartphone"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+  <path d="M12 18h.01" />
+</svg>
+`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-sparkles"
   xmlns="http://www.w3.org/2000/svg"
@@ -735,7 +792,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M22 4h-4" />
   <circle cx="4" cy="20" r="2" />
 </svg>
-`,Bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,An=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-star"
   xmlns="http://www.w3.org/2000/svg"
@@ -750,7 +807,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
 </svg>
-`,jn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,$n=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-trash-2"
   xmlns="http://www.w3.org/2000/svg"
@@ -769,7 +826,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M3 6h18" />
   <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 </svg>
-`,bn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Hn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-upload"
   xmlns="http://www.w3.org/2000/svg"
@@ -786,7 +843,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m17 8-5-5-5 5" />
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 </svg>
-`,An=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Ln=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-video"
   xmlns="http://www.w3.org/2000/svg"
@@ -802,7 +859,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
   <rect x="2" y="6" width="14" height="12" rx="2" />
 </svg>
-`,$n=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,Vn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-wrench"
   xmlns="http://www.w3.org/2000/svg"
@@ -817,7 +874,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
 </svg>
-`,Hn=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,zn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-x"
   xmlns="http://www.w3.org/2000/svg"
@@ -833,7 +890,7 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
   <path d="M18 6 6 18" />
   <path d="m6 6 12 12" />
 </svg>
-`,Ln=`<!-- @license lucide-static v1.57.0 - ISC -->
+`,qn=`<!-- @license lucide-static v1.57.0 - ISC -->
 <svg
   class="lucide lucide-zap"
   xmlns="http://www.w3.org/2000/svg"
@@ -848,4 +905,4 @@ const T=`<!-- @license lucide-static v1.57.0 - ISC -->
 >
   <path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z" />
 </svg>
-`,Vn=Object.freeze({archive:T,"arrow-right-left":Z,ban:D,camera:N,check:U,"circle-check":E,"circle-x":O,clapperboard:P,clock:R,cog:Q,copy:W,database:X,download:F,"file-archive":G,"file-up":K,"file-video":J,film:Y,folder:nn,"folder-input":en,"folder-plus":tn,"folder-tree":sn,"folder-up":on,gauge:rn,globe:cn,"hard-drive":ln,image:an,images:dn,info:hn,link:un,"loader-circle":wn,monitor:vn,"package-open":pn,palette:gn,pencil:kn,"refresh-cw":xn,"repeat-2":fn,rocket:mn,search:Mn,settings:Cn,shrink:Sn,"sliders-horizontal":yn,sparkles:In,star:Bn,"trash-2":jn,upload:bn,video:An,wrench:$n,x:Hn,zap:Ln}),_="lb-icon";function zn(t,e=_){const o=Vn[t];return o?o.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function _n(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(o=>{const l=zn(o.dataset.lbIcon,o.dataset.lbIconClass||_);l&&(o.innerHTML=l,e+=1)}),e}const q=99,qn={move:"Moving",delete:"Deleting",rename:"Renaming"},C=new Set(["running","processing"]);function Tn(t){const e=Number(t)||0;return e<=0?"":e>q?`${q}+`:String(e)}function c(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Zn(t={}){const{transfers:e,libraryOps:o,transcode:l,animated:r,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:f,batchUnpack:m,urlDownloads:i,uploads:p,metadata:M,thumbHash:w,h265:g}=t,k=e?(e.active?1:0)+c(e):0,n=o?(o.active?1:0)+c(o):0,s=l?(l.active?1:0)+c(l):0,d=g?(g.active?1:0)+c(g):0,S=r?Number(r.total_queued)||0||(r.active?1:0)+c(r):0,y=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,I=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,B=v&&v.status==="crawling"?1:0,j=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,b=x&&x.is_active?1:0,A=f&&C.has(f.status)?1:0,$=m&&C.has(m.status)?1:0,H=M&&M.status==="probing"?1:0,L=w&&(w.status==="hashing"||w.status==="migrating")?1:0,V=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,z=p?(p.active||0)+(p.queued||0):0;return{count:k+n+s+d+S+y+I+B+j+b+A+$+H+L+V+z,active:k+n+s+d+S+y+I+B+j+b+A+$+H+L+V+z>0}}function Dn(t={}){const{transfers:e,libraryOps:o,transcode:l,animated:r,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:f,batchUnpack:m,urlDownloads:i,uploads:p,metadata:M,thumbHash:w,h265:g}=t,k=n=>n&&(n.active||c(n)>0);if(k(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${c(e)} transfer${c(e)>1?"s":""}`}if(k(o)){const n=o.active,s=c(o),d=n?qn[n.op]||"Working":"Queued";return n?`${d}${s?` +${s}`:""}`:`${s} op${s>1?"s":""}`}if(v&&v.status==="crawling")return`Indexing ${typeof v.percent=="number"?Math.round(v.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(k(l)){const n=l.active,s=c(l);return n?`${Math.round(n.percent||0)}% (${s+1})`:`${s} queued`}if(k(g)){const n=g.active,s=c(g);return n?`x265 ${Math.round(n.percent||0)}%`:`${s} x265 queued`}if(r&&(r.active||(r.total_queued||0)>0)){const n=Math.round(r.percent||0);return r.active?`Anim ${n}%`:`${r.total_queued||c(r)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(M&&M.status==="probing")return`Probing ${Math.round(M.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(f&&C.has(f.status))return`Batch Zip ${Math.round(f.percent||0)}%`;if(m&&C.has(m.status))return`Extract ${Math.round(m.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,s=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${s?` +${s}`:""}`}if(x&&x.is_active){const n=(x.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:p&&(p.active||0)>0?`Uploading ${Math.round(p.percent||0)}%`:""}export{Zn as c,Dn as d,Tn as f,_n as h,zn as i};
+`,_n=Object.freeze({archive:T,"arrow-right-left":Z,ban:D,camera:N,check:U,"circle-check":E,"circle-x":O,clapperboard:P,clock:R,cog:G,copy:Q,database:W,download:X,"file-archive":F,"file-up":K,"file-video":J,film:Y,folder:nn,"folder-input":en,"folder-plus":tn,"folder-tree":sn,"folder-up":rn,gauge:on,globe:cn,"hard-drive":ln,image:an,images:dn,info:hn,keyboard:un,"layout-grid":wn,link:vn,"loader-circle":pn,monitor:gn,"package-open":kn,palette:xn,pencil:Mn,"refresh-cw":fn,"repeat-2":mn,rocket:Cn,search:yn,settings:Sn,shrink:In,"sliders-horizontal":Bn,smartphone:jn,sparkles:bn,star:An,"trash-2":$n,upload:Hn,video:Ln,wrench:Vn,x:zn,zap:qn}),_="lb-icon";function Tn(t,e=_){const r=_n[t];return r?r.replace(/<!--[\s\S]*?-->/g,"").replace(/\swidth="\d+"|\sheight="\d+"/g,"").replace(/class="lucide lucide-[^"]*"/,`class="${e}" aria-hidden="true" focusable="false"`).trim():""}function Dn(t=typeof document>"u"?null:document){if(!t||typeof t.querySelectorAll!="function")return 0;let e=0;return t.querySelectorAll("[data-lb-icon]").forEach(r=>{const l=Tn(r.dataset.lbIcon,r.dataset.lbIconClass||_);l&&(r.innerHTML=l,e+=1)}),e}const q=99,Zn={move:"Moving",delete:"Deleting",rename:"Renaming"},C=new Set(["running","processing"]);function Nn(t){const e=Number(t)||0;return e<=0?"":e>q?`${q}+`:String(e)}function c(t){return t?Array.isArray(t.queued)?t.queued.length:t.queue_length||0:0}function Un(t={}){const{transfers:e,libraryOps:r,transcode:l,animated:o,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:M,batchUnpack:f,urlDownloads:i,uploads:p,metadata:m,thumbHash:w,h265:g}=t,k=e?(e.active?1:0)+c(e):0,n=r?(r.active?1:0)+c(r):0,s=l?(l.active?1:0)+c(l):0,d=g?(g.active?1:0)+c(g):0,y=o?Number(o.total_queued)||0||(o.active?1:0)+c(o):0,S=h&&h.status==="generating"&&(h.pending_count||0)>0?1:0,I=u&&u.status==="converting"&&(u.pending_count||0)>0?1:0,B=v&&v.status==="crawling"?1:0,j=a&&(a.status==="backing_up"||a.status==="restoring")?1:0,b=x&&x.is_active?1:0,A=M&&C.has(M.status)?1:0,$=f&&C.has(f.status)?1:0,H=m&&m.status==="probing"?1:0,L=w&&(w.status==="hashing"||w.status==="migrating")?1:0,V=i?(Array.isArray(i.active)?i.active.length:0)+(Array.isArray(i.queued)?i.queued.length:0):0,z=p?(p.active||0)+(p.queued||0):0;return{count:k+n+s+d+y+S+I+B+j+b+A+$+H+L+V+z,active:k+n+s+d+y+S+I+B+j+b+A+$+H+L+V+z>0}}function En(t={}){const{transfers:e,libraryOps:r,transcode:l,animated:o,thumbnails:h,webp:u,index:v,backup:a,zip:x,batchZip:M,batchUnpack:f,urlDownloads:i,uploads:p,metadata:m,thumbHash:w,h265:g}=t,k=n=>n&&(n.active||c(n)>0);if(k(e)){const n=e.active;return n?`Moving ${Math.round(n.percent||0)}%`:`${c(e)} transfer${c(e)>1?"s":""}`}if(k(r)){const n=r.active,s=c(r),d=n?Zn[n.op]||"Working":"Queued";return n?`${d}${s?` +${s}`:""}`:`${s} op${s>1?"s":""}`}if(v&&v.status==="crawling")return`Indexing ${typeof v.percent=="number"?Math.round(v.percent):0}%`;if(a&&(a.status==="backing_up"||a.status==="restoring"))return`${a.status==="backing_up"?"Backup":"Restore"} ${Math.round(a.progress_percent||0)}%`;if(k(l)){const n=l.active,s=c(l);return n?`${Math.round(n.percent||0)}% (${s+1})`:`${s} queued`}if(k(g)){const n=g.active,s=c(g);return n?`x265 ${Math.round(n.percent||0)}%`:`${s} x265 queued`}if(o&&(o.active||(o.total_queued||0)>0)){const n=Math.round(o.percent||0);return o.active?`Anim ${n}%`:`${o.total_queued||c(o)} anim`}if(h&&h.status==="generating"&&(h.pending_count||0)>0)return`Thumbs ${Math.round(h.percent||0)}%`;if(u&&u.status==="converting"&&(u.pending_count||0)>0)return`WebP ${Math.round(u.percent||0)}%`;if(m&&m.status==="probing")return`Probing ${Math.round(m.percent||0)}%`;if(w&&(w.status==="hashing"||w.status==="migrating"))return`Visual hash ${Math.round(w.percent||0)}%`;if(M&&C.has(M.status))return`Batch Zip ${Math.round(M.percent||0)}%`;if(f&&C.has(f.status))return`Extract ${Math.round(f.overall_percent||0)}%`;if(i&&Array.isArray(i.active)&&i.active.length>0){const n=i.active,s=Array.isArray(i.queued)?i.queued.length:0,d=Math.round(n[0].percent||0);return n.length>1?`DL ${d}% (${n.length})`:`DL ${d}%${s?` +${s}`:""}`}if(x&&x.is_active){const n=(x.tasks||[]).find(d=>d.status==="running");return`${n?n.type==="compress"?"Zipping":n.type==="unpack"?"Unpack":"Archive":"ZIP"} ${n?Math.round(n.percent||0):0}%`}return i&&Array.isArray(i.queued)&&i.queued.length>0?`${i.queued.length} dl queued`:p&&(p.active||0)>0?`Uploading ${Math.round(p.percent||0)}%`:""}export{Un as c,En as d,Nn as f,Dn as h,Tn as i};

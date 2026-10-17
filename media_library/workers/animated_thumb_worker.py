@@ -11,6 +11,10 @@ from typing import Any
 
 from media_library.core.constants import VIDEO_EXTENSIONS
 from media_library.db.connection import db_conn
+from media_library.services.anim_cache import (
+    anim_cache_payload,
+    manage_animated_cache_lru,
+)
 from media_library.services.ffmpeg_service import (
     generate_animated_preview,
     get_animated_preview_path,
@@ -257,6 +261,7 @@ class AnimatedThumbWorker(BaseWorker):
             "queued": queued_items[:20],
             "history": self.history[-20:],
             "recent_completed": list(self.recent_completed)[-50:],
+            **anim_cache_payload(),
         }
 
     async def _run_loop(self):
@@ -320,6 +325,15 @@ class AnimatedThumbWorker(BaseWorker):
                         except Exception as dbe:
                             logger.warning(
                                 f"Failed to update has_animated in DB for {file_path}: {dbe}"
+                            )
+
+                        # Previews are regenerable, so the cache is bounded by an
+                        # LRU ceiling (self-throttled to at most once a minute).
+                        try:
+                            await asyncio.to_thread(manage_animated_cache_lru)
+                        except Exception as lrue:
+                            logger.warning(
+                                f"[AnimatedThumbWorker] Cache trim failed: {lrue}"
                             )
                     else:
                         item["status"] = "failed"

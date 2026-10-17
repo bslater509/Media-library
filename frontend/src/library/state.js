@@ -501,6 +501,7 @@
     animWorkerProgressBar: document.getElementById('animWorkerProgressBar'),
     animWorkerCountsText: document.getElementById('animWorkerCountsText'),
     animWorkerStatusLabel: document.getElementById('animWorkerStatusLabel'),
+    animWorkerCacheText: document.getElementById('animWorkerCacheText'),
     // Duplicate Hash Verifier Controls
     hashSummaryText: document.getElementById('hashSummaryText'),
     toggleHashPauseBtn: document.getElementById('toggleHashPauseBtn'),
@@ -654,6 +655,14 @@
     themeAccentPicker: document.getElementById('themeAccentPicker'),
     themeBasePicker: document.getElementById('themeBasePicker'),
     mobileDoubleTapSeekToggle: document.getElementById('mobileDoubleTapSeekToggle'),
+
+    // Keyboard Shortcut Reference (shortcuts.js)
+    shortcutsModal: document.getElementById('shortcutsModal'),
+    shortcutsGroups: document.getElementById('shortcutsGroups'),
+    shortcutsHelpBtn: document.getElementById('shortcutsHelpBtn'),
+    mobileShortcutsBtn: document.getElementById('mobileShortcutsBtn'),
+    closeShortcutsBtn: document.getElementById('closeShortcutsBtn'),
+    closeShortcutsFooterBtn: document.getElementById('closeShortcutsFooterBtn'),
 
     // Video Thumbnail Chooser Elements
     thumbnailChooserModal: document.getElementById('thumbnailChooserModal'),

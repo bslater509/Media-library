@@ -47,11 +47,23 @@ WEBP_STAGING_DIR = Path(
 ).resolve()
 WEBP_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
+# Extracted animated WebP previews are large (up to 24 frames at 480px) but fully
+# regenerable, so their cache directory is bounded by an LRU ceiling like the
+# extracted-ZIP cache is, instead of growing without limit as videos come and go.
+ANIMATED_CACHE_MAX_SIZE_GB = float(
+    os.environ.get("ANIMATED_CACHE_MAX_SIZE_GB", "5.0")
+)
+
 UPLOAD_STAGING_DIR = Path(
     os.environ.get("UPLOAD_STAGING_DIR", DATA_DIR / "upload_staging")
 ).resolve()
 UPLOAD_STAGING_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_FILE_SIZE_GB = float(os.environ.get("MAX_UPLOAD_FILE_SIZE_GB", "20.0"))
+
+# Browser uploads stage chunks as `<upload_id>.part` and can be resumed after a
+# dropped connection or a closed tab. Staging files untouched for longer than
+# this are garbage-collected at startup so abandoned uploads cannot fill the disk.
+UPLOAD_STAGING_TTL_HOURS = float(os.environ.get("UPLOAD_STAGING_TTL_HOURS", "24.0"))
 
 WEBP_WORKER_CONCURRENCY = max(1, int(os.environ.get("WEBP_WORKER_CONCURRENCY", "1")))
 WEBP_QUALITY = max(1, min(100, int(os.environ.get("WEBP_QUALITY", "85"))))

@@ -571,6 +571,12 @@
           <span class="hidden xl:inline">Theme</span>
         </button>
 
+        <!-- Keyboard Shortcut Reference (?) -->
+        <button id="shortcutsHelpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+          <span data-lb-icon="keyboard" data-lb-icon-class="w-4 h-4"></span>
+          <span class="hidden xl:inline">Shortcuts</span>
+        </button>
+
         <!-- Background Tasks Status Badge -->
         <div class="relative shrink-0">
           <button id="transferBadgeBtn" title="View background activity" class="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-800 hover:bg-slate-750 active:scale-95 rounded-lg border border-slate-700 text-[11px] sm:text-xs font-medium text-slate-300 hover:text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer">
@@ -916,7 +922,7 @@
   <!-- Fancybox 5 JS -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
   <!-- Library Script -->
-  <script type="module" src="/static/dist/library.js?v=76"></script>
+  <script type="module" src="/static/dist/library.js?v=77"></script>
   {{include 'partials/library_modals_media.html'}}
   {{include 'partials/library_modals_bulk.html'}}
   {{include 'partials/library_modals_manage.html'}}
@@ -924,6 +930,7 @@
   {{include 'partials/library_modals_zip.html'}}
   {{include 'partials/library_modals_viewer.html'}}
   {{include 'partials/theme_modal.html'}}
+  {{include 'partials/library_shortcuts_modal.html'}}
   {{include 'partials/mobile_controls_sheet.html'}}
 </body>
 </html>

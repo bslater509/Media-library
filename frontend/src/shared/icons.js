@@ -46,6 +46,8 @@ import hardDrive from 'lucide-static/icons/hard-drive.svg?raw';
 import image from 'lucide-static/icons/image.svg?raw';
 import images from 'lucide-static/icons/images.svg?raw';
 import info from 'lucide-static/icons/info.svg?raw';
+import keyboard from 'lucide-static/icons/keyboard.svg?raw';
+import layoutGrid from 'lucide-static/icons/layout-grid.svg?raw';
 import link from 'lucide-static/icons/link.svg?raw';
 import loaderCircle from 'lucide-static/icons/loader-circle.svg?raw';
 import monitor from 'lucide-static/icons/monitor.svg?raw';
@@ -59,6 +61,7 @@ import search from 'lucide-static/icons/search.svg?raw';
 import settings from 'lucide-static/icons/settings.svg?raw';
 import shrink from 'lucide-static/icons/shrink.svg?raw';
 import slidersHorizontal from 'lucide-static/icons/sliders-horizontal.svg?raw';
+import smartphone from 'lucide-static/icons/smartphone.svg?raw';
 import sparkles from 'lucide-static/icons/sparkles.svg?raw';
 import star from 'lucide-static/icons/star.svg?raw';
 import trash2 from 'lucide-static/icons/trash-2.svg?raw';
@@ -97,6 +100,8 @@ export const ICONS = Object.freeze({
   image,
   images,
   info,
+  keyboard,
+  'layout-grid': layoutGrid,
   link,
   'loader-circle': loaderCircle,
   monitor,
@@ -110,6 +115,7 @@ export const ICONS = Object.freeze({
   settings,
   shrink,
   'sliders-horizontal': slidersHorizontal,
+  smartphone,
   sparkles,
   star,
   'trash-2': trash2,

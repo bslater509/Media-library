@@ -31,6 +31,7 @@ from typing import Any
 
 from media_library.core.config import TRANSCODE_TEMP_DIR
 from media_library.core.state import format_size, get_thumbnail_cache_path
+from media_library.services.anim_cache import unlink_animated_previews
 from media_library.db.connection import db_conn
 from media_library.db.indexer import update_file_in_index
 from media_library.services.ffmpeg_service import format_eta_str, probe_video_meta
@@ -452,6 +453,21 @@ class H265ConvertWorker(BaseWorker):
         """
         source_path = item["source_path"]
         new_size = item["size_after"]
+
+        # The cached animated preview is keyed on the *old* path/mtime/size, so
+        # read those before the rewrite and drop the stale file (the new key has
+        # none, exactly like the poster below).
+        try:
+            with db_conn() as conn:
+                row = conn.execute(
+                    "SELECT path, mtime, size FROM files WHERE path = ? LIMIT 1",
+                    (source_path,),
+                ).fetchone()
+            if row:
+                unlink_animated_previews([row])
+        except Exception:
+            pass
+
         try:
             update_file_in_index(
                 source_path,

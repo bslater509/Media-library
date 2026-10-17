@@ -21,6 +21,41 @@ const uploadState = {
   startTime: null,
   targetFolder: null
 };
+// Non-cryptographic fallback for the upload id. `crypto.subtle` only exists in a
+// secure context, and a phone browsing the library over plain http://192.168.x.x
+// is not one, so this must never be the only path.
+function hashToHex(input) {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x1000193;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+  }
+  return (
+    h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')
+  );
+}
+
+// A stable upload id per (path, size, mtime): the server stages chunks under it,
+// so re-opening the page and re-picking the same file resumes the transfer
+// instead of starting the multi-gigabyte upload over.
+async function makeUploadId(fileObj) {
+  const key = `${fileObj.relativePath || (fileObj.file && fileObj.file.name) || ''}|${fileObj.size || 0}|${fileObj.mtime || 0}`;
+  try {
+    if (window.crypto && window.crypto.subtle && typeof TextEncoder !== 'undefined') {
+      const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+      const hex = Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      return 'u_' + hex.slice(0, 32);
+    }
+  } catch (err) {
+    // Insecure context / digest refused: fall through to the plain hash.
+  }
+  return 'u_' + hashToHex(key);
+}
+
 function initUploadEvents() {
   const dropzone = document.getElementById('globalDropzone');
   const uploadDropdownBtn = document.getElementById('uploadDropdownBtn');
@@ -166,16 +201,22 @@ async function traverseFileTree(item, path, fileList) {
     }
   }
 }
-function showUploadReviewModal(files) {
+async function showUploadReviewModal(files) {
   try {
     const target = state.currentPath || state.basePath || '/';
-    uploadState.queue = files.map((item, idx) => ({
+    const items = files.map((item, idx) => ({
       ...item,
       id: 'upl_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7),
       status: 'pending',
       uploadedBytes: 0,
       mtime: (item.file && item.file.lastModified) ? item.file.lastModified : Date.now()
     }));
+
+    // Stable, resumable upload ids (see makeUploadId).
+    const stableIds = await Promise.all(items.map((item) => makeUploadId(item)));
+    items.forEach((item, idx) => { item.id = stableIds[idx]; });
+
+    uploadState.queue = items;
     
     uploadState.totalBytes = uploadState.queue.reduce((sum, f) => sum + (f.size || 0), 0);
     uploadState.targetFolder = target;
@@ -327,9 +368,40 @@ async function processUploadQueue() {
 async function uploadFile(fileObj) {
   const { file, id, relativePath, size, mtime } = fileObj;
   const totalChunks = Math.ceil(size / uploadState.chunkSize) || 1;
-  
+
+  // Resume probe: the server stages this upload's chunks under a stable id, so
+  // ask how many bytes it already holds. An interrupted transfer (dropped
+  // connection, closed tab, phone asleep) continues from there instead of
+  // re-sending gigabytes; the server acks an already-held chunk as a duplicate.
+  let startChunk = 0;
   try {
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+    const stRes = await fetch(
+      `/api/backup/upload/status?upload_id=${encodeURIComponent(id)}`,
+      { cache: 'no-store' }
+    );
+    if (stRes.ok) {
+      const st = await stRes.json().catch(() => ({}));
+      const received = Number(st.received_bytes || 0);
+      if (received >= size && size > 0) {
+        startChunk = totalChunks; // every chunk is already staged; just finalize
+      } else if (received > 0 && received < size) {
+        startChunk = Math.floor(received / uploadState.chunkSize);
+        fileObj.uploadedBytes = startChunk * uploadState.chunkSize;
+        showToast(
+          `Resuming ${file.name} at ${Math.floor((fileObj.uploadedBytes / size) * 100)}%`,
+          'info',
+          2500
+        );
+        updateUploadsUI();
+      }
+    }
+  } catch (err) {
+    // Status unavailable: start from 0. Duplicate chunks are acked, and the
+    // offset check makes an out-of-order write impossible either way.
+  }
+
+  try {
+    for (let chunkIndex = startChunk; chunkIndex < totalChunks; chunkIndex++) {
       if (uploadState.isCancelled || fileObj.status === 'cancelled') {
         await cancelBackendUpload(id);
         return;
@@ -348,6 +420,7 @@ async function uploadFile(fileObj) {
           formData.append('upload_id', id);
           formData.append('chunk_index', chunkIndex);
           formData.append('total_chunks', totalChunks);
+          formData.append('offset', String(start));
           formData.append('chunk', chunk, file.name);
           
           const res = await fetch('/api/backup/upload/chunk', { method: 'POST', body: formData });
@@ -524,4 +597,4 @@ function finishUploadBatch() {
   }, 2000);
 }
 
-export { cancelAllUploads, cancelBackendUpload, closeUploadReviewModal, finishUploadBatch, handleFileInput, initUploadEvents, processUploadQueue, showUploadReviewModal, startUploadBatch, submitMobileUrlDownload, syncMobileDownloadsUI, traverseFileTree, updateUploadBatchStats, updateUploadsUI, uploadFile, uploadState };
+export { cancelAllUploads, cancelBackendUpload, closeUploadReviewModal, finishUploadBatch, handleFileInput, hashToHex, initUploadEvents, makeUploadId, processUploadQueue, showUploadReviewModal, startUploadBatch, submitMobileUrlDownload, syncMobileDownloadsUI, traverseFileTree, updateUploadBatchStats, updateUploadsUI, uploadFile, uploadState };

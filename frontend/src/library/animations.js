@@ -485,6 +485,12 @@ function renderAnimatedThumbStatus(data) {
   if (els.animWorkerStatusLabel) {
     els.animWorkerStatusLabel.textContent = isPaused ? 'Paused' : (isGenerating ? 'Active' : 'Idle');
   }
+  if (els.animWorkerCacheText) {
+    // On-disk animated WebP cache: regenerable, so it is capped and trimmed.
+    const used = data.cache_size_formatted || formatBytes(data.cache_bytes || 0);
+    const cap = data.cache_max_size_formatted;
+    els.animWorkerCacheText.textContent = cap ? `${used} of ${cap}` : used;
+  }
 }
 // Toggle Animated Preview Worker Pause / Resume
 async function toggleAnimPause() {

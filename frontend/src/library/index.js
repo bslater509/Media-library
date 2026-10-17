@@ -11,6 +11,7 @@ import { applyBulkRename, bulkFavoriteToggle, bulkWebpOptimize, clearSelection, 
 import { debouncedGlobalSearch, forceIndexPrune, performGlobalSearch, setSearchScope, triggerIndexSync } from './search.js';
 import { clearBrowserAnimCache, getBrowserAnimCacheStats, initServiceWorker, precacheFolderAnimatedPreviews } from './service_worker.js';
 import { toggleSheetList } from './sheet.js';
+import { closeShortcutsHelp, initShortcutsHelp, isShortcutsHelpOpen, openShortcutsHelp, toggleShortcutsHelp } from './shortcuts.js';
 import { SIDEBAR_TREE_KEY, TILE_SCALES, TILE_SCALE_KEY, TILE_SCALE_LABELS, els, loadExpandedFolders, loadTileScale, nameCollator, persistAnimatedThumbs, persistExpandedFolders, state } from './state.js';
 import { cancelAllTranscodes, cancelH265, cancelTranscode, closeConvertAllModal, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, submitConvertAll, toggleDuplicateHashPause, updateConvertAllBadge } from './tasks.js';
 import { closeThemeModal, initMobileControlsSheet, initSheetDrag, initThemeCustomizerEvents, openThemeModal, updateMobileControlsBadge } from './theme.js';
@@ -50,6 +51,20 @@ document.addEventListener('keydown', (e) => {
       closeMediaInfoModal();
       return;
     }
+  }
+
+  if (isShortcutsHelpOpen()) {
+    if (e.key === 'Escape' || e.key === '?') {
+      e.preventDefault();
+      closeShortcutsHelp();
+      return;
+    }
+  } else if ((e.key === '?' || (e.shiftKey && e.key === '/')) && !state.fancyboxInstance) {
+    // `?` (Shift+/ on most layouts) is the conventional "what can I press?"
+    // Not offered over the lightbox, whose own Esc handling would fight this.
+    e.preventDefault();
+    toggleShortcutsHelp();
+    return;
   }
 
   if (els.themeCustomizerModal && !els.themeCustomizerModal.classList.contains('hidden')) {
@@ -1086,6 +1101,7 @@ function initEvents() {
 
   // Swipe-to-dismiss drag handles for mobile full-height sheets
   initSheetDrag(() => setTransferDropdownOpen(false));
+  initShortcutsHelp();
 }
 
 // App Initialization
@@ -1158,6 +1174,8 @@ window.libraryApp = {
   updateBrowserCacheBadge,
   clearBrowserAnimCache,
   precacheFolderAnimatedPreviews,
+  openShortcutsHelp,
+  closeShortcutsHelp,
 };
 
 // Start app when DOM is ready

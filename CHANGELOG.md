@@ -11,6 +11,35 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Added
+
+- **Keyboard shortcut reference** (`?`, or the Shortcuts button in the desktop
+  header / the mobile Controls sheet's *System Status* tab): a full-height sheet
+  listing every grid and viewer binding, rendered from one `SHORTCUT_GROUPS`
+  table in `frontend/src/library/shortcuts.js` so the help cannot drift from the
+  keydown handler.
+- **Resumable browser uploads**: chunks are now staged at a verified byte offset
+  and the new `GET /api/backup/upload/status` reports what the server already
+  holds, so an interrupted upload (dropped connection, closed tab, phone asleep)
+  resumes instead of re-sending gigabytes. A retried chunk is acknowledged as a
+  duplicate rather than appended twice, and a short upload is refused at
+  finalize instead of landing silently truncated.
+- **Animated preview cache housekeeping**: orphaned `anim_*.webp` files are swept
+  by the index prune/deep clean alongside thumbnails, the directory is trimmed by
+  an LRU ceiling (`ANIMATED_CACHE_MAX_SIZE_GB`, default 5 GB — evicted previews
+  are regenerated on the next view), and the Background Tasks modal's Animated
+  Preview Generator card now reports the cache's size against its cap.
+
+### Changed
+
+- **Library search now matches folder names**: each query word may appear in the
+  filename *or* in the file's folder path inside the library, so "iceland 2023"
+  finds the clips in `…/Iceland 2023/`. The root and its ancestors are excluded
+  from the match so a shared parent name cannot return the whole library.
+- Abandoned upload staging files are garbage-collected at startup
+  (`UPLOAD_STAGING_TTL_HOURS`, default 24 h), and an in-place x265 conversion
+  drops the converted file's now-orphaned animated preview immediately.
+
 ## [1.0.0] - 2026-10-17
 
 First public release. Self-hosted media asset management and rapid keyboard

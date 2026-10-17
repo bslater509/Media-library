@@ -8,6 +8,7 @@ import { applyFiltersAndSort } from './gallery.js';
 import { applyTileScale, syncTileScaleUI } from './layout.js';
 import { closeMediaInfoModal } from './lightbox.js';
 import { debouncedGlobalSearch, performGlobalSearch } from './search.js';
+import { closeShortcutsHelp } from './shortcuts.js';
 import { pollSystemStatus, renderMobileUrlDownloadsStatus } from './tasks.js';
 import { closeThumbnailChooser } from './thumbnail_chooser.js';
 import { submitMobileUrlDownload, syncMobileDownloadsUI } from './uploads.js';
@@ -598,6 +599,7 @@ function initSheetDrag(closeTasksSheet = () => {}) {
     emptyFoldersModal: closeEmptyFoldersModal,
     mediaInfoModal: closeMediaInfoModal,
     thumbnailChooserModal: closeThumbnailChooser,
+    shortcutsModal: closeShortcutsHelp,
   };
 
   const DISMISS_THRESHOLD = 120;

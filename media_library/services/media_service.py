@@ -174,20 +174,35 @@ def search_backup_index(
     limit: int | None = None,
     return_meta: bool = False,
 ) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], bool]:
-    """Performs multi-token search in indexed SQLite library."""
+    """Performs multi-token search in indexed SQLite library.
+
+    Each word must appear in the file *name* or in the file's folder path
+    (relative to the library root, so the root and its ancestors never match):
+    "iceland 2023" finds the clips inside ``…/Iceland 2023/`` even when no
+    filename contains those words.
+    """
     effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
+    base_dir = os.path.realpath(
+        state.get("destination_dir") or DEFAULT_DESTINATION_DIR
+    )
+    rel_offset = len(base_dir) + 1
     with db_conn() as conn:
         try:
             words = query.strip().lower().split()
             if not words:
                 return ([], False) if return_meta else []
 
-            where_clauses = ["LOWER(f.name) LIKE ?" for _ in words]
+            where_clauses = [
+                "(LOWER(f.name) LIKE ? OR LOWER(substr(f.folder_path, ?)) LIKE ?)"
+                for _ in words
+            ]
             sql = (
                 "SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END AS is_favorite "
                 f"FROM files f LEFT JOIN favorites fav ON f.path = fav.path WHERE {' AND '.join(where_clauses)}"
             )
-            params: list[Any] = [f"%{w}%" for w in words]
+            params: list[Any] = []
+            for w in words:
+                params.extend([f"%{w}%", rel_offset, f"%{w}%"])
 
             if type_filter and type_filter in ("video", "image"):
                 sql += " AND f.type = ?"
@@ -217,9 +232,6 @@ def search_backup_index(
                 rows = rows[:effective_limit]
 
             results = []
-            base_dir = os.path.realpath(
-                state.get("destination_dir") or DEFAULT_DESTINATION_DIR
-            )
             for r in rows:
                 fpath = r["path"]
                 fname = r["name"]

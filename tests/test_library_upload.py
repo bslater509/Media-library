@@ -35,7 +35,11 @@ async def test_upload_chunk_success(app_instance, sandbox_env):
 
         response = await client.post("/api/backup/upload/chunk", data=data, files=files)
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "chunk_index": 0}
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["chunk_index"] == 0
+        assert body["received_bytes"] == len(chunk_data)
+        assert body["duplicate"] is False
 
         staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
         assert staging_file.exists()
@@ -146,3 +150,158 @@ async def test_cancel_upload(app_instance):
         res_cancel = await client.post("/api/backup/upload/cancel", json={"upload_id": upload_id})
         assert res_cancel.status_code == 200
         assert not staging_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Resumable uploads: offset-verified chunks, resume status and staging GC
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_upload_status_reports_staged_bytes(app_instance, sandbox_env):
+    transport = ASGITransport(app=app_instance)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload_id = "upl_resume_status_1"
+
+        empty = await client.get(
+            "/api/backup/upload/status", params={"upload_id": upload_id}
+        )
+        assert empty.status_code == 200
+        assert empty.json()["received_bytes"] == 0
+        assert empty.json()["exists"] is False
+
+        files = {"chunk": ("test.jpg", io.BytesIO(b"resume-me"), "image/jpeg")}
+        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "2", "offset": "0"}
+        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+
+        res = await client.get("/api/backup/upload/status", params={"upload_id": upload_id})
+        assert res.status_code == 200
+        assert res.json()["received_bytes"] == len(b"resume-me")
+        assert res.json()["exists"] is True
+
+        bad = await client.get("/api/backup/upload/status", params={"upload_id": "../etc"})
+        assert bad.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_retried_chunk_is_idempotent(app_instance, sandbox_env):
+    """A chunk retried after a timeout must not be appended twice."""
+    transport = ASGITransport(app=app_instance)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload_id = "upl_retry_same_chunk"
+        payload = b"1234567890"
+
+        for _ in range(2):
+            files = {"chunk": ("test.jpg", io.BytesIO(payload), "image/jpeg")}
+            data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "1", "offset": "0"}
+            res = await client.post("/api/backup/upload/chunk", data=data, files=files)
+            assert res.status_code == 200
+
+        assert res.json()["duplicate"] is True
+        staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
+        assert staging_file.read_bytes() == payload
+
+
+@pytest.mark.anyio
+async def test_chunk_sent_past_the_staged_end_is_rejected(app_instance, sandbox_env):
+    transport = ASGITransport(app=app_instance)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload_id = "upl_gap_rejected"
+        files = {"chunk": ("test.jpg", io.BytesIO(b"aaaa"), "image/jpeg")}
+        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "3", "offset": "0"}
+        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+
+        # Chunk 2 arrives while chunk 1 is missing: refuse rather than write a hole.
+        gap_files = {"chunk": ("test.jpg", io.BytesIO(b"cccc"), "image/jpeg")}
+        gap_data = {"upload_id": upload_id, "chunk_index": "2", "total_chunks": "3", "offset": "8"}
+        res = await client.post("/api/backup/upload/chunk", data=gap_data, files=gap_files)
+        assert res.status_code == 409
+
+        staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
+        assert staging_file.read_bytes() == b"aaaa"
+
+
+@pytest.mark.anyio
+async def test_overlapping_chunk_rewrites_the_partial_tail(app_instance, sandbox_env):
+    """A crash mid-write leaves a partial chunk; re-sending it must heal the file."""
+    transport = ASGITransport(app=app_instance)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload_id = "upl_partial_tail"
+        staging_file = upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part"
+        staging_file.write_bytes(b"hello world")
+
+        # Chunk 0 is re-sent with its full 11 bytes after a writable crash left
+        # 6 of them behind; the file ends up exactly the chunk, not 17 bytes.
+        files = {"chunk": ("test.jpg", io.BytesIO(b"hello world"), "image/jpeg")}
+        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "1", "offset": "0"}
+        res = await client.post("/api/backup/upload/chunk", data=data, files=files)
+        assert res.status_code == 200
+        assert staging_file.read_bytes() == b"hello world"
+
+
+@pytest.mark.anyio
+async def test_finalize_refuses_a_short_upload(app_instance, sandbox_env):
+    transport = ASGITransport(app=app_instance)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload_id = "upl_short_finalize"
+        files = {"chunk": ("test.jpg", io.BytesIO(b"half"), "image/jpeg")}
+        data = {"upload_id": upload_id, "chunk_index": "0", "total_chunks": "2", "offset": "0"}
+        assert (await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+
+        res = await client.post(
+            "/api/backup/upload/finalize",
+            json={
+                "upload_id": upload_id,
+                "original_filename": "short.jpg",
+                "relative_path": "short.jpg",
+                "destination_dir": str(sandbox_env["media_dir"]),
+                "collision_policy": "auto-rename",
+                "total_size": 100,
+            },
+        )
+        assert res.status_code == 400
+        assert "incomplete" in res.json()["detail"].lower()
+        # The staged bytes survive so the client can finish the upload and retry.
+        assert (upload_svc.UPLOAD_STAGING_DIR / f"{upload_id}.part").exists()
+
+        # Completing the upload (the client has the real total) finalizes cleanly.
+        files = {"chunk": ("test.jpg", io.BytesIO(b"-done"), "image/jpeg")}
+        data = {"upload_id": upload_id, "chunk_index": "1", "total_chunks": "2", "offset": "4"}
+        assert ( await client.post("/api/backup/upload/chunk", data=data, files=files)).status_code == 200
+
+        res_ok = await client.post(
+            "/api/backup/upload/finalize",
+            json={
+                "upload_id": upload_id,
+                "original_filename": "short.jpg",
+                "relative_path": "short.jpg",
+                "destination_dir": str(sandbox_env["media_dir"]),
+                "collision_policy": "auto-rename",
+                "total_size": 9,
+            },
+        )
+        assert res_ok.status_code == 200
+        assert Path(res_ok.json()["path"]).read_bytes() == b"half-done"
+
+
+def test_gc_stale_uploads_removes_only_old_parts(sandbox_env):
+    import os
+    import time as _time
+
+    staging = upload_svc.UPLOAD_STAGING_DIR
+    old_part = staging / "upl_abandoned.part"
+    old_part.write_bytes(b"x" * 32)
+    fresh_part = staging / "upl_in_flight.part"
+    fresh_part.write_bytes(b"y" * 16)
+    dl_dir = staging / "dl_job123"  # owned by the URL download worker
+    dl_dir.mkdir(exist_ok=True)
+
+    stale_time = _time.time() - 48 * 3600
+    os.utime(old_part, (stale_time, stale_time))
+
+    report = upload_svc.gc_stale_uploads(max_age_hours=24)
+    assert report["removed"] == 1
+    assert report["freed_bytes"] == 32
+    assert not old_part.exists()
+    assert fresh_part.exists()
+    assert dl_dir.exists()

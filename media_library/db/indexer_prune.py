@@ -24,6 +24,10 @@ from media_library.core.state import (
     state,
 )
 from media_library.db.connection import db_conn
+from media_library.services.anim_cache import (
+    clean_orphaned_animated_previews,
+    unlink_animated_previews,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,7 @@ def _remove_stale_folders(conn: Any, stale_folders: list[str]) -> tuple[int, int
         with conn:
             conn.execute("DELETE FROM files WHERE folder_path = ?", (sf,))
             conn.execute("DELETE FROM folders WHERE path = ?", (sf,))
+        unlink_animated_previews(rows)
         pruned_folders += 1
         pruned_files += len(rows)
     return pruned_folders, pruned_files
@@ -179,6 +184,7 @@ def prune_stale_index_entries(
             "pruned_folders": 0,
             "pruned_files": 0,
             "pruned_orphaned_thumbs": 0,
+            "pruned_orphaned_anims": 0,
             "pruned_stale_duplicates": 0,
             "aborted": True,
             "reason": "Base directory unmounted or missing",
@@ -187,6 +193,7 @@ def prune_stale_index_entries(
     pruned_folders = 0
     pruned_files = 0
     pruned_orphaned_thumbs = 0
+    pruned_orphaned_anims = 0
     pruned_stale_duplicates = 0
 
     try:
@@ -212,6 +219,7 @@ def prune_stale_index_entries(
                     "pruned_folders": 0,
                     "pruned_files": 0,
                     "pruned_orphaned_thumbs": 0,
+                    "pruned_orphaned_anims": 0,
                     "pruned_stale_duplicates": 0,
                     "aborted": True,
                     "reason": f"Too many folders reported missing ({len(candidate_stale)}); aborted to protect the index",
@@ -242,6 +250,7 @@ def prune_stale_index_entries(
 
             if clean_orphaned_thumbnails:
                 pruned_orphaned_thumbs = _clean_orphaned_thumbnails(conn, THUMBNAIL_CACHE_DIR)
+                pruned_orphaned_anims = clean_orphaned_animated_previews(conn)
 
             try:
                 from media_library.services.deduplication_service import (
@@ -261,10 +270,11 @@ def prune_stale_index_entries(
                 pruned_folders > 0
                 or pruned_files > 0
                 or pruned_orphaned_thumbs > 0
+                or pruned_orphaned_anims > 0
                 or pruned_stale_duplicates > 0
             ):
                 logger.info(
-                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, and {pruned_stale_duplicates} stale duplicate records."
+                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, {pruned_orphaned_anims} orphaned animated previews, and {pruned_stale_duplicates} stale duplicate records."
                 )
 
     except Exception as e:
@@ -274,6 +284,7 @@ def prune_stale_index_entries(
         "pruned_folders": pruned_folders,
         "pruned_files": pruned_files,
         "pruned_orphaned_thumbs": pruned_orphaned_thumbs,
+        "pruned_orphaned_anims": pruned_orphaned_anims,
         "pruned_stale_duplicates": pruned_stale_duplicates,
     }
 

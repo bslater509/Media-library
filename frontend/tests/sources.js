@@ -19,6 +19,7 @@ import libraryWorkers from '../src/library/workers.js?raw';
 import libraryZip from '../src/library/zip.js?raw';
 import libraryTheme from '../src/library/theme.js?raw';
 import librarySheet from '../src/library/sheet.js?raw';
+import libraryShortcuts from '../src/library/shortcuts.js?raw';
 import libraryUploads from '../src/library/uploads.js?raw';
 
 import sorterIndex from '../src/app/index.js?raw';
@@ -39,7 +40,7 @@ export const librarySource = [
   libraryIndex, libraryLayout, libraryAnimations, libraryFolders, librarySearch,
   libraryGallery, libraryLightbox, libraryThumbnailChooser, libraryManagement,
   libraryDuplicates, libraryTasks, libraryWorkers, libraryZip, libraryTheme,
-  librarySheet, libraryUploads,
+  librarySheet, libraryShortcuts, libraryUploads,
 ].join('\n');
 
 export const sorterSource = [

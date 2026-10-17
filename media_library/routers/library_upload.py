@@ -1,12 +1,14 @@
+import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from media_library.services.upload_service import (
     cancel_upload,
     finalize_upload,
+    get_upload_status,
     handle_upload_chunk,
 )
 
@@ -20,6 +22,7 @@ async def upload_chunk(
     upload_id: str = Form(...),
     chunk_index: int = Form(...),
     total_chunks: int = Form(...),
+    offset: int | None = Form(None),
     chunk: UploadFile = File(...)
 ) -> dict[str, Any]:
     """Receives a chunk of an uploaded file."""
@@ -30,12 +33,19 @@ async def upload_chunk(
             chunk_index=chunk_index,
             total_chunks=total_chunks,
             chunk_data=chunk_data,
+            offset=offset,
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in upload_chunk: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/backup/upload/status")
+async def upload_status(upload_id: str = Query(...)) -> dict[str, Any]:
+    """Bytes already staged for an upload, so the browser can resume it."""
+    return await asyncio.to_thread(get_upload_status, upload_id)
 
 
 class FinalizeUploadRequest(BaseModel):
@@ -57,6 +67,7 @@ async def finish_upload(req: FinalizeUploadRequest) -> dict[str, Any]:
         relative_path=req.relative_path,
         destination_dir=req.destination_dir,
         collision_policy=req.collision_policy,
+        total_size=req.total_size,
         mtime=req.mtime,
     )
 
