@@ -1,6 +1,7 @@
 """Integration tests for all major API routes and endpoints."""
 
 import os
+
 from media_library.core.state import state
 
 
@@ -19,6 +20,7 @@ def test_html_views(api_client):
     assert "generateFolderAnimatedBtn" in res_root.text
     assert "generateAllAnimatedBtn" in res_root.text
     import re
+
     assert re.search(r"library\.js\?v=\d+", res_root.text)
     assert re.search(r"styles\.css\?v=\d+", res_root.text)
     assert 'id="mobileHeader"' in res_root.text
@@ -29,7 +31,7 @@ def test_html_views(api_client):
     assert 'id="mainStage"' in res_root.text
     assert 'id="libraryStickyHeader"' in res_root.text
     assert 'id="galleryContentArea"' in res_root.text
-    assert 'pb-28 sm:pb-32 md:pb-6' in res_root.text
+    assert "pb-28 sm:pb-32 md:pb-6" in res_root.text
     assert re.search(r"styles\.css\?v=\d+", res_root.text)
     assert 'id="scrollToTopBtn"' in res_root.text
     assert 'id="sidebarDrawer"' in res_root.text
@@ -45,12 +47,12 @@ def test_html_views(api_client):
     assert res_sorter.status_code == 200
     assert "text/html" in res_sorter.headers.get("content-type", "")
     assert re.search(r"styles\.css\?v=\d+", res_sorter.text)
-    assert 'tasksTabBtnActive' in res_sorter.text
+    assert "tasksTabBtnActive" in res_sorter.text
     assert "tasksTabBtnWorkers" in res_sorter.text
     assert "tasksTabBtnTools" in res_sorter.text
     assert "activeQueuesEmptyState" in res_sorter.text
     assert "app.js?v=" in res_sorter.text
-    assert 'data-tasks-modal-close' in res_sorter.text
+    assert "data-tasks-modal-close" in res_sorter.text
     assert 'role="dialog"' in res_sorter.text
     assert 'role="tabpanel"' in res_sorter.text
     assert re.search(r"styles\.css\?v=\d+", res_sorter.text)
@@ -110,10 +112,19 @@ def test_html_views(api_client):
     assert "tasksTabBtnTools" in res_lib.text
     assert "activeQueuesEmptyState" in res_lib.text
     assert "duplicatesModal" in res_lib.text
-    assert 'id="duplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
-    assert 'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto' in res_lib.text
+    assert (
+        'id="duplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]'
+        in res_lib.text
+    )
+    assert (
+        'id="duplicateCardsContainer" class="flex-1 min-h-0 overflow-y-auto'
+        in res_lib.text
+    )
     assert "ignoredDuplicatesModal" in res_lib.text
-    assert 'id="ignoredDuplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]' in res_lib.text
+    assert (
+        'id="ignoredDuplicatesModal" class="ml-sheet fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[80] hidden flex flex-col items-center justify-center p-2 sm:p-4 md:p-6 h-[100dvh] max-h-[100dvh]'
+        in res_lib.text
+    )
     assert re.search(r"styles\.css\?v=\d+", res_lib.text)
     assert 'id="libraryStickyHeader"' in res_lib.text
     assert 'id="scrollToTopBtn"' in res_lib.text
@@ -438,7 +449,7 @@ def test_background_tasks_modal_button_always_visible(api_client):
     assert 'id="closeTransferDropdownBtn"' in sorter_html
     # Sorter header adopts the unified icon + count-badge tasks button design.
     assert 'id="transferCountText"' in sorter_html
-    assert 'rounded-full' in sorter_html
+    assert "rounded-full" in sorter_html
 
 
 def test_range_byte_streaming_media_and_sorter(api_client):
@@ -551,9 +562,11 @@ def test_set_poster_frame(api_client):
 
     # 3. Successful poster frame set using base64 image payload
     # Generate a small 10x10 JPEG in base64
-    import io
     import base64
+    import io
+
     from PIL import Image
+
     buf = io.BytesIO()
     Image.new("RGB", (10, 10), color="red").save(buf, format="JPEG")
     b64_str = base64.b64encode(buf.getvalue()).decode("ascii")
@@ -593,3 +606,48 @@ def test_service_worker_route(api_client, tmp_path, monkeypatch):
         res_404 = api_client.get("/sw.js")
         assert res_404.status_code == 404
 
+
+def test_health_probe_is_cheap_and_leaks_nothing(api_client):
+    res = api_client.get("/api/health")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ok"
+    assert body["database"] == "ok"
+    from media_library import __version__
+
+    assert body["version"] == __version__
+    assert isinstance(body["uptime_s"], (int, float))
+    assert body["workers"]["total"] > 0
+    # A health probe must not expose the library layout.
+    serialized = res.text
+    assert "media_dest" not in serialized
+    assert "media_src" not in serialized
+    assert "thumbnails" not in serialized
+
+
+def test_health_probe_reports_degraded_when_the_database_is_unreadable(
+    api_client, monkeypatch
+):
+    import media_library.routers.system as system_router
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(system_router, "db_conn", _boom)
+    res = api_client.get("/api/health")
+    assert res.status_code == 503
+    assert res.json()["status"] == "degraded"
+    assert res.json()["database"] == "error"
+
+
+def test_no_cors_middleware_is_installed(api_client):
+    """Same-origin app: a third-party page must not receive CORS permissions."""
+    res = api_client.get("/api/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in {k.lower() for k in res.headers}
+    assert "access-control-allow-credentials" not in {k.lower() for k in res.headers}
+
+
+def test_health_is_documented_in_the_openapi_schema(api_client):
+    paths = api_client.get("/openapi.json").json()["paths"]
+    assert "/api/health" in paths
+    assert "get" in paths["/api/health"]

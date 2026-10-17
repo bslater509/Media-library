@@ -35,6 +35,8 @@ def test_login_page_and_static_are_public(api_client, monkeypatch):
     # Static assets and service worker must stay public.
     assert api_client.get("/static/styles.css").status_code in (200, 304)
     assert api_client.get("/sw.js").status_code == 200
+    # The liveness probe is credential-free by design.
+    assert api_client.get("/api/health").status_code == 200
 
 
 def test_wrong_password_is_rejected(api_client, monkeypatch):

@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 import anyio
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -25,7 +24,6 @@ from media_library.services.backup_service import (
 from media_library.services.upload_service import gc_stale_uploads
 from media_library.workers import (
     animated_thumb_worker_instance,
-    url_download_worker_instance,
     backup_watcher_instance,
     duplicate_hash_worker_instance,
     enqueue_pretranscode_for_source,
@@ -36,6 +34,7 @@ from media_library.workers import (
     thumbnail_worker_instance,
     transcode_worker_instance,
     transfer_worker_instance,
+    url_download_worker_instance,
     webp_worker_instance,
 )
 
@@ -175,14 +174,10 @@ def create_app(
         lifespan=lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
+    # No CORS middleware: the app is same-origin only (pages, media streaming,
+    # thumbnails and the API are all served from this app). A wildcard
+    # ``allow_origins`` together with credentialed requests is rejected by
+    # browsers anyway and only widens the surface for third-party pages.
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # Password gate for the whole app (no-op when APP_PASSWORD is unset).

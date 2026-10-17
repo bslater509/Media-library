@@ -24,7 +24,9 @@ router = APIRouter()
 LOGIN_PATH = "/login"
 
 # Paths that must stay reachable without a password so the login page can render.
-_PUBLIC_PATHS = {LOGIN_PATH, "/favicon.ico", "/sw.js"}
+# ``/api/health`` is a credential-free liveness probe (reachability + worker
+# liveness only); see the ``health`` route in routers/system.py.
+_PUBLIC_PATHS = {LOGIN_PATH, "/favicon.ico", "/sw.js", "/api/health"}
 _PUBLIC_PREFIXES = ("/static/",)
 
 _FALLBACK_LOGIN_HTML = (

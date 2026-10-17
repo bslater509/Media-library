@@ -1,10 +1,13 @@
 """Unified System Status API consolidating polling across background subsystems."""
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 from media_library import __version__
+from media_library.db.connection import db_conn
 from media_library.db.indexer import deep_clean_database, indexer_state
 from media_library.services.backup_service import library_backup_state
 from media_library.services.status import (
@@ -19,16 +22,69 @@ from media_library.services.zip import (
 )
 from media_library.workers import (
     animated_thumb_worker_instance,
+    backup_watcher_instance,
     h265_worker_instance,
     library_ops_worker_instance,
     metadata_worker_instance,
     thumb_hash_worker_instance,
     thumbnail_worker_instance,
+    transcode_worker_instance,
+    transfer_worker_instance,
     url_download_worker_instance,
     webp_worker_instance,
 )
 
 router = APIRouter(tags=["system"])
+
+# Process start time, for the cheap liveness probe's uptime.
+_STARTED_AT = time.monotonic()
+
+# The long-lived background workers a health probe expects to see alive. Kept
+# here so a new worker is one line away from being covered.
+_HEALTH_WORKERS = (
+    transfer_worker_instance,
+    transcode_worker_instance,
+    thumbnail_worker_instance,
+    animated_thumb_worker_instance,
+    metadata_worker_instance,
+    webp_worker_instance,
+    url_download_worker_instance,
+    library_ops_worker_instance,
+    backup_watcher_instance,
+    h265_worker_instance,
+)
+
+
+def _worker_is_alive(worker) -> bool:
+    task = getattr(worker, "_task", None)
+    return task is not None and not task.done()
+
+
+@router.get("/api/health")
+async def health() -> JSONResponse:
+    """Cheap liveness probe for systemd, uptime monitors and container healthchecks.
+
+    Deliberately minimal and unauthenticated (see AGENTS.md §11): it reports
+    reachability and worker liveness only — never library paths, counts or
+    filenames — so a monitor needs no credentials. ``503`` signals a degraded
+    process (the database cannot be read) for orchestrators to act on.
+    """
+    database_ok = True
+    try:
+        with db_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception:
+        database_ok = False
+
+    running = sum(1 for worker in _HEALTH_WORKERS if _worker_is_alive(worker))
+    body: dict[str, Any] = {
+        "status": "ok" if database_ok else "degraded",
+        "version": __version__,
+        "uptime_s": round(time.monotonic() - _STARTED_AT, 1),
+        "database": "ok" if database_ok else "error",
+        "workers": {"running": running, "total": len(_HEALTH_WORKERS)},
+    }
+    return JSONResponse(body, status_code=200 if database_ok else 503)
 
 
 @router.get("/api/system/status")
@@ -152,4 +208,7 @@ async def get_all_system_status() -> dict[str, Any]:
 @router.post("/api/system/clean-db")
 async def clean_database_and_thumbnails(background_tasks: BackgroundTasks):
     background_tasks.add_task(deep_clean_database)
-    return {"success": True, "message": "Deep database scan and thumbnail cleanup started in the background."}
+    return {
+        "success": True,
+        "message": "Deep database scan and thumbnail cleanup started in the background.",
+    }
