@@ -63,6 +63,10 @@ _FINAL_CROP_RE = re.compile(r"^face_[0-9a-f]{24}\.jpg$")
 #: (scipy's linkage materialises an O(chunk^2) distance matrix).
 _CLUSTER_CHUNK = 3000
 
+#: How many folder labels a cluster row carries (`folder_names`): enough to say
+#: where its faces were filed without turning the row into a path dump.
+_FOLDER_LABELS = 3
+
 _USAGE_CACHE: dict[str, Any] = {"key": "", "at": 0.0, "files": 0, "bytes": 0}
 _USAGE_TTL_S = 60.0
 _LRU_STATE: dict[str, Any] = {"key": "", "at": 0.0}
@@ -1087,6 +1091,39 @@ def _folders_of_files(conn: Any, person_ids: list[int]) -> dict[int, set[str]]:
     return out
 
 
+def _top_folders_of_files(
+    conn: Any, person_ids: list[int], limit: int = _FOLDER_LABELS
+) -> dict[int, list[str]]:
+    """``{person_id: [folder label]}`` for the given clusters, busiest folder first.
+
+    One grouped query for every cluster in a page (rather than one per row), so
+    the review queue can say where a cluster's faces are filed — the fastest way
+    to recognise whose it is — without a query per cluster.
+    """
+    if not person_ids:
+        return {}
+    placeholders = ",".join("?" for _ in person_ids)
+    counts: dict[int, list[str]] = {}
+    for row in conn.execute(
+        f"""
+        SELECT fa.person_id AS person_id, f.folder_path AS folder_path,
+               COUNT(*) AS n
+        FROM faces fa
+        JOIN files f ON f.path = fa.file_path
+        WHERE fa.person_id IN ({placeholders})
+              AND f.folder_path IS NOT NULL AND f.folder_path <> ''
+        GROUP BY fa.person_id, f.folder_path
+        ORDER BY fa.person_id ASC, n DESC, f.folder_path ASC
+        """,
+        person_ids,
+    ).fetchall():
+        counts.setdefault(int(row["person_id"]), []).append(str(row["folder_path"]))
+    return {
+        person_id: [_folder_label(p) for p in paths[: max(1, int(limit))]]
+        for person_id, paths in counts.items()
+    }
+
+
 def read_people(
     conn: Any,
     limit: int = 200,
@@ -1094,6 +1131,7 @@ def read_people(
     named: bool | None = None,
     near: int | None = None,
     folder: str | None = None,
+    samples: int = 4,
 ) -> list[dict[str, Any]]:
     """Clusters with derived counts and a cover face, biggest first.
 
@@ -1116,8 +1154,14 @@ def read_people(
     ``match_folders``. That is the picker's folder box: with the collection filed
     per folder, "the ones from this folder" is the fastest way to find the
     duplicate.
+
+    Every row carries ``folder_names`` (the folders its faces are filed in,
+    busiest first) so a caller can show where a cluster comes from, and
+    ``sample_urls`` holds up to ``samples`` crops — the picker wants a few, the
+    review queue a handful more so a cluster can be recognised at a glance.
     """
     folder_cond, folder_params = _folder_filter_condition(folder)
+    sample_count = max(1, min(12, int(samples)))
     if near is None:
         conditions = [c for c in (_people_name_condition(named), folder_cond) if c]
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -1204,12 +1248,13 @@ def read_people(
                     match_names[person_id] = names[:3]
 
     people: list[dict[str, Any]] = []
+    folder_labels = _top_folders_of_files(conn, [int(r["person_id"]) for r in rows])
     for r in rows:
         person_id = int(r["person_id"])
         cover = conn.execute(
             "SELECT id, crop, frame_time, file_path FROM faces WHERE person_id = ? "
-            "ORDER BY (COALESCE(w,0) * COALESCE(h,0)) DESC, id ASC LIMIT 4",
-            (person_id,),
+            "ORDER BY (COALESCE(w,0) * COALESCE(h,0)) DESC, id ASC LIMIT ?",
+            (person_id, sample_count),
         ).fetchall()
         samples = [_crop_url(c["id"], c["crop"]) for c in cover if c["crop"]]
         entry = {
@@ -1221,6 +1266,7 @@ def read_people(
             "cover_url": samples[0] if samples else None,
             "sample_urls": samples,
             "is_named": bool(r["name"]),
+            "folder_names": folder_labels.get(person_id, []),
         }
         if near is not None:
             entry["shared_folders"] = int(r["shared_folders"] or 0)

@@ -118,6 +118,11 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2 bg-slate-900/50 border border-slate-800/70 rounded-2xl p-2.5">
+          <a id="ppReviewBtn" href="/people/review" title="Match the clusters with no name to people you have already named" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-100 text-[11px] sm:text-xs font-semibold transition flex items-center gap-1.5">
+            <span data-lb-icon="user-check" data-lb-icon-class="w-3.5 h-3.5"></span>
+            <span>Review unmatched</span>
+            <span id="ppReviewCount" class="hidden px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-mono">0</span>
+          </a>
           <button id="ppScanAllBtn" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[11px] sm:text-xs font-semibold shadow-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none">
             <span data-lb-icon="scan-face" data-lb-icon-class="w-3.5 h-3.5"></span><span>Scan library</span>
           </button>
@@ -267,6 +272,6 @@
 
   <!-- Fancybox 5 JS (media lightbox) -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
-  <script type="module" src="/static/dist/people.js?v=7"></script>
+  <script type="module" src="/static/dist/people.js?v=8"></script>
 </body>
 </html>

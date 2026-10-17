@@ -24,7 +24,7 @@ VERSION_REPORTERS = (
 
 # Pages served through ``routers/views._serve_page`` (the version token is
 # substituted for all of them, even where a template does not use it yet).
-SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics", "/people")
+SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics", "/people", "/people/review")
 
 
 def test_version_is_the_release_version():

@@ -49,6 +49,12 @@ async def list_people(
         max_length=200,
         description="Only clusters with a face in a folder whose path contains this text",
     ),
+    samples: int = Query(
+        4,
+        ge=1,
+        le=12,
+        description="How many crop URLs each row carries (the review queue wants more)",
+    ),
 ) -> dict[str, Any]:
     """Person clusters with derived counts and cover crops, biggest first.
 
@@ -59,10 +65,23 @@ async def list_people(
     it, and ranking same-folder clusters first surfaces it instead of burying it
     under thousands of unrelated ones. ``folder=<text>`` is its folder box, which
     narrows the candidates to the folders the user types.
+
+    The review queue runs the same query the other way round: ``named=true`` with
+    ``near=<the unnamed cluster being reviewed>`` ranks the *named* people it
+    could belong to, and ``named=false&limit=1`` is the next cluster to review.
+    ``samples`` sets how many crops come back (the picker shows a few, the review
+    card a handful more) and every row carries ``folder_names`` — where its faces
+    are filed — so a cluster can be recognised without opening it.
     """
     with db_conn() as conn:
         people = face_service.read_people(
-            conn, limit=limit, offset=offset, named=named, near=near, folder=folder
+            conn,
+            limit=limit,
+            offset=offset,
+            named=named,
+            near=near,
+            folder=folder,
+            samples=samples,
         )
         counts = face_service.people_counts(conn)
         total = face_service.count_people(conn, named=named, folder=folder)

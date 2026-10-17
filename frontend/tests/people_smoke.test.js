@@ -184,8 +184,25 @@ describe('people page publisher', () => {
     expect(activePreset.className).toContain('bg-emerald-600');
   });
 
-  it('shows the disabled notice and disables starting a scan', async () => {
-    await boot({ status: { ...STATUS, enabled: false, engine_available: false, engine_reason: 'OpenCV is not installed' } });
+  it('links to the review queue, badged with the unmatched count', async () => {
+    await boot();
+
+    const link = document.getElementById('ppReviewBtn');
+    expect(link.getAttribute('href')).toBe('/people/review');
+    expect(link.title).toContain('unnamed cluster');
+    const badge = document.getElementById('ppReviewCount');
+    expect(badge.classList.contains('hidden')).toBe(false);
+    expect(badge.textContent).toBe('1');
+  });
+
+  it('says so on the review link when nothing is unmatched', async () => {
+    await boot({ people: { ...PEOPLE, counts: { ...PEOPLE.counts, unnamed: 0 } } });
+
+    expect(document.getElementById('ppReviewCount').classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('ppReviewBtn').title).toContain('every cluster is named');
+  });
+
+  it('shows the disabled notice and disables starting a scan', async () => {    await boot({ status: { ...STATUS, enabled: false, engine_available: false, engine_reason: 'OpenCV is not installed' } });
 
     const notice = document.getElementById('ppNotice');
     expect(notice.classList.contains('hidden')).toBe(false);

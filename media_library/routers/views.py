@@ -44,6 +44,13 @@ async def serve_people():
     return await _serve_page("people.html", "People page loading...")
 
 
+@router.api_route(
+    "/people/review", methods=["GET", "HEAD"], response_class=HTMLResponse
+)
+async def serve_people_review():
+    return await _serve_page("people_review.html", "Face review page loading...")
+
+
 @router.api_route("/library", methods=["GET", "HEAD"])
 async def redirect_library(request: Request):
     # Preserve the query string (e.g. ?folder=...) so deep links and refreshes

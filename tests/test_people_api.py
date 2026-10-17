@@ -334,6 +334,77 @@ def test_listing_filters_by_folder_path(people_client, sandbox_env):
     assert ids("named=false&folder=%25") == []
 
 
+def test_listing_reports_the_folders_a_cluster_is_filed_in(people_client, sandbox_env):
+    """Every row says where its faces live, and how many crops it carries."""
+    import time
+
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer_files import add_file_to_index
+
+    media = Path(sandbox_env["media_dir"])
+
+    def add_file(folder: str, name: str) -> str:
+        path = media / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        add_file_to_index(str(path))
+        return str(path)
+
+    iceland = [add_file("Iceland 2023/Day 4", f"i{i}.jpg") for i in range(4)]
+    goa = [add_file("Goa/Day 1", f"g{i}.jpg") for i in range(2)]
+    # A face whose file left the index (a stale row): no folder to report.
+    orphan = str(media / "gone" / "vanished.jpg")
+
+    now = time.time()
+    # Index the files first: add_file_to_index() opens its own connection, so it
+    # must not run inside the write transaction below.
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO people (id, name, created_at) VALUES (?, ?, ?)",
+            (1, "Anna", now),
+        )
+        conn.execute(
+            "INSERT INTO people (id, name, created_at) VALUES (?, NULL, ?)", (2, now)
+        )
+        for index, path in enumerate([*iceland, *goa]):
+            conn.execute(
+                "INSERT INTO faces (file_path, frame_time, x, y, w, h, score,"
+                " embedding, person_id, crop, created_at)"
+                " VALUES (?, -1.0, 10, 10, ?, 60, 0.9, NULL, 1, ?, ?)",
+                (path, 60 + index, f"face_{index:024d}.jpg", now),
+            )
+        conn.execute(
+            "INSERT INTO faces (file_path, frame_time, x, y, score, embedding,"
+            " person_id, crop, created_at)"
+            " VALUES (?, -1.0, 10, 10, 0.9, NULL, 2, NULL, ?)",
+            (orphan, now),
+        )
+
+    rows = {
+        p["id"]: p for p in people_client.get("/api/people?limit=10").json()["people"]
+    }
+    # Busiest folder first, relative to the library root, last two segments.
+    assert rows[1]["folder_names"] == ["Iceland 2023/Day 4", "Goa/Day 1"]
+    assert rows[2]["folder_names"] == []
+    assert rows[1]["sample_urls"][0].startswith("/api/people/crop?face_id=")
+    assert rows[1]["cover_url"] == rows[1]["sample_urls"][0]
+
+    # `samples` sets how many crops a row carries: the merge picker wants a few,
+    # the review card a handful more, and the server clamps the band.
+    def crop_urls(query: str) -> list[str]:
+        body = people_client.get(f"/api/people?{query}").json()
+        return body["people"][0]["sample_urls"]
+
+    # 6 faces have a crop; the default is 4 and the review queue asks for more.
+    assert len(crop_urls("limit=1&named=true")) == 4
+    assert len(crop_urls("limit=1&named=true&samples=8")) == 6
+    assert len(crop_urls("limit=1&named=true&samples=12")) == 6
+    # A cluster with no crop falls back to none rather than a broken URL.
+    assert crop_urls("limit=1&named=false") == []
+    assert people_client.get("/api/people?samples=0").status_code == 422
+    assert people_client.get("/api/people?samples=13").status_code == 422
+
+
 def test_crop_endpoint_serves_jpeg_and_404s(
     people_client, face_image_factory, scan_face_batch
 ):

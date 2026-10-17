@@ -13,16 +13,26 @@ snapshot metadata.
 
 ### Added
 
-- **The `/people` merge picker's filter box searches folder paths.** With the
-  collection filed per folder, "the duplicate from this folder" is the fastest way
-  to find it, so the box (previously a client-side match on the cluster id and
-  counts of the ~60 loaded rows) now runs a debounced server query
-  (`GET /api/people?named=false&near=…&folder=…`) that narrows the candidates to
-  the clusters with a face in a folder whose path contains what you typed —
-  case-insensitive, `%`/`_` treated literally, and covering every unnamed cluster
-  rather than one page. Matching rows are labelled with the folder that matched
-  (relative to the library root, e.g. `Iceland 2023/Day 4`), and `total` follows
-  the filter so "Show more" stays honest.
+- **A `/people/review` page that works through unmatched face clusters.** With
+  thousands of unnamed clusters and a handful of named people, matching them one
+  by one on `/people` meant opening a cluster, opening the merge sheet and picking
+  from a list — so the review queue does it in one tap per cluster. It shows the
+  biggest unnamed cluster at a time (cover, eight of its crops, its face/file
+  counts, and the folders its faces are filed in), and offers three ways out:
+  **Match** opens the picker's mirror image — the people you have *already named*,
+  ranked by the folders this cluster shares with them (the same `near=` ranking
+  and folder-path search the merge sheet uses) — and tapping one folds the cluster
+  into that person straight away; **Name** turns the cluster into a new person;
+  **Not a person** dismisses it (with a confirm, since a dismissal is permanent).
+  Every action removes the cluster from the unnamed set, so the queue needs no
+  state of its own: the next request is simply the largest remaining cluster, and a
+  reload lands where a fresh queue would. Keys drive it (`M`/`N`/`X`, `1`–`9` to
+  match the numbered suggestion, `/` for the picker's folder box, `?` for a key
+  reference rendered from one table, `Esc` to close), the header counts what is
+  left to review and how many faces have been dismissed, and `/people` gained a
+  **Review unmatched** button badged with that count. `GET /api/people` now also
+  reports `folder_names` per row and takes `samples` (1–12) for how many crops a
+  row carries, so the same endpoint serves both pickers.
 
 ## [1.1.4] - 2026-10-17
 

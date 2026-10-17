@@ -11,7 +11,8 @@ export default defineConfig({
         app: resolve(__dirname, 'frontend/src/app/index.js'),
         downloads: resolve(__dirname, 'frontend/src/downloads/index.js'),
         analytics: resolve(__dirname, 'frontend/src/analytics/index.js'),
-        people: resolve(__dirname, 'frontend/src/people/index.js')
+        people: resolve(__dirname, 'frontend/src/people/index.js'),
+        people_review: resolve(__dirname, 'frontend/src/people/review.js')
       },
       output: {
         entryFileNames: '[name].js',

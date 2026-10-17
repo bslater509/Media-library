@@ -53,6 +53,8 @@ function cacheEls() {
   els.progressBar = byId('ppProgressBar');
   els.progressText = byId('ppProgressText');
   els.notice = byId('ppNotice');
+  els.reviewBtn = byId('ppReviewBtn');
+  els.reviewCount = byId('ppReviewCount');
   els.loading = byId('ppLoading');
   els.error = byId('ppError');
   els.peopleView = byId('ppPeopleView');
@@ -165,6 +167,18 @@ function renderCounts() {
   ].join('');
   if (els.mobileSubtitle) {
     els.mobileSubtitle.textContent = `${fmtInt(c.people)} people · ${fmtInt(c.faces)} faces`;
+  }
+  // The way into the review queue: how many unnamed clusters are waiting there.
+  if (els.reviewCount) {
+    const unnamed = Number(c.unnamed || 0);
+    els.reviewCount.textContent = fmtInt(unnamed);
+    els.reviewCount.classList.toggle('hidden', !unnamed);
+  }
+  if (els.reviewBtn) {
+    const unnamed = Number(c.unnamed || 0);
+    els.reviewBtn.title = unnamed
+      ? `Match ${fmtInt(unnamed)} unnamed cluster(s) to people you have already named`
+      : 'Nothing unmatched — every cluster is named';
   }
 }
 
