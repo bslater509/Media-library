@@ -261,18 +261,16 @@ describe('people review queue', () => {
     expect(calls.filter((u) => u === '/api/people/rename')).toHaveLength(1);
   });
 
-  it('dismisses a whole cluster only after a confirm', async () => {
+  it('ignores a whole cluster straight away, with no popup', async () => {
     const { calls } = await boot();
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    document.getElementById('prDismissBtn').click();
+    // "Ignore" is one tap/keystroke: no confirm dialog, no toast — the card
+    // simply advances to the next cluster.
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    document.getElementById('prIgnoreBtn').click();
     await flush();
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(calls.filter((u) => u === '/api/people/dismiss')).toHaveLength(0);
 
-    confirmSpy.mockReturnValue(true);
-    document.getElementById('prDismissBtn').click();
-    await flush();
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(calls.filter((u) => u === '/api/people/dismiss')).toHaveLength(1);
     const dismissed = JSON.parse(global.fetch.mock.calls.find((c) => c[0] === '/api/people/dismiss')[1].body);
     expect(dismissed).toEqual({ person_id: 12 });
@@ -368,11 +366,11 @@ describe('people review queue', () => {
     press(onKeydown, 'Escape');
     expect(document.getElementById('prKeysModal').classList.contains('hidden')).toBe(true);
 
-    // X is the dismiss key, and it still asks first.
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    // X is the ignore key: straight away, no dialog.
+    const confirmSpy = vi.spyOn(window, 'confirm');
     expect(press(onKeydown, 'x')).toBe(true);
     await flush();
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(calls.filter((u) => u === '/api/people/dismiss')).toHaveLength(1);
     confirmSpy.mockRestore();
   });
@@ -509,25 +507,37 @@ describe('people review queue', () => {
     expect(html.match(/data-sheet-grabber/g)).toHaveLength(2);
   });
 
-  it('fits the card on one phone screen', () => {
+  it('fits and fills one phone screen, with no toasts', () => {
     const html = fs.readFileSync(path.join(templatesDir, 'people_review.html'), 'utf8');
-    // Nothing may sit under the dismiss button: the card ends there, so the page
-    // does not have to be scrolled on a phone.
-    const dismiss = html.indexOf('id="prDismissBtn"');
-    expect(dismiss).toBeGreaterThan(-1);
-    const afterDismiss = html.slice(dismiss);
-    expect(afterDismiss).not.toContain('prHint');
-    expect(afterDismiss).not.toContain('id="prKeysBtn"');
-    expect(afterDismiss).not.toContain('Nothing is uploaded anywhere');
+    // Nothing may sit under the ignore button: the card ends there.
+    const ignore = html.indexOf('id="prIgnoreBtn"');
+    expect(ignore).toBeGreaterThan(-1);
+    const afterIgnore = html.slice(ignore);
+    expect(afterIgnore).not.toContain('prHint');
+    expect(afterIgnore).not.toContain('id="prKeysBtn"');
+    expect(afterIgnore).not.toContain('Nothing is uploaded anywhere');
     // The card closes right after the actions row.
-    expect(afterDismiss.indexOf('</section>')).toBeLessThan(afterDismiss.indexOf('</main>'));
-    // …and the pieces that would have pushed it over the fold are phone-sized:
-    // the cover is desktop-only, the crops go six-up, the chips are desktop-only.
+    expect(afterIgnore.indexOf('</section>')).toBeLessThan(afterIgnore.indexOf('</main>'));
+    // The page carries no toast host, and the module raises none.
+    expect(html).not.toContain('toastContainer');
+    expect(reviewSource).not.toContain('showToast');
+    // The pieces that keep it on one screen: the cover is desktop-only, the
+    // chips are desktop-only, the crops go three-up and grow to fill.
     expect(html).toMatch(/\.pr-cover \{[^}]*display: none/);
     expect(html).toMatch(/@media \(min-width: 640px\) \{ \.pr-cover \{ display: block; \} \}/);
-    expect(html).toMatch(/id="prCrops" class="grid grid-cols-6 sm:grid-cols-8/);
+    expect(html).toMatch(/id="prCrops" class="pr-crops grid grid-cols-3 sm:grid-cols-8/);
     expect(html).toMatch(/id="prStats" class="hidden sm:flex/);
-    // The page padding at the bottom is safe-area aware but small on a phone.
     expect(html).toMatch(/\.pr-stage \{[^}]*padding-bottom: max\(0\.75rem, var\(--sab/);
+    // Phone: the stage is one screen tall, the card fills it and the crop strip
+    // is what takes the slack, so no space is left empty and nothing scrolls.
+    expect(html).toMatch(/@media \(max-width: 639px\) \{[\s\S]*?\.pr-stage \{ height: 100%/);
+    expect(html).toMatch(/\.pr-fill \{ flex: 1 1 0%; min-height: 0; \}/);
+    expect(html).toMatch(/\.pr-crops \{ grid-auto-rows: minmax\(0, 1fr\); \}/);
+    expect(html).toMatch(/\.pr-crops \.pr-face \{ height: 100%; \}/);
+    expect(html).toMatch(/\.pr-actions \{ margin-top: auto; \}/);
+    // The fill chain needs the panel to stretch its column (a flex-start column
+    // would size to its content and push the card past the fold again).
+    expect(html).toMatch(/class="flex items-stretch gap-3 sm:gap-4[^"]*pr-fill"/);
+    expect(html.match(/pr-fill"/g)).toHaveLength(5);
   });
 });

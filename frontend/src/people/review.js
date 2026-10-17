@@ -11,13 +11,15 @@
 //               named person as the target and the only source being the cluster
 //               on screen.
 //   * Name    — POST /api/people/rename, so the cluster becomes a new person.
-//   * Dismiss — POST /api/people/dismiss with person_id: every one of its faces
-//               is recorded as "not a person". Irreversible (there is no
-//               un-dismiss endpoint), hence the confirm.
+//   * Ignore  — POST /api/people/dismiss with person_id: every one of its faces
+//               is recorded as "not a person", so no future scan re-adds it. It
+//               is irreversible (there is no un-dismiss endpoint) and, on the
+//               user's call, it fires straight away — no confirm, no toast.
 //
 // All three take the cluster out of the unnamed set, so "the next one" is simply
 // the largest remaining unnamed cluster — the queue keeps no state of its own and
-// a reload lands exactly where a fresh queue would.
+// a reload lands exactly where a fresh queue would. There are no toasts on this
+// page at all: the card advancing is the feedback.
 //
 // The picker sheet behind "More…" is the mirror image of the People page's merge
 // sheet: it lists *named* people (an unnamed cluster is never offered as a target
@@ -29,7 +31,7 @@
 // nothing here walks a mount.
 
 import '../../../static/styles.css';
-import { escapeHtml, showToast } from '../library/utils.js';
+import { escapeHtml } from '../library/utils.js';
 import { hydrateIcons, icon } from '../shared/icons.js';
 
 //: Crops per card — a handful, so a cluster can be recognised without opening it.
@@ -55,7 +57,7 @@ export const REVIEW_SHORTCUTS = [
       { keys: ['M'], description: 'Look through everyone you have named (the full list)' },
       { keys: ['N'], description: 'Name this cluster as a new person' },
       { keys: ['Enter'], description: 'Create the person whose name you typed' },
-      { keys: ['X'], description: 'Mark the whole cluster as “not a person”' },
+      { keys: ['X'], description: 'Ignore this cluster — it is not a face' },
       { keys: ['?'], description: 'Show this key reference' },
       { keys: ['Esc'], description: 'Close the picker or this reference' },
     ],
@@ -106,7 +108,7 @@ function cacheEls() {
   els.meta = byId('prMeta');
   els.folders = byId('prFolders');
   els.crops = byId('prCrops');
-  els.dismissBtn = byId('prDismissBtn');
+  els.ignoreBtn = byId('prIgnoreBtn');
   els.nameInput = byId('prNameInput');
   els.nameBtn = byId('prNameBtn');
   els.suggestions = byId('prSuggestions');
@@ -409,7 +411,7 @@ function showError(message) {
   if (els.loading) els.loading.classList.add('hidden');
   if (!els.error) return;
   els.error.innerHTML = `
-    <p>Could not load the next cluster: ${escapeHtml(message)}</p>
+    <p>${escapeHtml(message)}</p>
     <button type="button" data-review-retry="1" class="mt-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Try again</button>
   `;
   els.error.classList.remove('hidden');
@@ -442,7 +444,7 @@ async function loadNext() {
   } catch (e) {
     state.cluster = null;
     state.pending = false;
-    showError(e.message);
+    showError(`Could not load the next cluster: ${e.message}`);
   } finally {
     state.loading = false;
     if (els.loading) els.loading.classList.add('hidden');
@@ -450,9 +452,9 @@ async function loadNext() {
 }
 
 // Move to the next cluster: the action that just ran removed this one from the
-// unnamed set, so re-reading the queue's head is the advance.
-async function advance(message) {
-  if (message) showToast(message, 'success');
+// unnamed set, so re-reading the queue's head is the advance. There is no toast —
+// the next cluster appearing is the feedback.
+async function advance() {
   state.cluster = null;
   await loadNext();
 }
@@ -464,46 +466,44 @@ async function nameCluster() {
   if (!cluster || !els.nameInput) return;
   const name = els.nameInput.value.trim();
   if (!name) {
-    showToast('Type a name first', 'info');
+    // Nothing to say about an empty box: just put the cursor there.
     els.nameInput.focus();
     return;
   }
   try {
     await postJson('/api/people/rename', { person_id: cluster.id, name });
     els.nameInput.value = '';
-    await advance(`Named “${name}” — ${fmtInt(cluster.face_count)} faces`);
+    await advance();
   } catch (e) {
-    showToast(e.message, 'error');
+    showError(e.message);
   }
 }
 
-async function dismissCluster() {
+// Straight away, with no confirm: the button and the X key both land here, and a
+// mis-press costs that cluster's faces (a dismissal cannot be undone).
+async function ignoreCluster() {
   const cluster = state.cluster;
   if (!cluster) return;
-  if (!window.confirm(
-    `Mark every face of this cluster (${cluster.face_count}) as “not a person”?\n\n`
-    + 'They will be ignored by every future scan, and this cannot be undone.'
-  )) return;
   try {
-    const res = await postJson('/api/people/dismiss', { person_id: cluster.id });
-    await advance(`Dismissed ${fmtInt(res.dismissed || cluster.face_count)} face(s)`);
+    await postJson('/api/people/dismiss', { person_id: cluster.id });
+    await advance();
   } catch (e) {
-    showToast(e.message, 'error');
+    showError(e.message);
   }
 }
 
-async function matchCluster(personId, personName) {
+async function matchCluster(personId) {
   const cluster = state.cluster;
   if (!cluster) return;
   try {
-    const res = await postJson('/api/people/merge', {
+    await postJson('/api/people/merge', {
       target_id: personId,
       source_ids: [cluster.id],
     });
     closeSheet(els.matchModal);
-    await advance(`Matched ${fmtInt(res.moved || cluster.face_count)} face(s) into “${personName}”`);
+    await advance();
   } catch (e) {
-    showToast(e.message, 'error');
+    showError(e.message);
   }
 }
 
@@ -515,6 +515,7 @@ const picker = {
   hasMore: false,
   filter: '',
   loading: false,
+  error: false,
   timer: null,
 };
 
@@ -554,12 +555,15 @@ function renderPicker() {
     : '';
   const needle = picker.filter.trim();
   if (!picker.people.length) {
-    const empty = picker.loading
-      ? 'Searching the people you have named…'
-      : (needle
-        ? `No named person has a face in a folder matching “${escapeHtml(needle)}”.`
-        : 'No named people yet — close this and name a cluster first (N).');
-    els.matchList.innerHTML = `<p class="text-[11px] text-slate-500 p-3">${empty}</p>${more}`;
+    const empty = picker.error
+      ? 'Could not load the people you have named — try again in a moment.'
+      : (picker.loading
+        ? 'Searching the people you have named…'
+        : (needle
+          ? `No named person has a face in a folder matching “${escapeHtml(needle)}”.`
+          : 'No named people yet — close this and name a cluster first (N).'));
+    const tone = picker.error ? 'text-amber-300' : 'text-slate-500';
+    els.matchList.innerHTML = `<p class="text-[11px] ${tone} p-3">${empty}</p>${more}`;
   } else {
     els.matchList.innerHTML = picker.people.map(suggestionRowHtml).join('') + more;
   }
@@ -609,7 +613,7 @@ async function loadSuggestions(reset = false) {
     }
     if (data.status) applyStatus(data.status);
   } catch (e) {
-    showToast(e.message, 'error');
+    picker.error = true;
   } finally {
     picker.loading = false;
     renderPicker();
@@ -624,6 +628,7 @@ function openMatchPicker() {
   picker.people = [];
   picker.total = 0;
   picker.hasMore = false;
+  picker.error = false;
   if (els.matchSearch) els.matchSearch.value = '';
   if (els.matchSubtitle) {
     els.matchSubtitle.textContent = 'Their faces move into the person you tap';
@@ -777,7 +782,7 @@ export function onKeydown(e) {
       const person = picker.people[Number(key) - 1];
       if (person) {
         e.preventDefault();
-        matchCluster(person.id, person.name || 'Unnamed');
+        matchCluster(person.id);
       }
     }
     return;
@@ -799,8 +804,9 @@ export function onKeydown(e) {
   const lower = key.toLowerCase();
   if (lower === 'm') {
     e.preventDefault();
+    // With nobody named yet there is nothing to offer: the pills row already
+    // says so, so the key simply does nothing.
     if (state.namedTotal) openMatchPicker();
-    else showToast('Name a cluster first — there is nobody to match against yet', 'info');
     return;
   }
   if (lower === 'n') {
@@ -813,7 +819,7 @@ export function onKeydown(e) {
   }
   if (lower === 'x') {
     e.preventDefault();
-    dismissCluster();
+    ignoreCluster();
     return;
   }
   // A digit matches the pill carrying it, exactly as tapping it would.
@@ -821,7 +827,7 @@ export function onKeydown(e) {
     const person = state.suggestions[Number(key) - 1];
     if (person) {
       e.preventDefault();
-      matchCluster(person.id, person.name || 'Unnamed');
+      matchCluster(person.id);
     }
   }
 }
@@ -919,7 +925,7 @@ function initThemeCustomizer() {
 
 function initEvents() {
   if (els.nameBtn) els.nameBtn.addEventListener('click', nameCluster);
-  if (els.dismissBtn) els.dismissBtn.addEventListener('click', dismissCluster);
+  if (els.ignoreBtn) els.ignoreBtn.addEventListener('click', ignoreCluster);
   if (els.reloadBtn) els.reloadBtn.addEventListener('click', loadNext);
   if (els.suggestions) {
     els.suggestions.addEventListener('click', (e) => {
@@ -928,7 +934,7 @@ function initEvents() {
         return;
       }
       const pill = e.target.closest('[data-pill]');
-      if (pill) matchCluster(Number(pill.dataset.pill), pill.dataset.name || 'Unnamed');
+      if (pill) matchCluster(Number(pill.dataset.pill));
     });
   }
   if (els.nameInput) {
@@ -966,7 +972,7 @@ function initEvents() {
       }
       const btn = e.target.closest('[data-match]');
       if (!btn) return;
-      matchCluster(Number(btn.dataset.match), btn.dataset.name || 'Unnamed');
+      matchCluster(Number(btn.dataset.match));
     });
   }
   if (els.error) {

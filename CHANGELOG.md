@@ -24,18 +24,19 @@ snapshot metadata.
   so one tap folds the cluster into that person; a **More…** pill (showing how many
   others there are) opens the full list with crops, the folder-path search and the
   `1`–`9` keys, and the pills are numbered so the keyboard does the same thing.
-  **Name** turns the cluster into a new person; **Not a person** dismisses it, with
-  a confirm, since a dismissal is permanent. Every action removes the cluster from
-  the unnamed set, so the queue needs no state of its own: the next request is
-  simply the largest remaining cluster, and a reload lands where a fresh queue
-  would. `M`/`N`/`X` and `1`–`9` drive it, `?` opens a key reference rendered from
-  one table, and the card is sized to fit a phone screen with no page scrolling —
-  the cover, the counter chips and the intro are desktop-only, the crop strip goes
-  six-up on a phone, and nothing sits below the dismiss button. `/people` gained a
-  **Review unmatched** button badged with the count of unnamed clusters, and
-  `GET /api/people` now also reports `folder_names` per row and takes `samples`
-  (1–12) for how many crops a row carries, so the same endpoint serves both the
-  pills and the full list.
+  **Name** turns the cluster into a new person; **Ignore** records it as "not a
+  face" so no future scan re-adds it, straight away and with no popup (and no toast
+  anywhere on the page — the card advancing is the feedback). Every action removes
+  the cluster from the unnamed set, so the queue needs no state of its own: the next
+  request is simply the largest remaining cluster, and a reload lands where a fresh
+  queue would. `M`/`N`/`X` and `1`–`9` drive it, `?` opens a key reference rendered
+  from one table, and the card is laid out to fill one phone screen with no page
+  scrolling — the cover, the counter chips and the intro are desktop-only, and the
+  crop strip takes the slack so the faces grow with the screen while the actions sit
+  in the thumb zone. `/people` gained a **Review unmatched** button badged with the
+  count of unnamed clusters, and `GET /api/people` now also reports `folder_names`
+  per row and takes `samples` (1–12) for how many crops a row carries, so the same
+  endpoint serves both the pills and the full list.
 
 ## [1.1.4] - 2026-10-17
 
