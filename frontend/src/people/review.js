@@ -106,12 +106,10 @@ function cacheEls() {
   els.meta = byId('prMeta');
   els.folders = byId('prFolders');
   els.crops = byId('prCrops');
-  els.hint = byId('prHint');
-  els.suggestions = byId('prSuggestions');
   els.dismissBtn = byId('prDismissBtn');
   els.nameInput = byId('prNameInput');
   els.nameBtn = byId('prNameBtn');
-  els.keysBtn = byId('prKeysBtn');
+  els.suggestions = byId('prSuggestions');
   els.matchModal = byId('prMatchModal');
   els.matchList = byId('prMatchList');
   els.matchSearch = byId('prMatchSearch');
@@ -202,9 +200,14 @@ function renderStats() {
     s.pending_count ? chip(`${fmtInt(s.pending_count)} to scan`, 'text-amber-300 border-amber-900/40') : '',
   ].join('');
   if (els.mobileSubtitle) {
-    els.mobileSubtitle.textContent = state.cluster
-      ? `${fmtInt(state.remaining)} unmatched · ${fmtInt(c.named)} named`
-      : `${fmtInt(c.named)} named people`;
+    // The chips are desktop-only (on a phone the header carries the counts, so
+    // the card fits one screen), so the dismissed total rides along here.
+    const bits = [
+      `${fmtInt(state.remaining)} unmatched`,
+      `${fmtInt(c.named)} named`,
+    ];
+    if (c.dismissed) bits.push(`${fmtInt(c.dismissed)} dismissed`);
+    els.mobileSubtitle.textContent = bits.join(' · ');
   }
 }
 
@@ -285,9 +288,6 @@ function renderCluster() {
       ? samples.map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" class="pr-face rounded-lg border border-slate-800">`).join('')
       : '<span class="col-span-full text-[11px] text-slate-500">No cached crops for this cluster.</span>';
   }
-  if (els.hint) {
-    els.hint.textContent = 'Matching deletes nothing — the faces join that person, and you can split them off again from their page.';
-  }
   if (els.nameInput && document.activeElement !== els.nameInput) {
     els.nameInput.value = '';
   }
@@ -306,7 +306,7 @@ function pillHtml(person, index) {
   const title = `${person.name} · ${fmtInt(person.face_count)} faces${why}`;
   return `
     <button type="button" data-pill="${person.id}" data-name="${escapeHtml(person.name || '')}" title="${escapeHtml(title)}"
-      class="flex items-center gap-1 max-w-[11rem] px-2.5 py-1.5 rounded-full bg-slate-800 hover:bg-emerald-600 active:scale-95 border border-slate-700 hover:border-emerald-500 text-slate-100 text-[11px] font-semibold transition">
+      class="flex items-center gap-1 max-w-[11rem] px-2 py-1 rounded-full bg-slate-800 hover:bg-emerald-600 active:scale-95 border border-slate-700 hover:border-emerald-500 text-slate-100 text-[11px] font-semibold transition">
       ${index < 9 ? `<kbd class="text-[9px] font-mono text-slate-400">${index + 1}</kbd>` : ''}
       <span class="truncate">${escapeHtml(person.name || 'Unnamed')}</span>
     </button>
@@ -331,7 +331,7 @@ function renderSuggestions() {
   const more = hidden
     ? `
       <button type="button" data-more="1" title="Look through everyone you have named (M)"
-        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-950 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-300 text-[11px] font-semibold transition">
+        class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-950 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-300 text-[11px] font-semibold transition">
         ${icon('search', 'w-3 h-3')}<span>More…</span>
         <span class="text-[9px] font-mono text-slate-500">${fmtInt(hidden)}</span>
       </button>
@@ -921,7 +921,6 @@ function initEvents() {
   if (els.nameBtn) els.nameBtn.addEventListener('click', nameCluster);
   if (els.dismissBtn) els.dismissBtn.addEventListener('click', dismissCluster);
   if (els.reloadBtn) els.reloadBtn.addEventListener('click', loadNext);
-  if (els.keysBtn) els.keysBtn.addEventListener('click', openKeysHelp);
   if (els.suggestions) {
     els.suggestions.addEventListener('click', (e) => {
       if (e.target.closest('[data-more]')) {

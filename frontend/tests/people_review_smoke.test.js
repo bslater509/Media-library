@@ -508,4 +508,26 @@ describe('people review queue', () => {
     expect(html.match(/class="ml-sheet fixed/g)).toHaveLength(2);
     expect(html.match(/data-sheet-grabber/g)).toHaveLength(2);
   });
+
+  it('fits the card on one phone screen', () => {
+    const html = fs.readFileSync(path.join(templatesDir, 'people_review.html'), 'utf8');
+    // Nothing may sit under the dismiss button: the card ends there, so the page
+    // does not have to be scrolled on a phone.
+    const dismiss = html.indexOf('id="prDismissBtn"');
+    expect(dismiss).toBeGreaterThan(-1);
+    const afterDismiss = html.slice(dismiss);
+    expect(afterDismiss).not.toContain('prHint');
+    expect(afterDismiss).not.toContain('id="prKeysBtn"');
+    expect(afterDismiss).not.toContain('Nothing is uploaded anywhere');
+    // The card closes right after the actions row.
+    expect(afterDismiss.indexOf('</section>')).toBeLessThan(afterDismiss.indexOf('</main>'));
+    // …and the pieces that would have pushed it over the fold are phone-sized:
+    // the cover is desktop-only, the crops go six-up, the chips are desktop-only.
+    expect(html).toMatch(/\.pr-cover \{[^}]*display: none/);
+    expect(html).toMatch(/@media \(min-width: 640px\) \{ \.pr-cover \{ display: block; \} \}/);
+    expect(html).toMatch(/id="prCrops" class="grid grid-cols-6 sm:grid-cols-8/);
+    expect(html).toMatch(/id="prStats" class="hidden sm:flex/);
+    // The page padding at the bottom is safe-area aware but small on a phone.
+    expect(html).toMatch(/\.pr-stage \{[^}]*padding-bottom: max\(0\.75rem, var\(--sab/);
+  });
 });

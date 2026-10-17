@@ -29,11 +29,13 @@ snapshot metadata.
   the unnamed set, so the queue needs no state of its own: the next request is
   simply the largest remaining cluster, and a reload lands where a fresh queue
   would. `M`/`N`/`X` and `1`–`9` drive it, `?` opens a key reference rendered from
-  one table, the header counts what is left to review and how many faces have been
-  dismissed, and `/people` gained a **Review unmatched** button badged with that
-  count. `GET /api/people` now also reports `folder_names` per row and takes
-  `samples` (1–12) for how many crops a row carries, so the same endpoint serves
-  both the pills and the full list.
+  one table, and the card is sized to fit a phone screen with no page scrolling —
+  the cover, the counter chips and the intro are desktop-only, the crop strip goes
+  six-up on a phone, and nothing sits below the dismiss button. `/people` gained a
+  **Review unmatched** button badged with the count of unnamed clusters, and
+  `GET /api/people` now also reports `folder_names` per row and takes `samples`
+  (1–12) for how many crops a row carries, so the same endpoint serves both the
+  pills and the full list.
 
 ## [1.1.4] - 2026-10-17
 
