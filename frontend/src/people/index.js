@@ -11,7 +11,7 @@
 
 import '../../../static/styles.css';
 import { escapeHtml, formatDuration, getResolutionLabel, showToast } from '../library/utils.js';
-import { hydrateIcons } from '../shared/icons.js';
+import { hydrateIcons, icon } from '../shared/icons.js';
 
 const PEOPLE_PAGE = 120;
 const MEDIA_PAGE = 60;
@@ -605,13 +605,18 @@ function mergeRowHtml(p) {
   const crops = faces.length
     ? faces.map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" class="w-16 h-16 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0">`).join('')
     : '<span class="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 shrink-0"></span>';
+  const folders = p.shared_folder_names || [];
+  const shared = p.shared_folders
+    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-900/40 text-[10px] text-emerald-300 font-mono max-w-full truncate" title="Already seen in ${escapeHtml(folders.join(', '))}">${icon('folder', 'w-3 h-3')}${escapeHtml(folders[0] || `${p.shared_folders} shared folder(s)`)}</span>`
+    : '';
   return `
     <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"
       class="flex items-center gap-3 p-2 rounded-xl border text-left transition ${on ? 'border-emerald-600 bg-emerald-600/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
       <span class="flex items-center gap-1 shrink-0">${crops}</span>
-      <span class="min-w-0 flex flex-1 flex-col">
+      <span class="min-w-0 flex flex-1 flex-col gap-0.5">
         <span class="text-[11px] font-mono text-slate-300 truncate">${fmtInt(p.face_count)} faces · ${fmtInt(p.media_count)} files</span>
         <span class="text-[10px] text-slate-500 font-mono truncate">cluster ${p.id}</span>
+        ${shared}
       </span>
       ${on ? '<span class="ml-auto text-emerald-400 text-xs font-bold">✓</span>' : ''}
     </button>
@@ -654,7 +659,13 @@ async function loadMergeCandidates(reset = false) {
   renderMergeList();
   try {
     const offset = mergeState.people.length;
-    const data = await getJson(`/api/people?limit=${MERGE_PAGE}&offset=${offset}&named=false`);
+    // `near` ranks the clusters filed in the same folders as this person's faces
+    // first — with per-folder media, the duplicate of a cluster is nearly always
+    // filed next to it, so the right choice is at the top instead of buried
+    // under thousands of unrelated unnamed clusters.
+    const data = await getJson(
+      `/api/people?limit=${MERGE_PAGE}&offset=${offset}&named=false&near=${state.person.id}`
+    );
     const raw = data.people || [];
     const target = state.person.id;
     const seen = new Set(mergeState.people.map((p) => p.id));

@@ -138,6 +138,124 @@ def test_listing_filters_by_name_for_the_merge_picker(
     assert people_client.get("/api/people?named=maybe").status_code == 422
 
 
+def test_listing_ranks_same_folder_clusters_first(people_client, sandbox_env):
+    """`near=<person>` puts the clusters filed next to theirs at the top."""
+    import time
+
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer_files import add_file_to_index
+
+    media = Path(sandbox_env["media_dir"])
+
+    def add_file(folder: str, name: str) -> str:
+        path = media / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        add_file_to_index(str(path))
+        return str(path)
+
+    # The target person lives in album/; one candidate is filed there too (but is
+    # the *smaller* cluster), a bigger unrelated one sits in other/.
+    target_files = [add_file("album", f"target{i}.jpg") for i in range(2)]
+    same_folder = [add_file("album", f"duplicate{i}.jpg") for i in range(3)]
+    elsewhere = [add_file("other", f"unrelated{i}.jpg") for i in range(6)]
+
+    now = time.time()
+    with db_conn() as conn, conn:
+        for person_id, name in ((1, "Anna"), (2, None), (3, None)):
+            conn.execute(
+                "INSERT INTO people (id, name, created_at) VALUES (?, ?, ?)",
+                (person_id, name, now),
+            )
+        for person_id, paths in ((1, target_files), (2, same_folder), (3, elsewhere)):
+            for path in paths:
+                conn.execute(
+                    "INSERT INTO faces (file_path, frame_time, x, y, w, h, score,"
+                    " embedding, person_id, crop, created_at)"
+                    " VALUES (?, -1.0, 10, 10, 60, 60, 0.9, NULL, ?, NULL, ?)",
+                    (path, person_id, now),
+                )
+
+    # Without `near`: biggest first, and no folder annotation.
+    plain = people_client.get("/api/people?named=false&limit=5").json()
+    assert [p["id"] for p in plain["people"]] == [3, 2]
+    assert plain["people"][0].get("shared_folders") is None
+
+    ranked = people_client.get("/api/people?named=false&near=1&limit=5").json()
+    assert [p["id"] for p in ranked["people"]] == [2, 3]
+    assert ranked["total"] == 2  # the target itself is never a candidate
+    top, other = ranked["people"]
+    assert top["shared_folders"] == 1
+    assert top["shared_faces"] == 3
+    assert top["shared_folder_names"] == ["album"]
+    assert other["shared_folders"] == 0
+    assert other["shared_faces"] == 0
+    assert other["shared_folder_names"] == []
+
+    # A cluster with no folders of its own simply has no affinity.
+    assert (
+        people_client.get("/api/people?named=false&near=3&limit=5").json()["people"][0][
+            "shared_folders"
+        ]
+        == 0
+    )
+    assert people_client.get("/api/people?near=0").status_code == 422
+
+
+def test_listing_weights_the_folders_the_target_is_all_over(people_client, sandbox_env):
+    """A folder the person appears in heavily outranks one they pass through."""
+    import time
+
+    from media_library.db.connection import db_conn
+    from media_library.db.indexer_files import add_file_to_index
+
+    media = Path(sandbox_env["media_dir"])
+
+    def add_file(folder: str, name: str) -> str:
+        path = media / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        add_file_to_index(str(path))
+        return str(path)
+
+    # The target is all over "series" (3 faces) and only passes through "extras".
+    target_files = [add_file("series", f"t{i}.jpg") for i in range(3)]
+    target_files += [add_file("extras", "t-extra.jpg")]
+    extras_heavy = [add_file("extras", f"e{i}.jpg") for i in range(2)]
+    series_light = [add_file("series", "s0.jpg")]
+
+    now = time.time()
+    with db_conn() as conn, conn:
+        for person_id, name in ((1, "Anna"), (2, None), (3, None)):
+            conn.execute(
+                "INSERT INTO people (id, name, created_at) VALUES (?, ?, ?)",
+                (person_id, name, now),
+            )
+        for person_id, paths in (
+            (1, target_files),
+            (2, extras_heavy),
+            (3, series_light),
+        ):
+            for path in paths:
+                conn.execute(
+                    "INSERT INTO faces (file_path, frame_time, x, y, w, h, score,"
+                    " embedding, person_id, crop, created_at)"
+                    " VALUES (?, -1.0, 10, 10, 60, 60, 0.9, NULL, ?, NULL, ?)",
+                    (path, person_id, now),
+                )
+
+    # Bigger first when there is no folder context: 2 faces before 1.
+    plain = people_client.get("/api/people?named=false&limit=5").json()
+    assert [p["id"] for p in plain["people"]] == [2, 3]
+
+    ranked = people_client.get("/api/people?named=false&near=1&limit=5").json()
+    # 3 has fewer shared faces (1 vs 2) but sits in the folder the target is all
+    # over, so it is the better merge candidate.
+    assert [p["id"] for p in ranked["people"]] == [3, 2]
+    assert ranked["people"][0]["shared_folder_names"] == ["series"]
+    assert ranked["people"][0]["affinity"] > ranked["people"][1]["affinity"]
+
+
 def test_crop_endpoint_serves_jpeg_and_404s(
     people_client, face_image_factory, scan_face_batch
 ):

@@ -39,15 +39,25 @@ async def list_people(
         None,
         description="Only clusters with (true) or without (false) a name; omit for both",
     ),
+    near: int | None = Query(
+        None,
+        ge=1,
+        description="Rank clusters sharing folders with this person's faces first",
+    ),
 ) -> dict[str, Any]:
     """Person clusters with derived counts and cover crops, biggest first.
 
-    ``named=false`` is what the merge picker asks for: those are the clusters
-    that can safely be folded into another one, since a named person would lose
-    its name (and the option is still available to a curator via the API).
+    The merge picker asks for ``named=false`` (those are the clusters that can
+    safely be folded into another one, since a named person would lose its name)
+    plus ``near=<the cluster it was opened from>``: media is filed per folder, so
+    the cluster it is really the same person as is usually filed right next to
+    it, and ranking same-folder clusters first surfaces it instead of burying it
+    under thousands of unrelated ones.
     """
     with db_conn() as conn:
-        people = face_service.read_people(conn, limit=limit, offset=offset, named=named)
+        people = face_service.read_people(
+            conn, limit=limit, offset=offset, named=named, near=near
+        )
         counts = face_service.people_counts(conn)
         total = face_service.count_people(conn, named=named)
     return {

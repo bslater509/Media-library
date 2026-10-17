@@ -1023,54 +1023,152 @@ def _people_name_clause(named: bool | None) -> str:
     return "WHERE p.name IS NOT NULL" if named else "WHERE p.name IS NULL"
 
 
+def _people_name_condition(named: bool | None) -> str:
+    """The bare ``p.name`` condition, for composing into a larger WHERE."""
+    if named is None:
+        return ""
+    return "p.name IS NOT NULL" if named else "p.name IS NULL"
+
+
+def _folders_of_files(conn: Any, person_ids: list[int]) -> dict[int, set[str]]:
+    """``{person_id: {folder_path}}`` for the given clusters, from the index."""
+    if not person_ids:
+        return {}
+    placeholders = ",".join("?" for _ in person_ids)
+    out: dict[int, set[str]] = {}
+    for row in conn.execute(
+        f"""
+        SELECT fa.person_id AS person_id, f.folder_path AS folder_path
+        FROM faces fa
+        JOIN files f ON f.path = fa.file_path
+        WHERE fa.person_id IN ({placeholders})
+              AND f.folder_path IS NOT NULL AND f.folder_path <> ''
+        GROUP BY fa.person_id, f.folder_path
+        """,
+        person_ids,
+    ).fetchall():
+        out.setdefault(int(row["person_id"]), set()).add(str(row["folder_path"]))
+    return out
+
+
 def read_people(
-    conn: Any, limit: int = 200, offset: int = 0, named: bool | None = None
+    conn: Any,
+    limit: int = 200,
+    offset: int = 0,
+    named: bool | None = None,
+    near: int | None = None,
 ) -> list[dict[str, Any]]:
     """Clusters with derived counts and a cover face, biggest first.
 
     ``named`` narrows the list to clusters the user has (True) or has not
     (False) named — the merge picker asks for the unnamed ones only, because
     folding a named person into another cluster would throw that name away.
+
+    ``near`` ranks the clusters that share folders with that person's faces
+    first (then the usual biggest-first), and annotates each row with
+    ``shared_folders``/``shared_faces``/``shared_folder_names``. That is how the
+    merge picker suggests the right duplicates: with per-folder media, the true
+    duplicate of a cluster is nearly always filed next to it. The ranking weight
+    (``affinity``) is the dot product of the two clusters' per-folder face counts,
+    so a folder this person is all over counts for more than one they merely pass
+    through — otherwise a busy folder shared with other people would outrank the
+    duplicate.
     """
-    rows = conn.execute(
-        f"""
-        SELECT p.id AS person_id,
-               p.name AS name,
-               p.created_at AS created_at,
-               COUNT(fa.id) AS face_count,
-               COUNT(DISTINCT fa.file_path) AS media_count,
-               MAX(fa.frame_time) AS last_seen
-        FROM people p
-        LEFT JOIN faces fa ON fa.person_id = p.id
-        {_people_name_clause(named)}
-        GROUP BY p.id
-        HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
-        ORDER BY face_count DESC, p.id ASC
-        LIMIT ? OFFSET ?
-        """,
-        (max(1, int(limit)), max(0, int(offset))),
-    ).fetchall()
+    if near is None:
+        rows = conn.execute(
+            f"""
+            SELECT p.id AS person_id,
+                   p.name AS name,
+                   p.created_at AS created_at,
+                   COUNT(fa.id) AS face_count,
+                   COUNT(DISTINCT fa.file_path) AS media_count,
+                   MAX(fa.frame_time) AS last_seen
+            FROM people p
+            LEFT JOIN faces fa ON fa.person_id = p.id
+            {_people_name_clause(named)}
+            GROUP BY p.id
+            HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
+            ORDER BY face_count DESC, p.id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (max(1, int(limit)), max(0, int(offset))),
+        ).fetchall()
+    else:
+        target = int(near)
+        name_cond = _people_name_condition(named)
+        rows = conn.execute(
+            f"""
+            WITH target_folders AS (
+                SELECT f2.folder_path AS folder_path, COUNT(*) AS n
+                FROM faces fa2
+                JOIN files f2 ON f2.path = fa2.file_path
+                WHERE fa2.person_id = ?
+                      AND f2.folder_path IS NOT NULL AND f2.folder_path <> ''
+                GROUP BY f2.folder_path
+            )
+            SELECT p.id AS person_id,
+                   p.name AS name,
+                   p.created_at AS created_at,
+                   COUNT(fa.id) AS face_count,
+                   COUNT(DISTINCT fa.file_path) AS media_count,
+                   COUNT(DISTINCT CASE WHEN tf.folder_path IS NOT NULL
+                         THEN f.folder_path END) AS shared_folders,
+                   SUM(CASE WHEN tf.folder_path IS NULL THEN 0 ELSE 1 END)
+                       AS shared_faces,
+                   COALESCE(SUM(COALESCE(tf.n, 0)), 0) AS affinity
+            FROM people p
+            JOIN faces fa ON fa.person_id = p.id
+            LEFT JOIN files f ON f.path = fa.file_path
+            LEFT JOIN target_folders tf ON tf.folder_path = f.folder_path
+            WHERE p.id <> ? {f"AND {name_cond}" if name_cond else ""}
+            GROUP BY p.id
+            ORDER BY affinity DESC, face_count DESC, p.id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (target, target, max(1, int(limit)), max(0, int(offset))),
+        ).fetchall()
+
+    shared_names: dict[int, list[str]] = {}
+    if near is not None and rows:
+        candidates = [int(r["person_id"]) for r in rows]
+        target_folders = sorted(
+            _folders_of_files(conn, [int(near)]).get(int(near), set())
+        )
+        per_person = _folders_of_files(conn, candidates)
+        for person_id in candidates:
+            names = [
+                Path(p).name or p
+                for p in target_folders
+                if p in per_person.get(person_id, ())
+            ]
+            if names:
+                shared_names[person_id] = names
 
     people: list[dict[str, Any]] = []
     for r in rows:
+        person_id = int(r["person_id"])
         cover = conn.execute(
             "SELECT id, crop, frame_time, file_path FROM faces WHERE person_id = ? "
             "ORDER BY (COALESCE(w,0) * COALESCE(h,0)) DESC, id ASC LIMIT 4",
-            (int(r["person_id"]),),
+            (person_id,),
         ).fetchall()
         samples = [_crop_url(c["id"], c["crop"]) for c in cover if c["crop"]]
-        people.append(
-            {
-                "id": int(r["person_id"]),
-                "name": r["name"],
-                "created_at": r["created_at"],
-                "face_count": int(r["face_count"] or 0),
-                "media_count": int(r["media_count"] or 0),
-                "cover_url": samples[0] if samples else None,
-                "sample_urls": samples,
-                "is_named": bool(r["name"]),
-            }
-        )
+        entry = {
+            "id": person_id,
+            "name": r["name"],
+            "created_at": r["created_at"],
+            "face_count": int(r["face_count"] or 0),
+            "media_count": int(r["media_count"] or 0),
+            "cover_url": samples[0] if samples else None,
+            "sample_urls": samples,
+            "is_named": bool(r["name"]),
+        }
+        if near is not None:
+            entry["shared_folders"] = int(r["shared_folders"] or 0)
+            entry["shared_faces"] = int(r["shared_faces"] or 0)
+            entry["affinity"] = int(r["affinity"] or 0)
+            entry["shared_folder_names"] = (shared_names.get(person_id) or [])[:3]
+        people.append(entry)
     return people
 
 

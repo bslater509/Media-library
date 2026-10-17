@@ -9,6 +9,23 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.4] - 2026-10-17
+
+### Added
+
+- **The `/people` "Merge into…" picker ranks same-folder clusters first.** The
+  media collection is filed per folder, so the cluster that is really the same
+  person as the one you opened is nearly always filed right next to it — but the
+  picker listed clusters by size, which buried the right choice under thousands
+  of unrelated ones. The listing endpoint grew a `near=<person_id>` parameter
+  (`GET /api/people?named=false&near=…`) that orders the candidates sharing
+  folders with that person's faces first (then biggest first), and each row is
+  annotated with `shared_folders`/`shared_faces`/`shared_folder_names` and badged
+  with the shared folder's name so the ranking is legible. The weight
+  (`affinity`) is the dot product of the two clusters' per-folder face counts, so
+  a folder the person is all over outranks one they merely pass through (a folder
+  shared with a whole cast would otherwise bury the duplicate).
+
 ## [1.1.3] - 2026-10-17
 
 ### Changed

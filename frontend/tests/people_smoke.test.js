@@ -342,6 +342,13 @@ describe('people page publisher', () => {
         `/api/people/crop?face_id=${200 + i}&v=d${i}.jpg`,
       ],
     }));
+    // The server ranks same-folder clusters first and annotates them.
+    unnamed[0] = {
+      ...unnamed[0],
+      shared_folders: 1,
+      shared_faces: 5,
+      shared_folder_names: ['Iceland 2023'],
+    };
     const calls = stubFetch({ people: { ...PEOPLE, people: [named, ...unnamed], total: 62 } });
     installPage();
     await import('../src/people/index.js');
@@ -355,12 +362,17 @@ describe('people page publisher', () => {
     await flush();
 
     expect(calls.some((u) => u.includes('/api/people?') && u.includes('named=false'))).toBe(true);
+    // ...and ranked against the cluster it was opened from.
+    expect(calls.some((u) => u.includes('named=false') && u.includes('near=1'))).toBe(true);
     const rows = Array.from(document.querySelectorAll('#ppMergeList [data-merge]'));
     expect(rows).toHaveLength(60);
     expect(rows.map((r) => r.dataset.merge)).not.toContain('1');
     expect(document.getElementById('ppMergeList').textContent).not.toContain('Anna');
     // Each row shows the cluster's faces, not just one cover.
     expect(rows[0].querySelectorAll('img')).toHaveLength(2);
+    // A candidate filed in the same folder says so, so the ranking is legible.
+    expect(rows[0].textContent).toContain('Iceland 2023');
+    expect(rows[1].textContent).not.toContain('Iceland 2023');
 
     // The rest is one tap away rather than missing.
     const more = document.querySelector('#ppMergeList [data-merge-more]');
