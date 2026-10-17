@@ -18,21 +18,22 @@ snapshot metadata.
   by one on `/people` meant opening a cluster, opening the merge sheet and picking
   from a list — so the review queue does it in one tap per cluster. It shows the
   biggest unnamed cluster at a time (cover, eight of its crops, its face/file
-  counts, and the folders its faces are filed in), and offers three ways out:
-  **Match** opens the picker's mirror image — the people you have *already named*,
-  ranked by the folders this cluster shares with them (the same `near=` ranking
-  and folder-path search the merge sheet uses) — and tapping one folds the cluster
-  into that person straight away; **Name** turns the cluster into a new person;
-  **Not a person** dismisses it (with a confirm, since a dismissal is permanent).
-  Every action removes the cluster from the unnamed set, so the queue needs no
-  state of its own: the next request is simply the largest remaining cluster, and a
-  reload lands where a fresh queue would. Keys drive it (`M`/`N`/`X`, `1`–`9` to
-  match the numbered suggestion, `/` for the picker's folder box, `?` for a key
-  reference rendered from one table, `Esc` to close), the header counts what is
-  left to review and how many faces have been dismissed, and `/people` gained a
-  **Review unmatched** button badged with that count. `GET /api/people` now also
-  reports `folder_names` per row and takes `samples` (1–12) for how many crops a
-  row carries, so the same endpoint serves both pickers.
+  counts, and the folders its faces are filed in) with the six most likely people
+  as **name pills** — the people you have already named, ranked by the folders they
+  share with this cluster, which is the same `near=` ranking the merge sheet uses —
+  so one tap folds the cluster into that person; a **More…** pill (showing how many
+  others there are) opens the full list with crops, the folder-path search and the
+  `1`–`9` keys, and the pills are numbered so the keyboard does the same thing.
+  **Name** turns the cluster into a new person; **Not a person** dismisses it, with
+  a confirm, since a dismissal is permanent. Every action removes the cluster from
+  the unnamed set, so the queue needs no state of its own: the next request is
+  simply the largest remaining cluster, and a reload lands where a fresh queue
+  would. `M`/`N`/`X` and `1`–`9` drive it, `?` opens a key reference rendered from
+  one table, the header counts what is left to review and how many faces have been
+  dismissed, and `/people` gained a **Review unmatched** button badged with that
+  count. `GET /api/people` now also reports `folder_names` per row and takes
+  `samples` (1–12) for how many crops a row carries, so the same endpoint serves
+  both the pills and the full list.
 
 ## [1.1.4] - 2026-10-17
 

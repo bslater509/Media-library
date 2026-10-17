@@ -3,10 +3,13 @@
 // One unnamed cluster at a time, biggest first (GET /api/people?named=false&
 // limit=1&offset=0&samples=8), with three ways out of the queue:
 //
-//   * Match   — fold its faces into a person the user already named, through the
-//               same POST /api/people/merge the People page's picker uses (there
-//               the target is the named person; here the target is the named
-//               person and the only source is the cluster on screen).
+//   * Match   — fold its faces into a person the user already named. The card
+//               offers the six best guesses as name-only pills (ranked by the
+//               folders they share with this cluster, `near=`), one tap each, and
+//               "More…" (or M) opens the full list as a sheet. Matching posts the
+//               same /api/people/merge the People page's picker uses, with the
+//               named person as the target and the only source being the cluster
+//               on screen.
 //   * Name    — POST /api/people/rename, so the cluster becomes a new person.
 //   * Dismiss — POST /api/people/dismiss with person_id: every one of its faces
 //               is recorded as "not a person". Irreversible (there is no
@@ -16,12 +19,10 @@
 // the largest remaining unnamed cluster — the queue keeps no state of its own and
 // a reload lands exactly where a fresh queue would.
 //
-// The match picker is the mirror image of the People page's merge sheet: it lists
-// *named* people (an unnamed cluster is never offered as a target — folding into
-// it would just move the problem) ranked by the folders they share with the
-// cluster being reviewed (`near=`), which is the strongest hint available: media
-// is filed per folder, so a person's duplicate from the same trip sits next to
-// it. Tapping a row matches immediately; a wrong match is unpicked on /people
+// The picker sheet behind "More…" is the mirror image of the People page's merge
+// sheet: it lists *named* people (an unnamed cluster is never offered as a target
+// — folding into it would just move the problem) with their crops and the same
+// folder-path search, and matches on tap. A wrong match is unpicked on /people
 // with Split / Not a person.
 //
 // Everything is index-only on the server and read from the local crop cache, so
@@ -33,7 +34,9 @@ import { hydrateIcons, icon } from '../shared/icons.js';
 
 //: Crops per card — a handful, so a cluster can be recognised without opening it.
 const CROPS = 8;
-//: Named people per picker page.
+//: Name-only pills on the card: the likely people, one tap each.
+const SUGGESTION_PILLS = 6;
+//: Named people per picker page (behind the pills' "More…").
 const SUGGESTION_PAGE = 30;
 //: Typing in the folder box re-queries the server; wait for a pause so a phone
 //: keyboard does not fire a request per character.
@@ -48,7 +51,8 @@ export const REVIEW_SHORTCUTS = [
     title: 'Review',
     iconHtml: icon('user-check', 'w-3.5 h-3.5'),
     entries: [
-      { keys: ['M'], description: 'Match this cluster to a person you have named' },
+      { keys: ['1', '…', '9'], description: 'Match the numbered person pill straight away' },
+      { keys: ['M'], description: 'Look through everyone you have named (the full list)' },
       { keys: ['N'], description: 'Name this cluster as a new person' },
       { keys: ['Enter'], description: 'Create the person whose name you typed' },
       { keys: ['X'], description: 'Mark the whole cluster as “not a person”' },
@@ -57,10 +61,10 @@ export const REVIEW_SHORTCUTS = [
     ],
   },
   {
-    title: 'Match picker',
+    title: 'The full list (M)',
     iconHtml: icon('scan-face', 'w-3.5 h-3.5'),
     entries: [
-      { keys: ['1', '…', '9'], description: 'Match the numbered suggestion straight away' },
+      { keys: ['1', '…', '9'], description: 'Match the numbered person straight away' },
       { keys: ['/'], description: 'Jump to the folder filter box' },
     ],
   },
@@ -76,6 +80,12 @@ const state = {
   // True while between two clusters, so neither the stale card nor the "nothing
   // left" state is painted during the fetch.
   pending: false,
+  // The name pills on the card: the likely people for the cluster on screen, plus
+  // how many named people exist in total (the "More…" pill and the M key).
+  suggestions: [],
+  suggestionsLoading: false,
+  suggestionsError: false,
+  namedTotal: 0,
 };
 
 function byId(id) {
@@ -97,7 +107,7 @@ function cacheEls() {
   els.folders = byId('prFolders');
   els.crops = byId('prCrops');
   els.hint = byId('prHint');
-  els.matchBtn = byId('prMatchBtn');
+  els.suggestions = byId('prSuggestions');
   els.dismissBtn = byId('prDismissBtn');
   els.nameInput = byId('prNameInput');
   els.nameBtn = byId('prNameBtn');
@@ -276,22 +286,90 @@ function renderCluster() {
       : '<span class="col-span-full text-[11px] text-slate-500">No cached crops for this cluster.</span>';
   }
   if (els.hint) {
-    const named = state.counts ? Number(state.counts.named || 0) : 0;
-    els.hint.textContent = named
-      ? `Nothing is deleted by matching — the faces join that person and can be split off again on their page.`
-      : 'No named people yet: name this cluster below, and it becomes a person the next clusters can be matched against.';
-  }
-  if (els.matchBtn) {
-    const named = state.counts ? Number(state.counts.named || 0) : 0;
-    els.matchBtn.disabled = !named;
-    els.matchBtn.title = named
-      ? 'Match to a named person (M)'
-      : 'Name a cluster first — there is nobody to match against yet';
+    els.hint.textContent = 'Matching deletes nothing — the faces join that person, and you can split them off again from their page.';
   }
   if (els.nameInput && document.activeElement !== els.nameInput) {
     els.nameInput.value = '';
   }
+  renderSuggestions();
   renderStats();
+}
+
+// The card's match suggestions as name-only pills: one tap matches, and the
+// number on each is the key that does the same thing. The people that reach the
+// pills are ranked by the folders they share with this cluster (`near=`), so the
+// answer is usually the first one; "More…" opens the full list — the picker sheet
+// with every named person, the folder-path search and the crops.
+function pillHtml(person, index) {
+  const shared = (person.shared_folder_names || [])[0] || '';
+  const why = shared ? ` — filed in ${shared}` : '';
+  const title = `${person.name} · ${fmtInt(person.face_count)} faces${why}`;
+  return `
+    <button type="button" data-pill="${person.id}" data-name="${escapeHtml(person.name || '')}" title="${escapeHtml(title)}"
+      class="flex items-center gap-1 max-w-[11rem] px-2.5 py-1.5 rounded-full bg-slate-800 hover:bg-emerald-600 active:scale-95 border border-slate-700 hover:border-emerald-500 text-slate-100 text-[11px] font-semibold transition">
+      ${index < 9 ? `<kbd class="text-[9px] font-mono text-slate-400">${index + 1}</kbd>` : ''}
+      <span class="truncate">${escapeHtml(person.name || 'Unnamed')}</span>
+    </button>
+  `;
+}
+
+function renderSuggestions() {
+  if (!els.suggestions) return;
+  if (!state.suggestions.length) {
+    const text = state.suggestionsError
+      ? 'Could not load the people you named — press M to look through them.'
+      : (state.suggestionsLoading
+        ? 'Looking for people you named…'
+        : (state.namedTotal
+          ? 'Nothing of theirs is filed near this cluster — press M to look through everyone you named.'
+          : 'No named people yet — name this cluster below (N).'));
+    const tone = state.suggestionsError ? 'text-amber-300' : 'text-slate-500';
+    els.suggestions.innerHTML = `<span class="text-[11px] ${tone}">${escapeHtml(text)}</span>`;
+    return;
+  }
+  const hidden = Math.max(0, Number(state.namedTotal || 0) - state.suggestions.length);
+  const more = hidden
+    ? `
+      <button type="button" data-more="1" title="Look through everyone you have named (M)"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-950 hover:bg-slate-800 active:scale-95 border border-slate-700 text-slate-300 text-[11px] font-semibold transition">
+        ${icon('search', 'w-3 h-3')}<span>More…</span>
+        <span class="text-[9px] font-mono text-slate-500">${fmtInt(hidden)}</span>
+      </button>
+    `
+    : '';
+  els.suggestions.innerHTML = state.suggestions.map(pillHtml).join('') + more;
+}
+
+// Fetched per cluster, so the pills always answer for what is on screen. A stale
+// response (the user acted before it landed) is dropped rather than painted.
+async function loadCardSuggestions() {
+  const cluster = state.cluster;
+  if (!cluster) return;
+  state.suggestions = [];
+  state.suggestionsLoading = true;
+  state.suggestionsError = false;
+  renderSuggestions();
+  try {
+    const data = await getJson(
+      `/api/people?named=true&near=${cluster.id}&limit=${SUGGESTION_PILLS}&samples=1`
+    );
+    if (state.cluster !== cluster) return;
+    state.suggestions = (data.people || []).filter((p) => p.is_named);
+    state.namedTotal = Math.max(state.suggestions.length, Number(data.total || 0));
+    if (data.counts) {
+      state.counts = data.counts;
+      renderStats();
+    }
+    if (data.status) applyStatus(data.status);
+  } catch (e) {
+    if (state.cluster !== cluster) return;
+    state.suggestionsError = true;
+  } finally {
+    if (state.cluster === cluster) {
+      state.suggestionsLoading = false;
+      renderSuggestions();
+    }
+  }
 }
 
 function showDone() {
@@ -352,9 +430,15 @@ async function loadNext() {
     state.remaining = Number(data.total || 0);
     if (data.counts) state.counts = data.counts;
     applyStatus(data.status);
+    // The pills belong to the cluster on screen: clear them before painting, so
+    // the previous cluster's people are never offered for this one.
+    state.suggestions = [];
+    state.suggestionsLoading = Boolean(state.cluster);
+    state.suggestionsError = false;
     state.pending = false;
     renderCluster();
     scrollStageToTop();
+    if (state.cluster) await loadCardSuggestions();
   } catch (e) {
     state.cluster = null;
     state.pending = false;
@@ -713,18 +797,32 @@ export function onKeydown(e) {
   }
   if (!state.cluster) return;
   const lower = key.toLowerCase();
-  if (lower === 'm' && els.matchBtn && !els.matchBtn.disabled) {
+  if (lower === 'm') {
     e.preventDefault();
-    openMatchPicker();
-  } else if (lower === 'n') {
+    if (state.namedTotal) openMatchPicker();
+    else showToast('Name a cluster first — there is nobody to match against yet', 'info');
+    return;
+  }
+  if (lower === 'n') {
     e.preventDefault();
     if (els.nameInput) {
       els.nameInput.focus();
       els.nameInput.select();
     }
-  } else if (lower === 'x') {
+    return;
+  }
+  if (lower === 'x') {
     e.preventDefault();
     dismissCluster();
+    return;
+  }
+  // A digit matches the pill carrying it, exactly as tapping it would.
+  if (/^[1-9]$/.test(key)) {
+    const person = state.suggestions[Number(key) - 1];
+    if (person) {
+      e.preventDefault();
+      matchCluster(person.id, person.name || 'Unnamed');
+    }
   }
 }
 
@@ -820,11 +918,20 @@ function initThemeCustomizer() {
 }
 
 function initEvents() {
-  if (els.matchBtn) els.matchBtn.addEventListener('click', openMatchPicker);
   if (els.nameBtn) els.nameBtn.addEventListener('click', nameCluster);
   if (els.dismissBtn) els.dismissBtn.addEventListener('click', dismissCluster);
   if (els.reloadBtn) els.reloadBtn.addEventListener('click', loadNext);
   if (els.keysBtn) els.keysBtn.addEventListener('click', openKeysHelp);
+  if (els.suggestions) {
+    els.suggestions.addEventListener('click', (e) => {
+      if (e.target.closest('[data-more]')) {
+        openMatchPicker();
+        return;
+      }
+      const pill = e.target.closest('[data-pill]');
+      if (pill) matchCluster(Number(pill.dataset.pill), pill.dataset.name || 'Unnamed');
+    });
+  }
   if (els.nameInput) {
     els.nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
