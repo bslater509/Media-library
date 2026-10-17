@@ -579,51 +579,114 @@ async function rescanPersonFiles() {
 
 // --------------------------------------------------------------- merge modal
 
-const mergeState = { selected: new Set(), filter: '' };
+// The picker only offers *unnamed* clusters: merging folds the picked clusters'
+// faces into the person you opened, so offering a named person would silently
+// throw its name away. It loads its own list from the API (rather than reusing
+// the grid's current page) so the choices are not limited to what happens to be
+// loaded behind the sheet, and pages with "Show more".
+const MERGE_PAGE = 60;
+
+const mergeState = {
+  selected: new Set(),
+  filter: '',
+  people: [],
+  total: 0,
+  hasMore: false,
+  loading: false,
+};
+
+function mergeRowHtml(p) {
+  const on = mergeState.selected.has(p.id);
+  // A few crops per cluster, so "is this the same person?" can be answered by
+  // looking at the faces rather than at a cluster id.
+  const faces = (p.sample_urls && p.sample_urls.length
+    ? p.sample_urls
+    : [p.cover_url]).filter(Boolean).slice(0, 3);
+  const crops = faces.length
+    ? faces.map((url) => `<img src="${escapeHtml(url)}" alt="" loading="lazy" class="w-16 h-16 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0">`).join('')
+    : '<span class="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 shrink-0"></span>';
+  return `
+    <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"
+      class="flex items-center gap-3 p-2 rounded-xl border text-left transition ${on ? 'border-emerald-600 bg-emerald-600/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
+      <span class="flex items-center gap-1 shrink-0">${crops}</span>
+      <span class="min-w-0 flex flex-1 flex-col">
+        <span class="text-[11px] font-mono text-slate-300 truncate">${fmtInt(p.face_count)} faces · ${fmtInt(p.media_count)} files</span>
+        <span class="text-[10px] text-slate-500 font-mono truncate">cluster ${p.id}</span>
+      </span>
+      ${on ? '<span class="ml-auto text-emerald-400 text-xs font-bold">✓</span>' : ''}
+    </button>
+  `;
+}
 
 function renderMergeList() {
   if (!els.mergeList || !state.person) return;
-  const options = state.people.filter((p) => p.id !== state.person.id);
   const needle = mergeState.filter.trim().toLowerCase();
-  const shown = options.filter((p) => {
+  const shown = mergeState.people.filter((p) => {
     if (!needle) return true;
-    const label = (p.name || `Person ${p.id}`).toLowerCase();
-    return label.includes(needle);
+    return `${p.id} ${p.face_count} ${p.media_count}`.includes(needle);
   });
-  els.mergeList.innerHTML = shown.length
-    ? shown.map((p) => {
-      const on = mergeState.selected.has(p.id);
-      const cover = p.cover_url
-        ? `<img src="${escapeHtml(p.cover_url)}" alt="" class="w-16 h-16 rounded-xl object-cover bg-slate-950 border border-slate-800 shrink-0">`
-        : '<span class="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 shrink-0"></span>';
-      return `
-        <button type="button" data-merge="${p.id}" aria-pressed="${on ? 'true' : 'false'}"
-          class="flex items-center gap-3 p-2 rounded-xl border text-left transition ${on ? 'border-emerald-600 bg-emerald-600/10' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'}">
-          ${cover}
-          <span class="min-w-0 flex flex-col">
-            <span class="text-xs font-semibold text-white truncate">${escapeHtml(p.name || `Person ${p.id}`)}</span>
-            <span class="text-[10px] text-slate-500 font-mono">${fmtInt(p.face_count)} faces · ${fmtInt(p.media_count)} files</span>
-          </span>
-          ${on ? '<span class="ml-auto text-emerald-400 text-xs font-bold">✓</span>' : ''}
-        </button>
-      `;
-    }).join('')
-    : '<p class="text-[11px] text-slate-500 p-3">No other clusters to merge.</p>';
+  const left = Math.max(0, mergeState.total - mergeState.people.length);
+  const more = mergeState.hasMore
+    ? `<button type="button" data-merge-more="1" class="w-full px-3 py-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-slate-200 transition">Show more${left ? ` (${fmtInt(left)} unnamed)` : ''}</button>`
+    : '';
+  if (!shown.length) {
+    const empty = mergeState.people.length
+      ? 'No unnamed cluster matches that filter.'
+      : (mergeState.loading
+        ? 'Loading unnamed clusters…'
+        : 'No other unnamed cluster to merge — every other cluster is named.');
+    els.mergeList.innerHTML = `<p class="text-[11px] text-slate-500 p-3">${empty}</p>${more}`;
+  } else {
+    els.mergeList.innerHTML = shown.map(mergeRowHtml).join('') + more;
+  }
   if (els.mergeCount) els.mergeCount.textContent = `${mergeState.selected.size} selected`;
+}
+
+async function loadMergeCandidates(reset = false) {
+  if (!state.person || mergeState.loading) return;
+  if (reset) {
+    mergeState.people = [];
+    mergeState.total = 0;
+    mergeState.hasMore = false;
+    mergeState.selected = new Set();
+  }
+  mergeState.loading = true;
+  renderMergeList();
+  try {
+    const offset = mergeState.people.length;
+    const data = await getJson(`/api/people?limit=${MERGE_PAGE}&offset=${offset}&named=false`);
+    const raw = data.people || [];
+    const target = state.person.id;
+    const seen = new Set(mergeState.people.map((p) => p.id));
+    // Trust the query, but keep the picker's own rule (unnamed, not the target)
+    // so a stale paginated row can never offer a named person.
+    const fresh = raw.filter((p) => p.id !== target && !p.is_named && !seen.has(p.id));
+    mergeState.people = mergeState.people.concat(fresh);
+    mergeState.total = Math.max(mergeState.people.length, Number(data.total || 0));
+    // A full page means there may be more; the server's total includes the
+    // target when it is unnamed, so it is only used for the label.
+    mergeState.hasMore = raw.length >= MERGE_PAGE && fresh.length > 0;
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    mergeState.loading = false;
+    renderMergeList();
+  }
 }
 
 function openMergeModal() {
   if (!state.person) return;
-  mergeState.selected = new Set();
   mergeState.filter = '';
   if (els.mergeSearch) els.mergeSearch.value = '';
+  const label = state.person.name ? `“${state.person.name}”` : 'this cluster';
   if (els.mergeSubtitle) {
-    els.mergeSubtitle.textContent = `Fold the selected clusters into “${state.person.name || 'this cluster'}”`;
+    els.mergeSubtitle.textContent = `Their faces move into ${label}`;
   }
   els.mergeModal.classList.remove('hidden');
   els.mergeModal.classList.add('flex');
   document.body.classList.add('modal-scroll-lock');
   renderMergeList();
+  loadMergeCandidates(true);
 }
 
 function closeMergeModal() {
@@ -913,6 +976,10 @@ function initEvents() {
   }
   if (els.mergeList) {
     els.mergeList.addEventListener('click', (e) => {
+      if (e.target.closest('[data-merge-more]')) {
+        loadMergeCandidates(false);
+        return;
+      }
       const btn = e.target.closest('[data-merge]');
       if (!btn) return;
       const id = Number(btn.dataset.merge);

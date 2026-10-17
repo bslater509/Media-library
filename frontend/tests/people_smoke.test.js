@@ -118,7 +118,26 @@ function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = f
     const target = String(url);
     if (target.startsWith('/api/people/status')) return Promise.resolve(jsonResponse(status));
     if (/^\/api\/people\/\d+/.test(target)) return Promise.resolve(jsonResponse(person));
-    if (target.startsWith('/api/people')) return Promise.resolve(jsonResponse(people));
+    if (target.startsWith('/api/people')) {
+      // Mirror the server: paged, newest-cluster ordering aside, with the
+      // optional named=true/false filter the merge picker relies on.
+      const q = new URL(target, 'http://localhost').searchParams;
+      const limit = Number(q.get('limit') || 120);
+      const offset = Number(q.get('offset') || 0);
+      const named = q.get('named');
+      const all = (people.people || []).filter((p) => {
+        if (named === 'false') return !p.is_named;
+        if (named === 'true') return Boolean(p.is_named);
+        return true;
+      });
+      return Promise.resolve(jsonResponse({
+        ...people,
+        people: all.slice(offset, offset + limit),
+        total: all.length,
+        limit,
+        offset,
+      }));
+    }
     return Promise.resolve(jsonResponse({ success: true }));
   });
   return calls;
@@ -292,6 +311,7 @@ describe('people page publisher', () => {
     await flush();
 
     document.getElementById('ppMergeBtn').click();
+    await flush();
     expect(document.getElementById('ppMergeModal').classList.contains('hidden')).toBe(false);
     const option = document.querySelector('#ppMergeList [data-merge="2"]');
     expect(option).toBeTruthy();
@@ -302,6 +322,69 @@ describe('people page publisher', () => {
     await flush();
     expect(calls.filter((u) => u === '/api/people/merge')).toHaveLength(1);
     expect(document.getElementById('ppMergeModal').classList.contains('hidden')).toBe(true);
+  });
+
+  it('offers only unnamed clusters in the merge picker, with their faces', async () => {
+    const named = {
+      id: 1, name: 'Anna', face_count: 9, media_count: 9, is_named: true,
+      cover_url: '/api/people/crop?face_id=1&v=a.jpg',
+      sample_urls: ['/api/people/crop?face_id=1&v=a.jpg'],
+    };
+    const unnamed = Array.from({ length: 61 }, (_, i) => ({
+      id: 100 + i,
+      name: null,
+      face_count: 5,
+      media_count: 4,
+      is_named: false,
+      cover_url: `/api/people/crop?face_id=${100 + i}&v=c${i}.jpg`,
+      sample_urls: [
+        `/api/people/crop?face_id=${100 + i}&v=c${i}.jpg`,
+        `/api/people/crop?face_id=${200 + i}&v=d${i}.jpg`,
+      ],
+    }));
+    const calls = stubFetch({ people: { ...PEOPLE, people: [named, ...unnamed], total: 62 } });
+    installPage();
+    await import('../src/people/index.js');
+    await flush();
+
+    // Open the named cluster: the picker must not offer it (nor any other named
+    // person) as a merge source.
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+    document.getElementById('ppMergeBtn').click();
+    await flush();
+
+    expect(calls.some((u) => u.includes('/api/people?') && u.includes('named=false'))).toBe(true);
+    const rows = Array.from(document.querySelectorAll('#ppMergeList [data-merge]'));
+    expect(rows).toHaveLength(60);
+    expect(rows.map((r) => r.dataset.merge)).not.toContain('1');
+    expect(document.getElementById('ppMergeList').textContent).not.toContain('Anna');
+    // Each row shows the cluster's faces, not just one cover.
+    expect(rows[0].querySelectorAll('img')).toHaveLength(2);
+
+    // The rest is one tap away rather than missing.
+    const more = document.querySelector('#ppMergeList [data-merge-more]');
+    expect(more).toBeTruthy();
+    more.click();
+    await flush();
+    expect(calls.some((u) => u.includes('offset=60') && u.includes('named=false'))).toBe(true);
+    expect(document.querySelectorAll('#ppMergeList [data-merge]')).toHaveLength(61);
+    expect(document.querySelector('#ppMergeList [data-merge-more]')).toBeNull();
+  });
+
+  it('says so when every other cluster is named', async () => {
+    const onlyNamed = [
+      { id: 1, name: 'Anna', face_count: 3, media_count: 2, is_named: true, cover_url: null, sample_urls: [] },
+      { id: 2, name: 'Bob', face_count: 1, media_count: 1, is_named: true, cover_url: null, sample_urls: [] },
+    ];
+    await boot({ people: { ...PEOPLE, people: onlyNamed, total: 2 } });
+    document.querySelector('#ppGrid [data-person="1"]').click();
+    await flush();
+    document.getElementById('ppMergeBtn').click();
+    await flush();
+
+    expect(document.querySelectorAll('#ppMergeList [data-merge]')).toHaveLength(0);
+    expect(document.getElementById('ppMergeList').textContent).toContain('every other cluster is named');
   });
 
   it('queues scans and re-groups from the toolbar', async () => {
@@ -360,6 +443,7 @@ describe('people page publisher', () => {
     document.querySelector('#ppGrid [data-person="1"]').click();
     await flush();
     document.getElementById('ppMergeBtn').click();
+    await flush();
 
     const wrap = document.getElementById('ppMergeModal');
     expect(wrap.classList.contains('ml-sheet')).toBe(true);
@@ -389,6 +473,7 @@ describe('people page publisher', () => {
       document.querySelector('#ppGrid [data-person="1"]').click();
       await flush();
       document.getElementById('ppMergeBtn').click();
+      await flush();
       const wrap = document.getElementById('ppMergeModal');
       const card = wrap.querySelector('.ml-sheet-card');
       const grabber = card.querySelector('[data-sheet-grabber]');

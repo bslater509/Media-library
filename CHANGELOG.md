@@ -9,6 +9,22 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.3] - 2026-10-17
+
+### Changed
+
+- **The `/people` "Merge into…" picker now lists unnamed clusters only.** Merging
+  folds the picked clusters' faces into the cluster the sheet was opened from, so
+  a named person in that list was only an invitation to throw its name away; the
+  candidates are now the unnamed clusters, which is what you actually want to fold
+  in. It also loads its own paged list (`GET /api/people?named=false`, a new
+  `named` query on the listing endpoint) instead of the grid page rendered behind
+  the sheet, with a "Show more" row, so the choices are no longer limited to the
+  ~120 clusters that happened to be loaded, and each row shows three of the
+  candidate's face crops rather than a single cover so the right cluster is
+  recognisable. The sheet header states the direction of the merge ("their faces
+  move into …").
+
 ## [1.1.2] - 2026-10-17
 
 ### Fixed

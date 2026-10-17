@@ -35,19 +35,21 @@ async def people_status() -> dict[str, Any]:
 async def list_people(
     limit: int = Query(200, ge=1, le=2000),
     offset: int = Query(0, ge=0),
+    named: bool | None = Query(
+        None,
+        description="Only clusters with (true) or without (false) a name; omit for both",
+    ),
 ) -> dict[str, Any]:
-    """Person clusters with derived counts and cover crops, biggest first."""
+    """Person clusters with derived counts and cover crops, biggest first.
+
+    ``named=false`` is what the merge picker asks for: those are the clusters
+    that can safely be folded into another one, since a named person would lose
+    its name (and the option is still available to a curator via the API).
+    """
     with db_conn() as conn:
-        people = face_service.read_people(conn, limit=limit, offset=offset)
+        people = face_service.read_people(conn, limit=limit, offset=offset, named=named)
         counts = face_service.people_counts(conn)
-        total = int(
-            conn.execute(
-                "SELECT COUNT(*) FROM ("
-                "  SELECT p.id FROM people p LEFT JOIN faces fa ON fa.person_id = p.id"
-                "  GROUP BY p.id HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL"
-                ")"
-            ).fetchone()[0]
-        )
+        total = face_service.count_people(conn, named=named)
     return {
         "people": people,
         "counts": counts,

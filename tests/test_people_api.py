@@ -81,6 +81,63 @@ def test_scan_all_then_listing_and_person_detail(
     assert faces["total"] == 2 and len(faces["faces"]) == 2
 
 
+def test_listing_filters_by_name_for_the_merge_picker(
+    people_client, face_image_factory, scan_face_batch
+):
+    face_image_factory("anna.jpg", (255, 0, 0))
+    face_image_factory("bob.jpg", (0, 0, 255))
+    people_client.post("/api/people/scan", json={"all": True})
+    _scan(scan_face_batch)
+
+    listing = _people(people_client)["people"]
+    assert len(listing) == 2
+    named_id = listing[0]["id"]
+    other_id = listing[1]["id"]
+    assert (
+        people_client.post(
+            "/api/people/rename", json={"person_id": named_id, "name": "Anna"}
+        ).status_code
+        == 200
+    )
+
+    # No filter: both clusters, and the default total still counts them.
+    both = _people(people_client)
+    assert both["total"] == 2
+    assert {p["id"] for p in both["people"]} == {named_id, other_id}
+
+    # named=false is the merge picker's view: only clusters that can be folded
+    # away without losing a name.
+    unnamed = people_client.get("/api/people?named=false").json()
+    assert unnamed["total"] == 1
+    assert [p["id"] for p in unnamed["people"]] == [other_id]
+    assert unnamed["people"][0]["is_named"] is False
+    assert unnamed["counts"]["named"] == 1
+    assert unnamed["counts"]["unnamed"] == 1
+
+    only_named = people_client.get("/api/people?named=true").json()
+    assert only_named["total"] == 1
+    assert only_named["people"][0]["name"] == "Anna"
+
+    # The filter pages like the unfiltered list.
+    first = people_client.get("/api/people?named=false&limit=1&offset=0").json()
+    second = people_client.get("/api/people?named=false&limit=1&offset=1").json()
+    assert first["total"] == second["total"] == 1
+    assert first["people"][0]["id"] == other_id
+    assert second["people"] == []
+
+    # Clearing the name returns the cluster to the unnamed set.
+    assert (
+        people_client.post(
+            "/api/people/rename", json={"person_id": named_id, "name": ""}
+        ).json()["name"]
+        == ""
+    )
+    assert people_client.get("/api/people?named=true").json()["total"] == 0
+    assert people_client.get("/api/people?named=false").json()["total"] == 2
+
+    assert people_client.get("/api/people?named=maybe").status_code == 422
+
+
 def test_crop_endpoint_serves_jpeg_and_404s(
     people_client, face_image_factory, scan_face_batch
 ):

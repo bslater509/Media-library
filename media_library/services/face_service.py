@@ -1012,10 +1012,28 @@ def _face_entry(row: Any) -> dict[str, Any]:
     }
 
 
-def read_people(conn: Any, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
-    """Clusters with derived counts and a cover face, biggest first."""
+def _people_name_clause(named: bool | None) -> str:
+    """SQL fragment filtering clusters by whether the user named them.
+
+    An empty name is never stored (``rename_person`` writes NULL instead), so
+    ``name IS NULL`` is exactly "unnamed". ``None`` matches every cluster.
+    """
+    if named is None:
+        return ""
+    return "WHERE p.name IS NOT NULL" if named else "WHERE p.name IS NULL"
+
+
+def read_people(
+    conn: Any, limit: int = 200, offset: int = 0, named: bool | None = None
+) -> list[dict[str, Any]]:
+    """Clusters with derived counts and a cover face, biggest first.
+
+    ``named`` narrows the list to clusters the user has (True) or has not
+    (False) named — the merge picker asks for the unnamed ones only, because
+    folding a named person into another cluster would throw that name away.
+    """
     rows = conn.execute(
-        """
+        f"""
         SELECT p.id AS person_id,
                p.name AS name,
                p.created_at AS created_at,
@@ -1024,6 +1042,7 @@ def read_people(conn: Any, limit: int = 200, offset: int = 0) -> list[dict[str, 
                MAX(fa.frame_time) AS last_seen
         FROM people p
         LEFT JOIN faces fa ON fa.person_id = p.id
+        {_people_name_clause(named)}
         GROUP BY p.id
         HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
         ORDER BY face_count DESC, p.id ASC
@@ -1053,6 +1072,23 @@ def read_people(conn: Any, limit: int = 200, offset: int = 0) -> list[dict[str, 
             }
         )
     return people
+
+
+def count_people(conn: Any, named: bool | None = None) -> int:
+    """How many clusters a matching ``read_people`` call could return in total."""
+    return int(
+        conn.execute(
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT p.id FROM people p
+                LEFT JOIN faces fa ON fa.person_id = p.id
+                {_people_name_clause(named)}
+                GROUP BY p.id
+                HAVING COUNT(fa.id) > 0 OR p.name IS NOT NULL
+            )
+            """
+        ).fetchone()[0]
+    )
 
 
 def read_person_faces(
