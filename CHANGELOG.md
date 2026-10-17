@@ -33,10 +33,14 @@ snapshot metadata.
   from one table, and the card is laid out to fill one phone screen with no page
   scrolling — the cover, the counter chips and the intro are desktop-only, and the
   crop strip takes the slack so the faces grow with the screen while the actions sit
-  in the thumb zone. `/people` gained a **Review unmatched** button badged with the
-  count of unnamed clusters, and `GET /api/people` now also reports `folder_names`
-  per row and takes `samples` (1–12) for how many crops a row carries, so the same
-  endpoint serves both the pills and the full list.
+  in the thumb zone. A phone keyboard can no longer leave the page scrolled: the
+  stage takes its height from the *visual* viewport (which follows the keyboard,
+  unlike the layout viewport iOS keeps), the face strip steps aside while a name is
+  being typed, and any scroll a browser performed is undone. `/people` gained a
+  **Review unmatched** button badged with the count of unnamed clusters, and
+  `GET /api/people` now also reports `folder_names` per row and takes `samples`
+  (1–12) for how many crops a row carries, so the same endpoint serves both the
+  pills and the full list.
 
 ## [1.1.4] - 2026-10-17
 

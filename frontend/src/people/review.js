@@ -182,6 +182,45 @@ function scrollStageToTop() {
   else window.scrollTo(0, 0);
 }
 
+// The name box sits near the bottom of the card, and a phone keyboard covers the
+// bottom half of the screen. iOS does not shrink the layout viewport for the
+// keyboard, so a card sized to the layout viewport ends up behind it: the browser
+// then scrolls the stage to reach the focused input and leaves it scrolled once
+// the keyboard closes (the card half off the top, empty space below). Sizing the
+// stage to the *visual* viewport — which does follow the keyboard — keeps the
+// whole card inside what is actually visible, so nothing has to scroll; the
+// scroll offset is reset as well, in case a browser scrolled anyway.
+//
+// Exported for the tests, like onKeydown.
+export function syncVisualViewport() {
+  const stage = document.querySelector('main');
+  if (!stage) return;
+  const root = document.documentElement;
+  if (!window.matchMedia('(max-width: 639px)').matches) {
+    // Desktop and tablets lay out from the document, not the visual viewport.
+    root.style.removeProperty('--pr-vv-height');
+    root.classList.remove('pr-kb');
+    return;
+  }
+  const vv = window.visualViewport;
+  if (!vv || !vv.height) return;
+  // Everything above the stage (the fixed mobile header) is not part of it.
+  const above = Math.max(0, Math.round(stage.getBoundingClientRect().top));
+  root.style.setProperty(
+    '--pr-vv-height',
+    `${Math.max(240, Math.round(vv.height - above))}px`
+  );
+  // A keyboard up leaves far less room than the layout viewport: the face strip
+  // is not needed while typing a name, so it steps aside (CSS hides it) and the
+  // room it frees keeps the name box above the keyboard.
+  root.classList.toggle('pr-kb', vv.height < window.innerHeight - 120);
+}
+
+export function resetStageScroll() {
+  scrollStageToTop();
+  if (window.scrollY) window.scrollTo(0, 0);
+}
+
 function isTyping(target) {
   if (!target || !target.tagName) return false;
   const tag = target.tagName.toUpperCase();
@@ -990,8 +1029,26 @@ async function init() {
   initEvents();
   initSheetDrag(els.matchModal);
   initSheetDrag(els.keysModal);
+  initViewportTracking();
 
   await loadNext();
+}
+
+// Keep the card inside the visible area as the keyboard opens and closes (see
+// syncVisualViewport), and undo any scroll a browser performed to reach the name
+// box. The delayed pass runs after the keyboard animation has settled.
+function initViewportTracking() {
+  const settle = () => setTimeout(resetStageScroll, 250);
+  syncVisualViewport();
+  window.addEventListener('resize', syncVisualViewport);
+  window.addEventListener('orientationchange', syncVisualViewport);
+  document.addEventListener('focusout', resetStageScroll);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      syncVisualViewport();
+      settle();
+    });
+  }
 }
 
 if (document.readyState === 'loading') {

@@ -142,7 +142,14 @@ async function boot(options) {
   const { calls, holder } = stubFetch(options);
   const mod = await import('../src/people/review.js');
   await flush();
-  return { calls, holder, REVIEW_SHORTCUTS: mod.REVIEW_SHORTCUTS, onKeydown: mod.onKeydown };
+  return {
+    calls,
+    holder,
+    REVIEW_SHORTCUTS: mod.REVIEW_SHORTCUTS,
+    onKeydown: mod.onKeydown,
+    syncVisualViewport: mod.syncVisualViewport,
+    resetStageScroll: mod.resetStageScroll,
+  };
 }
 
 const pillIds = () =>
@@ -507,6 +514,70 @@ describe('people review queue', () => {
     expect(html.match(/data-sheet-grabber/g)).toHaveLength(2);
   });
 
+  it('sizes the card to the visual viewport so the keyboard cannot scroll it', async () => {
+    const originalMM = window.matchMedia;
+    const originalVV = window.visualViewport;
+    // A phone with the keyboard up: the visual viewport is short, the layout one
+    // is not (which is exactly what makes iOS scroll the stage).
+    window.matchMedia = (query) => ({
+      matches: String(query).includes('max-width'),
+      media: String(query),
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+    });
+    window.visualViewport = {
+      height: 420,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    try {
+      const { syncVisualViewport, resetStageScroll } = await boot();
+
+      // The stage gets the visible height minus whatever sits above it (the
+      // header), so the name box stays above the keyboard.
+      syncVisualViewport();
+      const root = document.documentElement;
+      const applied = root.style.getPropertyValue('--pr-vv-height');
+      expect(applied).toMatch(/^\d+px$/);
+      expect(parseInt(applied, 10)).toBeLessThanOrEqual(420);
+      expect(parseInt(applied, 10)).toBeGreaterThanOrEqual(240);
+
+      // …and any scroll a browser did anyway is undone.
+      const stage = document.querySelector('main');
+      stage.scrollTop = 180;
+      resetStageScroll();
+      expect(stage.scrollTop).toBe(0);
+
+      // A short visual viewport means a keyboard is up: the face strip steps
+      // aside (CSS) so the name box keeps its room above it.
+      expect(document.documentElement.classList.contains('pr-kb')).toBe(true);
+
+      // Back to the full viewport: the strip returns.
+      window.visualViewport.height = window.innerHeight;
+      syncVisualViewport();
+      expect(document.documentElement.classList.contains('pr-kb')).toBe(false);
+
+      // Desktop lays out from the document: the override is dropped.
+      window.matchMedia = () => ({
+        matches: false,
+        media: '',
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+      });
+      syncVisualViewport();
+      expect(root.style.getPropertyValue('--pr-vv-height')).toBe('');
+      expect(document.documentElement.classList.contains('pr-kb')).toBe(false);
+    } finally {
+      window.matchMedia = originalMM;
+      window.visualViewport = originalVV;
+      document.documentElement.style.removeProperty('--pr-vv-height');
+    }
+  });
+
   it('fits and fills one phone screen, with no toasts', () => {
     const html = fs.readFileSync(path.join(templatesDir, 'people_review.html'), 'utf8');
     // Nothing may sit under the ignore button: the card ends there.
@@ -528,16 +599,20 @@ describe('people review queue', () => {
     expect(html).toMatch(/id="prCrops" class="pr-crops grid grid-cols-3 sm:grid-cols-8/);
     expect(html).toMatch(/id="prStats" class="hidden sm:flex/);
     expect(html).toMatch(/\.pr-stage \{[^}]*padding-bottom: max\(0\.75rem, var\(--sab/);
-    // Phone: the stage is one screen tall, the card fills it and the crop strip
-    // is what takes the slack, so no space is left empty and nothing scrolls.
-    expect(html).toMatch(/@media \(max-width: 639px\) \{[\s\S]*?\.pr-stage \{ height: 100%/);
+    // Phone: the stage is one screen tall (following the visual viewport, so a
+    // phone keyboard cannot force a scroll), the card fills it and the crop strip
+    // is what takes the slack — no empty space left, nothing to scroll.
+    expect(html).toMatch(/@media \(max-width: 639px\) \{[\s\S]*?\.pr-stage \{ height: var\(--pr-vv-height, 100%\)/);
     expect(html).toMatch(/\.pr-fill \{ flex: 1 1 0%; min-height: 0; \}/);
     expect(html).toMatch(/\.pr-crops \{ grid-auto-rows: minmax\(0, 1fr\); \}/);
     expect(html).toMatch(/\.pr-crops \.pr-face \{ height: 100%; \}/);
     expect(html).toMatch(/\.pr-actions \{ margin-top: auto; \}/);
+    expect(html).toMatch(/html\.pr-kb \.pr-crops-block \{ display: none; \}/);
     // The fill chain needs the panel to stretch its column (a flex-start column
     // would size to its content and push the card past the fold again).
     expect(html).toMatch(/class="flex items-stretch gap-3 sm:gap-4[^"]*pr-fill"/);
-    expect(html.match(/pr-fill"/g)).toHaveLength(5);
+    // The card, its panel, the column, the crop block and the crop grid all take
+    // the slack, plus the rule itself.
+    expect(html.match(/\bpr-fill\b/g)).toHaveLength(6);
   });
 });
