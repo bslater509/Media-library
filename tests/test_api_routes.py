@@ -65,8 +65,9 @@ def test_html_views(api_client):
     assert "text/html" in res_dl.headers.get("content-type", "")
     assert re.search(r"downloads\.js\?v=\d+", res_dl.text)
     assert 'id="dlUrlsInput"' in res_dl.text
-    assert 'id="dlPickerModal"' in res_dl.text
     assert 'id="dlBrowseBtn"' in res_dl.text
+    # The target-folder chooser is the shared component now, not page markup.
+    assert 'id="dlPickerModal"' not in res_dl.text
     assert 'id="dlClearBtn"' in res_dl.text
     assert "themeCustomizerModal" in res_dl.text
     assert 'href="/downloads"' in res_dl.text

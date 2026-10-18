@@ -11,6 +11,7 @@
 
 import '../../../static/styles.css';
 import { escapeHtml, formatDuration, getResolutionLabel, showToast } from '../library/utils.js';
+import { createFolderPicker } from '../shared/folder_picker.js';
 import { hydrateIcons, icon } from '../shared/icons.js';
 
 const PEOPLE_PAGE = 120;
@@ -47,6 +48,7 @@ function cacheEls() {
   els.scanAllBtn = byId('ppScanAllBtn');
   els.scanFolder = byId('ppScanFolder');
   els.scanFolderBtn = byId('ppScanFolderBtn');
+  els.scanFolderPickBtn = byId('ppScanFolderPickBtn');
   els.reclusterBtn = byId('ppReclusterBtn');
   els.autoMatchBtn = byId('ppAutoMatchBtn');
   els.pauseBtn = byId('ppPauseBtn');
@@ -834,6 +836,26 @@ async function scanLibrary(folder) {
   }
 }
 
+// The scan scope is chosen from the index (a typed path is still accepted for
+// a deep link or a paste), so the picker is built lazily on first use.
+let folderPicker = null;
+
+function openScanFolderPicker() {
+  if (!folderPicker) {
+    folderPicker = createFolderPicker({
+      title: 'Scan a folder',
+      subtitle: 'Every file inside it is checked for faces',
+      confirmLabel: 'Scan this folder',
+      rowIcon: icon('folder', 'w-3.5 h-3.5 shrink-0 text-emerald-400'),
+      onSelect: (path) => {
+        if (els.scanFolder) els.scanFolder.value = path;
+        scanLibrary(path);
+      },
+    });
+  }
+  folderPicker.open((els.scanFolder && els.scanFolder.value.trim()) || '');
+}
+
 async function togglePause() {
   const paused = !(state.status && state.status.is_paused);
   try {
@@ -1109,11 +1131,13 @@ function initEvents() {
     });
   }
   if (els.scanAllBtn) els.scanAllBtn.addEventListener('click', () => scanLibrary(null));
+  if (els.scanFolderPickBtn)
+    els.scanFolderPickBtn.addEventListener('click', openScanFolderPicker);
   if (els.scanFolderBtn) {
     els.scanFolderBtn.addEventListener('click', () => {
       const value = (els.scanFolder && els.scanFolder.value.trim()) || '';
       if (!value) {
-        showToast('Enter a folder path to scan', 'info');
+        showToast('Choose a folder with Browse… or type a path to scan', 'info');
         return;
       }
       scanLibrary(value);

@@ -9,6 +9,30 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.9] - 2026-10-18
+
+### Added
+
+- **A folder chooser for the face scan scope.** The People page's "Scan folder"
+  took a typed path, which is a poor fit on a phone and easy to get wrong; the
+  new **Browse…** button opens a drill-down chooser over the library index
+  (`/api/backup/folders`, so opening it never walks the mount) with an up
+  control, the current path, and ZIP archives filtered out. Picking a folder
+  fills the box and queues that folder in one tap, and the typed box stays for a
+  pasted path or a `?folder=` deep link.
+
+### Changed
+
+- **The folder chooser is now one shared component.** It moved to
+  `frontend/src/shared/folder_picker.js` (its own sheet, no template markup) and
+  the Downloads page's hand-rolled copy — markup, handlers, state and all — was
+  removed in favour of it, so both pages use the same chooser and the same
+  index-only endpoint. `downloads.js` got smaller for it; the People page passes
+  the icon registry's folder glyph in, so a bundle that needs no other icons
+  does not have to carry the whole set. The Downloads page also boots like the
+  other pages now (`readyState` guard) instead of only on `DOMContentLoaded`,
+  and it has a smoke test for the first time.
+
 ## [1.1.8] - 2026-10-18
 
 ### Changed

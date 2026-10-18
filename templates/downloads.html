@@ -188,35 +188,9 @@
     </div>
   </main>
 
-  <!-- Folder Picker Modal -->
-  <div id="dlPickerModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[90] hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-md w-full shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <span>📁</span> Choose Target Folder
-        </h3>
-        <button id="closeDlPickerBtn" class="text-slate-400 hover:text-white text-base p-1">✕</button>
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <p class="text-xs text-slate-400">New downloads will be saved into:</p>
-        <div class="flex items-center gap-1">
-          <button id="dlPickerUpBtn" title="Go to parent folder" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs shrink-0 transition">⬆ Up</button>
-          <span id="dlPickerPath" class="flex-1 truncate text-[11px] font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">/</span>
-        </div>
-        <div id="dlPickerList" class="max-h-64 overflow-y-auto no-scrollbar bg-slate-950/60 rounded-xl border border-slate-800 p-1.5 flex flex-col gap-1"></div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-2">
-        <button id="cancelDlPickerBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Cancel</button>
-        <button id="confirmDlPickerBtn" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-sm">Download into this folder</button>
-      </div>
-    </div>
-  </div>
-
   {{include 'partials/theme_modal.html'}}
 
   <!-- Downloads Script -->
-  <script type="module" src="/static/dist/downloads.js?v=6"></script>
+  <script type="module" src="/static/dist/downloads.js?v=7"></script>
 </body>
 </html>

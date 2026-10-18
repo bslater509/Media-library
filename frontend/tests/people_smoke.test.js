@@ -110,7 +110,7 @@ function jsonResponse(payload) {
   return { ok: true, status: 200, json: () => Promise.resolve(payload) };
 }
 
-function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = false, autoMatch = null } = {}) {
+function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = false, autoMatch = null, folders = null } = {}) {
   const calls = [];
   const posts = [];
   global.fetch = vi.fn((url, options) => {
@@ -136,6 +136,17 @@ function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = f
       return Promise.resolve(jsonResponse(payload));
     }
     if (/^\/api\/people\/\d+/.test(target)) return Promise.resolve(jsonResponse(person));
+    if (target.startsWith('/api/backup/folders')) {
+      // The folder chooser drills this endpoint: a map of parent -> children.
+      const q = new URL(target, 'http://localhost').searchParams;
+      const path = q.get('path') || '';
+      return Promise.resolve(jsonResponse({
+        current_path: path || '/media',
+        is_root: !path,
+        subfolders: (folders && folders[path]) || [],
+        indexing: false,
+      }));
+    }
     if (target.startsWith('/api/people')) {
       // Mirror the server: paged, newest-cluster ordering aside, with the
       // optional named=true/false filter the merge picker relies on.
@@ -558,6 +569,41 @@ describe('people page publisher', () => {
     expect(calls.filter((u) => u === '/api/people/auto-match')).toHaveLength(1);
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it('chooses a folder to scan with the picker instead of typing it', async () => {
+    const folders = {
+      '': [{ name: 'Trips', path: '/media/Trips', is_zip: false }],
+      '/media/Trips': [
+        { name: 'Iceland', path: '/media/Trips/Iceland', is_zip: false },
+        { name: 'archive.zip', path: '/media/Trips/archive.zip', is_zip: true },
+      ],
+    };
+    const calls = await boot({ folders });
+
+    document.getElementById('ppScanFolderPickBtn').click();
+    await flush();
+    expect(document.querySelector('[data-picker-list]')).toBeTruthy();
+    expect(document.querySelector('[data-picker-dir="/media/Trips"]')).toBeTruthy();
+
+    // Drilling in lists that folder's children…
+    document.querySelector('[data-picker-dir="/media/Trips"]').click();
+    await flush();
+    expect(document.querySelector('[data-picker-dir="/media/Trips/Iceland"]')).toBeTruthy();
+    // …and an archive is never offered as a place to scan.
+    expect(document.querySelector('[data-picker-dir="/media/Trips/archive.zip"]')).toBeNull();
+    expect(document.querySelector('[data-picker-path]').textContent).toBe('/media/Trips');
+
+    // Confirming scans the folder that is open, and fills the box with it.
+    document.querySelector('[data-picker-confirm]').click();
+    await flush();
+    expect(document.getElementById('ppScanFolder').value).toBe('/media/Trips');
+    const scanPosts = calls.posts.filter((p) => p.url === '/api/people/scan');
+    expect(scanPosts).toHaveLength(1);
+    expect(scanPosts[0].body.folder).toBe('/media/Trips');
+    // The sheet closes behind the choice.
+    const sheet = document.querySelector('[data-picker-list]').closest('.ml-sheet');
+    expect(sheet.classList.contains('hidden')).toBe(true);
   });
 
   it('prefills the scan folder from a ?folder= deep link', async () => {

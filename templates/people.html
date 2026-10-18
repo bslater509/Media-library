@@ -127,7 +127,10 @@
             <span data-lb-icon="scan-face" data-lb-icon-class="w-3.5 h-3.5"></span><span>Scan library</span>
           </button>
           <div class="flex items-center gap-1">
-            <input id="ppScanFolder" type="text" placeholder="…or a folder path" spellcheck="false" class="w-44 sm:w-64 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-emerald-600">
+            <button id="ppScanFolderPickBtn" type="button" title="Choose a folder to scan" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 transition flex items-center gap-1.5 shrink-0">
+              <span data-lb-icon="folder-tree" data-lb-icon-class="w-3.5 h-3.5"></span><span class="text-[11px] font-semibold">Browse…</span>
+            </button>
+            <input id="ppScanFolder" type="text" placeholder="…or a folder path" spellcheck="false" class="w-40 sm:w-64 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-emerald-600">
             <button id="ppScanFolderBtn" type="button" title="Queue just this folder" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Scan folder</button>
           </div>
           <div class="flex items-center gap-1">
@@ -275,6 +278,6 @@
 
   <!-- Fancybox 5 JS (media lightbox) -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
-  <script type="module" src="/static/dist/people.js?v=9"></script>
+  <script type="module" src="/static/dist/people.js?v=10"></script>
 </body>
 </html>

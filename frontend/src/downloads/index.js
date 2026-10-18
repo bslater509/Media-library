@@ -16,6 +16,7 @@ import {
   urlDownloadsSummaryText,
 } from '../library/url_downloads.js';
 import { readRecentTargets, rememberRecentTarget } from '../library/recent_targets.js';
+import { createFolderPicker } from '../shared/folder_picker.js';
 
 const HISTORY_PAGE_SIZE = 50;
 const URL_RE = /^https?:\/\//i;
@@ -43,13 +44,6 @@ function cacheEls() {
   els.clearBtn = byId('dlClearBtn');
   els.loadMoreBtn = byId('dlLoadMore');
   els.navBadge = byId('dlNavBadge');
-  els.pickerModal = byId('dlPickerModal');
-  els.pickerPath = byId('dlPickerPath');
-  els.pickerUpBtn = byId('dlPickerUpBtn');
-  els.pickerList = byId('dlPickerList');
-  els.pickerSelectBtn = byId('confirmDlPickerBtn');
-  els.closePickerBtn = byId('closeDlPickerBtn');
-  els.cancelPickerBtn = byId('cancelDlPickerBtn');
 }
 
 const state = {
@@ -59,8 +53,6 @@ const state = {
   historyTotal: 0,
   historyLoaded: false,
   recent: [],
-  pickerPath: '',
-  pickerIsRoot: true,
   submitting: false,
   lastLiveCount: 0,    // active+queued count at the previous poll
 };
@@ -408,60 +400,21 @@ async function clearHistory() {
 
 // ---------------------------------------------------------------- picker
 
-async function loadPickerFolders(path) {
-  try {
-    const res = await fetch(`/api/backup/folders?path=${encodeURIComponent(path || '')}`);
-    const data = await res.json();
-    state.pickerPath = data.current_path || path || '/';
-    state.pickerIsRoot = Boolean(data.is_root);
-    state.pickerChildren = data.subfolders || [];
-    renderPicker();
-  } catch (err) {
-    showToast('Error loading folders', 'error');
-  }
-}
-
-function renderPicker() {
-  els.pickerPath.textContent = state.pickerPath;
-  els.pickerPath.title = state.pickerPath;
-  els.pickerUpBtn.disabled = state.pickerIsRoot;
-  els.pickerUpBtn.className = state.pickerIsRoot
-    ? 'px-2 py-1 rounded-lg bg-slate-900 text-slate-600 text-xs shrink-0 transition cursor-not-allowed'
-    : 'px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs shrink-0 transition';
-
-  els.pickerList.innerHTML = '<div class="text-xs text-slate-500 px-2 py-3 text-center">Loading…</div>';
-  // Children were fetched in loadPickerFolders via state.pickerChildren.
-  const dirs = (state.pickerChildren || []).filter(s => !(s.is_zip || /\.zip$/i.test(s.path || '')));
-  if (!dirs.length) {
-    els.pickerList.innerHTML = `<div class="text-xs text-slate-500 px-2 py-3 text-center">No subfolders — choose this location</div>`;
-    return;
-  }
-  els.pickerList.innerHTML = dirs.map(s => `
-    <button type="button" data-picker-dir="${escapeHtml(s.path)}" class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 text-left transition min-w-0">
-      <span class="text-emerald-400 shrink-0">📁</span>
-      <span class="truncate flex-1">${escapeHtml(s.name)}</span>
-      <span class="text-slate-500 shrink-0">›</span>
-    </button>
-  `).join('');
-  els.pickerList.querySelectorAll('[data-picker-dir]').forEach(btn => {
-    btn.addEventListener('click', () => loadPickerFolders(btn.dataset.pickerDir));
-  });
-}
+// The drill-down chooser is shared with the People page (see
+// shared/folder_picker.js): it renders its own sheet, reads the index only, and
+// hides ZIP archives, which cannot receive a download.
+let targetPicker = null;
 
 function openPicker() {
-  if (els.pickerModal) {
-    els.pickerModal.classList.remove('hidden');
-    els.pickerModal.classList.add('flex');
+  if (!targetPicker) {
+    targetPicker = createFolderPicker({
+      title: 'Choose target folder',
+      subtitle: 'New downloads are saved into it',
+      confirmLabel: 'Download into this folder',
+      onSelect: setTarget,
+    });
   }
-  const start = state.target && state.target !== '/' ? state.target : '';
-  loadPickerFolders(start);
-}
-
-function closePicker() {
-  if (els.pickerModal) {
-    els.pickerModal.classList.add('hidden');
-    els.pickerModal.classList.remove('flex');
-  }
+  targetPicker.open(state.target && state.target !== '/' ? state.target : '');
 }
 
 // ---------------------------------------------------------------- theme
@@ -574,12 +527,13 @@ async function init() {
 
   // Keyboard shortcut parity (T opens the theme modal) — optional nicety.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      if (els.pickerModal && !els.pickerModal.classList.contains('hidden')) closePicker();
-      else if (document.getElementById('themeCustomizerModal') && !document.getElementById('themeCustomizerModal').classList.contains('hidden')) {
-        document.getElementById('themeCustomizerModal').classList.add('hidden');
-        document.body.classList.remove('modal-scroll-lock');
-      }
+    if (
+      e.key === 'Escape' &&
+      document.getElementById('themeCustomizerModal') &&
+      !document.getElementById('themeCustomizerModal').classList.contains('hidden')
+    ) {
+      document.getElementById('themeCustomizerModal').classList.add('hidden');
+      document.body.classList.remove('modal-scroll-lock');
     }
     if (e.key === 't' && !e.ctrlKey && !e.metaKey) {
       // Click the trigger that is actually visible for this viewport.
@@ -590,19 +544,6 @@ async function init() {
 
   // Events
   if (els.browseBtn) els.browseBtn.addEventListener('click', openPicker);
-  if (els.pickerSelectBtn) els.pickerSelectBtn.addEventListener('click', () => {
-    if (state.pickerPath) setTarget(state.pickerPath);
-    closePicker();
-  });
-  if (els.closePickerBtn) els.closePickerBtn.addEventListener('click', closePicker);
-  if (els.cancelPickerBtn) els.cancelPickerBtn.addEventListener('click', closePicker);
-  if (els.pickerUpBtn) {
-    els.pickerUpBtn.addEventListener('click', () => {
-      if (state.pickerIsRoot || !state.pickerPath || state.pickerPath === '/') return;
-      const parent = state.pickerPath.substring(0, state.pickerPath.lastIndexOf('/')) || '';
-      loadPickerFolders(parent);
-    });
-  }
   if (els.startBtn) els.startBtn.addEventListener('click', submitDownloads);
   if (els.urlsInput) {
     els.urlsInput.addEventListener('keydown', (e) => {
@@ -638,4 +579,8 @@ async function init() {
   setInterval(pollStatus, 1000);
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

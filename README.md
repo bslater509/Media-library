@@ -2,7 +2,7 @@
 
 A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
 
-**Current release: v1.1.8** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v1.1.9** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 
