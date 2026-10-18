@@ -277,6 +277,36 @@ async def recluster(payload: dict[str, Any] = Body(default={})) -> dict[str, Any
     return result
 
 
+@router.post("/api/people/auto-match")
+async def auto_match(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """Fold unnamed clusters that sit on a named person into that person.
+
+    Pass ``dry_run: true`` to see what the pass would do without moving
+    anything; ``threshold`` (or ``preset``) sets how close a cluster has to be.
+    """
+    preset = (payload.get("preset") or "").strip().lower()
+    if preset:
+        if preset not in face_service.THRESHOLD_PRESETS:
+            raise HTTPException(
+                status_code=422,
+                detail="preset must be one of "
+                + ", ".join(sorted(face_service.THRESHOLD_PRESETS)),
+            )
+        threshold: float | None = face_service.THRESHOLD_PRESETS[preset]
+    elif payload.get("threshold") is not None:
+        threshold = min(1.2, max(0.05, float(payload["threshold"])))
+    else:
+        threshold = None
+    result = face_service.auto_match_people(
+        threshold=threshold, dry_run=bool(payload.get("dry_run"))
+    )
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=409, detail=result.get("error") or "Auto-match failed"
+        )
+    return result
+
+
 @router.post("/api/people/scan")
 async def scan(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     """Queue (or re-queue) a folder, a path list, or the whole library."""

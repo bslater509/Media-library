@@ -34,6 +34,7 @@ const state = {
   mediaOffset: 0,
   sort: 'count',
   loading: false,
+  busy: false,
 };
 
 function byId(id) {
@@ -47,6 +48,7 @@ function cacheEls() {
   els.scanFolder = byId('ppScanFolder');
   els.scanFolderBtn = byId('ppScanFolderBtn');
   els.reclusterBtn = byId('ppReclusterBtn');
+  els.autoMatchBtn = byId('ppAutoMatchBtn');
   els.pauseBtn = byId('ppPauseBtn');
   els.presets = byId('ppPresets');
   els.progress = byId('ppProgress');
@@ -856,6 +858,56 @@ async function reclusterAll() {
   }
 }
 
+function autoMatchSummary(preview) {
+  const gains = (preview.by_person || [])
+    .slice(0, 3)
+    .map((p) => `${p.name} +${fmtInt(p.faces)}`)
+    .join(', ');
+  const rest = Math.max(0, (preview.by_person || []).length - 3);
+  return [
+    `Fold ${fmtInt(preview.matched)} unnamed clusters (${fmtInt(preview.faces)} faces) into ` +
+      `${fmtInt(preview.people)} named people at ${preview.threshold}?`,
+    gains ? `Biggest gains: ${gains}${rest ? `, +${rest} more` : ''}.` : '',
+    `That leaves ${fmtInt(preview.remaining_unnamed)} unnamed clusters.`,
+    'A wrong match can be undone: open the person and use Split.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+// A face joins the nearest person within the match threshold as it is scanned —
+// but only the people that existed then, so clusters that a later name would
+// have claimed stay unnamed. This re-asks that question for every unnamed
+// cluster at once, showing what it would do before anything moves.
+async function autoMatchClusters() {
+  if (state.busy) return;
+  state.busy = true;
+  if (els.autoMatchBtn) els.autoMatchBtn.disabled = true;
+  try {
+    const preview = await postJson('/api/people/auto-match', { dry_run: true });
+    if (!preview.matched) {
+      showToast(
+        `Nothing to auto-match at ${preview.threshold}: no unnamed cluster is that close to a named person`,
+        'info'
+      );
+      return;
+    }
+    if (!window.confirm(autoMatchSummary(preview))) return;
+    const res = await postJson('/api/people/auto-match', {});
+    showToast(
+      `Matched ${fmtInt(res.removed)} clusters (${fmtInt(res.faces)} faces) into ${fmtInt(res.people)} people`,
+      'success'
+    );
+    await loadPeople(true);
+    await refreshStatus();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    state.busy = false;
+    if (els.autoMatchBtn) els.autoMatchBtn.disabled = false;
+  }
+}
+
 async function applyPreset(name) {
   try {
     const res = await postJson('/api/people/threshold', { preset: name });
@@ -1068,6 +1120,7 @@ function initEvents() {
     });
   }
   if (els.reclusterBtn) els.reclusterBtn.addEventListener('click', reclusterAll);
+  if (els.autoMatchBtn) els.autoMatchBtn.addEventListener('click', autoMatchClusters);
   if (els.pauseBtn) els.pauseBtn.addEventListener('click', togglePause);
   if (els.presets) {
     els.presets.addEventListener('click', (e) => {

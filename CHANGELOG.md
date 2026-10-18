@@ -9,6 +9,24 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.7] - 2026-10-18
+
+### Added
+
+- **An "Auto-match" pass that clears the part of an unnamed-cluster backlog you
+  would otherwise review by hand.** A face joins the nearest person within the
+  match threshold as it is scanned — but only the people that existed at that
+  moment, so a person named afterwards (or one whose cluster has grown since)
+  leaves unnamed clusters behind that a fresh assignment would have merged.
+  `POST /api/people/auto-match` re-asks that question for every unnamed cluster
+  at once, against the **named** people only (folding a cluster into another
+  unnamed one would just move the problem). The toolbar's **Auto-match** button
+  always runs it as a dry run first: it shows how many clusters and faces would
+  move, the biggest gains per person (`Dare Taylor +338, Emily black +286, …`),
+  what would be left unnamed and the threshold it used, and only then asks. A
+  merge is exactly what the merge sheet does, so a wrong match is undone with
+  Split.
+
 ## [1.1.6] - 2026-10-18
 
 ### Changed

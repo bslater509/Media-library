@@ -1,7 +1,11 @@
 """The /api/people surface: scanning triggers, curation, search and crops."""
 
 import os
+import time
 from pathlib import Path
+
+import numpy as np
+import pytest
 
 from media_library.core import config
 from media_library.db.connection import db_conn
@@ -17,6 +21,36 @@ def _people(client):
     res = client.get("/api/people")
     assert res.status_code == 200
     return res.json()
+
+
+def _unit(**weights: float) -> bytes:
+    """A 128-d unit embedding: one-hot, or a mix of axes for a near-miss.
+
+    Two vectors built from the same axis are ``1 - dot`` apart, so
+    ``_unit(a0=0.8, a1=0.6)`` sits 0.20 from ``_unit(a0=1.0)``.
+    """
+    vec = np.zeros(128, dtype="float32")
+    for axis, weight in weights.items():
+        vec[int(axis[1:])] = float(weight)
+    vec /= np.linalg.norm(vec)
+    return vec.astype("<f4").tobytes()
+
+
+def _seed_person(person_id: int, name: str | None, embedding: bytes, faces: int):
+    """A cluster with ``faces`` members at the given embedding (no crops)."""
+    now = time.time()
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO people (id, name, created_at) VALUES (?, ?, ?)",
+            (person_id, name, now),
+        )
+        for index in range(faces):
+            conn.execute(
+                "INSERT INTO faces (file_path, frame_time, x, y, w, h, score,"
+                " embedding, person_id, crop, created_at)"
+                " VALUES (?, -1.0, 10, 10, 60, 60, 0.9, ?, ?, NULL, ?)",
+                (f"/media/cluster{person_id}_{index}.jpg", embedding, person_id, now),
+            )
 
 
 def test_status_payload_shape_and_disabled_default(api_client, monkeypatch):
@@ -493,6 +527,101 @@ def test_recluster_endpoint_keeps_names(
     assert res.json()["kept"] == 1
     listing = _people(people_client)
     assert listing["counts"]["named"] == 1
+
+
+def test_auto_match_folds_lookalikes_into_named_people(people_client):
+    # Anna (named) with a near-miss cluster 0.20 away and an unrelated cluster
+    # orthogonal to her — the shape of a backlog built before the name existed.
+    _seed_person(1, "Anna", _unit(a0=1.0), 3)
+    _seed_person(2, None, _unit(a0=0.8, a1=0.6), 2)
+    _seed_person(3, None, _unit(a5=1.0), 2)
+
+    preview = people_client.post("/api/people/auto-match", json={"dry_run": True})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert (body["matched"], body["faces"], body["people"]) == (1, 2, 1)
+    assert body["remaining_unnamed"] == 1
+    assert body["by_person"][0]["name"] == "Anna"
+    assert body["by_person"][0]["clusters"] == 1
+    assert body["samples"][0]["target_name"] == "Anna"
+    assert body["samples"][0]["distance"] == pytest.approx(0.2, abs=0.01)
+    with db_conn() as conn:  # a dry run moves nothing
+        assert (
+            conn.execute("SELECT COUNT(*) FROM faces WHERE person_id = 2").fetchone()[0]
+            == 2
+        )
+
+    applied = people_client.post("/api/people/auto-match", json={})
+    assert applied.status_code == 200
+    assert (applied.json()["removed"], applied.json()["faces"]) == (1, 2)
+    with db_conn() as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM faces WHERE person_id = 1").fetchone()[0]
+            == 5
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM people WHERE id = 2").fetchone()[0] == 0
+        )
+        # An unnamed cluster is never folded into another unnamed one, so the
+        # unrelated cluster keeps its faces and its (still unnamed) cluster.
+        assert (
+            conn.execute("SELECT COUNT(*) FROM faces WHERE person_id = 3").fetchone()[0]
+            == 2
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM people WHERE id = 3 AND name IS NULL"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_auto_match_threshold_and_preset_controls(people_client):
+    _seed_person(1, "Anna", _unit(a0=1.0), 2)
+    _seed_person(2, None, _unit(a0=0.6, a1=0.8), 2)  # 0.40 away
+
+    strict = people_client.post(
+        "/api/people/auto-match", json={"preset": "strict", "dry_run": True}
+    ).json()
+    assert strict["threshold"] == 0.28
+    assert strict["matched"] == 0
+
+    balanced = people_client.post(
+        "/api/people/auto-match", json={"preset": "balanced", "dry_run": True}
+    ).json()
+    assert balanced["matched"] == 0
+
+    loose = people_client.post(
+        "/api/people/auto-match", json={"preset": "loose", "dry_run": True}
+    ).json()
+    assert loose["threshold"] == 0.46
+    assert loose["matched"] == 1
+
+    assert (
+        people_client.post(
+            "/api/people/auto-match", json={"preset": "nope"}
+        ).status_code
+        == 422
+    )
+    # An explicit threshold is clamped to the same range the setting allows.
+    clamped = people_client.post(
+        "/api/people/auto-match", json={"threshold": 0.01, "dry_run": True}
+    ).json()
+    assert clamped["threshold"] == 0.05
+    assert clamped["matched"] == 0
+
+
+def test_auto_match_is_available_while_scanning_is_off(api_client, monkeypatch):
+    """Curation of an existing index never needs the feature switched on."""
+    monkeypatch.setattr(config, "FACE_RECOGNITION_ENABLED", False)
+    _seed_person(1, "Anna", _unit(a0=1.0), 1)
+    _seed_person(2, None, _unit(a0=0.9, a1=0.43589), 1)  # 0.10 away
+
+    res = api_client.post("/api/people/auto-match", json={})
+
+    assert res.status_code == 200
+    assert res.json()["removed"] == 1
+    assert api_client.post("/api/people/scan", json={"all": True}).status_code == 409
 
 
 def test_threshold_preset_endpoint(people_client, monkeypatch):

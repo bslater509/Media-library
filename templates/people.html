@@ -131,6 +131,9 @@
             <button id="ppScanFolderBtn" type="button" title="Queue just this folder" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition">Scan folder</button>
           </div>
           <div class="flex items-center gap-1">
+            <button id="ppAutoMatchBtn" type="button" title="Fold unnamed clusters that are already a named person's lookalike into them" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition flex items-center gap-1.5">
+              <span data-lb-icon="sparkles" data-lb-icon-class="w-3.5 h-3.5"></span><span>Auto-match</span>
+            </button>
             <button id="ppReclusterBtn" type="button" title="Re-group every face (existing names are kept)" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold transition flex items-center gap-1.5">
               <span data-lb-icon="refresh-cw" data-lb-icon-class="w-3.5 h-3.5"></span><span>Re-group all</span>
             </button>
@@ -272,6 +275,6 @@
 
   <!-- Fancybox 5 JS (media lightbox) -->
   <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
-  <script type="module" src="/static/dist/people.js?v=8"></script>
+  <script type="module" src="/static/dist/people.js?v=9"></script>
 </body>
 </html>

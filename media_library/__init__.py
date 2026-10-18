@@ -6,4 +6,4 @@ payload and the backup snapshot metadata all import it from here, and
 ``tests/test_version.py`` fails if any of them — or ``package.json`` — drifts.
 """
 
-__version__ = "1.1.6"
+__version__ = "1.1.7"

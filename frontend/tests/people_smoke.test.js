@@ -110,13 +110,31 @@ function jsonResponse(payload) {
   return { ok: true, status: 200, json: () => Promise.resolve(payload) };
 }
 
-function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = false } = {}) {
+function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = false, autoMatch = null } = {}) {
   const calls = [];
+  const posts = [];
   global.fetch = vi.fn((url, options) => {
     calls.push(String(url));
+    if (options && options.body) {
+      try {
+        posts.push({ url: String(url), body: JSON.parse(options.body) });
+      } catch (e) {
+        // not JSON (form data): nothing to inspect
+      }
+    }
     if (fail) return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ detail: 'boom' }) });
     const target = String(url);
     if (target.startsWith('/api/people/status')) return Promise.resolve(jsonResponse(status));
+    if (target.startsWith('/api/people/auto-match')) {
+      // The endpoint answers the dry run and the real pass with the same shape;
+      // the client only ever reads `matched`/counts from them.
+      const body = JSON.parse((options && options.body) || '{}');
+      const canned = autoMatch || {};
+      const payload = body.dry_run
+        ? canned.preview || { matched: 0, faces: 0, people: 0, remaining_unnamed: 0, threshold: 0.36, by_person: [] }
+        : canned.result || { success: true, removed: 0, faces: 0, people: 0 };
+      return Promise.resolve(jsonResponse(payload));
+    }
     if (/^\/api\/people\/\d+/.test(target)) return Promise.resolve(jsonResponse(person));
     if (target.startsWith('/api/people')) {
       // Mirror the server: paged, newest-cluster ordering aside, with the
@@ -140,6 +158,9 @@ function stubFetch({ status = STATUS, people = PEOPLE, person = PERSON, fail = f
     }
     return Promise.resolve(jsonResponse({ success: true }));
   });
+  // The request bodies the page sent, for tests that care what was posted
+  // (the URL list stays a plain array of strings for the existing assertions).
+  calls.posts = posts;
   return calls;
 }
 
@@ -485,6 +506,58 @@ describe('people page publisher', () => {
     await flush();
     expect(calls.filter((u) => u === '/api/people/threshold')).toHaveLength(1);
     expect(localStorage.getItem('pp_strictness')).toBe('loose');
+  });
+
+  it('previews an auto-match, then applies it only after confirmation', async () => {
+    const preview = {
+      success: true,
+      threshold: 0.36,
+      matched: 488,
+      faces: 1432,
+      people: 20,
+      remaining_unnamed: 14566,
+      by_person: [
+        { person_id: 263, name: 'Dare Taylor', clusters: 109, faces: 338 },
+        { person_id: 533, name: 'Emily black', clusters: 75, faces: 286 },
+        { person_id: 12711, name: 'Piper blush', clusters: 54, faces: 217 },
+        { person_id: 7124, name: 'Elise Laurenne', clusters: 32, faces: 133 },
+      ],
+    };
+    const result = { success: true, removed: 488, faces: 1432, people: 20, remaining_unnamed: 14566 };
+    const calls = await boot({ autoMatch: { preview, result } });
+    const autoPosts = () => calls.posts.filter((p) => p.url === '/api/people/auto-match');
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    document.getElementById('ppAutoMatchBtn').click();
+    await flush();
+
+    // The preview is a dry run: it asks first, and shows what would move.
+    expect(autoPosts()).toHaveLength(1);
+    expect(autoPosts()[0].body.dry_run).toBe(true);
+    expect(confirmSpy.mock.calls[0][0]).toContain('488');
+    expect(confirmSpy.mock.calls[0][0]).toContain('Dare Taylor +338');
+    expect(calls.filter((u) => u === '/api/people/auto-match')).toHaveLength(1);
+
+    confirmSpy.mockReturnValue(true);
+    document.getElementById('ppAutoMatchBtn').click();
+    await flush();
+    expect(autoPosts()).toHaveLength(3);
+    expect(autoPosts()[2].body.dry_run).toBeUndefined();
+    confirmSpy.mockRestore();
+  });
+
+  it('says nothing to auto-match when no cluster is close enough', async () => {
+    const calls = await boot({
+      autoMatch: { preview: { success: true, threshold: 0.28, matched: 0, faces: 0, people: 0, remaining_unnamed: 15054 } },
+    });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    document.getElementById('ppAutoMatchBtn').click();
+    await flush();
+
+    expect(calls.filter((u) => u === '/api/people/auto-match')).toHaveLength(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('prefills the scan folder from a ?folder= deep link', async () => {

@@ -852,6 +852,189 @@ def _cluster_labels(matrix: np.ndarray, threshold: float) -> np.ndarray:
     return out
 
 
+def auto_match_people(
+    threshold: float | None = None,
+    dry_run: bool = False,
+    max_unnamed: int = 200000,
+    max_samples: int = 6,
+) -> dict[str, Any]:
+    """Fold unnamed clusters that sit on a named person into that person.
+
+    Every face is assigned to the nearest person within the match threshold as it
+    is scanned — but the people it *could* join are only the ones that existed at
+    that moment. A person named after the fact, or one whose cluster has grown
+    since, leaves unnamed clusters that a fresh assignment would have merged;
+    that is the bulk of a long-lived backlog, and reviewing them one at a time is
+    the slow way to undo it.
+
+    This pass re-asks that question for every unnamed cluster at once, against
+    the **named** people only (folding a cluster into another unnamed one would
+    just move the problem), and reports what it would do before doing it when
+    ``dry_run`` is set. A merge is exactly what ``merge_people`` does — faces
+    move, the drained cluster is dropped — so a wrong match is undone with Split.
+    """
+    limit = (
+        get_threshold() if threshold is None else min(1.2, max(0.05, float(threshold)))
+    )
+    report: dict[str, Any] = {
+        "success": False,
+        "threshold": limit,
+        "dry_run": bool(dry_run),
+        "named": 0,
+        "unnamed": 0,
+        "matched": 0,
+        "faces": 0,
+        "people": 0,
+        "removed": 0,
+        "remaining_unnamed": 0,
+        "by_person": [],
+        "samples": [],
+        "counts": {},
+        "error": "",
+    }
+
+    try:
+        with db_conn() as conn:
+            rows = conn.execute("SELECT id, name FROM people").fetchall()
+            face_counts = {
+                int(r["person_id"]): int(r["c"])
+                for r in conn.execute(
+                    "SELECT person_id, COUNT(*) AS c FROM faces "
+                    "WHERE person_id IS NOT NULL GROUP BY person_id"
+                ).fetchall()
+            }
+    except Exception as e:
+        logger.error(f"[Faces] Auto-match read failed: {e}")
+        report["error"] = str(e)
+        return report
+
+    named = {
+        int(r["id"]): (r["name"] or "").strip()
+        for r in rows
+        if (r["name"] or "").strip()
+    }
+    unnamed = [int(r["id"]) for r in rows if not (r["name"] or "").strip()]
+    report["named"] = len(named)
+    report["unnamed"] = len(unnamed)
+    report["remaining_unnamed"] = len(unnamed)
+    if not named or not unnamed:
+        report["success"] = True
+        report["counts"] = people_counts()
+        return report
+    if len(unnamed) > max_unnamed:
+        report["error"] = (
+            f"Too many unnamed clusters to auto-match in one pass "
+            f"({len(unnamed):,} > {max_unnamed:,})"
+        )
+        return report
+
+    centroids = get_centroids()
+    named_ids = [pid for pid in named if pid in centroids]
+    unnamed_ids = [pid for pid in unnamed if pid in centroids]
+    if not named_ids or not unnamed_ids:
+        report["success"] = True
+        report["counts"] = people_counts()
+        return report
+
+    named_matrix = np.vstack([centroids[pid] for pid in named_ids])
+    unnamed_matrix = np.vstack([centroids[pid] for pid in unnamed_ids])
+    distances = 1.0 - unnamed_matrix @ named_matrix.T
+    best = np.argmin(distances, axis=1)
+    best_distance = distances[np.arange(len(unnamed_ids)), best]
+
+    targets: dict[int, int] = {}
+    gains: dict[int, list[int]] = {}
+    for index, pid in enumerate(unnamed_ids):
+        distance = float(best_distance[index])
+        if distance > limit:
+            continue
+        target = named_ids[int(best[index])]
+        targets[pid] = target
+        gains.setdefault(target, []).append(pid)
+
+    report["matched"] = len(targets)
+    report["faces"] = sum(int(face_counts.get(pid, 0)) for pid in targets)
+    report["people"] = len(gains)
+    report["remaining_unnamed"] = len(unnamed) - len(targets)
+
+    # What the pass would do, biggest gain first, so the confirmation sheet can
+    # show the shape of it before anything moves.
+    by_person = [
+        {
+            "person_id": target,
+            "name": named.get(target, ""),
+            "clusters": len(sources),
+            "faces": sum(int(face_counts.get(pid, 0)) for pid in sources),
+        }
+        for target, sources in gains.items()
+    ]
+    by_person.sort(key=lambda entry: (-entry["faces"], -entry["clusters"]))
+    report["by_person"] = by_person[:8]
+
+    samples: list[dict[str, Any]] = []
+    for pid, target in sorted(
+        targets.items(), key=lambda kv: -int(face_counts.get(kv[0], 0))
+    )[:max_samples]:
+        samples.append(
+            {
+                "person_id": pid,
+                "faces": int(face_counts.get(pid, 0)),
+                "target_id": target,
+                "target_name": named.get(target, ""),
+                "distance": round(
+                    float(1.0 - float(centroids[target] @ centroids[pid])), 3
+                ),
+            }
+        )
+    report["samples"] = samples
+
+    if dry_run:
+        report["success"] = True
+        report["counts"] = people_counts()
+        return report
+
+    moved = 0
+    removed = 0
+    try:
+        with db_conn() as conn, conn:
+            for source, target in targets.items():
+                cur = conn.execute(
+                    "UPDATE faces SET person_id = ?, distance = NULL WHERE person_id = ?",
+                    (target, source),
+                )
+                moved += max(0, cur.rowcount or 0)
+            sources = sorted(targets)
+            for start in range(0, len(sources), SQL_IN_CHUNK):
+                chunk = sources[start : start + SQL_IN_CHUNK]
+                placeholders = ",".join("?" for _ in chunk)
+                cur = conn.execute(
+                    f"DELETE FROM people WHERE id IN ({placeholders}) AND name IS NULL",
+                    chunk,
+                )
+                removed += max(0, cur.rowcount or 0)
+            now = time.time()
+            for target in gains:
+                conn.execute(
+                    "UPDATE people SET updated_at = ? WHERE id = ?", (now, target)
+                )
+    except Exception as e:
+        logger.error(f"[Faces] Auto-match write failed: {e}")
+        report["error"] = str(e)
+        report["removed"] = removed
+        return report
+
+    report["removed"] = removed
+    report["faces"] = moved
+    invalidate_centroids()
+    report["success"] = True
+    report["counts"] = people_counts()
+    logger.info(
+        f"[Faces] Auto-matched {removed} unnamed clusters ({moved} faces) into "
+        f"{len(gains)} named people at {limit:.2f}."
+    )
+    return report
+
+
 def recluster_people(
     threshold: float | None = None, max_faces: int = 200000
 ) -> dict[str, Any]:
