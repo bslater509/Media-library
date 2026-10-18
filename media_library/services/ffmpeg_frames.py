@@ -54,6 +54,149 @@ def _manage_candidate_cache() -> None:
         logger.debug(f"Could not trim the candidate frame cache: {e}")
 
 
+#: One decode pass at a time per process: a pass is CPU-heavy and reads a whole
+#: file, so two of them at once would only compete for the same cores and mount.
+video_scan_sem = asyncio.Semaphore(1)
+
+#: JPEG start-of-image / end-of-image markers. Entropy-coded scan data escapes
+#: 0xFF as 0xFF00, so an EOI marker can only be a real frame boundary.
+_SOI = b"\xff\xd8\xff"
+_EOI = b"\xff\xd9"
+_READ_CHUNK = 1 << 16
+
+
+def _split_jpegs(buffer: bytearray) -> list[bytes]:
+    """Pull every complete JPEG out of ``buffer``, leaving the tail behind."""
+    frames: list[bytes] = []
+    while True:
+        start = buffer.find(_SOI)
+        if start < 0:
+            # Nothing usable: keep at most a marker's worth in case it straddles
+            # a chunk boundary.
+            if len(buffer) > 3:
+                del buffer[:-3]
+            return frames
+        end = buffer.find(_EOI, start + len(_SOI))
+        if end < 0:
+            if start:
+                del buffer[:start]
+            return frames
+        end += len(_EOI)
+        frames.append(bytes(buffer[start:end]))
+        del buffer[:end]
+
+
+async def iter_video_scan_frames(
+    file_path: str,
+    interval: float,
+    width: int,
+    max_frames: int = 0,
+    timeout_s: float = 0.0,
+):
+    """Yield ``(index, timestamp, jpeg_bytes)`` from one pass over a video.
+
+    FFmpeg decodes the file **once** and samples the timeline itself
+    (``fps=1/interval``), which is what makes a dense face sweep affordable: the
+    mount is read sequentially once instead of re-seeking for every frame, and
+    nothing is written to disk — the caller keeps only the face crops it finds,
+    so the shared candidate-frame cache is never touched (or evicted) by the
+    sweep. Frames are scaled to ``width`` but never upscaled, so a small source
+    is not blown up into blurry pixels the recogniser cannot use.
+    """
+    interval = max(0.05, float(interval))
+    width = max(160, int(width))
+    fps = 1.0 / interval
+    scale = f"scale='min({width},iw)':-2:flags=fast_bilinear"
+    cmd = [
+        "nice",
+        "-n",
+        "15",
+        "ffmpeg",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-i",
+        file_path,
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        f"fps={fps:.6f},{scale}",
+    ]
+    if max_frames and int(max_frames) > 0:
+        cmd += ["-frames:v", str(int(max_frames))]
+    cmd += ["-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "-"]
+
+    async with video_scan_sem:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        except Exception as e:
+            # FFmpeg missing, no file handle left, mount hiccup: nothing to read,
+            # and the file simply stays pending for the next sweep.
+            logger.warning(
+                f"[Faces] Could not start the frame pass for {file_path}: {e}"
+            )
+            return
+        buffer = bytearray()
+        index = 0
+        deadline = None
+        if timeout_s and timeout_s > 0:
+            deadline = asyncio.get_running_loop().time() + float(timeout_s)
+        try:
+            while True:
+                if deadline is not None:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        logger.warning(
+                            f"[Faces] Frame pass timed out for {file_path} after "
+                            f"{index} frames"
+                        )
+                        break
+                    chunk = await asyncio.wait_for(
+                        proc.stdout.read(_READ_CHUNK), remaining
+                    )
+                else:
+                    chunk = await proc.stdout.read(_READ_CHUNK)
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+                for jpeg in _split_jpegs(buffer):
+                    yield index, round(index * interval, 3), jpeg
+                    index += 1
+                    if max_frames and index >= int(max_frames):
+                        break
+                if max_frames and index >= int(max_frames):
+                    break
+            for jpeg in _split_jpegs(buffer):
+                yield index, round(index * interval, 3), jpeg
+                index += 1
+        except asyncio.TimeoutError:
+            logger.warning(f"[Faces] Frame pass timed out for {file_path}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"[Faces] Frame pass failed for {file_path}: {e}")
+        finally:
+            try:
+                if proc.returncode is None:
+                    proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+            try:
+                if proc.stdout is not None:
+                    proc.stdout.feed_eof()
+            except Exception:
+                pass
+
+
 async def extract_candidate_frame(
     file_path: str,
     timestamp: float = 0.0,

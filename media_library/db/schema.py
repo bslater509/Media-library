@@ -237,16 +237,24 @@ def init_backup_db(custom_path: str | Path | None = None):
             scanned_at REAL NOT NULL
         )""")
         # Faces the user rejected as "not a person": kept as a rejection so a
-        # later re-scan of the same file does not re-cluster them.
+        # later re-scan of the same file does not re-cluster them. The box is
+        # what identifies the detection, and the embedding is what survives a
+        # change in how frames are sampled (a denser grid moves the timestamp
+        # and box of the representative detection of the same face).
         conn.execute("""
         CREATE TABLE IF NOT EXISTS dismissed_faces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_path TEXT NOT NULL,
             frame_time REAL NOT NULL DEFAULT -1.0,
             x INTEGER, y INTEGER,
+            embedding BLOB,
             created_at REAL NOT NULL,
             UNIQUE(file_path, frame_time, x, y)
         )""")
+        try:
+            conn.execute("ALTER TABLE dismissed_faces ADD COLUMN embedding BLOB")
+        except sqlite3.OperationalError:
+            pass
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_dismissed_file ON dismissed_faces(file_path)"
         )

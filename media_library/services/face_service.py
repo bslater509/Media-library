@@ -96,6 +96,11 @@ THRESHOLD_PRESETS: dict[str, float] = {
     "balanced": 0.36,
     "loose": 0.46,
 }
+#: How close a fresh detection has to be to a face the user rejected for the
+#: same file to count as the same face. Tighter than the match threshold on
+#: purpose: a dismissal must never swallow a different person who happens to be
+#: in the shot, and its only job is to survive a change of sampling grid.
+_DISMISSAL_DISTANCE = 0.25
 _THRESHOLD_CACHE: dict[str, Any] = {"value": None, "at": 0.0}
 _THRESHOLD_TTL_S = 10.0
 
@@ -540,15 +545,43 @@ def manage_face_crop_lru(
 # ------------------------------------------------------------------- scanning
 
 
-def _dismissed_keys(conn: Any, file_path: str) -> set[tuple]:
+def _dismissed_keys(conn: Any, file_path: str) -> tuple[set[tuple], np.ndarray]:
+    """The user's rejections for one file: boxes, and the embeddings behind them.
+
+    Both matter. The box identifies the exact detection, which is stable while
+    the frame sampling is; the embedding survives a change of grid (a denser
+    sweep moves the timestamp and box of the detection that represents the same
+    face), so a dismissal is not undone by re-scanning with a new interval.
+    """
     rows = conn.execute(
-        "SELECT frame_time, x, y FROM dismissed_faces WHERE file_path = ?",
+        "SELECT frame_time, x, y, embedding FROM dismissed_faces WHERE file_path = ?",
         (file_path,),
     ).fetchall()
-    return {
+    keys = {
         (round(float(r["frame_time"]), 3), int(r["x"] or 0), int(r["y"] or 0))
         for r in rows
     }
+    vectors = [
+        np.frombuffer(r["embedding"], dtype="<f4")
+        for r in rows
+        if r["embedding"] and len(r["embedding"]) == EMBEDDING_DIM * 4
+    ]
+    matrix = (
+        np.vstack(vectors).astype("float32", copy=False)
+        if vectors
+        else np.zeros((0, EMBEDDING_DIM), dtype="float32")
+    )
+    return keys, matrix
+
+
+def _is_dismissed(
+    embedding: np.ndarray, matrix: np.ndarray, limit: float = _DISMISSAL_DISTANCE
+) -> bool:
+    """True when a detection is one the user already rejected for this file."""
+    if matrix.shape[0] == 0:
+        return False
+    sims = matrix @ _normalize(embedding)
+    return bool(float(np.max(sims)) >= 1.0 - limit)
 
 
 def record_scan(
@@ -568,7 +601,7 @@ def record_scan(
     now = time.time()
     try:
         with db_conn() as conn, conn:
-            dismissed = _dismissed_keys(conn, file_path)
+            dismissed, dismissed_vectors = _dismissed_keys(conn, file_path)
             conn.execute("DELETE FROM faces WHERE file_path = ?", (file_path,))
             for face in faces:
                 frame_time = float(face.get("frame_time", IMAGE_FRAME_TIME))
@@ -579,6 +612,8 @@ def record_scan(
                 if embedding is None:
                     continue
                 embedding = _normalize(embedding)
+                if _is_dismissed(embedding, dismissed_vectors):
+                    continue
                 person_id = face.get("person_id")
                 distance = face.get("distance")
                 if person_id is None:
@@ -735,19 +770,22 @@ def dismiss_faces(face_ids: list[int]) -> int:
         with db_conn() as conn, conn:
             placeholders = ",".join("?" for _ in ids)
             rows = conn.execute(
-                f"SELECT file_path, frame_time, x, y, crop FROM faces WHERE id IN ({placeholders})",
+                "SELECT file_path, frame_time, x, y, crop, embedding FROM faces "
+                f"WHERE id IN ({placeholders})",
                 ids,
             ).fetchall()
             now = time.time()
             for r in rows:
                 conn.execute(
                     "INSERT OR IGNORE INTO dismissed_faces "
-                    "(file_path, frame_time, x, y, created_at) VALUES (?, ?, ?, ?, ?)",
+                    "(file_path, frame_time, x, y, embedding, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         r["file_path"],
                         float(r["frame_time"]),
                         int(r["x"] or 0),
                         int(r["y"] or 0),
+                        r["embedding"],
                         now,
                     ),
                 )

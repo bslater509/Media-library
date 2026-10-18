@@ -2,14 +2,18 @@
 
 Sweeps the index and detects + embeds faces, one file at a time:
 
-* **Images** are read from the already-cached thumbnail in
-  ``THUMBNAIL_CACHE_DIR`` — the source file is never pulled over the (possibly
-  FUSE) mount, and an image whose thumbnail has not been generated yet simply
-  stays pending until the thumbnail worker catches up.
-* **Videos** are read from the cached 480px candidate frames the animated
-  previews and the thumbnail chooser already use (one frame every
-  ``FACE_VIDEO_SAMPLE_INTERVAL`` seconds, capped at ``FACE_VIDEO_MAX_FRAMES``),
-  and every hit keeps its timestamp so a person's page can jump to the moment.
+* **Videos** are decoded **once** each, and FFmpeg samples the timeline itself
+  (``fps=1/FACE_VIDEO_SAMPLE_INTERVAL``, 2 s by default) at ``FACE_SCAN_WIDTH``
+  pixels. One sequential pass beats one seek per frame over a (possibly FUSE)
+  mount, and nothing is written to disk: the sweep keeps only the face crops it
+  finds, so it neither fills nor evicts the candidate-frame cache the thumbnail
+  chooser and animated previews share. A face is recorded **once per appearance**
+  (see ``TrackBuilder``) rather than once per frame, which is what makes a 2 s
+  grid affordable in database and clustering terms.
+* **Images** are read from the source once and downsized to ``FACE_SCAN_WIDTH``
+  — a 360px thumbnail hands the recogniser a 112px crop that is mostly upscale —
+  falling back to the cached thumbnail when the source cannot be read, and
+  staying pending when neither is available.
 
 Only loose files are scanned: images inside ZIP archives are skipped entirely,
 since detecting on them would force an archive extraction over FUSE.
@@ -34,7 +38,7 @@ from media_library.core import config
 from media_library.core.state import get_thumbnail_cache_path
 from media_library.db.connection import db_conn
 from media_library.services import candidate_cache, face_engine, face_service
-from media_library.services.ffmpeg_frames import extract_candidate_frame
+from media_library.services.ffmpeg_frames import iter_video_scan_frames
 from media_library.workers.base import BaseWorker
 from media_library.workers.webp_worker import (
     MEMORY_GUARD_MB,
@@ -50,44 +54,72 @@ _MODEL_RETRY_S = 600.0
 _STATS_INTERVAL_S = 2.0
 
 
-def sample_timestamps(duration: float, interval: float, max_frames: int) -> list[float]:
-    """Frame timestamps to scan in a video of ``duration`` seconds."""
+def effective_video_interval(
+    duration: float, interval: float, max_frames: int
+) -> float:
+    """Seconds between sampled frames for a clip of ``duration``.
+
+    ``FACE_VIDEO_SAMPLE_INTERVAL`` is the density; ``FACE_VIDEO_MAX_FRAMES`` is a
+    frame *budget*, so a clip long enough to blow it is sampled evenly instead
+    (the spacing widens rather than the sweep stopping early).
+    """
     try:
         duration = float(duration or 0.0)
     except (TypeError, ValueError):
         duration = 0.0
-    interval = max(1.0, float(interval))
-    max_frames = max(1, int(max_frames))
-    if duration <= 0.0:
-        return [0.0]
-
-    safe_end = max(0.0, duration - min(0.5, duration * 0.02))
-    step = interval if (duration / interval) <= max_frames else duration / max_frames
-    stamps: list[float] = []
-    current = 0.0
-    while current < duration and len(stamps) < max_frames:
-        stamps.append(round(min(current, safe_end), 3))
-        current += step
-    if not stamps:
-        stamps = [0.0]
-    if len(stamps) < max_frames and stamps[-1] < safe_end * 0.98:
-        stamps.append(round(safe_end, 3))
-    return stamps
+    interval = max(0.05, float(interval))
+    cap = max(1, int(max_frames))
+    if duration > 0 and (duration / interval) > cap:
+        return duration / cap
+    return interval
 
 
 def _open_scan_image(path: str) -> Any:
-    """Load a local scan image (thumbnail / candidate frame) as a PIL image."""
+    """Load a local scan image (thumbnail) as a PIL image."""
     with Image.open(path) as img:
         return img.convert("RGB").copy()
 
 
-def _detect_in_image(
-    engine: Any,
-    image: Any,
-    file_path: str,
-    frame_time: float,
-) -> list[dict[str, Any]]:
-    """Detect faces in one local image, writing a crop for each hit."""
+def _open_scan_bytes(data: bytes) -> Any:
+    """Decode one JPEG frame from the sweep's stream as a PIL image."""
+    import io
+
+    with Image.open(io.BytesIO(data)) as img:
+        return img.convert("RGB").copy()
+
+
+def _load_scan_image(file_path: str, mtime: Any, size: Any) -> Any:
+    """The sharpest local image available for one photo, or None.
+
+    The source is read once and downsized to ``FACE_SCAN_WIDTH``: the recogniser
+    aligns every crop to 112x112, so a 360px thumbnail gives it mostly upscale,
+    and the blur that produces is why one person's faces scatter past the match
+    threshold. The cached thumbnail is the fallback, so a photo whose source
+    cannot be read is still scanned rather than staying pending forever.
+    """
+    width = max(160, int(getattr(config, "FACE_SCAN_WIDTH", 960)))
+    try:
+        if os.path.exists(file_path):
+            with Image.open(file_path) as img:
+                photo = img.convert("RGB")
+                if photo.width > width:
+                    height = max(1, int(photo.height * width / photo.width))
+                    photo = photo.resize((width, height), Image.Resampling.BILINEAR)
+                return photo.copy()
+    except Exception as e:
+        logger.debug(f"[Faces] Could not read {file_path} directly: {e}")
+
+    thumb = get_thumbnail_cache_path(file_path, mtime, size)
+    try:
+        if thumb.exists() and thumb.stat().st_size > 0:
+            return _open_scan_image(str(thumb))
+    except OSError:
+        pass
+    return None
+
+
+def _detect_faces(engine: Any, image: Any, frame_time: float) -> list[dict[str, Any]]:
+    """Detect faces in one image. Crops are written later, for the keeper only."""
     import numpy as np
 
     try:
@@ -98,13 +130,8 @@ def _detect_in_image(
         return []
     bgr = np.ascontiguousarray(rgb[:, :, ::-1])
 
-    faces = engine.detect(bgr)
     out: list[dict[str, Any]] = []
-    for face in faces:
-        name = face_service.face_crop_name(
-            file_path, frame_time, int(face["x"]), int(face["y"])
-        )
-        stored = face_service.write_face_crop(image, face, name)
+    for face in engine.detect(bgr):
         out.append(
             {
                 "x": int(face["x"]),
@@ -114,10 +141,124 @@ def _detect_in_image(
                 "score": float(face.get("score") or 0.0),
                 "embedding": face["embedding"],
                 "frame_time": frame_time,
-                "crop": name if stored else None,
+                "crop": None,
             }
         )
     return out
+
+
+def _store_crop(file_path: str, face: dict[str, Any], image: Any) -> None:
+    """Store the crop of a face that is being kept (mutates ``face['crop']``)."""
+    try:
+        name = face_service.face_crop_name(
+            file_path,
+            float(face.get("frame_time") or 0.0),
+            int(face["x"]),
+            int(face["y"]),
+        )
+        face["crop"] = name if face_service.write_face_crop(image, face, name) else None
+    except Exception as e:
+        logger.debug(f"[Faces] Could not store a crop for {file_path}: {e}")
+        face["crop"] = None
+
+
+def _face_quality(face: dict[str, Any]) -> float:
+    """How good a representative a detection makes: big and confident."""
+    return max(1.0, float(face.get("w") or 0) * float(face.get("h") or 0)) * max(
+        0.05, float(face.get("score") or 0.0)
+    )
+
+
+class TrackBuilder:
+    """Collapse per-frame detections into one record per person per appearance.
+
+    A 2 s grid detects the same face dozens of times inside one shot. Keeping
+    every one of them triples the database, skews a cluster's centroid towards
+    whichever shot happened to be longest, and fills the review queue with
+    copies of a person who is already clustered. A detection therefore joins an
+    existing track while it stays within ``FACE_TRACK_DISTANCE`` of the track's
+    running mean and within ``FACE_TRACK_GAP_S`` of its last hit; the track keeps
+    its sharpest crop and its **mean** embedding, which is also a cleaner cluster
+    vote than any single frame. A gap longer than the window starts a new track,
+    so a person who leaves and returns is recorded again (and their page still
+    has moments to jump to).
+    """
+
+    def __init__(
+        self,
+        gap_s: float,
+        distance: float,
+        on_best: Any = None,
+    ):
+        self.gap_s = max(0.0, float(gap_s))
+        self.distance = min(1.2, max(0.02, float(distance)))
+        self.on_best = on_best
+        self._tracks: list[dict[str, Any]] = []
+
+    def add(self, face: dict[str, Any], image: Any = None) -> None:
+        import numpy as np
+
+        embedding = face.get("embedding")
+        if embedding is None:
+            return
+        vec = np.asarray(embedding, dtype="float32").reshape(-1)
+        norm = float(np.linalg.norm(vec))
+        if norm <= 0:
+            return
+        vec = vec / norm
+        when = float(face.get("frame_time") or 0.0)
+
+        best: dict[str, Any] | None = None
+        best_distance = 0.0
+        for track in self._tracks:
+            if self.gap_s and (when - float(track["last"])) > self.gap_s:
+                continue
+            distance = 1.0 - float(track["mean"] @ vec)
+            if distance <= self.distance and (best is None or distance < best_distance):
+                best, best_distance = track, distance
+
+        if best is None:
+            track = {
+                "mean": vec,
+                "count": 1,
+                "last": when,
+                "best": dict(face),
+                "quality": _face_quality(face),
+            }
+            self._tracks.append(track)
+            self._promote(track, image)
+            return
+
+        count = int(best["count"])
+        merged = best["mean"] * count + vec
+        norm = float(np.linalg.norm(merged))
+        best["mean"] = merged / norm if norm else vec
+        best["count"] = count + 1
+        best["last"] = when
+        quality = _face_quality(face)
+        if quality > float(best["quality"]):
+            best["best"] = dict(face)
+            best["quality"] = quality
+            self._promote(best, image)
+
+    def _promote(self, track: dict[str, Any], image: Any) -> None:
+        """A track's representative changed: keep its crop (if we have the frame).
+
+        The crop the previous representative wrote is left behind; the crop
+        sweep and its LRU ceiling collect it, and it is at most one stale file
+        per change.
+        """
+        if self.on_best is not None and image is not None:
+            self.on_best(track["best"], image)
+
+    def finish(self) -> list[dict[str, Any]]:
+        """The records to store: one per track, with the track's mean embedding."""
+        out: list[dict[str, Any]] = []
+        for track in self._tracks:
+            face = dict(track["best"])
+            face["embedding"] = track["mean"]
+            out.append(face)
+        return out
 
 
 class FaceWorker(BaseWorker):
@@ -154,8 +295,9 @@ class FaceWorker(BaseWorker):
         status["enabled"] = face_service.is_enabled()
         status["engine"] = face_engine.engine_status()
         status.update(face_service.face_crop_payload())
-        # The 480px frames the video sweep reads live in their own cache with an
-        # LRU ceiling, so report that usage next to the crop cache's.
+        # The shared candidate-frame cache (the 480px stills the thumbnail chooser
+        # and animated previews use) is reported next to the crop cache: it is the
+        # other on-disk cache the People feature's numbers are read against.
         status.update(candidate_cache.frame_cache_payload())
         counts = face_service.people_counts()
         status["faces_total"] = counts.get("faces", 0)
@@ -209,47 +351,47 @@ class FaceWorker(BaseWorker):
             return []
 
     async def _scan_image(self, engine: Any, row: Any) -> list[dict[str, Any]] | None:
-        thumb = get_thumbnail_cache_path(row["path"], row["mtime"], row["size"])
-        try:
-            if not (thumb.exists() and thumb.stat().st_size > 0):
-                return None  # thumbnail not generated yet: stay pending
-        except OSError:
-            return None
-        try:
-            image = await asyncio.to_thread(_open_scan_image, str(thumb))
-        except Exception:
-            return []
-        return await asyncio.to_thread(
-            _detect_in_image, engine, image, row["path"], face_service.IMAGE_FRAME_TIME
+        image = await asyncio.to_thread(
+            _load_scan_image, row["path"], row["mtime"], row["size"]
         )
+        if image is None:
+            return None  # nothing readable yet: stay pending
+        hits = await asyncio.to_thread(
+            _detect_faces, engine, image, face_service.IMAGE_FRAME_TIME
+        )
+        for hit in hits:
+            _store_crop(row["path"], hit, image)
+        return hits
 
     async def _scan_video(self, engine: Any, row: Any) -> list[dict[str, Any]]:
-        stamps = sample_timestamps(
-            row["duration"],
-            getattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 30.0),
-            getattr(config, "FACE_VIDEO_MAX_FRAMES", 24),
+        duration = float(row["duration"] or 0.0)
+        interval = effective_video_interval(
+            duration,
+            getattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 2.0),
+            getattr(config, "FACE_VIDEO_MAX_FRAMES", 20000),
         )
-        faces: list[dict[str, Any]] = []
-        for stamp in stamps:
+        width = int(getattr(config, "FACE_SCAN_WIDTH", 960))
+        cap = max(1, int(getattr(config, "FACE_VIDEO_MAX_FRAMES", 20000)))
+        builder = TrackBuilder(
+            getattr(config, "FACE_TRACK_GAP_S", 15.0),
+            getattr(config, "FACE_TRACK_DISTANCE", 0.25),
+            on_best=lambda face, image: _store_crop(row["path"], face, image),
+        )
+        # One pass may decode an hour of video, so the ceiling scales with the
+        # clip instead of being the 12 s a single frame extraction needed.
+        timeout = max(180.0, duration * 1.5)
+        async for _index, stamp, jpeg in iter_video_scan_frames(
+            row["path"], interval, width, cap, timeout
+        ):
             try:
-                frame = await extract_candidate_frame(row["path"], timestamp=stamp)
-            except Exception as e:
-                logger.warning(
-                    f"[Faces] Frame extraction failed for {row['path']}: {e}"
-                )
-                continue
-            if not frame:
-                continue
-            try:
-                image = await asyncio.to_thread(_open_scan_image, str(frame))
+                image = await asyncio.to_thread(_open_scan_bytes, jpeg)
             except Exception as e:
                 logger.warning(f"[Faces] Could not read a frame of {row['path']}: {e}")
                 continue
-            hits = await asyncio.to_thread(
-                _detect_in_image, engine, image, row["path"], float(stamp)
-            )
-            faces.extend(hits)
-        return faces
+            hits = await asyncio.to_thread(_detect_faces, engine, image, float(stamp))
+            for hit in hits:
+                builder.add(hit, image)
+        return builder.finish()
 
     async def _wait_for_memory(self) -> bool:
         """Wait for headroom; False when the guard is still tripped after a minute."""

@@ -218,75 +218,241 @@ def test_rescan_replaces_detections_and_keeps_dismissals(
     assert Path(image).exists()
 
 
-def test_video_scan_keeps_frame_timestamps(
-    sandbox_env, face_image_factory, scan_face_batch, monkeypatch
-):
+def _video_row(sandbox_env, name="clip.mp4", duration=8.0):
     media = sandbox_env["media_dir"]
-    video = media / "clip.mp4"
+    video = media / name
     video.write_bytes(b"\x00\x00\x00 ftypmp42" + b"A" * 512)
     add_file_to_index(str(video))
     with db_conn() as conn, conn:
         conn.execute(
-            "UPDATE files SET type='video', duration=8.0 WHERE path = ?", (str(video),)
+            "UPDATE files SET type='video', duration=? WHERE path = ?",
+            (duration, str(video)),
         )
+    return video
 
-    frame = face_image_factory("frame.jpg", (0, 0, 255))
-    stamps: list[float] = []
 
-    async def fake_extract(file_path, timestamp=0.0):
-        stamps.append(round(float(timestamp), 2))
-        return frame
+def _jpeg_bytes(color, size=(960, 540)):
+    import io
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color).save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
+def test_dismissal_survives_a_change_of_sampling(
+    sandbox_env, face_image_factory, scan_face_batch, monkeypatch
+):
+    """A rejected face stays rejected even when its box/time move."""
+    import numpy as np
 
     from media_library.workers import face_worker
 
-    monkeypatch.setattr(face_worker, "extract_candidate_frame", fake_extract)
-    monkeypatch.setattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 4.0)
-    monkeypatch.setattr(config, "FACE_VIDEO_MAX_FRAMES", 3)
+    face_image_factory("two.jpg", (255, 0, 0))
+    image = face_image_factory("both.jpg", (255, 0, 0))
+    worker = face_worker.face_worker_instance
 
-    scan_face_batch(face_worker.face_worker_instance)
-    assert stamps == [0.0, 4.0, 7.84]
+    def detect(engine, picture, frame_time):
+        red = np.zeros(128, dtype="float32")
+        red[1] = 1.0
+        blue = np.zeros(128, dtype="float32")
+        blue[2] = 1.0
+        return [
+            {
+                "x": 10,
+                "y": 10,
+                "w": 60,
+                "h": 60,
+                "score": 0.9,
+                "embedding": red,
+                "frame_time": frame_time,
+                "crop": None,
+            },
+            {
+                "x": 200,
+                "y": 10,
+                "w": 60,
+                "h": 60,
+                "score": 0.9,
+                "embedding": blue,
+                "frame_time": frame_time,
+                "crop": None,
+            },
+        ]
+
+    monkeypatch.setattr(face_worker, "_detect_faces", detect)
+    scan_face_batch(worker)
+    with db_conn() as conn:
+        red_id = conn.execute(
+            "SELECT id FROM faces WHERE file_path = ? AND x = 10", (str(image),)
+        ).fetchone()["id"]
+    assert face_service.dismiss_faces([red_id]) == 1
+
+    # Re-scan the same file with the detections in slightly different places:
+    # the box key no longer matches, the embedding still does.
+    def detect_moved(engine, picture, frame_time):
+        hits = detect(engine, picture, frame_time)
+        for hit in hits:
+            hit["x"] += 3
+            hit["y"] += 3
+        return hits
+
+    monkeypatch.setattr(face_worker, "_detect_faces", detect_moved)
+    with db_conn() as conn, conn:
+        conn.execute("DELETE FROM face_scans")
+    scan_face_batch(worker)
+
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT frame_time FROM faces WHERE file_path = ? ORDER BY frame_time",
+            "SELECT x FROM faces WHERE file_path = ? ORDER BY x", (str(image),)
+        ).fetchall()
+    # The rejected red face stays out; the blue one beside it is untouched.
+    assert [r["x"] for r in rows] == [203]
+    assert face_service.people_counts()["dismissed"] == 1
+
+
+def test_video_scan_records_one_face_per_appearance(
+    sandbox_env, scan_face_batch, monkeypatch
+):
+    """A 2 s grid sees one person many times; they are stored once per track."""
+    video = _video_row(sandbox_env, duration=40.0)
+
+    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+        # The same red face for 20 s, then a blue one for 20 s, then red again
+        # after a gap longer than the track window.
+        plan = [(0.0, (255, 0, 0)), (2.0, (255, 0, 0)), (4.0, (250, 4, 4))]
+        plan += [(22.0, (0, 0, 255)), (24.0, (0, 0, 255))]
+        plan += [(60.0, (255, 0, 0))]
+        for index, (stamp, color) in enumerate(plan):
+            yield index, stamp, _jpeg_bytes(color)
+
+    from media_library.workers import face_worker
+
+    monkeypatch.setattr(face_worker, "iter_video_scan_frames", fake_frames)
+    monkeypatch.setattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 2.0)
+    monkeypatch.setattr(config, "FACE_TRACK_GAP_S", 15.0)
+
+    scan_face_batch(face_worker.face_worker_instance)
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT frame_time, w, h, crop FROM faces WHERE file_path = ? "
+            "ORDER BY frame_time",
             (str(video),),
         ).fetchall()
-    assert [r["frame_time"] for r in rows] == [0.0, 4.0, 7.84]
+    # Three tracks: red, blue, and the red face returning after the gap.
+    assert [r["frame_time"] for r in rows] == [0.0, 22.0, 60.0]
+    assert all(r["crop"] for r in rows)
 
 
-def test_sample_timestamps_bounds():
-    from media_library.workers.face_worker import sample_timestamps
+def test_video_scan_keeps_the_sharpest_frame_of_a_track(
+    sandbox_env, scan_face_batch, monkeypatch
+):
+    """The record is the track's best frame, not its first or last."""
+    video = _video_row(sandbox_env, duration=10.0)
+    sizes = [(40, 40), (120, 120), (60, 60)]
+    calls = {"n": 0}
 
-    assert sample_timestamps(0, 30, 24) == [0.0]
-    assert sample_timestamps(20, 30, 24) == [0.0, 19.6]
-    long_clip = sample_timestamps(3600, 30, 24)
-    assert len(long_clip) == 24
-    assert long_clip[0] == 0.0
-    assert long_clip[-1] == pytest.approx(3450.0, abs=1.0)
+    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+        for index, stamp in enumerate((0.0, 2.0, 4.0)):
+            yield index, stamp, _jpeg_bytes((255, 0, 0))
+
+    # The fake engine reports one fixed box, so vary the box per frame here to
+    # give the track a clear winner.
+    def fake_detect(engine, image, frame_time):
+        size = sizes[min(calls["n"], len(sizes) - 1)]
+        calls["n"] += 1
+        embedding = np.zeros(128, dtype="float32")
+        embedding[1] = 1.0
+        return [
+            {
+                "x": 10,
+                "y": 10,
+                "w": size[0],
+                "h": size[1],
+                "score": 0.9,
+                "embedding": embedding,
+                "frame_time": frame_time,
+                "crop": None,
+            }
+        ]
+
+    from media_library.workers import face_worker
+
+    monkeypatch.setattr(face_worker, "iter_video_scan_frames", fake_frames)
+    monkeypatch.setattr(face_worker, "_detect_faces", fake_detect)
+
+    scan_face_batch(face_worker.face_worker_instance)
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT frame_time, w, h, crop FROM faces WHERE file_path = ?",
+            (str(video),),
+        ).fetchall()
+    assert len(rows) == 1
+    assert (rows[0]["w"], rows[0]["h"]) == (120, 120)
+    assert rows[0]["frame_time"] == 2.0
+    assert rows[0]["crop"]
 
 
-def test_sample_timestamps_scales_the_cap_with_video_length():
-    """The cap is the length sampled at full density, not a flat ceiling."""
-    from media_library.workers.face_worker import sample_timestamps
+def test_track_builder_folds_repeats_and_splits_on_gap_or_distance():
+    import numpy as np
+
+    from media_library.workers.face_worker import TrackBuilder
+
+    def face(when, axis, size=60):
+        embedding = np.zeros(128, dtype="float32")
+        embedding[axis] = 1.0
+        return {
+            "x": 0,
+            "y": 0,
+            "w": size,
+            "h": size,
+            "score": 0.9,
+            "embedding": embedding,
+            "frame_time": when,
+            "crop": None,
+        }
+
+    promoted: list[float] = []
+    builder = TrackBuilder(
+        15.0, 0.25, on_best=lambda f, image: promoted.append(f["frame_time"])
+    )
+    builder.add(face(0.0, 1), image=object())
+    builder.add(face(2.0, 1), image=object())  # same person, same shot
+    builder.add(face(4.0, 1, size=90), image=object())  # sharper: becomes the keeper
+    builder.add(face(6.0, 5), image=object())  # someone else entirely
+    builder.add(face(30.0, 1), image=object())  # same person, long after the gap
+
+    records = builder.finish()
+
+    assert [r["frame_time"] for r in records] == [4.0, 6.0, 30.0]
+    # Every keeper got a crop, and the mean of a track is a unit vector.
+    assert promoted == [0.0, 4.0, 6.0, 30.0]
+    for record in records:
+        assert float(np.linalg.norm(record["embedding"])) == pytest.approx(
+            1.0, abs=1e-6
+        )
+
+    # A wide gap and a distant face each start their own track.
+    assert len(records) == 3
+
+
+def test_effective_video_interval_uses_the_cap_as_a_budget():
+    from media_library.workers.face_worker import effective_video_interval
 
     interval = config.FACE_VIDEO_SAMPLE_INTERVAL
     cap = config.FACE_VIDEO_MAX_FRAMES
-    assert (interval, cap) == (30.0, 240)
+    assert (interval, cap) == (2.0, 20000)
 
-    # Up to cap * interval seconds, one frame every interval.
-    half_hour = sample_timestamps(1800, interval, cap)
-    assert len(half_hour) == 60
-    assert half_hour[1] - half_hour[0] == pytest.approx(30.0)
-
-    # Two hours is the last clip that still gets full density (240 * 30s).
-    two_hours = sample_timestamps(7200, interval, cap)
-    assert len(two_hours) == 240
-    assert two_hours[1] - two_hours[0] == pytest.approx(30.0)
-
-    # Past that the spacing widens instead of the sweep stopping early.
-    eight_hours = sample_timestamps(8 * 3600, interval, cap)
-    assert len(eight_hours) == cap
-    assert eight_hours[1] - eight_hours[0] == pytest.approx(8 * 3600 / cap, abs=1.0)
-    assert eight_hours[-1] == pytest.approx(8 * 3600 - 120, abs=1.0)
+    # A normal clip is sampled on the configured grid.
+    assert effective_video_interval(600, interval, cap) == 2.0
+    assert effective_video_interval(0, interval, cap) == 2.0
+    # Only a clip long enough to blow the budget gets a wider spacing, and it is
+    # still sampled end to end rather than stopping at the budget.
+    assert effective_video_interval(cap * 2 * interval, interval, cap) == pytest.approx(
+        2 * interval
+    )
+    assert effective_video_interval(12 * 3600, interval, cap) == pytest.approx(
+        12 * 3600 / cap, abs=0.01
+    )
 
 
 # -------------------------------------------------------------- crops/cache
@@ -475,24 +641,19 @@ def test_person_media_groups_a_video_once_with_its_moments(
     sandbox_env, face_image_factory, scan_face_batch, monkeypatch
 ):
     face_image_factory("portrait.jpg", (255, 0, 0))
-    media = sandbox_env["media_dir"]
-    video = media / "clip.mp4"
-    video.write_bytes(b"\x00\x00\x00 ftypmp42" + b"B" * 512)
-    add_file_to_index(str(video))
-    with db_conn() as conn, conn:
-        conn.execute(
-            "UPDATE files SET type='video', duration=12.0 WHERE path = ?", (str(video),)
-        )
-    frame = sandbox_env["media_dir"] / "frame.jpg"
-    Image.new("RGB", (64, 64), (255, 0, 0)).save(frame, "JPEG")
+    _video_row(sandbox_env, "moments.mp4", duration=60.0)
 
-    async def fake_extract(file_path, timestamp=0.0):
-        return frame
+    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+        # The face is on screen early and again near the end, with a gap longer
+        # than the track window — so it is one file with two appearances.
+        for index, stamp in enumerate((0.0, 2.0, 44.0, 46.0)):
+            yield index, stamp, _jpeg_bytes((255, 0, 0), (320, 240))
 
     from media_library.workers import face_worker
 
-    monkeypatch.setattr(face_worker, "extract_candidate_frame", fake_extract)
-    monkeypatch.setattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 4.0)
+    monkeypatch.setattr(face_worker, "iter_video_scan_frames", fake_frames)
+    monkeypatch.setattr(config, "FACE_VIDEO_SAMPLE_INTERVAL", 2.0)
+    monkeypatch.setattr(config, "FACE_TRACK_GAP_S", 15.0)
 
     scan_face_batch(face_worker.face_worker_instance)
     with db_conn() as conn:
@@ -761,20 +922,31 @@ def test_worker_loop_skips_when_disabled(monkeypatch, sandbox_env):
     assert asyncio.run(_once()) == "disabled"
 
 
-def test_image_without_thumbnail_stays_pending(
+def test_image_is_read_from_its_source_and_falls_back_to_the_thumbnail(
     sandbox_env, face_image_factory, scan_face_batch
 ):
-    """An image whose thumbnail has not been generated yet is retried later."""
-    image = face_image_factory("later.jpg", (255, 0, 0))
+    """A photo is scanned from the sharpest source available, never left stuck."""
     from media_library.core.state import get_thumbnail_cache_path
+    from media_library.workers.face_worker import _load_scan_image
     from media_library.workers.face_worker import face_worker_instance as worker
 
+    image = face_image_factory("sharp.jpg", (255, 0, 0))
     stat = image.stat()
-    thumb = get_thumbnail_cache_path(str(image), stat.st_mtime, stat.st_size)
-    Path(thumb).unlink()
+    thumb = Path(get_thumbnail_cache_path(str(image), stat.st_mtime, stat.st_size))
 
-    # Nothing is scanned and no scan row is written, so it is retried once the
-    # thumbnail worker catches up.
+    # The source is what is read (downsized to the scan width), so the sweep no
+    # longer waits for a thumbnail to exist.
+    thumb.unlink()
+    loaded = _load_scan_image(str(image), stat.st_mtime, stat.st_size)
+    assert loaded is not None and loaded.width <= config.FACE_SCAN_WIDTH
+    assert scan_face_batch(worker) == 1
+
+    # With neither source nor thumbnail readable the file stays pending: nothing
+    # is recorded and no scan row is written, so it is retried later.
+    with db_conn() as conn, conn:
+        conn.execute("DELETE FROM faces")
+        conn.execute("DELETE FROM face_scans")
+    image.unlink()
     assert scan_face_batch(worker) == 0
     with db_conn() as conn:
         assert conn.execute("SELECT COUNT(*) FROM face_scans").fetchone()[0] == 0

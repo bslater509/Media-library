@@ -9,6 +9,45 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.8] - 2026-10-18
+
+### Changed
+
+- **The video face sweep samples every 2 seconds instead of every 30, and reads
+  each video once instead of seeking into it per frame.** A 30 s grid looked at
+  about 25 moments of a 12-minute clip and found faces in 4 of them, so a person
+  on screen for twenty seconds was usually missed. FFmpeg now decodes the file
+  **once** and samples the timeline itself (`fps=1/2`), which is what makes the
+  denser grid affordable: the mount is read sequentially once rather than
+  re-sought for every frame, and nothing is written to disk — the sweep streams
+  the frames and keeps only the face crops, so it no longer fills (or evicts)
+  the candidate-frame cache the thumbnail chooser and animated previews share.
+  `FACE_VIDEO_MAX_FRAMES` becomes a frame *budget*: a clip long enough to blow
+  it is sampled evenly rather than stopping early.
+- **Detection now runs at 960px, and a person is recorded once per appearance.**
+  The recogniser aligns every crop to 112×112, so a face that was 48px on the
+  480px frame reached it as a 2.3× upscale — that blur is why one person's faces
+  landed up to 0.46 apart and split into separate clusters, and why a denser grid
+  on its own would have multiplied the backlog instead of clearing it. Frames are
+  decoded at `FACE_SCAN_WIDTH` (960, never upscaling a smaller source) and
+  `FACE_MIN_FACE_PX` moves to 96 to keep the same physical floor with twice the
+  pixels; loose photos are read from the source (downsized, falling back to the
+  cached thumbnail) for the same reason. Per-frame detections are then folded
+  into a **track** — same person, within `FACE_TRACK_DISTANCE` and
+  `FACE_TRACK_GAP_S` — so a shot of someone contributes one row carrying their
+  sharpest frame and their **mean** embedding, instead of ninety near-identical
+  rows that skewed the cluster centroid towards whichever shot was longest. A
+  person who leaves and returns still gets separate moments to jump to.
+
+### Added
+
+- **A rejection now survives a change of sampling.** `dismissed_faces` stores the
+  embedding of the face the user rejected (idempotent `ALTER TABLE`), so
+  re-scanning with a different grid — which moves the timestamp and box of the
+  detection representing that same face — cannot resurrect a "not a person"
+  decision. A fresh detection is skipped when it is within `FACE_TRACK_DISTANCE`
+  of a dismissed embedding for that file, or matches the box exactly.
+
 ## [1.1.7] - 2026-10-18
 
 ### Added

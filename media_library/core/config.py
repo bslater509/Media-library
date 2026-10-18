@@ -137,18 +137,35 @@ FACE_DETECTION_CONFIDENCE = min(
 FACE_MATCH_THRESHOLD = min(
     1.2, max(0.05, float(os.environ.get("FACE_MATCH_THRESHOLD", "0.36")))
 )
-# Faces smaller than this (in pixels, on the 480px-wide scan image) are ignored:
-# in a crowd or a wide shot they are too small to cluster reliably.
-FACE_MIN_FACE_PX = max(8, int(os.environ.get("FACE_MIN_FACE_PX", "48")))
+# Faces smaller than this (in pixels, on the FACE_SCAN_WIDTH-wide scan image)
+# are ignored: in a crowd or a wide shot they are too small to cluster reliably.
+# The default is the same ~10% of the frame the 480px scan used, now measured on
+# a 960px image — the floor is physical, the pixels are sharper.
+FACE_MIN_FACE_PX = max(8, int(os.environ.get("FACE_MIN_FACE_PX", "96")))
 FACE_MAX_PER_FRAME = max(1, int(os.environ.get("FACE_MAX_PER_FRAME", "20")))
+# Width the video sweep decodes each sampled frame at (never upscaling a smaller
+# source). The recogniser aligns every crop to 112x112, so a face that is 48px on
+# a 480px frame reaches it as a 2.3x upscale — which is why one person's faces
+# landed up to 0.46 apart and split into separate clusters.
+FACE_SCAN_WIDTH = max(160, int(os.environ.get("FACE_SCAN_WIDTH", "960")))
 # Video sampling: one frame every N seconds, capped at FACE_VIDEO_MAX_FRAMES.
-# The cap is the *length* of video that gets full-density sampling (240 frames
-# at 30s = 2h); past it the spacing widens (8h clip -> one frame per 2 min)
-# rather than the sweep ending early.
+# The sweep decodes each video once and samples on that grid (a seek per frame
+# over a FUSE mount is far more expensive than one sequential pass), so the cap
+# is a frame budget: past it the spacing widens evenly (a 12 h clip at 2 s is
+# 21,600 frames, so the default covers every realistic length at full density).
 FACE_VIDEO_SAMPLE_INTERVAL = max(
-    1.0, float(os.environ.get("FACE_VIDEO_SAMPLE_INTERVAL", "30"))
+    0.5, float(os.environ.get("FACE_VIDEO_SAMPLE_INTERVAL", "2"))
 )
-FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "240")))
+FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "20000")))
+# One record per person per appearance: a 2 s grid detects the same face dozens
+# of times in a static shot, so detections are folded into a track while they
+# stay within this cosine distance of the track's running mean and within this
+# many seconds of its last hit. The track keeps its sharpest crop and its mean
+# embedding (a cleaner cluster vote than any single frame).
+FACE_TRACK_GAP_S = max(0.0, float(os.environ.get("FACE_TRACK_GAP_S", "15")))
+FACE_TRACK_DISTANCE = min(
+    1.2, max(0.02, float(os.environ.get("FACE_TRACK_DISTANCE", "0.25")))
+)
 # Face crops are regenerable, so their cache gets the same LRU ceiling the
 # animated-preview and extracted-ZIP caches have.
 FACE_CROP_MAX_SIZE_GB = float(os.environ.get("FACE_CROP_MAX_SIZE_GB", "2.0"))
