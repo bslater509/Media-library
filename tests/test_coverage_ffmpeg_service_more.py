@@ -469,9 +469,10 @@ async def test_extract_candidate_frame_timeout_and_cleanup(sandbox_env):
     assert frame is None
     assert spawn.call_count == 2  # first attempt + retry, both killed
 
-    # Temp artifacts never survive a failure.
+    # Temp artifacts never survive a failure (frames are binned per video, so
+    # the check has to reach into the subdirectories).
     cand_dir = _thumb_cache_dir() / "candidates"
-    assert not list(cand_dir.glob("*.tmp.jpg")) if cand_dir.exists() else True
+    assert not list(cand_dir.rglob("*.tmp.jpg")) if cand_dir.exists() else True
 
 
 # --------------------------------------------------------------------------

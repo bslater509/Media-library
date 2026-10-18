@@ -9,6 +9,36 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.1.6] - 2026-10-18
+
+### Changed
+
+- **Face scanning of videos now scales with the clip's length instead of
+  stopping at 24 frames.** The sampling loop already kept a frame every
+  `FACE_VIDEO_SAMPLE_INTERVAL` seconds and only widened the spacing once a video
+  passed the cap, so the cap was the whole rule: at 24 it meant anything over 12
+  minutes got one frame every few minutes (a two-hour film: one per 5 minutes).
+  The default is now **240**, i.e. one frame every 30 seconds up to a two-hour
+  clip and a steadily widening spacing past that (8 hours: one per 2 minutes) —
+  so a long recording is swept at a density a face is unlikely to slip through,
+  while clips under 12 minutes are untouched.
+
+### Added
+
+- **A ceiling and an orphan sweep for the candidate-frame cache.** The 480px
+  stills the thumbnail chooser, the animated preview compiler and the face
+  worker extract from a video are now binned per video
+  (`thumbnails/candidates/v<path hash>/cand_<second>.jpg`), which makes the
+  cache sweepable: the index prune and deep clean drop the bins of videos that
+  are gone (reported as `pruned_orphaned_frames`) along with the flat files the
+  old layout wrote, and `CANDIDATE_CACHE_MAX_SIZE_GB` (default 5 GB) trims the
+  least recently written frames after each generation, throttled to once a
+  minute. Raising the frame cap multiplies this cache, so it no longer grows
+  without bound — evicted frames simply regenerate on the next view. The faces
+  status payload reports the cache's usage (`frame_cache_files`,
+  `frame_cache_bytes`, `frame_cache_size_formatted`, `frame_cache_max_bytes`,
+  `frame_cache_max_size_formatted`).
+
 ## [1.1.5] - 2026-10-17
 
 ### Added

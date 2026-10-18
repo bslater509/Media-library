@@ -264,6 +264,31 @@ def test_sample_timestamps_bounds():
     assert long_clip[-1] == pytest.approx(3450.0, abs=1.0)
 
 
+def test_sample_timestamps_scales_the_cap_with_video_length():
+    """The cap is the length sampled at full density, not a flat ceiling."""
+    from media_library.workers.face_worker import sample_timestamps
+
+    interval = config.FACE_VIDEO_SAMPLE_INTERVAL
+    cap = config.FACE_VIDEO_MAX_FRAMES
+    assert (interval, cap) == (30.0, 240)
+
+    # Up to cap * interval seconds, one frame every interval.
+    half_hour = sample_timestamps(1800, interval, cap)
+    assert len(half_hour) == 60
+    assert half_hour[1] - half_hour[0] == pytest.approx(30.0)
+
+    # Two hours is the last clip that still gets full density (240 * 30s).
+    two_hours = sample_timestamps(7200, interval, cap)
+    assert len(two_hours) == 240
+    assert two_hours[1] - two_hours[0] == pytest.approx(30.0)
+
+    # Past that the spacing widens instead of the sweep stopping early.
+    eight_hours = sample_timestamps(8 * 3600, interval, cap)
+    assert len(eight_hours) == cap
+    assert eight_hours[1] - eight_hours[0] == pytest.approx(8 * 3600 / cap, abs=1.0)
+    assert eight_hours[-1] == pytest.approx(8 * 3600 - 120, abs=1.0)
+
+
 # -------------------------------------------------------------- crops/cache
 
 

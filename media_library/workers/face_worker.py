@@ -33,7 +33,7 @@ from PIL import Image
 from media_library.core import config
 from media_library.core.state import get_thumbnail_cache_path
 from media_library.db.connection import db_conn
-from media_library.services import face_engine, face_service
+from media_library.services import candidate_cache, face_engine, face_service
 from media_library.services.ffmpeg_frames import extract_candidate_frame
 from media_library.workers.base import BaseWorker
 from media_library.workers.webp_worker import (
@@ -154,6 +154,9 @@ class FaceWorker(BaseWorker):
         status["enabled"] = face_service.is_enabled()
         status["engine"] = face_engine.engine_status()
         status.update(face_service.face_crop_payload())
+        # The 480px frames the video sweep reads live in their own cache with an
+        # LRU ceiling, so report that usage next to the crop cache's.
+        status.update(candidate_cache.frame_cache_payload())
         counts = face_service.people_counts()
         status["faces_total"] = counts.get("faces", 0)
         status["people_total"] = counts.get("people", 0)

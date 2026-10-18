@@ -111,6 +111,13 @@ ZIP_CACHE_DIR = Path(
 ZIP_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_CACHE_MAX_SIZE_GB = float(os.environ.get("ZIP_CACHE_MAX_SIZE_GB", "5.0"))
 
+# Candidate frames (480px stills the thumbnail chooser, the animated preview
+# compiler and the face worker pull out of a video) are regenerable, so their
+# cache gets an LRU ceiling too; the oldest frames are evicted past it.
+CANDIDATE_CACHE_MAX_SIZE_GB = float(
+    os.environ.get("CANDIDATE_CACHE_MAX_SIZE_GB", "5.0")
+)
+
 # Face recognition ("People"). Off by default: it is the only feature that loads
 # an inference runtime (opencv-contrib, lazily) and a pair of ONNX models, so an
 # untouched install pays nothing. Empty *_DIR values mean "derive from DATA_DIR /
@@ -135,10 +142,13 @@ FACE_MATCH_THRESHOLD = min(
 FACE_MIN_FACE_PX = max(8, int(os.environ.get("FACE_MIN_FACE_PX", "48")))
 FACE_MAX_PER_FRAME = max(1, int(os.environ.get("FACE_MAX_PER_FRAME", "20")))
 # Video sampling: one frame every N seconds, capped at FACE_VIDEO_MAX_FRAMES.
+# The cap is the *length* of video that gets full-density sampling (240 frames
+# at 30s = 2h); past it the spacing widens (8h clip -> one frame per 2 min)
+# rather than the sweep ending early.
 FACE_VIDEO_SAMPLE_INTERVAL = max(
     1.0, float(os.environ.get("FACE_VIDEO_SAMPLE_INTERVAL", "30"))
 )
-FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "24")))
+FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "240")))
 # Face crops are regenerable, so their cache gets the same LRU ceiling the
 # animated-preview and extracted-ZIP caches have.
 FACE_CROP_MAX_SIZE_GB = float(os.environ.get("FACE_CROP_MAX_SIZE_GB", "2.0"))

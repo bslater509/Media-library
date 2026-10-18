@@ -20,17 +20,38 @@ candidate_generation_sem = asyncio.Semaphore(4)
 
 
 def get_candidate_cache_path(file_path: str, timestamp: float) -> Path:
-    """Returns the persistent disk path for a cached candidate frame."""
-    import hashlib
+    """Returns the persistent disk path for a cached candidate frame.
+
+    Frames are binned per video (``candidates/v<hash>/cand_<ts>.jpg``) so the
+    housekeeping in ``services.candidate_cache`` can tell which video a frame
+    belongs to by name and drop a whole bin once that video leaves the index.
+    """
+    import math
 
     from media_library.core.config import THUMBNAIL_CACHE_DIR
+    from media_library.services.candidate_cache import candidate_dir_name
 
-    cand_dir = Path(THUMBNAIL_CACHE_DIR) / "candidates"
+    cand_dir = Path(THUMBNAIL_CACHE_DIR) / "candidates" / candidate_dir_name(file_path)
     cand_dir.mkdir(parents=True, exist_ok=True)
-    ts = max(0.0, round(float(timestamp), 3))
-    key = f"{file_path}_{ts:.3f}"
-    h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
-    return cand_dir / f"cand_{h}.jpg"
+    try:
+        ts = float(timestamp)
+    except (TypeError, ValueError):
+        ts = 0.0
+    if not math.isfinite(ts) or ts < 0:
+        ts = 0.0
+    return cand_dir / f"cand_{round(ts, 3):.3f}.jpg"
+
+
+def _manage_candidate_cache() -> None:
+    """Throttled LRU trim of the frame cache; never fatal to a generation."""
+    try:
+        from media_library.services.candidate_cache import (
+            manage_candidate_cache_lru,
+        )
+
+        manage_candidate_cache_lru()
+    except Exception as e:
+        logger.debug(f"Could not trim the candidate frame cache: {e}")
 
 
 async def extract_candidate_frame(
@@ -174,6 +195,10 @@ async def extract_candidate_frame(
 
             if temp_thumb.exists() and temp_thumb.stat().st_size > 0:
                 os.replace(temp_thumb, cand_path)
+                # Growth only ever happens here, and the trim is throttled to
+                # once a minute, so this keeps the cache under its ceiling
+                # without any worker having to know about it.
+                await asyncio.to_thread(_manage_candidate_cache)
                 return cand_path
         except Exception as e:
             logger.error(

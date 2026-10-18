@@ -160,10 +160,11 @@ def test_ffmpeg_service_helpers():
     assert "-ss" in cmd_ss
     assert "12.5" in cmd_ss
 
-    # get_candidate_cache_path
+    # get_candidate_cache_path (binned per video so the cache can be swept)
     cand_p = get_candidate_cache_path("/path/to/vid.mp4", 10.5)
     assert str(cand_p).endswith(".jpg")
-    assert "cand_" in str(cand_p)
+    assert cand_p.parent.parent.name == "candidates"
+    assert cand_p.name == "cand_10.500.jpg"
 
     # relay_process_stdout
     import asyncio
