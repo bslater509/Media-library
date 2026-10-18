@@ -22,7 +22,7 @@ from typing import Any
 from PIL import Image
 
 from media_library.core.state import get_thumbnail_cache_path
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.services.ffmpeg_service import probe_media_metadata
 from media_library.workers.base import BaseWorker
 
@@ -42,6 +42,33 @@ def _read_image_size(path: str):
             return img.width, img.height
     except Exception:
         return None
+
+
+def _apply_zip_dimensions(updates: list[tuple[int, int, str]]) -> None:
+    """Persist ZIP-member dimensions in one short transaction, off the loop."""
+    with db_conn() as conn, conn:
+        conn.executemany(
+            "UPDATE files SET width = ?, height = ? WHERE path = ?", updates
+        )
+
+
+def _apply_probe_results(rows: list[tuple]) -> None:
+    """Persist a batch of probe results in one short transaction, off the loop.
+
+    ``rows`` are ``(path, width, height, duration, video_codec, audio_codec,
+    fps, capture_time)`` as returned by ``process_item``; the statement's
+    parameter order puts the path last.
+    """
+    with db_conn() as conn, conn:
+        conn.executemany(
+            "UPDATE files SET width = ?, height = ?, duration = ?, "
+            "video_codec = ?, audio_codec = ?, fps = ?, capture_time = ? "
+            "WHERE path = ?",
+            [
+                (w, h, dur, vc, ac, fps, ct, p)
+                for (p, w, h, dur, vc, ac, fps, ct) in rows
+            ],
+        )
 
 
 class MediaMetadataWorker(BaseWorker):
@@ -156,11 +183,8 @@ class MediaMetadataWorker(BaseWorker):
 
         if updates:
             try:
-                with db_conn() as conn, conn:
-                    conn.executemany(
-                        "UPDATE files SET width = ?, height = ? WHERE path = ?", updates
-                    )
-                    self.state["processed_count"] += len(updates)
+                await run_db_write(_apply_zip_dimensions, updates)
+                self.state["processed_count"] += len(updates)
             except Exception as e:
                 logger.error(f"Error updating zip media dimensions: {e}")
         return True
@@ -210,26 +234,17 @@ class MediaMetadataWorker(BaseWorker):
 
             if rows:
                 try:
-                    with db_conn() as conn, conn:
-                        conn.executemany(
-                            "UPDATE files SET width = ?, height = ?, duration = ?, "
-                            "video_codec = ?, audio_codec = ?, fps = ?, capture_time = ? "
-                            "WHERE path = ?",
-                            [
-                                (w, h, dur, vc, ac, fps, ct, p)
-                                for (p, w, h, dur, vc, ac, fps, ct) in rows
-                            ],
+                    await run_db_write(_apply_probe_results, rows)
+                    self.state["processed_count"] += len(rows)
+                    self.state["pending_count"] = max(
+                        0, self.state["pending_count"] - len(rows)
+                    )
+                    total = self.state["total_files"]
+                    pending = self.state["pending_count"]
+                    if total > 0:
+                        self.state["percent"] = round(
+                            ((total - pending) / total * 100.0), 1
                         )
-                        self.state["processed_count"] += len(rows)
-                        self.state["pending_count"] = max(
-                            0, self.state["pending_count"] - len(rows)
-                        )
-                        total = self.state["total_files"]
-                        pending = self.state["pending_count"]
-                        if total > 0:
-                            self.state["percent"] = round(
-                                ((total - pending) / total * 100.0), 1
-                            )
                 except Exception as e:
                     logger.error(f"Error updating media dimensions: {e}")
             return count

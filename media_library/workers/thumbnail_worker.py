@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.services.backup_service import sync_thumbnail_db_cache
 from media_library.services.ffmpeg_service import generate_thumbnail
 from media_library.workers.base import BaseWorker
@@ -19,6 +19,28 @@ logger = logging.getLogger(__name__)
 _DEFERRED_ZIP_IMAGE_PREDICATE = (
     "(COALESCE(fo.is_zip, 0) = 1 AND f.type = 'image' AND f.ext != '.webp')"
 )
+
+
+def _apply_thumbnail_status(
+    successes: list[tuple[str]], failures: list[tuple[str]]
+) -> None:
+    """Record a batch's thumbnail outcomes in one short transaction.
+
+    Runs off the event loop via ``run_db_write``: the write lock is held for the
+    whole transaction, and waiting for it on the loop starves every request
+    until SQLite's busy timeout fires.
+    """
+    with db_conn() as conn, conn:
+        if successes:
+            conn.executemany(
+                "UPDATE files SET has_thumb = 1 WHERE path = ?",
+                successes,
+            )
+        if failures:
+            conn.executemany(
+                "UPDATE files SET has_thumb = 2 WHERE path = ?",
+                failures,
+            )
 
 
 class ThumbnailWorker(BaseWorker):
@@ -150,31 +172,21 @@ class ThumbnailWorker(BaseWorker):
 
             if successes or failures:
                 try:
-                    with db_conn() as conn, conn:
-                        if successes:
-                            conn.executemany(
-                                "UPDATE files SET has_thumb = 1 WHERE path = ?",
-                                successes,
-                            )
-                            self.state["processed_count"] += len(successes)
-                            self.state["cached_count"] += len(successes)
-                            self.state["pending_count"] = max(
-                                0, self.state["pending_count"] - len(successes)
-                            )
-                        if failures:
-                            conn.executemany(
-                                "UPDATE files SET has_thumb = 2 WHERE path = ?",
-                                failures,
-                            )
-                            self.state["pending_count"] = max(
-                                0, self.state["pending_count"] - len(failures)
-                            )
-                        tot = self.state["total_files"]
-                        pend = self.state["pending_count"]
-                        if tot > 0:
-                            self.state["percent"] = round(
-                                ((tot - pend) / tot * 100.0), 1
-                            )
+                    await run_db_write(_apply_thumbnail_status, successes, failures)
+                    if successes:
+                        self.state["processed_count"] += len(successes)
+                        self.state["cached_count"] += len(successes)
+                        self.state["pending_count"] = max(
+                            0, self.state["pending_count"] - len(successes)
+                        )
+                    if failures:
+                        self.state["pending_count"] = max(
+                            0, self.state["pending_count"] - len(failures)
+                        )
+                    tot = self.state["total_files"]
+                    pend = self.state["pending_count"]
+                    if tot > 0:
+                        self.state["percent"] = round(((tot - pend) / tot * 100.0), 1)
                 except Exception as e:
                     logger.error(f"Error bulk updating thumbnail status: {e}")
 

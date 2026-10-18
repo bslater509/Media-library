@@ -33,8 +33,18 @@ def add_file_to_index(file_path: str):
         fname = os.path.basename(file_path)
         st = os.stat(file_path)
 
-        with db_conn() as conn, conn:
+        # Resolve the thumbnail's presence *before* opening the write
+        # transaction. get_thumbnail_cache_path() is served from the in-memory
+        # stat cache / index, but the existence probe is a remote FUSE round
+        # trip — and SQLite admits one writer at a time, so holding the write
+        # lock across it starved every other writer for as long as the mount
+        # took to answer (AGENTS.md Rule 2).
+        try:
             has_thumb = 1 if get_thumbnail_cache_path(file_path).exists() else 0
+        except OSError:
+            has_thumb = 0
+
+        with db_conn() as conn, conn:
             conn.execute(
                 """
             INSERT OR REPLACE INTO files (path, name, folder_path, type, ext, size, size_formatted, mtime, needs_transcode, has_thumb)

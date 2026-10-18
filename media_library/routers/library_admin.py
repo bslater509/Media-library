@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from media_library.core.constants import VIDEO_EXTENSIONS
 from media_library.core.state import get_thumbnail_cache_path
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.db.indexer import (
     remove_file_from_index,
     update_file_in_index,
@@ -36,6 +36,42 @@ from media_library.workers.thumbnail_worker import thumbnail_worker_instance
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+
+def _reset_stale_thumb_markers() -> None:
+    """Clear ``has_thumb = 2`` (failed) markers so the worker retries them.
+
+    Off-loop: the update takes the write lock, and waiting for it on the event
+    loop would stall every request (see ``run_db_write``).
+    """
+    with db_conn() as conn:
+        try:
+            with conn:
+                conn.execute("UPDATE files SET has_thumb = 0 WHERE has_thumb = 2")
+        except sqlite3.DatabaseError:
+            logger.warning("Could not reset stale has_thumb markers", exc_info=True)
+
+
+def _set_poster_in_index(real_path: str, v_tag: int) -> tuple[float | None, int | None]:
+    """Record a custom poster frame and return the file's (mtime, size)."""
+    with db_conn() as conn, conn:
+        conn.execute(
+            "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
+            (float(v_tag), real_path),
+        )
+        row = conn.execute(
+            "SELECT mtime, size FROM files WHERE path = ? LIMIT 1",
+            (real_path,),
+        ).fetchone()
+    if row:
+        return row["mtime"], row["size"]
+    return None, None
+
+
+def _clear_animated_flag(real_path: str) -> None:
+    """Drop the ``has_animated`` flag so the preview recompiles from the new poster."""
+    with db_conn() as conn, conn:
+        conn.execute("UPDATE files SET has_animated = 0 WHERE path = ?", (real_path,))
 
 
 class BackupRenameRequest(BaseModel):
@@ -226,12 +262,7 @@ async def trigger_thumbnail_generate(req: ThumbnailGenerateRequest) -> dict:
             "message": f"Enqueued thumbnails for {os.path.basename(real_path)}",
         }
     else:
-        with db_conn() as conn:
-            try:
-                with conn:
-                    conn.execute("UPDATE files SET has_thumb = 0 WHERE has_thumb = 2")
-            except sqlite3.DatabaseError:
-                logger.warning("Could not reset stale has_thumb markers", exc_info=True)
+        await run_db_write(_reset_stale_thumb_markers)
         thumbnail_worker_instance.resume()
         return {"success": True, "message": "Thumbnail generator active for all files"}
 
@@ -273,20 +304,7 @@ async def set_poster_frame(req: SetPosterFrameRequest):
     fmtime = None
     fsize = None
     try:
-        from media_library.db.connection import db_conn
-
-        with db_conn() as conn, conn:
-            conn.execute(
-                "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
-                (float(v_tag), real_path),
-            )
-            row = conn.execute(
-                "SELECT mtime, size FROM files WHERE path = ? LIMIT 1",
-                (real_path,),
-            ).fetchone()
-            if row:
-                fmtime = row["mtime"]
-                fsize = row["size"]
+        fmtime, fsize = await run_db_write(_set_poster_in_index, real_path, v_tag)
     except Exception:
         pass
 
@@ -300,10 +318,7 @@ async def set_poster_frame(req: SetPosterFrameRequest):
         anim_path = await asyncio.to_thread(get_animated_preview_path, real_path)
         if anim_path.exists():
             anim_path.unlink()
-        with db_conn() as conn, conn:
-            conn.execute(
-                "UPDATE files SET has_animated = 0 WHERE path = ?", (real_path,)
-            )
+        await run_db_write(_clear_animated_flag, real_path)
         animated_thumb_worker_instance.enqueue(real_path, priority=True)
     except Exception as e:
         logger.warning(

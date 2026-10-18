@@ -16,13 +16,42 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.services import face_service
 from media_library.workers.face_worker import face_worker_instance
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["people"])
+
+
+def _requeue_face_scans(folder: str, paths: list[str], scan_all: bool) -> int:
+    """Drop ``face_scans`` markers so the worker re-scans the requested scope.
+
+    Off-loop: the DELETEs take the write lock (see ``run_db_write``).
+    """
+    queued = 0
+    with db_conn() as conn, conn:
+        if paths:
+            for start in range(0, len(paths), 200):
+                chunk = paths[start : start + 200]
+                placeholders = ",".join("?" for _ in chunk)
+                cur = conn.execute(
+                    f"DELETE FROM face_scans WHERE file_path IN ({placeholders})",
+                    chunk,
+                )
+                queued += max(0, cur.rowcount or 0)
+        elif folder:
+            prefix = folder.rstrip("/") + "/"
+            cur = conn.execute(
+                "DELETE FROM face_scans WHERE file_path = ? OR file_path LIKE ?",
+                (folder, prefix + "%"),
+            )
+            queued += max(0, cur.rowcount or 0)
+        else:
+            cur = conn.execute("DELETE FROM face_scans")
+            queued += max(0, cur.rowcount or 0)
+    return queued
 
 
 @router.get("/api/people/status")
@@ -319,34 +348,11 @@ async def scan(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     folder = (payload.get("folder") or "").strip()
     paths = [str(p) for p in (payload.get("paths") or []) if str(p).strip()]
     scan_all = bool(payload.get("all"))
-    queued = 0
+    if not (paths or folder or scan_all):
+        raise HTTPException(status_code=422, detail="Pass folder, paths or all=true")
+
     try:
-        with db_conn() as conn, conn:
-            if paths:
-                for start in range(0, len(paths), 200):
-                    chunk = paths[start : start + 200]
-                    placeholders = ",".join("?" for _ in chunk)
-                    cur = conn.execute(
-                        f"DELETE FROM face_scans WHERE file_path IN ({placeholders})",
-                        chunk,
-                    )
-                    queued += max(0, cur.rowcount or 0)
-            elif folder:
-                prefix = folder.rstrip("/") + "/"
-                cur = conn.execute(
-                    "DELETE FROM face_scans WHERE file_path = ? OR file_path LIKE ?",
-                    (folder, prefix + "%"),
-                )
-                queued += max(0, cur.rowcount or 0)
-            elif scan_all:
-                cur = conn.execute("DELETE FROM face_scans")
-                queued += max(0, cur.rowcount or 0)
-            else:
-                raise HTTPException(
-                    status_code=422, detail="Pass folder, paths or all=true"
-                )
-    except HTTPException:
-        raise
+        queued = await run_db_write(_requeue_face_scans, folder, paths, scan_all)
     except Exception as e:
         logger.error(f"[People] Could not queue a face scan: {e}")
         raise HTTPException(status_code=500, detail="Could not queue the scan") from e

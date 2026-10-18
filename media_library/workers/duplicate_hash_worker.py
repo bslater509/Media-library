@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from media_library.core.state import get_thumbnail_cache_path
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.services.deduplication_service import (
     compute_quick_hash,
     compute_thumbnail_phash,
@@ -16,6 +16,27 @@ from media_library.services.deduplication_service import (
 from media_library.workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_quick_hashes(updates: list[tuple[str, str]]) -> None:
+    """Persist quick-hash results in one short transaction, off the loop."""
+    with db_conn() as conn, conn:
+        conn.executemany("UPDATE files SET quick_hash = ? WHERE path = ?", updates)
+
+
+def _apply_thumb_hashes(updates: list[tuple[str, str]]) -> None:
+    """Persist perceptual-hash results in one short transaction, off the loop."""
+    with db_conn() as conn, conn:
+        conn.executemany("UPDATE files SET thumb_hash = ? WHERE path = ?", updates)
+
+
+def _mark_phash_migration_complete() -> None:
+    """Record that the one-off pHash backfill finished, off the event loop."""
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (key, value) "
+            "VALUES ('phash_migration_complete', '1')"
+        )
 
 
 class DuplicateHashWorker(BaseWorker):
@@ -123,11 +144,7 @@ class DuplicateHashWorker(BaseWorker):
 
                 if updates:
                     try:
-                        with db_conn() as conn, conn:
-                            conn.executemany(
-                                "UPDATE files SET quick_hash = ? WHERE path = ?",
-                                updates,
-                            )
+                        await run_db_write(_apply_quick_hashes, updates)
                     except Exception as e:
                         logger.error(f"Error updating candidate hashes in DB: {e}")
 
@@ -210,10 +227,7 @@ class ThumbHashWorker(BaseWorker):
                             pool, lambda chunk=chunk: list(map(hash_task, chunk))
                         )
 
-                    with db_conn() as conn, conn:
-                        conn.executemany(
-                            "UPDATE files SET thumb_hash = ? WHERE path = ?", updates
-                        )
+                    await run_db_write(_apply_thumb_hashes, updates)
 
                     self.state["hashed_count"] = min(total_m, start_idx + len(chunk))
                     self.state["pending_count"] = max(
@@ -226,10 +240,7 @@ class ThumbHashWorker(BaseWorker):
                     )
                     await asyncio.sleep(0.01)
 
-                with db_conn() as conn, conn:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('phash_migration_complete', '1')"
-                    )
+                await run_db_write(_mark_phash_migration_complete)
 
                 invalidate_visual_cache()
                 self.state["status"] = "idle"
@@ -310,10 +321,7 @@ class ThumbHashWorker(BaseWorker):
                         updates.append((val, fpath))
 
                 if updates:
-                    with db_conn() as conn, conn:
-                        conn.executemany(
-                            "UPDATE files SET thumb_hash = ? WHERE path = ?", updates
-                        )
+                    await run_db_write(_apply_thumb_hashes, updates)
 
                     self.state["processed_count"] += len(updates)
                     self.state["hashed_count"] += len(updates)

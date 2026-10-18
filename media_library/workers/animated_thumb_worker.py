@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from media_library.db.connection import db_conn
+from media_library.db.connection import db_conn, run_db_write
 from media_library.services.anim_cache import (
     anim_cache_payload,
     manage_animated_cache_lru,
@@ -21,6 +21,12 @@ from media_library.services.ffmpeg_service import (
 from media_library.workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_has_animated(file_path: str) -> None:
+    """Flag a generated preview in the index, off the event loop."""
+    with db_conn() as conn, conn:
+        conn.execute("UPDATE files SET has_animated = 1 WHERE path = ?", (file_path,))
 
 
 def sync_animated_thumb_db_cache():
@@ -316,11 +322,7 @@ class AnimatedThumbWorker(BaseWorker):
                             self.history.pop(0)
 
                         try:
-                            with db_conn() as conn, conn:
-                                conn.execute(
-                                    "UPDATE files SET has_animated = 1 WHERE path = ?",
-                                    (file_path,),
-                                )
+                            await run_db_write(_mark_has_animated, file_path)
                         except Exception as dbe:
                             logger.warning(
                                 f"Failed to update has_animated in DB for {file_path}: {dbe}"

@@ -125,6 +125,8 @@ The target media collection may reside on a remote FUSE filesystem (such as pClo
 - Always wrap database writes in a transaction block: `with conn: conn.execute(...)`.
 - Always close database connections in a `finally` block: `conn.close()`.
 - Never hold a database connection open across `await` points or long-running network/disk operations.
+- **Never run a mutating `db_conn()` block on the event loop.** SQLite admits one writer at a time and a connection waits for that write lock for its whole `timeout` (30s) before raising `database is locked`, so awaiting such a write inside a coroutine stalls the *entire* server for the duration — the unit stays `active` and bound to its port while answering nothing, and nothing appears in the log because the loop never returns to the socket. Worker loops and request handlers must hand the transaction to a thread: `await run_db_write(fn, *args)` (`media_library/db/connection.py`) or an equivalent `await asyncio.to_thread(fn, …)` with the transaction in a module-level sync function. Reads are fine on the loop — WAL lets them run alongside a writer. `tests/test_no_blocking_db_writes.py` fails the build when a mutating `with db_conn() as conn, conn:` reappears directly in a coroutine.
+- **Never hold a write transaction across remote I/O.** A `Path.exists()`/`os.stat()` on the library mount inside a `with db_conn() as conn, conn:` block spends its FUSE round trip holding SQLite's single write lock, which starves every other writer for that long (see Rule 2). Resolve such probes *before* opening the transaction.
 - Schema migrations must be idempotent: modify `init_backup_db()` in `media_library/db/schema.py` using `ALTER TABLE ... ADD COLUMN ...` wrapped in `try...except sqlite3.OperationalError: pass`.
 - **Never import a `media_library.services.*` module at import time from `media_library/db/*`.** `services/__init__.py` eagerly imports the dedup facades, which import back from `media_library.db.indexer`; a module-level service import inside the DB layer therefore creates an import cycle that makes `import media_library.db.indexer` an `ImportError` as soon as the facade's import order changes (this broke once when a naive import sort moved `indexer_crawl` above `indexer_files`). Service helpers needed by the DB layer (`db.indexer_prune`'s animated-cache cleanup, the dedup cache invalidation) are imported **lazily inside the functions** that use them.
 
@@ -208,7 +210,7 @@ media-library/
 │   │
 │   ├── db/                          # Database connection, schema, and filesystem crawler
 │   │   ├── __init__.py
-│   │   ├── connection.py            # SQLite connection factory with WAL PRAGMAs
+│   │   ├── connection.py            # SQLite connection factory with WAL PRAGMAs + run_db_write (off-loop write helper)
 │   │   ├── schema.py                # Schema tables, indexes, idempotent migrations
 │   │   ├── indexer_state.py         # Shared indexer_state dict + asyncio lock
 │   │   ├── indexer_scan.py          # Folder/entry scanning, ZIP archives, index_folder
@@ -352,6 +354,7 @@ media-library/
 │   ├── test_media_dimensions.py     # Dimension/metadata probing, natural-ratio tile data, folder totals
 │   ├── test_media_service_and_ops_worker.py # LAN IP, token search, ops worker queue/undo, debounced sync-back
 │   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
+│   ├── test_no_blocking_db_writes.py # Event-loop guard: no mutating db_conn() in a coroutine; run_db_write runs off-loop
 │   ├── test_performance_features.py# In-memory stat cache, subfolder caching, status API
 │   ├── test_search_folder_match.py  # Search matches folder names (relative to the library root), not just filenames
 │   ├── test_sorter_browse.py        # Video sorter browsing, queue scanning & destination listing
@@ -628,6 +631,8 @@ All background workers inherit from `BaseWorker` (`media_library.workers.base`) 
 - `pause()` / `resume()`: Non-destructively suspends and resumes processing.
 - `is_paused()`: Returns Boolean pause state.
 - `get_status()`: Returns a status dictionary for API polling.
+
+Every worker's database mutations run off the event loop (`await run_db_write(...)` / `asyncio.to_thread(...)`) — see Rule 3. A worker that writes synchronously on the loop can stall the whole HTTP server while it waits for SQLite's write lock.
 
 ### Worker Roster
 

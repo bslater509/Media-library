@@ -19,6 +19,18 @@ from media_library.services.ffmpeg_probe import probe_video_meta
 candidate_generation_sem = asyncio.Semaphore(4)
 
 
+def _mark_animated_in_index(file_path: str) -> None:
+    """Flag the preview in the index, off the event loop.
+
+    Imported lazily: ``media_library.db`` must not pull services in at import
+    time (AGENTS.md Rule 3), and this module is imported by services.
+    """
+    from media_library.db.connection import db_conn
+
+    with db_conn() as conn, conn:
+        conn.execute("UPDATE files SET has_animated = 1 WHERE path = ?", (file_path,))
+
+
 def get_candidate_cache_path(file_path: str, timestamp: float) -> Path:
     """Returns the persistent disk path for a cached candidate frame.
 
@@ -584,13 +596,7 @@ async def generate_animated_preview(
             if temp_anim.exists() and temp_anim.stat().st_size > 0:
                 os.replace(temp_anim, anim_path)
                 try:
-                    from media_library.db.connection import db_conn
-
-                    with db_conn() as conn, conn:
-                        conn.execute(
-                            "UPDATE files SET has_animated = 1 WHERE path = ?",
-                            (file_path,),
-                        )
+                    await asyncio.to_thread(_mark_animated_in_index, file_path)
                 except Exception:
                     pass
                 return anim_path
