@@ -819,6 +819,71 @@ def test_assign_person_respects_threshold(sandbox_env):
     assert face_service.assign_person(embedding, {1: embedding})[0] == 1
 
 
+def test_centroid_matcher_agrees_with_assign_person(sandbox_env):
+    """The batch matcher must pick the same cluster, and see ones it creates."""
+    embedding = np.zeros(128, dtype="float32")
+    embedding[0] = 1.0
+    other = np.zeros(128, dtype="float32")
+    other[0] = 1.0
+    other[1] = 1.0
+    other = other / np.linalg.norm(other)
+
+    matcher = face_service._CentroidMatcher({7: embedding}, 0.36)
+    assert matcher.match(other) == (7, pytest.approx(0.293, abs=0.01))
+    strict = face_service._CentroidMatcher({7: embedding}, 0.1)
+    assert strict.match(other) == (None, None)
+    assert face_service._CentroidMatcher({}, 0.36).match(embedding) == (None, None)
+
+    # A cluster created mid-batch is matchable by the faces that follow it —
+    # without it, one person on one file would spawn a cluster per detection.
+    fresh = face_service._CentroidMatcher({7: embedding}, 0.36)
+    fresh.add(42, other)
+    assert fresh.match(other) == (42, pytest.approx(0.0, abs=1e-5))
+
+
+def test_record_scan_reuses_one_matcher_per_file(sandbox_env, monkeypatch):
+    """Every face in a file must be matched without rebuilding the matrix."""
+    db_path = sandbox_env["db_path"]
+    faces = []
+    for i in range(6):
+        vec = np.zeros(128, dtype="float32")
+        vec[i % 4] = 1.0
+        faces.append(
+            {
+                "frame_time": -1.0,
+                "x": i * 10,
+                "y": 0,
+                "w": 40,
+                "h": 40,
+                "score": 0.9,
+                "embedding": vec,
+                "crop": None,
+            }
+        )
+
+    builds = []
+    real_matcher = face_service._CentroidMatcher
+
+    class _Counting(real_matcher):
+        def __init__(self, centroids, limit):
+            builds.append(1)
+            super().__init__(centroids, limit)
+
+    monkeypatch.setattr(face_service, "_CentroidMatcher", _Counting)
+    assert face_service.record_scan("/tmp/a.jpg", 1.0, 10, faces, {}) == 6
+    assert builds == [1], "the centroid matrix must be built once per file"
+
+    from media_library.db.connection import db_conn
+
+    with db_conn(db_path) as conn:
+        assert conn.execute("SELECT count(*) FROM faces").fetchone()[0] == 6
+        # Same four directions -> the first four become clusters, the rest match.
+        assert (
+            conn.execute("SELECT count(DISTINCT person_id) FROM faces").fetchone()[0]
+            == 4
+        )
+
+
 def test_embedding_pack_roundtrip(sandbox_env):
     vec = np.linspace(0, 1, 128, dtype="float32")
     blob = face_service.pack_embedding(vec)

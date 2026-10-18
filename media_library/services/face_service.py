@@ -332,6 +332,56 @@ def assign_person(
     return None, None
 
 
+class _CentroidMatcher:
+    """Nearest-centroid lookup whose matrix is built once, not once per face.
+
+    ``assign_person`` rebuilds a ``(people x 128)`` matrix on every call, which
+    on a library with ~16k clusters costs ~30ms a time. ``record_scan`` calls it
+    per face *inside* its write transaction, so one file earning a few hundred
+    tracks held SQLite's single write lock for seconds and starved every other
+    writer — including the "Scan library" request, which then failed with
+    ``database is locked`` and looked like a dead button.
+
+    Building the matrix once and keeping clusters created during the same batch
+    in a short side list makes the per-face cost a single matmul, so the
+    transaction is back to being a handful of inserts.
+    """
+
+    def __init__(self, centroids: dict[int, np.ndarray], limit: float) -> None:
+        self.limit = float(limit)
+        self.ids = list(centroids.keys())
+        self._matrix = (
+            np.vstack([_normalize(centroids[i]) for i in self.ids])
+            if self.ids
+            else np.zeros((0, EMBEDDING_DIM), dtype="float32")
+        )
+        # Clusters created while this batch runs: matched separately so adding
+        # one never costs a rebuild of the full matrix.
+        self._created: list[tuple[int, np.ndarray]] = []
+
+    def match(self, embedding: np.ndarray) -> tuple[int | None, float | None]:
+        """Nearest person within the threshold, or ``(None, None)``."""
+        vec = _normalize(embedding)
+        best_id: int | None = None
+        best_distance: float | None = None
+        if self._matrix.shape[0]:
+            distances = 1.0 - self._matrix @ vec
+            idx = int(np.argmin(distances))
+            best_id = self.ids[idx]
+            best_distance = float(distances[idx])
+        for person_id, centroid in self._created:
+            distance = 1.0 - float(centroid @ vec)
+            if best_distance is None or distance < best_distance:
+                best_id, best_distance = person_id, distance
+        if best_distance is not None and best_distance <= self.limit:
+            return best_id, best_distance
+        return None, None
+
+    def add(self, person_id: int, embedding: np.ndarray) -> None:
+        """Make a cluster created during this batch matchable by later faces."""
+        self._created.append((int(person_id), _normalize(embedding)))
+
+
 # ---------------------------------------------------------------------- crops
 
 
@@ -599,6 +649,9 @@ def record_scan(
     """
     inserted = 0
     now = time.time()
+    # Built before the transaction opens: the per-batch matrix is the expensive
+    # part, and the write lock must not be held for it.
+    matcher = _CentroidMatcher(centroids, get_threshold())
     try:
         with db_conn() as conn, conn:
             dismissed, dismissed_vectors = _dismissed_keys(conn, file_path)
@@ -617,13 +670,14 @@ def record_scan(
                 person_id = face.get("person_id")
                 distance = face.get("distance")
                 if person_id is None:
-                    person_id, distance = assign_person(embedding, centroids)
+                    person_id, distance = matcher.match(embedding)
                     if person_id is None:
                         cur = conn.execute(
                             "INSERT INTO people (name, created_at) VALUES (NULL, ?)",
                             (now,),
                         )
                         person_id = int(cur.lastrowid)
+                        matcher.add(person_id, embedding)
                 conn.execute(
                     "INSERT OR REPLACE INTO faces (file_path, frame_time, x, y, w, h, "
                     "score, embedding, person_id, distance, crop, created_at) "
