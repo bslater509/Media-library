@@ -109,6 +109,8 @@ async def iter_video_scan_frames(
     max_frames: int = 0,
     timeout_s: float = 0.0,
     slots: asyncio.Semaphore | None = None,
+    stall_timeout_s: float = 0.0,
+    report: dict | None = None,
 ):
     """Yield ``(index, timestamp, jpeg_bytes)`` from one pass over a video.
 
@@ -119,6 +121,14 @@ async def iter_video_scan_frames(
     so the shared candidate-frame cache is never touched (or evicted) by the
     sweep. Frames are scaled to ``width`` but never upscaled, so a small source
     is not blown up into blurry pixels the recogniser cannot use.
+
+    ``stall_timeout_s`` is the no-progress limit: a pass that produces no frame
+    for that long is abandoned instead of holding a decode slot until the mount
+    comes back (a remote mount can stay wedged for far longer than a clip takes
+    to decode). ``timeout_s`` stays the overall budget. ``report``, when given, is
+    filled with ``{"frames": n, "complete": bool}`` — a caller that needs to know
+    whether it saw the whole clip (rather than a truncated pass) can leave the
+    file pending instead of recording a partial scan as final.
     """
     interval = max(0.05, float(interval))
     width = max(160, int(width))
@@ -157,28 +167,40 @@ async def iter_video_scan_frames(
             logger.warning(
                 f"[Faces] Could not start the frame pass for {file_path}: {e}"
             )
+            if report is not None:
+                report.update(
+                    {"frames": 0, "complete": False, "reason": "start_failed"}
+                )
             return
         buffer = bytearray()
         index = 0
+        complete = False
+        reason = "error"
+        stall = max(0.0, float(stall_timeout_s or 0.0))
         deadline = None
         if timeout_s and timeout_s > 0:
             deadline = asyncio.get_running_loop().time() + float(timeout_s)
         try:
             while True:
+                budget = stall
                 if deadline is not None:
                     remaining = deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
+                        reason = "timeout"
                         logger.warning(
                             f"[Faces] Frame pass timed out for {file_path} after "
                             f"{index} frames"
                         )
                         break
+                    budget = remaining if budget <= 0 else min(budget, remaining)
+                if budget > 0:
                     chunk = await asyncio.wait_for(
-                        proc.stdout.read(_READ_CHUNK), remaining
+                        proc.stdout.read(_READ_CHUNK), budget
                     )
                 else:
                     chunk = await proc.stdout.read(_READ_CHUNK)
                 if not chunk:
+                    complete, reason = True, "eof"
                     break
                 buffer.extend(chunk)
                 for jpeg in _split_jpegs(buffer):
@@ -187,17 +209,29 @@ async def iter_video_scan_frames(
                     if max_frames and index >= int(max_frames):
                         break
                 if max_frames and index >= int(max_frames):
+                    complete, reason = True, "cap"
                     break
             for jpeg in _split_jpegs(buffer):
                 yield index, round(index * interval, 3), jpeg
                 index += 1
         except asyncio.TimeoutError:
-            logger.warning(f"[Faces] Frame pass timed out for {file_path}")
+            reason = "stall" if stall else "timeout"
+            if stall:
+                logger.warning(
+                    f"[Faces] Frame pass stalled on {file_path} after {index} frames "
+                    f"({stall:.0f}s without a frame); leaving it pending"
+                )
+            else:
+                logger.warning(f"[Faces] Frame pass timed out for {file_path}")
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logger.warning(f"[Faces] Frame pass failed for {file_path}: {e}")
         finally:
+            if report is not None:
+                report["frames"] = index
+                report["complete"] = complete
+                report["reason"] = reason
             try:
                 if proc.returncode is None:
                     proc.kill()

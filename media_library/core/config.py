@@ -157,6 +157,16 @@ FACE_VIDEO_SAMPLE_INTERVAL = max(
     0.5, float(os.environ.get("FACE_VIDEO_SAMPLE_INTERVAL", "2"))
 )
 FACE_VIDEO_MAX_FRAMES = max(1, int(os.environ.get("FACE_VIDEO_MAX_FRAMES", "20000")))
+# A frame pass reads a whole clip over the (possibly FUSE) mount, and a mount
+# hiccup can stall that read for as long as the mount stays wedged. Nothing else
+# on the box is harmed by one pending file, but a pass that never returns would
+# pin a decode slot (and the sweep with it) indefinitely, so a pass that goes this
+# long without producing a frame is abandoned and the file stays pending for the
+# next sweep. It also bounds how long the ordered pipeline waits for a detection
+# that never comes back.
+FACE_FRAME_STALL_TIMEOUT = max(
+    10.0, float(os.environ.get("FACE_FRAME_STALL_TIMEOUT", "60"))
+)
 # One record per person per appearance: a 2 s grid detects the same face dozens
 # of times in a static shot, so detections are folded into a track while they
 # stay within this cosine distance of the track's running mean and within this

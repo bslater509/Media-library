@@ -64,6 +64,8 @@ DOWNLOAD_TIMEOUT_S = 120.0
 #: Set by the test suite (or an embedder) to stand in for the OpenCV engine.
 _ENGINE_OVERRIDE: Any = None
 _ENGINE: Any = None
+#: OpenCV's internal thread pool is capped once, on first import.
+_CV2_CONFIGURED = False
 
 # Verification memo: the recogniser is 37 MB, and the status API reports model
 # readiness on every poll, so the SHA-256 is only recomputed when a file's own
@@ -204,13 +206,27 @@ def models_ready() -> bool:
 
 
 def _load_cv2():
-    """Import OpenCV, or return None when it is not installed."""
+    """Import OpenCV, or return None when it is not installed.
+
+    Detection is parallelised one whole frame at a time by the sweep (each
+    detection thread leases its own engine), so OpenCV's own per-call thread
+    pool is set to a single thread. Left at its default it spawns (and
+    spin-waits) a worker per core *per detection*, which on an 8-core box with
+    four detection threads is dozens of busy threads competing with the event
+    loop — the sweep would flatten the server it runs inside.
+    """
+    global _CV2_CONFIGURED
     try:
         import cv2  # deliberately lazy: OpenCV is an optional dependency
-
-        return cv2
     except Exception:  # pragma: no cover - depends on the install
         return None
+    if not _CV2_CONFIGURED:
+        _CV2_CONFIGURED = True
+        try:
+            cv2.setNumThreads(1)
+        except Exception:  # pragma: no cover - old/odd builds
+            pass
+    return cv2
 
 
 def opencv_available() -> bool:

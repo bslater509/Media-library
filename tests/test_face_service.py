@@ -316,7 +316,9 @@ def test_video_scan_records_one_face_per_appearance(
     """A 2 s grid sees one person many times; they are stored once per track."""
     video = _video_row(sandbox_env, duration=40.0)
 
-    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+    async def fake_frames(
+        file_path, interval, width, max_frames=0, timeout_s=0.0, **kwargs
+    ):
         # The same red face for 20 s, then a blue one for 20 s, then red again
         # after a gap longer than the track window.
         plan = [(0.0, (255, 0, 0)), (2.0, (255, 0, 0)), (4.0, (250, 4, 4))]
@@ -351,7 +353,9 @@ def test_video_scan_keeps_the_sharpest_frame_of_a_track(
     sizes = [(40, 40), (120, 120), (60, 60)]
     calls = {"n": 0}
 
-    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+    async def fake_frames(
+        file_path, interval, width, max_frames=0, timeout_s=0.0, **kwargs
+    ):
         for index, stamp in enumerate((0.0, 2.0, 4.0)):
             yield index, stamp, _jpeg_bytes((255, 0, 0))
 
@@ -643,7 +647,9 @@ def test_person_media_groups_a_video_once_with_its_moments(
     face_image_factory("portrait.jpg", (255, 0, 0))
     _video_row(sandbox_env, "moments.mp4", duration=60.0)
 
-    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+    async def fake_frames(
+        file_path, interval, width, max_frames=0, timeout_s=0.0, **kwargs
+    ):
         # The face is on screen early and again near the end, with a gap longer
         # than the track window — so it is one file with two appearances.
         for index, stamp in enumerate((0.0, 2.0, 44.0, 46.0)):
@@ -1120,7 +1126,9 @@ def test_parallel_scan_matches_the_serial_scan(sandbox_env, monkeypatch):
         # Red for the first half, blue for the second: two tracks, one gap.
         plan.append((index, stamp, (255, 0, 0) if index < 20 else (0, 0, 255)))
 
-    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+    async def fake_frames(
+        file_path, interval, width, max_frames=0, timeout_s=0.0, **kwargs
+    ):
         for index, stamp, color in plan:
             yield index, stamp, _jpeg_bytes(color)
 

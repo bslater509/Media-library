@@ -1,0 +1,13 @@
+[Unit]
+Description=Restart the Media Library when its HTTP loop stops answering
+After=media-library.service
+
+[Service]
+Type=oneshot
+# Needs to be able to restart the app's unit, so it runs as root.
+ExecStart=/path/to/media-library/scripts/media-library-watchdog.sh
+# Override the endpoint/unit/attempts here if your deployment differs:
+# Environment=ML_UNIT=media-library
+# Environment=ML_HEALTH_URL=http://127.0.0.1:8888/api/health
+# Environment=ML_HEALTH_TIMEOUT=10
+# Environment=ML_WATCHDOG_FAILS=2

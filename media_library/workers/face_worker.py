@@ -537,6 +537,10 @@ class FaceWorker(BaseWorker):
         # One pass may decode an hour of video, so the ceiling scales with the
         # clip instead of being the 12 s a single frame extraction needed.
         timeout = max(180.0, duration * 1.5)
+        # No-progress limit: a trim over a stalled mount must not hold a decode
+        # slot forever (see FACE_FRAME_STALL_TIMEOUT), and the same limit bounds
+        # how long the ordered pipeline waits for a detection that never returns.
+        stall = float(getattr(config, "FACE_FRAME_STALL_TIMEOUT", 60.0) or 0.0)
 
         pool = pool or _DetectPool(1, seed=engine)
         workers = pool.size
@@ -547,6 +551,7 @@ class FaceWorker(BaseWorker):
         )
         results: dict[int, tuple[list[dict[str, Any]], Any]] = {}
         progress: dict[str, Any] = {"total": None}
+        pass_report: dict[str, Any] = {}
         wake = asyncio.Event()
 
         async def produce() -> None:
@@ -559,6 +564,8 @@ class FaceWorker(BaseWorker):
                     cap,
                     timeout,
                     **({"slots": slots} if slots is not None else {}),
+                    stall_timeout_s=stall,
+                    report=pass_report,
                 ):
                     total = index + 1
                     await queue.put((index, stamp, jpeg))
@@ -576,7 +583,10 @@ class FaceWorker(BaseWorker):
                 item = await queue.get()
                 if item is None:
                     # Hand the stop on so every worker drains and exits.
-                    queue.put_nowait(None)
+                    try:
+                        queue.put_nowait(None)
+                    except asyncio.QueueFull:
+                        pass
                     return
                 index, stamp, jpeg = item
                 try:
@@ -605,6 +615,7 @@ class FaceWorker(BaseWorker):
 
         tasks = [asyncio.create_task(produce())]
         tasks += [asyncio.create_task(consume()) for _ in range(workers)]
+        waited_out = False
         try:
             index = 0
             while True:
@@ -617,11 +628,27 @@ class FaceWorker(BaseWorker):
                 total = progress["total"]
                 if total is not None and index >= total:
                     break
-                await wake.wait()
+                # A detection that never comes back (a wedged frame, an engine
+                # stuck in C) must not hold this file's decode slot for ever:
+                # wait no longer than the same no-progress limit the frame pass
+                # uses, then give up and leave the file pending.
+                try:
+                    await asyncio.wait_for(wake.wait(), stall or None)
+                except asyncio.TimeoutError:
+                    waited_out = True
+                    logger.warning(
+                        f"[Faces] Detection stalled on {row['path']} at frame "
+                        f"{index}; leaving it pending"
+                    )
+                    break
         finally:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+        if waited_out or pass_report.get("reason") in ("stall", "timeout"):
+            # A cut-short pass says nothing about the clip: recording what was
+            # read so far would mark the file scanned and never look again.
+            return None
         return builder.finish()
 
     async def _scan_batch(

@@ -1,0 +1,11 @@
+[Unit]
+Description=Watchdog for the Media Library HTTP loop
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=media-library-watchdog.service
+
+[Install]
+WantedBy=timers.target

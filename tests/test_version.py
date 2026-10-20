@@ -28,7 +28,7 @@ SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics", "/people", "/people/
 
 
 def test_version_is_the_release_version():
-    assert __version__ == "1.2.2"
+    assert __version__ == "1.2.3"
 
 
 def test_package_json_matches_python_version():

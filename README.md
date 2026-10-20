@@ -2,7 +2,7 @@
 
 A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
 
-**Current release: v1.2.2** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v1.2.3** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 
@@ -196,6 +196,26 @@ To run the media library continuously in the background on Linux:
    systemctl status media-library
    journalctl -u media-library -f
    ```
+
+### Watchdog for a hung process
+
+`Restart=always` only helps when the process *exits*. A process can stay alive,
+listen on its port and hold every worker while answering nothing (one long
+synchronous stretch on the event loop — a wedged mount read, a lock wait). The
+bundled watchdog asks the app for `/api/health` every couple of minutes and
+restarts the unit after two consecutive failures:
+
+```bash
+sudo cp media-library-watchdog.service.example /etc/systemd/system/media-library-watchdog.service
+sudo cp media-library-watchdog.timer.example /etc/systemd/system/media-library-watchdog.timer
+sudo sed -i "s#/path/to/media-library#$PWD#" /etc/systemd/system/media-library-watchdog.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now media-library-watchdog.timer
+```
+
+Override `ML_UNIT`, `ML_HEALTH_URL`, `ML_HEALTH_TIMEOUT` or `ML_WATCHDOG_FAILS`
+in the unit if your port or unit name differs; restarts are logged to the journal
+under the `media-library-watchdog` tag.
 
 ---
 

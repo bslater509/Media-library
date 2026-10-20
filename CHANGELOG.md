@@ -9,6 +9,31 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.3] - 2026-10-20
+
+### Fixed
+
+- **A face scan can no longer wedge the whole server.** A sweep reading a clip
+  over a remote mount that stops answering would hold its decode slot for as
+  long as the mount stayed wedged, and the ordered pipeline waited forever for a
+  detection that never came back — while OpenCV's own per-call thread pool
+  spawned (and spin-waited) a worker per core for every detection. A frame pass
+  now gives up after `FACE_FRAME_STALL_TIMEOUT` (60 s) without a frame, the
+  pipeline stops waiting for a detection on the same limit, and OpenCV's pool is
+  capped at one thread (`cv2.setNumThreads(1)`) since the sweep already
+  parallelises one whole frame at a time. A cut-short pass reports why it ended
+  and leaves the file pending for the next sweep instead of recording a partial
+  scan as final.
+
+### Added
+
+- **Health watchdog for a hung process.** `Restart=always` only helps when the
+  process exits; one that is alive and holding its port but answering nothing is
+  invisible to systemd. `scripts/media-library-watchdog.sh` polls
+  `/api/health` and restarts the unit after two consecutive failures, driven by
+  the new `media-library-watchdog.service.example` /
+  `media-library-watchdog.timer.example` pair.
+
 ## [1.2.2] - 2026-10-20
 
 ### Fixed
