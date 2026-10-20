@@ -1153,9 +1153,12 @@ def test_scan_concurrency_leaves_a_core_for_the_server():
 
     assert scan_concurrency(1) == (1, 1)
     assert scan_concurrency(2) == (1, 1)
-    # One core for the server, one per decoder stream, the rest detect.
-    assert scan_concurrency(8) == (2, 5)
-    assert scan_concurrency(16) == (3, 12)
+    # One core for the server, one per decoder stream, the rest detect — with
+    # the detection pool capped, since decoding is the wall and each detection
+    # worker costs an engine instance.
+    assert scan_concurrency(4) == (1, 2)
+    assert scan_concurrency(8) == (2, 4)
+    assert scan_concurrency(16) == (3, 4)
 
 
 def test_scan_batch_runs_concurrent_videos_without_deadlocking(

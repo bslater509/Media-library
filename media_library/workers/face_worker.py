@@ -22,8 +22,13 @@ Each file is scanned at most once per ``mtime``/``size`` (recorded in
 ``face_scans``), so a re-run resumes instead of restarting, and a file that
 changed is re-scanned with its previous detections replaced. Memory is guarded
 the same way the WebP optimizer guards itself: the sweep waits when available
-memory (host *or* cgroup headroom) drops below ``MEMORY_GUARD_MB`` and skips the
-current file rather than risking the kernel throttling the server.
+memory (host *or* cgroup headroom) drops below ``_MEMORY_FLOOR_MB`` and skips
+the current file rather than risking the kernel throttling the server. That
+floor is deliberately not the WebP optimizer's ``MEMORY_GUARD_MB`` (1.5 GB): the
+sweep's own models, engine instances and frame queues are a fixed cost of a
+gigabyte or more, so on a 3 GB service cap a 1.5 GB *available* threshold is
+never met again once the sweep has started — it would pause itself for being
+alive.
 """
 
 import asyncio
@@ -42,7 +47,6 @@ from media_library.services import candidate_cache, face_engine, face_service
 from media_library.services.ffmpeg_frames import iter_video_scan_frames
 from media_library.workers.base import BaseWorker
 from media_library.workers.webp_worker import (
-    MEMORY_GUARD_MB,
     _available_memory_mb,
     _release_memory,
 )
@@ -59,6 +63,10 @@ _QUEUE_FRAMES_PER_WORKER = 2
 _RATE_WINDOW_S = 180.0
 #: Most videos decoded (and so most mount streams read) at any one time.
 _MAX_DECODERS = 3
+#: Pause below this much free memory (host *or* cgroup headroom). Low on purpose:
+#: see the module docstring — the sweep's own footprint is what makes a
+#: comfort-level threshold unreachable.
+_MEMORY_FLOOR_MB = 256.0
 
 
 def effective_video_interval(
@@ -104,7 +112,10 @@ def scan_concurrency(cores: int | None = None) -> tuple[int, int]:
     if cores < 3:
         return 1, 1
     decoders = min(_MAX_DECODERS, max(1, cores // 3))
-    detectors = max(1, cores - decoders - 1)
+    # Detection needs about one core in total on this workload (decoding is the
+    # wall), and every detection worker pays for its own engine instance, so the
+    # pool is capped rather than given every spare core.
+    detectors = max(1, min(4, cores - decoders - 1))
     return decoders, detectors
 
 
@@ -674,12 +685,12 @@ class FaceWorker(BaseWorker):
     async def _wait_for_memory(self) -> bool:
         """Wait for headroom; False when the guard is still tripped after a minute."""
         waited = 0
-        while _available_memory_mb() < MEMORY_GUARD_MB and waited < 60:
+        while _available_memory_mb() < _MEMORY_FLOOR_MB and waited < 60:
             if not self._pause_event.is_set():
                 return False
             await asyncio.sleep(1.0)
             waited += 1
-        return _available_memory_mb() >= MEMORY_GUARD_MB
+        return _available_memory_mb() >= _MEMORY_FLOOR_MB
 
     async def _run_loop(self):
         while True:
