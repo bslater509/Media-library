@@ -9,6 +9,41 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.0] - 2026-10-20
+
+### Changed
+
+- **The face sweep now decodes and detects in parallel.** It used to be strictly
+  serial — one file, one FFmpeg frame, one detection, in turn — which left seven
+  of this box's eight cores idle and took ~65 h for the whole library. Now two
+  FFmpeg streams run at once, each feeding a shared pool of detection workers,
+  and the frames of a clip are detected while the next frames are still being
+  decoded. The sampling is untouched (same `FACE_VIDEO_SAMPLE_INTERVAL` grid,
+  same `FACE_SCAN_WIDTH`), and detections are folded into tracks **in frame
+  order**, so the stored faces are identical to a serial scan's — a test asserts
+  it. Each detection thread leases its own engine instance, because YuNet keeps
+  the input size on the detector and two threads sharing one would resize it
+  under each other.
+- **Concurrency is derived from the core count, not configured.** One core is
+  left to the server, one per decode stream to FFmpeg and the rest go to
+  detection (`scan_concurrency`), so a small machine simply gets fewer of each
+  instead of a new environment variable to get wrong. Database writes stay
+  serialized behind a lock, so the sweep cannot starve other writers.
+
+### Added
+
+- **Throughput and ETA on the face card.** The background-tasks modal (both the
+  Library and the Sorter) now shows files per minute over a rolling window and
+  the time left at that rate, from `files_per_min` / `eta_seconds` in the
+  `faces` status payload, alongside the existing counts.
+
+### Fixed
+
+- The file gate and the frame-stream gate are deliberately **different**
+  semaphores: sharing one had each concurrent video holding a permit while its
+  own frame pass waited for a second, so the sweep sat at "scanning" with zero
+  progress and no decoder running. `tests/test_face_service.py` covers it.
+
 ## [1.1.9] - 2026-10-18
 
 ### Added

@@ -1100,3 +1100,114 @@ def test_write_face_crop_crops_and_resizes(sandbox_env):
         )
         is False
     )
+
+
+def test_parallel_scan_matches_the_serial_scan(sandbox_env, monkeypatch):
+    """Detecting frames in parallel must produce the same records, in order.
+
+    The sweep used to detect one frame at a time between decode steps; it now
+    hands frames to a pool of detection workers. The grid, the frames and the
+    track folding are unchanged, so the stored records have to be identical —
+    including their order, since tracks are built by folding detections in
+    timestamp order.
+    """
+    from media_library.workers import face_worker
+
+    video = _video_row(sandbox_env, name="parallel.mp4", duration=240.0)
+    plan = []
+    for index in range(40):
+        stamp = index * 2.0
+        # Red for the first half, blue for the second: two tracks, one gap.
+        plan.append((index, stamp, (255, 0, 0) if index < 20 else (0, 0, 255)))
+
+    async def fake_frames(file_path, interval, width, max_frames=0, timeout_s=0.0):
+        for index, stamp, color in plan:
+            yield index, stamp, _jpeg_bytes(color)
+
+    monkeypatch.setattr(face_worker, "iter_video_scan_frames", fake_frames)
+    monkeypatch.setattr(config, "FACE_TRACK_GAP_S", 600.0)
+
+    row = {"path": str(video), "type": "video", "duration": 240.0}
+    engine = face_engine.get_engine()
+    worker = face_worker.FaceWorker()
+
+    serial = asyncio.run(worker._scan_video(engine, row))
+    parallel = asyncio.run(
+        worker._scan_video(engine, row, face_worker._DetectPool(4, seed=engine))
+    )
+
+    def shape(faces):
+        return [
+            (f["frame_time"], f["x"], f["y"], f["w"], f["h"], round(f["score"], 6))
+            for f in faces
+        ]
+
+    assert shape(parallel) == shape(serial)
+    assert len(serial) == 2
+    for serial_face, parallel_face in zip(serial, parallel, strict=True):
+        assert np.allclose(serial_face["embedding"], parallel_face["embedding"])
+
+
+def test_scan_concurrency_leaves_a_core_for_the_server():
+    from media_library.workers.face_worker import scan_concurrency
+
+    assert scan_concurrency(1) == (1, 1)
+    assert scan_concurrency(2) == (1, 1)
+    # One core for the server, one per decoder stream, the rest detect.
+    assert scan_concurrency(8) == (2, 5)
+    assert scan_concurrency(16) == (3, 12)
+
+
+def test_scan_batch_runs_concurrent_videos_without_deadlocking(
+    sandbox_env, monkeypatch
+):
+    """Regression: the file gate and the frame-stream gate must be separate.
+
+    They started out as one semaphore, so each of the two concurrent videos held
+    a permit and its frame pass then waited for a second one. No decoder ever
+    started: the status card sat at "scanning" with two active files and zero
+    progress, forever.
+    """
+    from media_library.workers import face_worker
+
+    videos = [
+        _video_row(sandbox_env, name=f"gate{i}.mp4", duration=10.0) for i in range(2)
+    ]
+
+    async def fake_frames(
+        file_path, interval, width, max_frames=0, timeout_s=0.0, **kwargs
+    ):
+        for index in range(6):
+            yield index, float(index * 2), _jpeg_bytes((255, 0, 0))
+
+    monkeypatch.setattr(face_worker, "iter_video_scan_frames", fake_frames)
+
+    worker = face_worker.FaceWorker()
+    engine = face_engine.get_engine()
+    batch = [
+        {
+            "path": str(video),
+            "type": "video",
+            "mtime": 1.0,
+            "size": 1,
+            "duration": 60.0,
+        }
+        for video in videos
+    ]
+
+    async def run():
+        await asyncio.wait_for(
+            worker._scan_batch(
+                batch, engine, face_worker._DetectPool(2, seed=engine), 2
+            ),
+            timeout=30,
+        )
+
+    asyncio.run(run())
+
+    with db_conn() as conn:
+        scanned = conn.execute(
+            "SELECT COUNT(*) FROM face_scans WHERE file_path IN (?, ?)",
+            (str(videos[0]), str(videos[1])),
+        ).fetchone()[0]
+    assert scanned == 2

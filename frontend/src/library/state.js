@@ -537,6 +537,8 @@
     faceWorkerStatusLabel: document.getElementById('faceWorkerStatusLabel'),
     faceWorkerPeopleText: document.getElementById('faceWorkerPeopleText'),
     faceWorkerCacheText: document.getElementById('faceWorkerCacheText'),
+    faceWorkerRateText: document.getElementById('faceWorkerRateText'),
+    faceWorkerEtaText: document.getElementById('faceWorkerEtaText'),
     faceWorkerHintText: document.getElementById('faceWorkerHintText'),
     triggerFaceScanAllBtn: document.getElementById('triggerFaceScanAllBtn'),
     openPeoplePageBtn: document.getElementById('openPeoplePageBtn'),

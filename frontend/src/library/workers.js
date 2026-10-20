@@ -304,6 +304,17 @@ async function triggerFaceScanAll() {
   }
 }
 
+// Coarse "how long is left" label for the face sweep.
+function formatEta(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  if (!total) return '—';
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.round((total % 3600) / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${Math.max(1, minutes)}m`;
+}
+
 // Render Face Recognition / People worker status (opt-in, off by default).
 function renderFaceStatus(data) {
   if (!els.faceWorkerSummaryText) return;
@@ -366,6 +377,16 @@ function renderFaceStatus(data) {
   }
   if (els.faceWorkerPeopleText) {
     els.faceWorkerPeopleText.textContent = `${people.toLocaleString()} people · ${faces.toLocaleString()} faces`;
+  }
+  // How fast the sweep is going, so a parallel crawl's gain is visible instead
+  // of just "it feels quicker". Rate and ETA only mean something while scanning.
+  const rate = Number(data.files_per_min) || 0;
+  if (els.faceWorkerRateText) {
+    els.faceWorkerRateText.textContent = isScanning && rate > 0 ? `${rate.toFixed(1)} files/min` : '— files/min';
+  }
+  if (els.faceWorkerEtaText) {
+    const eta = Number(data.eta_seconds) || 0;
+    els.faceWorkerEtaText.textContent = isScanning && eta > 0 ? `ETA ${formatEta(eta)}` : 'ETA —';
   }
   if (els.faceWorkerCacheText) {
     els.faceWorkerCacheText.textContent = `${data.cache_size_formatted || '0 B'} / ${data.cache_max_size_formatted || '—'} crops`;

@@ -1,7 +1,7 @@
 import { icon } from '../shared/icons.js';
 import { computeTaskSummary, describePrimaryTask, formatTaskCount } from '../shared/tasks_badge.js';
 import { currentVideo, refreshQueue } from './config.js';
-import { activeTranscodeBox, activeTranscodeEta, activeTranscodeFilename, activeTranscodeMethodBadge, activeTranscodePercent, activeTranscodeProgressBar, activeTranscodeSpeed, activeTransferBox, activeTransferFilename, activeTransferPercent, activeTransferProgressBar, activeTransferSize, activeTransferTarget, cleanDbBtn, currentVideoTitle, faceWorkerCacheText, faceWorkerCountsText, faceWorkerCurrentFile, faceWorkerHintText, faceWorkerPeopleText, faceWorkerPercentText, faceWorkerProgressBar, faceWorkerStatusLabel, faceWorkerSummaryText, hashCountsText, hashCurrentFile, hashPercentText, hashProgressBar, hashStatusLabel, hashSummaryText, indexCountsText, indexCurrentFolder, indexFilesText, indexForcePruneBtn, indexPercentText, indexProgressBar, indexStaleText, indexStaleWarning, indexSummaryText, indexSyncDropdownIcon, metaWorkerCountsText, metaWorkerCurrentFile, metaWorkerPercentText, metaWorkerProgressBar, metaWorkerStatusLabel, metaWorkerSummaryText, queuedTranscodesContainer, queuedTranscodesList, queuedTransfersList, thumbCountsText, thumbCurrentFile, thumbPercentText, thumbProgressBar, thumbStatusLabel, thumbSummaryText, toggleHashPauseBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transcodeStatusBadge, transcodeSummaryText, transferBadgeBtn, transferCountText, transferDropdownSummary, transferHistoryList, transferIcon, transferSpinner, triggerIndexSyncDropdownBtn, vhashCountsText, vhashCurrentFile, vhashPercentText, vhashProgressBar, vhashStatusLabel, vhashSummaryText, videoPlayer, webpCountsText, webpCurrentFile, webpPercentText, webpProgressBar, webpSavedText, webpSummaryText } from './elements.js';
+import { activeTranscodeBox, activeTranscodeEta, activeTranscodeFilename, activeTranscodeMethodBadge, activeTranscodePercent, activeTranscodeProgressBar, activeTranscodeSpeed, activeTransferBox, activeTransferFilename, activeTransferPercent, activeTransferProgressBar, activeTransferSize, activeTransferTarget, cleanDbBtn, currentVideoTitle, faceWorkerCacheText, faceWorkerCountsText, faceWorkerCurrentFile, faceWorkerEtaText, faceWorkerHintText, faceWorkerRateText, faceWorkerPeopleText, faceWorkerPercentText, faceWorkerProgressBar, faceWorkerStatusLabel, faceWorkerSummaryText, hashCountsText, hashCurrentFile, hashPercentText, hashProgressBar, hashStatusLabel, hashSummaryText, indexCountsText, indexCurrentFolder, indexFilesText, indexForcePruneBtn, indexPercentText, indexProgressBar, indexStaleText, indexStaleWarning, indexSummaryText, indexSyncDropdownIcon, metaWorkerCountsText, metaWorkerCurrentFile, metaWorkerPercentText, metaWorkerProgressBar, metaWorkerStatusLabel, metaWorkerSummaryText, queuedTranscodesContainer, queuedTranscodesList, queuedTransfersList, thumbCountsText, thumbCurrentFile, thumbPercentText, thumbProgressBar, thumbStatusLabel, thumbSummaryText, toggleHashPauseBtn, toggleThumbPauseBtn, toggleTranscodePauseBtn, toggleWebpPauseBtn, transcodeStatusBadge, transcodeSummaryText, transferBadgeBtn, transferCountText, transferDropdownSummary, transferHistoryList, transferIcon, transferSpinner, triggerIndexSyncDropdownBtn, vhashCountsText, vhashCurrentFile, vhashPercentText, vhashProgressBar, vhashStatusLabel, vhashSummaryText, videoPlayer, webpCountsText, webpCurrentFile, webpPercentText, webpProgressBar, webpSavedText, webpSummaryText } from './elements.js';
 import { escapeHtml, showToast, state } from './state.js';
 import { loadVideoSource } from './video.js';
 
@@ -546,6 +546,16 @@ if (vhashCountsText) {
 }
 }
 // Face Recognition / People (opt-in; dormant until FACE_RECOGNITION_ENABLED)
+function formatFaceEta(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  if (!total) return "—";
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.round((total % 3600) / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${Math.max(1, minutes)}m`;
+}
+
 function renderFacesUI(data) {
 if (!faceWorkerSummaryText) return;
 const status = data.status || "idle";
@@ -605,6 +615,14 @@ if (faceWorkerCountsText) {
 }
 if (faceWorkerPeopleText) {
   faceWorkerPeopleText.textContent = `${(data.people_total || 0).toLocaleString()} people · ${(data.faces_total || 0).toLocaleString()} faces`;
+}
+if (faceWorkerRateText) {
+  const rate = Number(data.files_per_min) || 0;
+  faceWorkerRateText.textContent = isScanning && rate > 0 ? `${rate.toFixed(1)} files/min` : "— files/min";
+}
+if (faceWorkerEtaText) {
+  const eta = Number(data.eta_seconds) || 0;
+  faceWorkerEtaText.textContent = isScanning && eta > 0 ? `ETA ${formatFaceEta(eta)}` : "ETA —";
 }
 if (faceWorkerCacheText) {
   faceWorkerCacheText.textContent = `${data.cache_size_formatted || "0 B"} / ${data.cache_max_size_formatted || "—"} crops`;

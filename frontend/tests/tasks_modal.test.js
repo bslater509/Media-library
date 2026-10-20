@@ -114,6 +114,24 @@ describe('Background Tasks modal — analysis workers stay visible', () => {
   });
 });
 
+describe('Background Tasks modal — face sweep throughput', () => {
+  it('both modals carry the rate and ETA readouts', () => {
+    MODALS.forEach(([_label, html]) => {
+      expect(html).toContain('id="faceWorkerRateText"');
+      expect(html).toContain('id="faceWorkerEtaText"');
+    });
+  });
+
+  it('both bundles render files/min and an ETA from the status payload', () => {
+    [librarySource, sorterSource].forEach((src) => {
+      expect(src).toMatch(/faceWorkerRateText/);
+      expect(src).toMatch(/faceWorkerEtaText/);
+      expect(src).toMatch(/files_per_min/);
+      expect(src).toMatch(/eta_seconds/);
+    });
+  });
+});
+
 describe('Background Tasks modal — output escaping', () => {
   it('escapes transfer/transcode/zip/upload names before innerHTML', () => {
     expect(librarySource).toMatch(/escapeHtml\(q\.filename\)/);

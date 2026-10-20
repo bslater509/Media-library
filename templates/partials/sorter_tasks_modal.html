@@ -299,6 +299,10 @@
                 <span id="faceWorkerCountsText">0 / 0 scanned</span>
                 <span id="faceWorkerStatusLabel" class="text-slate-500">Idle</span>
               </div>
+              <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono">
+                <span id="faceWorkerRateText" title="Files the sweep has finished per minute over the last few minutes">— files/min</span>
+                <span id="faceWorkerEtaText" title="Time left at the current rate, weighted by file count">ETA —</span>
+              </div>
               <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono border-t border-slate-800/70 pt-1.5">
                 <span id="faceWorkerPeopleText">—</span>
                 <span id="faceWorkerCacheText" class="text-slate-400" title="Face crops on disk. Regenerable, so the oldest are evicted past the cap.">—</span>

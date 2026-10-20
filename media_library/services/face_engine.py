@@ -356,6 +356,29 @@ def get_engine() -> FaceEngine | None:
     return _ENGINE
 
 
+def spawn_engine() -> FaceEngine | None:
+    """Build an **additional** engine instance for a parallel detection thread.
+
+    ``FaceEngine.detect`` calls ``setInputSize`` on the detector before every
+    frame, which is instance state: two threads sharing one engine would resize
+    it under each other and detect on the wrong scale. The face sweep therefore
+    leases one instance per detection thread, and this is where those extra
+    instances come from (``get_engine`` stays the one shared instance). A test
+    fake installed with ``set_engine`` is handed back unchanged, since it holds
+    no such state.
+    """
+    if _ENGINE_OVERRIDE is not None:
+        return _ENGINE_OVERRIDE
+    if _load_cv2() is None or not models_ready():
+        return None
+    paths = model_paths()
+    try:
+        return FaceEngine(paths["detector"], paths["recognizer"])
+    except Exception as e:
+        logger.error(f"[FaceEngine] Could not load an extra face engine: {e}")
+        return None
+
+
 def set_engine(engine: Any) -> None:
     """Install an engine (the test suite's deterministic fake, or a real one)."""
     global _ENGINE_OVERRIDE

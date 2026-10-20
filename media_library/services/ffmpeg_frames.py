@@ -66,8 +66,12 @@ def _manage_candidate_cache() -> None:
         logger.debug(f"Could not trim the candidate frame cache: {e}")
 
 
-#: One decode pass at a time per process: a pass is CPU-heavy and reads a whole
-#: file, so two of them at once would only compete for the same cores and mount.
+#: One decode pass at a time unless the caller brings its own slots: a pass is
+#: CPU-heavy and reads a whole file, so the sweep hands a semaphore sized to the
+#: core count it was given instead of letting every caller start a stream. On
+#: this project's library a *second* stream is what doubles decode throughput
+#: (FFmpeg tops out around three cores per stream at 1080p), a third does not —
+#: see ``workers.face_worker.scan_concurrency``.
 video_scan_sem = asyncio.Semaphore(1)
 
 #: JPEG start-of-image / end-of-image markers. Entropy-coded scan data escapes
@@ -104,6 +108,7 @@ async def iter_video_scan_frames(
     width: int,
     max_frames: int = 0,
     timeout_s: float = 0.0,
+    slots: asyncio.Semaphore | None = None,
 ):
     """Yield ``(index, timestamp, jpeg_bytes)`` from one pass over a video.
 
@@ -139,7 +144,7 @@ async def iter_video_scan_frames(
         cmd += ["-frames:v", str(int(max_frames))]
     cmd += ["-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "3", "-"]
 
-    async with video_scan_sem:
+    async with slots or video_scan_sem:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
