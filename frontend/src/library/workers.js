@@ -380,9 +380,15 @@ function renderFaceStatus(data) {
   }
   // How fast the sweep is going, so a parallel crawl's gain is visible instead
   // of just "it feels quicker". Rate and ETA only mean something while scanning.
-  const rate = Number(data.files_per_min) || 0;
+  // Footage per second of wall clock says more than files per minute: a queue of
+  // 90-minute films and a queue of clips are not the same work.
+  const factor = Number(data.realtime_factor) || 0;
+  const perMinute = Number(data.files_per_min) || 0;
   if (els.faceWorkerRateText) {
-    els.faceWorkerRateText.textContent = isScanning && rate > 0 ? `${rate.toFixed(1)} files/min` : '— files/min';
+    els.faceWorkerRateText.textContent = isScanning && factor > 0 ? `${factor.toFixed(1)}x realtime` : '— realtime';
+    els.faceWorkerRateText.title = perMinute > 0
+      ? `${perMinute.toFixed(1)} files/min over the last few minutes`
+      : 'How much footage the sweep clears per minute of real time';
   }
   if (els.faceWorkerEtaText) {
     const eta = Number(data.eta_seconds) || 0;

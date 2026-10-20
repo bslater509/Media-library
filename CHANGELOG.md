@@ -9,6 +9,19 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.1] - 2026-10-20
+
+### Changed
+
+- **The face sweep's ETA is measured in footage, not files.** A queue of
+  2-second phone clips and a queue holding a 90-minute film are not the same
+  work, so files-per-minute made the estimate meaningless. `face_stats()` now
+  returns `total_seconds`/`pending_seconds` alongside the counts and the card
+  shows a **realtime factor** (e.g. `2.4x realtime`, footage cleared per second
+  of wall clock) with the ETA derived from the footage still owed
+  (`realtime_factor` and `pending_footage_s` in the `faces` status payload).
+  Files per minute survives as the rate line's tooltip.
+
 ## [1.2.0] - 2026-10-20
 
 ### Changed

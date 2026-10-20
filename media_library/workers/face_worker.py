@@ -360,6 +360,8 @@ class FaceWorker(BaseWorker):
             "faces_total": 0,
             "people_total": 0,
             "files_per_min": 0.0,
+            "realtime_factor": 0.0,
+            "pending_footage_s": 0.0,
             "eta_seconds": 0,
             "active_files": 0,
             "decode_workers": 0,
@@ -367,9 +369,10 @@ class FaceWorker(BaseWorker):
         }
         self._stats_at = 0.0
         self._last_model_try = 0.0
-        #: Completion times inside the rolling rate window (files per minute,
-        #: and the ETA derived from it).
-        self._recent: deque[float] = deque(maxlen=2000)
+        #: ``(finished_at, seconds_of_footage)`` inside the rolling rate window.
+        #: Footage, not file count, is what predicts the remaining time: a batch
+        #: of 2-second phone clips and one 90-minute film are not the same work.
+        self._recent: deque[tuple[float, float]] = deque(maxlen=2000)
         #: Database writes are serialized: SQLite has one writer, and a queue of
         #: concurrent `record_scan` calls would just wait on its lock.
         self._db_lock = asyncio.Lock()
@@ -407,7 +410,7 @@ class FaceWorker(BaseWorker):
             return
         self._stats_at = now
         stats = face_service.face_stats()
-        per_min, eta = self._throughput()
+        per_min, factor, eta = self._throughput()
         self.state.update(
             {
                 "total_files": stats["total_files"],
@@ -415,34 +418,48 @@ class FaceWorker(BaseWorker):
                 "processed_count": stats["processed_count"],
                 "percent": stats["percent"],
                 "files_per_min": round(per_min, 1),
+                "realtime_factor": round(factor, 2),
+                "pending_footage_s": round(float(stats.get("pending_seconds") or 0.0)),
                 "eta_seconds": int(eta),
             }
         )
 
-    def _throughput(self) -> tuple[float, float]:
-        """Files per minute over the recent window, and seconds left at that rate."""
+    def _throughput(self) -> tuple[float, float, float]:
+        """Rate and ETA: files per minute, footage per second, and seconds left.
+
+        The ETA is ``pending footage / footage-per-second``, so a queue of long
+        films is not promised the time a queue of clips would take. Files per
+        minute is still reported for the card's secondary line.
+        """
         now = time.time()
-        while self._recent and now - self._recent[0] > _RATE_WINDOW_S:
+        while self._recent and now - self._recent[0][0] > _RATE_WINDOW_S:
             self._recent.popleft()
-        if len(self._recent) < 2:
-            return 0.0, 0.0
-        if now - self._recent[-1] > _RATE_WINDOW_S:
+        if not self._recent:
+            return 0.0, 0.0, 0.0
+        if now - self._recent[-1][0] > _RATE_WINDOW_S:
             # Nothing finished for a whole window: the sweep is not running.
             self._recent.clear()
-            return 0.0, 0.0
-        span = max(1.0, now - self._recent[0])
+            return 0.0, 0.0, 0.0
+        # A floor on the divisor keeps the first few completions after a restart
+        # from reporting a wild rate: two clips landing within a couple of
+        # seconds is not "300x realtime".
+        span = max(60.0, min(_RATE_WINDOW_S, now - self._recent[0][0]))
         per_min = len(self._recent) * 60.0 / span
-        pending = int(self.state.get("pending_count") or 0)
-        return per_min, (pending / per_min * 60.0) if per_min > 0 else 0.0
+        footage = sum(seconds for _when, seconds in self._recent)
+        factor = footage / span
+        pending = float(self.state.get("pending_footage_s") or 0.0)
+        eta = (pending / factor) if factor > 0 and pending > 0 else 0.0
+        return per_min, factor, eta
 
-    def _record_completion(self) -> None:
+    def _record_completion(self, seconds: float = 0.0) -> None:
         self.state["processed_count"] += 1
-        self._recent.append(time.time())
+        self._recent.append((time.time(), seconds))
         # Publish the rate as each file lands rather than once per batch: a batch
         # is eight files, and on a mount this slow that can be many minutes of a
-        # card still reading "0 files/min".
-        per_min, eta = self._throughput()
+        # card still reading a blank rate.
+        per_min, factor, eta = self._throughput()
         self.state["files_per_min"] = round(per_min, 1)
+        self.state["realtime_factor"] = round(factor, 2)
         self.state["eta_seconds"] = int(eta)
 
     async def _next_batch(self) -> list[Any]:
@@ -663,7 +680,9 @@ class FaceWorker(BaseWorker):
                         faces,
                         centroids,
                     )
-                self._record_completion()
+                self._record_completion(
+                    float(row["duration"] or 0.0) if row["type"] == "video" else 0.0
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as e:

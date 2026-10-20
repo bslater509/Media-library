@@ -1776,6 +1776,11 @@ def face_stats() -> dict[str, Any]:
         "pending_count": 0,
         "processed_count": 0,
         "percent": 100.0,
+        # Seconds of footage behind those counts. Files range from a phone
+        # snapshot to a 90-minute film, so a file count is a poor clock for the
+        # sweep; the ETA is derived from how much footage is still owed.
+        "total_seconds": 0.0,
+        "pending_seconds": 0.0,
     }
     try:
         with db_conn() as conn:
@@ -1789,17 +1794,27 @@ def face_stats() -> dict[str, Any]:
                      OR (f.type = 'video' AND f.duration IS NOT NULL)
                   )
             """
-            total = int(conn.execute(f"SELECT COUNT(*) {base}").fetchone()[0])
-            done = int(
-                conn.execute(
-                    f"SELECT COUNT(*) {base} AND fs.file_path IS NOT NULL "
-                    "AND (fs.mtime IS NULL OR f.mtime IS NULL OR fs.mtime = f.mtime) "
-                    "AND (fs.size IS NULL OR f.size IS NULL OR fs.size = f.size)"
-                ).fetchone()[0]
+            footage = (
+                "COALESCE(SUM(CASE WHEN f.type = 'video' "
+                "THEN COALESCE(f.duration, 0) ELSE 0 END), 0)"
             )
+            total, total_s = conn.execute(
+                f"SELECT COUNT(*), {footage} {base}"
+            ).fetchone()
+            done, done_s = conn.execute(
+                f"SELECT COUNT(*), {footage} {base} AND fs.file_path IS NOT NULL "
+                "AND (fs.mtime IS NULL OR f.mtime IS NULL OR fs.mtime = f.mtime) "
+                "AND (fs.size IS NULL OR f.size IS NULL OR fs.size = f.size)"
+            ).fetchone()
+        total = int(total or 0)
+        done = int(done or 0)
         stats["total_files"] = total
         stats["processed_count"] = done
         stats["pending_count"] = max(0, total - done)
+        stats["total_seconds"] = float(total_s or 0.0)
+        stats["pending_seconds"] = max(
+            0.0, float(total_s or 0.0) - float(done_s or 0.0)
+        )
         stats["percent"] = round((done / total * 100.0), 1) if total else 100.0
     except Exception as e:
         logger.error(f"[Faces] Could not read face scan stats: {e}")

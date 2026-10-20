@@ -122,11 +122,12 @@ describe('Background Tasks modal — face sweep throughput', () => {
     });
   });
 
-  it('both bundles render files/min and an ETA from the status payload', () => {
+  it('both bundles render a footage rate and an ETA from the status payload', () => {
     [librarySource, sorterSource].forEach((src) => {
       expect(src).toMatch(/faceWorkerRateText/);
       expect(src).toMatch(/faceWorkerEtaText/);
-      expect(src).toMatch(/files_per_min/);
+      // Footage, not file count, drives the estimate.
+      expect(src).toMatch(/realtime_factor/);
       expect(src).toMatch(/eta_seconds/);
     });
   });

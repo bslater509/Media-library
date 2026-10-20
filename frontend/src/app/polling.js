@@ -617,8 +617,8 @@ if (faceWorkerPeopleText) {
   faceWorkerPeopleText.textContent = `${(data.people_total || 0).toLocaleString()} people · ${(data.faces_total || 0).toLocaleString()} faces`;
 }
 if (faceWorkerRateText) {
-  const rate = Number(data.files_per_min) || 0;
-  faceWorkerRateText.textContent = isScanning && rate > 0 ? `${rate.toFixed(1)} files/min` : "— files/min";
+  const factor = Number(data.realtime_factor) || 0;
+  faceWorkerRateText.textContent = isScanning && factor > 0 ? `${factor.toFixed(1)}x realtime` : "— realtime";
 }
 if (faceWorkerEtaText) {
   const eta = Number(data.eta_seconds) || 0;
