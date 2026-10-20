@@ -344,6 +344,104 @@ def test_run_job_uses_gallery_dl_when_ytdlp_missing(sandbox_env, monkeypatch):
     assert item["imported_count"] == 1
 
 
+def test_piracy_blocklist_refusal_falls_back_to_gallery_dl(sandbox_env, monkeypatch):
+    """yt-dlp's "[Piracy]" blocklist refusal must hand the job to gallery-dl."""
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://some-blocked-host.test/v/1", str(dest)
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+    job_dir = _staging() / f"dl_{job_id}"
+
+    calls = {"n": 0}
+
+    def fake_popen(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FakeProc(
+                [
+                    (
+                        "ERROR: [Piracy] This website is no longer supported since it "
+                        "has been determined to be primarily used for piracy."
+                    )
+                ],
+                returncode=1,
+            )
+        job_dir.mkdir(parents=True, exist_ok=True)
+        f = job_dir / "clip.mp4"
+        f.write_bytes(b"\x00\x00\x00 ftypmp42" + b"Q" * 256)
+        return FakeProc([str(f)], returncode=0)
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+    _run_ytdlp_job(item)
+
+    assert calls["n"] == 2
+    assert item["downloader"] == "gallery-dl"
+    assert item["status"] == "completed"
+    assert item["imported_count"] == 1
+
+
+def test_gofile_url_skips_ytdlp_entirely(sandbox_env, monkeypatch):
+    """gofile.io goes straight to gallery-dl (yt-dlp refuses the host)."""
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://gofile.io/d/8fFJ2N", str(dest)
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+    job_dir = _staging() / f"dl_{job_id}"
+
+    commands: list[list[str]] = []
+
+    def fake_popen(cmd, *a, **k):
+        commands.append(cmd)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        f = job_dir / "clip.mp4"
+        f.write_bytes(b"\x00\x00\x00 ftypmp42" + b"Q" * 256)
+        return FakeProc([str(f)], returncode=0)
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+    _run_ytdlp_job(item)
+
+    assert len(commands) == 1  # no yt-dlp attempt
+    assert "gallery_dl" in commands[0]
+    assert item["downloader"] == "gallery-dl"
+    assert item["status"] == "completed"
+
+
+def test_gofile_without_gallery_dl_explains_why(sandbox_env, monkeypatch):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://www.gofile.io/d/8fFJ2N", str(dest)
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+
+    attempted = {"n": 0}
+
+    def fake_popen(*a, **k):
+        attempted["n"] += 1
+        return FakeProc([], returncode=0)
+
+    monkeypatch.setattr(f"{WORKER}.is_gallery_dl_available", lambda: False)
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+    _run_ytdlp_job(item)
+
+    assert attempted["n"] == 0
+    assert item["status"] == "failed"
+    assert "gallery-dl" in item["error"]
+
+
+def test_prefers_gallery_dl_matches_host_and_subdomains():
+    assert url_download_worker._prefers_gallery_dl("https://gofile.io/d/abc")
+    assert url_download_worker._prefers_gallery_dl("https://www.gofile.io/d/abc")
+    assert url_download_worker._prefers_gallery_dl("https://store1.gofile.io/x")
+    assert not url_download_worker._prefers_gallery_dl("https://youtube.com/watch?v=1")
+    assert not url_download_worker._prefers_gallery_dl("https://notgofile.io/d/abc")
+    assert not url_download_worker._prefers_gallery_dl("garbage")
+
+
 def test_run_job_no_fallback_without_gallery_dl(sandbox_env, monkeypatch):
     dest = sandbox_env["media_dir"] / "dest"
     dest.mkdir()

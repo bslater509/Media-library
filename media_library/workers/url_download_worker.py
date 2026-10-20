@@ -11,8 +11,12 @@ Pipeline per job:
 1. **yt-dlp first**. If it reports an unsupported URL (or finds nothing
    importable), and gallery-dl is installed, the job **automatically falls back
    to gallery-dl** for sites yt-dlp cannot handle (image boards / file hosts
-   such as bunkr album links). yt-dlp is still preferred for streaming sites
-   where it gives richer format selection and progress reporting.
+   such as bunkr album links). A yt-dlp *blocklist* refusal counts as unsupported
+   too: yt-dlp ships a "[Piracy] This website is no longer supported…" extractor
+   for hosts such as gofile.io, and gallery-dl still serves them. The few hosts
+   only gallery-dl supports (`gofile.io`) skip the yt-dlp attempt entirely. yt-dlp
+   is still preferred for streaming sites where it gives richer format selection
+   and progress reporting.
 2. The downloader writes into a per-job staging directory under
    ``UPLOAD_STAGING_DIR`` (local disk; never touches the remote library).
 3. Completed files are moved one by one into the user-chosen library folder
@@ -38,6 +42,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from media_library.core.config import (
     DOWNLOAD_COOKIES_FILE,
@@ -81,7 +86,19 @@ _MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
 
 # Substrings in yt-dlp output that mean "this extractor does not handle the URL";
 # these trigger the gallery-dl fallback instead of a hard failure.
-_UNSUPPORTED_HINTS = ("Unsupported URL", "No video formats found")
+_UNSUPPORTED_HINTS = (
+    "Unsupported URL",
+    "No video formats found",
+    # yt-dlp ships a blocklist pseudo-extractor that refuses some file hosts
+    # outright ("[Piracy] This website is no longer supported…") and exits 1.
+    # gallery-dl still serves them, so hand the job over instead of failing.
+    "primarily used for piracy",
+    "This website is no longer supported",
+)
+
+# Hosts yt-dlp refuses (or never supported) that gallery-dl does handle. Jobs on
+# these go straight to gallery-dl, skipping a guaranteed-failing yt-dlp attempt.
+_GALLERY_DL_HOSTS = ("gofile.io",)
 
 
 class DownloadCancelled(Exception):
@@ -332,6 +349,15 @@ def _looks_unsupported(lines: list[str]) -> bool:
     return any(hint in joined for hint in _UNSUPPORTED_HINTS)
 
 
+def _prefers_gallery_dl(url: str) -> bool:
+    """True when the URL's host is only served by gallery-dl (yt-dlp refuses it)."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return any(host == h or host.endswith("." + h) for h in _GALLERY_DL_HOSTS)
+
+
 def _attempt_downloads(
     item: dict[str, Any], job_dir: Path
 ) -> tuple[int, Exception | None]:
@@ -341,8 +367,13 @@ def _attempt_downloads(
     ``DownloadCancelled`` propagates to the caller.
     """
     last_error: Exception | None = None
+    prefer_gallery_dl = _prefers_gallery_dl(item["url"])
+    if prefer_gallery_dl and not is_gallery_dl_available():
+        return 0, RuntimeError(
+            "This host is only supported by gallery-dl, which is not installed"
+        )
 
-    if is_ytdlp_available():
+    if is_ytdlp_available() and not prefer_gallery_dl:
         item["downloader"] = "yt-dlp"
         try:
             code, lines = _stream_process(

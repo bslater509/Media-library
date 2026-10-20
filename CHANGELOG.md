@@ -9,6 +9,22 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.2] - 2026-10-20
+
+### Fixed
+
+- **File-host URLs no longer fail on a yt-dlp blocklist refusal.** yt-dlp now
+  ships a `[Piracy]` pseudo-extractor that refuses some hosts outright
+  (`ERROR: [Piracy] This website is no longer supported…`, exit code 1), e.g.
+  `gofile.io`. The download worker only recognised `Unsupported URL` and
+  `No video formats found` as "try gallery-dl", so these jobs died with
+  `yt-dlp exited with code 1` even though gallery-dl serves the same link. Both
+  blocklist phrasings now trigger the gallery-dl fallback.
+- Hosts only gallery-dl can serve (`gofile.io`) skip the yt-dlp attempt
+  altogether, so the job shows a single gallery-dl run instead of a failing
+  yt-dlp pass first, and a job on such a host with gallery-dl missing now says
+  so instead of "no downloadable media found".
+
 ## [1.2.1] - 2026-10-20
 
 ### Changed
