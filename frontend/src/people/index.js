@@ -868,8 +868,8 @@ async function togglePause() {
 }
 
 async function reclusterAll() {
-  if (!window.confirm('Re-group every face now? Existing names are kept by matching each cluster to its nearest previous centroid.')) return;
-  showToast('Re-grouping faces…', 'info');
+  if (!window.confirm('Re-group every face now? Existing names are kept by matching each cluster to its nearest previous centroid. On a large library this can take a few minutes — keep this tab open.')) return;
+  showToast('Re-grouping faces… this can take a few minutes on a large library', 'info');
   try {
     const res = await postJson('/api/people/recluster', {});
     showToast(`Re-grouped ${res.faces} faces into ${res.people} people (${res.kept} names kept)`, 'success');

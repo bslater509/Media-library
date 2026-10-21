@@ -586,9 +586,9 @@ def test_recluster_reattaches_names(face_image_factory, scan_face_batch):
     person_id = int(top["person_id"])
     assert face_service.rename_person(person_id, "Anna") is True
 
-    # Scatter the faces first: the re-cluster has to rebuild the clusters.
+    # Drop the unnamed clusters so the re-cluster has to rebuild them (a named
+    # person's faces keep their link — that is the state a re-cluster starts from).
     with db_conn() as conn, conn:
-        conn.execute("UPDATE faces SET person_id = NULL")
         conn.execute("DELETE FROM people WHERE name IS NULL")
     report = face_service.recluster_people()
     assert report["success"] is True
@@ -621,6 +621,117 @@ def test_recluster_refuses_absurd_face_count(face_image_factory, scan_face_batch
     report = face_service.recluster_people(max_faces=0)
     assert report["success"] is False
     assert "Too many faces" in report["error"]
+
+
+def test_cluster_labels_stitches_across_many_chunks(monkeypatch):
+    """Groups spread over dozens of chunks must still collapse to one cluster.
+
+    This is the shape of a real library: a person's faces are scattered through
+    the (id-ordered) scan, so every chunk holds a handful of them, and only the
+    centroid stitch can bring them back together.
+    """
+    monkeypatch.setattr(face_service, "_CLUSTER_CHUNK", 5)
+    rng = np.random.default_rng(7)
+    base = rng.normal(size=(3, 128)).astype("float32")
+    base /= np.linalg.norm(base, axis=1, keepdims=True)
+    # 3 people, 10 near-copies each, interleaved across the chunk boundaries.
+    matrix = np.repeat(base, 10, axis=0)
+    matrix += (rng.normal(size=matrix.shape) * 0.01).astype("float32")
+    matrix /= np.linalg.norm(matrix, axis=1, keepdims=True)
+    order = rng.permutation(matrix.shape[0])
+    labels = face_service._cluster_labels(matrix[order], 0.36)
+    assert len(np.unique(labels)) == 3
+    for person in range(3):
+        members = np.flatnonzero(order // 10 == person)
+        assert len(np.unique(labels[members])) == 1
+
+
+def test_cluster_labels_terminates_when_nothing_merges(monkeypatch):
+    """All-singleton input must stop at the depth guard, not recurse forever."""
+    monkeypatch.setattr(face_service, "_CLUSTER_CHUNK", 2)
+    rng = np.random.default_rng(3)
+    matrix = rng.normal(size=(200, 128)).astype("float32")
+    matrix /= np.linalg.norm(matrix, axis=1, keepdims=True)
+    labels = face_service._cluster_labels(matrix, 0.0)
+    assert labels.shape[0] == 200
+    assert len(np.unique(labels)) == 200
+
+
+def test_recluster_streams_embeddings_and_keeps_names(
+    face_image_factory, scan_face_batch, monkeypatch
+):
+    """The pass reads the table a page at a time and still re-attaches names."""
+    face_image_factory("s1.jpg", (255, 0, 0))
+    face_image_factory("s2.jpg", (250, 3, 3))
+    face_image_factory("s3.jpg", (0, 0, 255))
+    from media_library.workers.face_worker import face_worker_instance as worker
+
+    scan_face_batch(worker)
+    with db_conn() as conn:
+        top = conn.execute(
+            "SELECT person_id, COUNT(*) AS n FROM faces GROUP BY person_id "
+            "ORDER BY n DESC LIMIT 1"
+        ).fetchone()
+    person_id = int(top["person_id"])
+    assert face_service.rename_person(person_id, "Anna") is True
+
+    monkeypatch.setattr(face_service, "_RECLUSTER_READ_BATCH", 1)
+    monkeypatch.setattr(face_service, "_CLUSTER_CHUNK", 2)
+    report = face_service.recluster_people()
+    assert report["success"] is True
+    assert report["faces"] == 3
+    assert report["kept"] == 1
+    with db_conn() as conn:
+        named = conn.execute(
+            "SELECT COUNT(*) FROM faces WHERE person_id = ?", (person_id,)
+        ).fetchone()[0]
+    assert named == 2
+
+
+def test_recluster_drops_a_duplicate_name_left_empty(
+    face_image_factory, scan_face_batch
+):
+    """A name on two clusters keeps one card, not an empty duplicate."""
+    face_image_factory("d1.jpg", (255, 0, 0))
+    face_image_factory("d2.jpg", (250, 3, 3))
+    from media_library.workers.face_worker import face_worker_instance as worker
+
+    scan_face_batch(worker)
+    with db_conn() as conn:
+        person_id = int(
+            conn.execute(
+                "SELECT person_id FROM faces GROUP BY person_id ORDER BY COUNT(*) DESC "
+                "LIMIT 1"
+            ).fetchone()[0]
+        )
+    assert face_service.rename_person(person_id, "Anna") is True
+    with db_conn() as conn, conn:
+        conn.execute(
+            "INSERT INTO people (name, created_at) VALUES ('Anna', ?)", (time.time(),)
+        )
+    report = face_service.recluster_people()
+    assert report["success"] is True
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, (SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS n "
+            "FROM people p WHERE name = 'Anna'"
+        ).fetchall()
+    assert [(int(r["id"]), int(r["n"])) for r in rows] == [(person_id, 2)]
+
+
+def test_claim_groups_pairs_best_first():
+    red = np.zeros(128, dtype="float32")
+    red[0] = 1.0
+    blue = np.zeros(128, dtype="float32")
+    blue[1] = 1.0
+    near_red = (red * 0.99).astype("float32")
+    near_red[2] = 0.01
+    near_red /= np.linalg.norm(near_red)
+    claimed = face_service._claim_groups(
+        {1: red, 2: blue}, {10: near_red, 11: red.copy(), 12: blue.copy()}, 0.36
+    )
+    # One group per person, and each person claims the closer of their matches.
+    assert claimed == {11: 1, 12: 2}
 
 
 def test_cluster_labels_chunks_large_inputs(monkeypatch):

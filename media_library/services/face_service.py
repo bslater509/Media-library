@@ -63,6 +63,21 @@ _FINAL_CROP_RE = re.compile(r"^face_[0-9a-f]{24}\.jpg$")
 #: (scipy's linkage materialises an O(chunk^2) distance matrix).
 _CLUSTER_CHUNK = 3000
 
+#: How many times the chunk-centroid stitch may recurse. Every level is bounded
+#: by ``_CLUSTER_CHUNK`` so a library of any size fits in memory; the cap only
+#: guarantees termination on data that refuses to merge (all-singleton input).
+_MAX_CLUSTER_DEPTH = 16
+
+#: Faces read per query while streaming the embeddings table.
+_RECLUSTER_READ_BATCH = 20000
+
+#: Clusters written per transaction during a re-cluster. One transaction for the
+#: whole pass holds SQLite's single write lock for minutes on a large library.
+_RECLUSTER_WRITE_BATCH_GROUPS = 2000
+
+#: Only one re-cluster at a time: two passes would interleave their writes.
+_RECLUSTER_LOCK = threading.Lock()
+
 #: How many folder labels a cluster row carries (`folder_names`): enough to say
 #: where its faces were filed without turning the row into a path dump.
 _FOLDER_LABELS = 3
@@ -888,60 +903,90 @@ def dismiss_person(person_id: int) -> dict[str, Any]:
     return {"success": True, "dismissed": count, "removed": removed, "error": ""}
 
 
-def _cluster_labels(matrix: np.ndarray, threshold: float) -> np.ndarray:
+def _cluster_block(block: np.ndarray, threshold: float) -> np.ndarray:
+    """Average-linkage cosine clustering of one block that fits in memory."""
+    from scipy.cluster.hierarchy import fcluster, linkage
+
+    count = block.shape[0]
+    if count == 0:
+        return np.zeros(0, dtype="int64")
+    if count == 1:
+        return np.zeros(1, dtype="int64")
+    if count == 2:
+        same = float(1.0 - float(block[0] @ block[1])) <= threshold
+        return np.array([0, 0 if same else 1], dtype="int64")
+    z = linkage(block, method="average", metric="cosine")
+    return fcluster(z, t=threshold, criterion="distance").astype("int64")
+
+
+def _block_groups(
+    block: np.ndarray, labels: np.ndarray
+) -> tuple[list[int], list[np.ndarray]]:
+    """Centroid of every cluster in a block, in ``np.unique(labels)`` order."""
+    keys = np.unique(labels)
+    centroids = [_centroid_of(block[labels == key]) for key in keys]
+    return [int(k) for k in keys], centroids  # type: ignore[list-item]
+
+
+def _stitch_blocks(
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]],
+    threshold: float,
+    depth: int,
+) -> np.ndarray:
+    """Fold per-block clusterings into one labelling via their centroids.
+
+    Every block was clustered on its own (so no block ever built a large
+    distance matrix); the cross-block question — "do two blocks hold the same
+    person?" — is asked of the centroids alone, recursing until that set fits in
+    one chunk. O(n) memory in the labels and O(clusters) in the centroids,
+    whatever the library size.
+    """
+    total_rows = int(sum(labels.shape[0] for labels, _keys, _cs in blocks))
+    flat_parts = [c for _labels, _keys, centroids in blocks for c in centroids]
+    if not flat_parts:
+        return np.zeros(total_rows, dtype="int64")
+
+    if depth >= _MAX_CLUSTER_DEPTH:
+        # Safety net for data that never merges: keep the blocks' clusters apart
+        # rather than recursing forever.
+        group_labels = np.arange(len(flat_parts), dtype="int64")
+    else:
+        group_labels = _cluster_labels(np.vstack(flat_parts), threshold, depth + 1)
+
+    out = np.zeros(total_rows, dtype="int64")
+    pos = 0
+    row = 0
+    for labels, keys, centroids in blocks:
+        block_out = out[pos : pos + labels.shape[0]]
+        for key, _centroid in zip(keys, centroids):
+            block_out[labels == key] = int(group_labels[row])
+            row += 1
+        pos += labels.shape[0]
+    return out
+
+
+def _cluster_labels(matrix: np.ndarray, threshold: float, depth: int = 0) -> np.ndarray:
     """Agglomerative cosine clustering with bounded memory.
 
     Faces are clustered in chunks; when there is more than one chunk the chunk
-    centroids are clustered too and the two levels are combined, so a library
-    with tens of thousands of faces never materialises one huge distance matrix.
+    centroids are clustered too and the levels are combined, so a library with
+    hundreds of thousands of faces never materialises one huge distance matrix.
     """
-    from scipy.cluster.hierarchy import fcluster, linkage
-
     n = matrix.shape[0]
     if n == 0:
         return np.zeros(0, dtype="int64")
     if n == 1:
         return np.zeros(1, dtype="int64")
-
-    def _cluster_block(block: np.ndarray) -> np.ndarray:
-        count = block.shape[0]
-        if count < 2:
-            return np.zeros(count, dtype="int64")
-        if count == 2:
-            same = float(1.0 - float(block[0] @ block[1])) <= threshold
-            return np.array([0, 0 if same else 1], dtype="int64")
-        z = linkage(block, method="average", metric="cosine")
-        return fcluster(z, t=threshold, criterion="distance").astype("int64")
-
     if n <= _CLUSTER_CHUNK:
-        return _cluster_block(matrix)
+        return _cluster_block(matrix, threshold)
 
-    chunk_labels: list[np.ndarray] = []
-    # (chunk_index, local label) -> row in the chunk-centroid matrix.
-    group_index: dict[tuple[int, int], int] = {}
-    centroids: list[np.ndarray] = []
-    for chunk_index, lo in enumerate(range(0, n, _CLUSTER_CHUNK)):
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]] = []
+    for lo in range(0, n, _CLUSTER_CHUNK):
         block = matrix[lo : lo + _CLUSTER_CHUNK]
-        labels = _cluster_block(block)
-        chunk_labels.append(labels)
-        for label in np.unique(labels):
-            centroid = _centroid_of(block[labels == label])
-            if centroid is None:
-                continue
-            group_index[(chunk_index, int(label))] = len(centroids)
-            centroids.append(centroid)
-
-    group_labels = _cluster_block(np.vstack(centroids))
-
-    out = np.zeros(n, dtype="int64")
-    for chunk_index, labels in enumerate(chunk_labels):
-        lo = chunk_index * _CLUSTER_CHUNK
-        for label in np.unique(labels):
-            row = group_index.get((chunk_index, int(label)))
-            out[lo : lo + labels.shape[0]][labels == label] = (
-                int(group_labels[row]) if row is not None else -1
-            )
-    return out
+        labels = _cluster_block(block, threshold)
+        keys, centroids = _block_groups(block, labels)
+        blocks.append((labels, keys, centroids))
+    return _stitch_blocks(blocks, threshold, depth)
 
 
 def auto_match_people(
@@ -1127,11 +1172,140 @@ def auto_match_people(
     return report
 
 
+def _named_person_centroids() -> dict[int, np.ndarray]:
+    """Centroid of each *named* person, reading only those people's faces.
+
+    Unnamed clusters are not the user's work — a re-cluster rebuilds them anyway —
+    and matching every one of them is what made the pass unusable on a large
+    library: with hundreds of thousands of clusters, the old pairwise Python loop
+    had billions of pairs to walk before it could write anything.
+    """
+    sums: dict[int, np.ndarray] = {}
+    counts: dict[int, int] = {}
+    try:
+        with db_conn() as conn:
+            rows = conn.execute(
+                "SELECT f.person_id AS pid, f.embedding AS embedding FROM faces f "
+                "JOIN people p ON p.id = f.person_id "
+                "WHERE p.name IS NOT NULL AND f.embedding IS NOT NULL"
+            )
+            for row in rows:
+                blob = row["embedding"]
+                if not blob or len(blob) != EMBEDDING_DIM * 4:
+                    continue
+                pid = int(row["pid"])
+                vec = np.frombuffer(blob, dtype="<f4").astype("float32", copy=False)
+                sums[pid] = vec.copy() if pid not in sums else sums[pid] + vec
+                counts[pid] = counts.get(pid, 0) + 1
+    except Exception as e:
+        logger.error(f"[Faces] Could not read named people for re-clustering: {e}")
+        return {}
+    return {pid: _normalize(vec / float(counts[pid])) for pid, vec in sums.items()}
+
+
+def _claim_groups(
+    person_centroids: dict[int, np.ndarray],
+    group_centroids: dict[int, np.ndarray],
+    limit: float,
+) -> dict[int, int]:
+    """Pair new groups with the people they continue, best match first.
+
+    Blocked matrix multiplication rather than a Python double loop: this is the
+    one part of the pass whose cost does not shrink as the clustering is chunked,
+    and a few named people against tens of thousands of clusters is already
+    millions of dot products.
+    """
+    person_ids = list(person_centroids)
+    group_ids = list(group_centroids)
+    if not person_ids or not group_ids:
+        return {}
+    person_matrix = np.vstack([person_centroids[p] for p in person_ids]).astype(
+        "float32", copy=False
+    )
+    group_matrix = np.vstack([group_centroids[g] for g in group_ids]).astype(
+        "float32", copy=False
+    )
+    group_block = 1024
+    pair_budget = 4_000_000
+    found: list[tuple[float, int, int]] = []
+    for g0 in range(0, len(group_ids), group_block):
+        group_slice = group_matrix[g0 : g0 + group_block]
+        person_block = max(1, pair_budget // max(1, group_slice.shape[0]))
+        for p0 in range(0, len(person_ids), person_block):
+            distances = 1.0 - (person_matrix[p0 : p0 + person_block] @ group_slice.T)
+            for pi, gi in np.argwhere(distances <= limit):
+                found.append(
+                    (
+                        float(distances[pi, gi]),
+                        person_ids[p0 + int(pi)],
+                        group_ids[g0 + int(gi)],
+                    )
+                )
+    found.sort()
+    claimed: dict[int, int] = {}
+    used_people: set[int] = set()
+    for _distance, person_id, group in found:
+        if person_id in used_people or group in claimed:
+            continue
+        claimed[group] = person_id
+        used_people.add(person_id)
+    return claimed
+
+
+def _iter_face_embeddings(batch: int = _RECLUSTER_READ_BATCH):
+    """Stream ``(face_id, embedding)`` rows in id order, a page at a time.
+
+    The re-cluster must never hold every embedding (plus every blob) in memory at
+    once: a library that has been face-swept for a while holds hundreds of
+    thousands of faces, and one big read is what made a large library unclustered.
+    """
+    last = 0
+    while True:
+        with db_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, embedding FROM faces WHERE embedding IS NOT NULL "
+                "AND id > ? ORDER BY id LIMIT ?",
+                (last, batch),
+            ).fetchall()
+        if not rows:
+            return
+        for row in rows:
+            last = int(row["id"])
+            yield last, row["embedding"]
+
+
 def recluster_people(
-    threshold: float | None = None, max_faces: int = 200000
+    threshold: float | None = None, max_faces: int = 1000000
 ) -> dict[str, Any]:
-    """Re-group every face and re-attach the user's names by nearest centroid."""
+    """Re-group every face and re-attach the user's names by nearest centroid.
+
+    Memory and time stay bounded whatever the face count: embeddings are read a
+    page at a time, clustered in chunks whose centroids are stitched (recursively)
+    at the top, and only *named* people are re-attached — that is the work a
+    re-cluster can lose, and limiting the match to them is what keeps a library
+    with hundreds of thousands of clusters from walking billions of pairs.
+    """
+    if not _RECLUSTER_LOCK.acquire(blocking=False):
+        return {
+            "success": False,
+            "faces": 0,
+            "people": 0,
+            "created": 0,
+            "kept": 0,
+            "removed": 0,
+            "error": "A re-cluster is already running",
+        }
+    try:
+        return _recluster_people_pass(threshold, max_faces)
+    finally:
+        _RECLUSTER_LOCK.release()
+
+
+def _recluster_people_pass(
+    threshold: float | None = None, max_faces: int = 1000000
+) -> dict[str, Any]:
     limit = get_threshold() if threshold is None else float(threshold)
+    started = time.time()
     report: dict[str, Any] = {
         "success": False,
         "faces": 0,
@@ -1141,86 +1315,120 @@ def recluster_people(
         "removed": 0,
         "error": "",
     }
+    expected_blob = EMBEDDING_DIM * 4
+    face_ids: list[int] = []
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]] = []
+    batch_blobs: list[bytes] = []
+    too_many = False
+
+    def _flush() -> None:
+        if not batch_blobs:
+            return
+        blobs = list(batch_blobs)
+        batch_blobs.clear()
+        block = np.vstack([np.frombuffer(b, dtype="<f4") for b in blobs]).astype(
+            "float32", copy=False
+        )
+        labels = _cluster_block(block, limit)
+        keys, centroids = _block_groups(block, labels)
+        blocks.append((labels, keys, centroids))
+
     try:
-        with db_conn() as conn:
-            rows = conn.execute(
-                "SELECT id, embedding FROM faces WHERE embedding IS NOT NULL"
-            ).fetchall()
+        for face_id, blob in _iter_face_embeddings():
+            if len(face_ids) >= max_faces:
+                too_many = True
+                break
+            if not blob or len(blob) != expected_blob:
+                continue
+            face_ids.append(face_id)
+            batch_blobs.append(blob)
+            if len(batch_blobs) >= _CLUSTER_CHUNK:
+                _flush()
     except Exception as e:
         logger.error(f"[Faces] Re-cluster read failed: {e}")
         report["error"] = str(e)
         return report
+    _flush()
 
-    face_ids: list[int] = []
-    blobs: list[bytes] = []
-    for r in rows:
-        if r["embedding"]:
-            face_ids.append(int(r["id"]))
-            blobs.append(r["embedding"])
     report["faces"] = len(face_ids)
+    if too_many:
+        report["error"] = (
+            f"Too many faces to re-cluster in one pass "
+            f"(more than {max_faces:,}); re-scan fewer folders"
+        )
+        return report
     if not face_ids:
         report["success"] = True
         return report
-    if len(face_ids) > max_faces:
-        report["error"] = (
-            f"Too many faces to re-cluster in one pass ({len(face_ids):,} > {max_faces:,})"
-        )
-        return report
-
-    matrix = unpack_embeddings(blobs)
-    if matrix.shape[0] != len(face_ids):
-        report["error"] = "Stored embeddings are unreadable"
-        return report
 
     try:
-        labels = _cluster_labels(matrix, limit)
+        labels = blocks[0][0] if len(blocks) == 1 else _stitch_blocks(blocks, limit, 0)
     except Exception as e:
         logger.error(f"[Faces] Clustering failed: {e}")
         report["error"] = f"Clustering failed: {e}"
         return report
+    if labels.shape[0] != len(face_ids):
+        report["error"] = "Stored embeddings are unreadable"
+        return report
 
-    # Existing people claim the new cluster nearest to their centroid, best pair
-    # first, so names and cluster ids survive a re-run.
-    group_ids = [int(g) for g in np.unique(labels)]
-    group_centroids: dict[int, np.ndarray] = {}
-    for group in group_ids:
-        centroid = _centroid_of(matrix[labels == group])
-        if centroid is not None:
-            group_centroids[group] = centroid
+    # Group centroids, accumulated from the block clusters (the embedding matrix
+    # itself is gone once the blocks are stitched). Weighted by member count, so a
+    # real cluster outweighs a two-face stray when names are re-attached.
+    group_sums: dict[int, np.ndarray] = {}
+    group_sizes: dict[int, int] = {}
+    pos = 0
+    for block_labels, keys, centroids in blocks:
+        local = labels[pos : pos + block_labels.shape[0]]
+        for key, centroid in zip(keys, centroids):
+            mask = block_labels == key
+            size = int(np.count_nonzero(mask))
+            if not size:
+                continue
+            group = int(local[mask][0])
+            group_sizes[group] = group_sizes.get(group, 0) + size
+            total = group_sums.get(group)
+            group_sums[group] = (
+                centroid * size if total is None else total + centroid * size
+            )
+        pos += block_labels.shape[0]
+    blocks.clear()
 
+    group_ids = list(group_sums)
+    group_centroids = {
+        group: _normalize(vec / float(group_sizes[group]))
+        for group, vec in group_sums.items()
+    }
+    group_sums.clear()
+    group_sizes.clear()
+
+    # A named person claims the new cluster nearest to their centroid, best pair
+    # first, so the naming work survives a re-run.
     claimed: dict[int, int] = {}  # group -> person_id
-    if group_centroids:
-        try:
-            with db_conn() as conn:
-                old_centroids = get_centroids(conn)
-                known_people = {
-                    int(r["id"])
-                    for r in conn.execute("SELECT id FROM people").fetchall()
-                }
-        except Exception as e:
-            logger.error(f"[Faces] Could not read people for re-clustering: {e}")
-            old_centroids = {}
-            known_people = set()
-        pairs: list[tuple[float, int, int]] = []
-        for person_id, centroid in old_centroids.items():
-            if person_id not in known_people:
-                continue
-            for group, group_centroid in group_centroids.items():
-                distance = float(1.0 - float(centroid @ group_centroid))
-                if distance <= limit:
-                    pairs.append((distance, person_id, group))
-        pairs.sort()
-        used_people: set[int] = set()
-        for _distance, person_id, group in pairs:
-            if person_id in used_people or group in claimed:
-                continue
-            claimed[group] = person_id
-            used_people.add(person_id)
-            report["kept"] += 1
+    named_centroids = _named_person_centroids()
+    if named_centroids and group_centroids:
+        claimed = _claim_groups(named_centroids, group_centroids, limit)
+        report["kept"] = len(claimed)
 
+    # Runs of faces per group, so each face is visited once instead of once per
+    # cluster (a linear scan per cluster is O(faces x clusters)).
+    face_id_array = np.asarray(face_ids, dtype="int64")
+    order = np.argsort(labels, kind="stable")
+    sorted_labels = labels[order]
+    bounds = np.flatnonzero(np.diff(sorted_labels)) + 1
+    run_starts = np.concatenate(([0], bounds))
+    run_ends = np.concatenate((bounds, [sorted_labels.shape[0]]))
+
+    logger.info(
+        f"[Faces] Re-clustered {len(face_ids):,} faces into {len(group_ids):,} "
+        f"clusters in {time.time() - started:.0f}s "
+        f"({len(claimed):,} names re-attached); writing…"
+    )
     try:
         with db_conn() as conn, conn:
-            for group in group_ids:
+            for index, (run_start, run_end) in enumerate(
+                zip(run_starts.tolist(), run_ends.tolist())
+            ):
+                group = int(sorted_labels[run_start])
                 person_id = claimed.get(group)
                 if person_id is None:
                     cur = conn.execute(
@@ -1229,7 +1437,7 @@ def recluster_people(
                     )
                     person_id = int(cur.lastrowid)
                     report["created"] += 1
-                members = [face_ids[i] for i in np.nonzero(labels == group)[0]]
+                members = face_id_array[order[run_start:run_end]].tolist()
                 for start in range(0, len(members), SQL_IN_CHUNK):
                     chunk = members[start : start + SQL_IN_CHUNK]
                     placeholders = ",".join("?" for _ in chunk)
@@ -1238,12 +1446,28 @@ def recluster_people(
                         f"WHERE id IN ({placeholders})",
                         [person_id, *chunk],
                     )
+                # Release SQLite's single write lock every so often: one giant
+                # transaction starves every other writer for minutes, and a
+                # half-written pass is simply re-run.
+                if (index + 1) % _RECLUSTER_WRITE_BATCH_GROUPS == 0:
+                    conn.commit()
             # Empty unnamed clusters left behind by the regrouping.
             cur = conn.execute(
                 "DELETE FROM people WHERE name IS NULL AND id NOT IN "
                 "(SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)"
             )
             report["removed"] = max(0, cur.rowcount or 0)
+            # A name that ended up on more than one cluster (the same person named
+            # twice, say) must not leave an empty card behind: only one of them
+            # can win a group, so drop the ones this pass emptied.
+            cur = conn.execute(
+                "DELETE FROM people WHERE name IS NOT NULL AND id NOT IN "
+                "(SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL) "
+                "AND EXISTS (SELECT 1 FROM people p2 WHERE p2.name = people.name "
+                "AND p2.id IN (SELECT person_id FROM faces "
+                "WHERE person_id IS NOT NULL))"
+            )
+            report["removed"] += max(0, cur.rowcount or 0)
     except Exception as e:
         logger.error(f"[Faces] Re-cluster write failed: {e}")
         report["error"] = str(e)
@@ -1258,6 +1482,11 @@ def recluster_people(
     except Exception:
         report["people"] = len(group_ids)
     report["success"] = True
+    logger.info(
+        f"[Faces] Re-grouped {report['faces']:,} faces into {report['people']:,} "
+        f"people in {time.time() - started:.0f}s ({report['kept']:,} names kept, "
+        f"{report['removed']:,} empty clusters dropped)"
+    )
     return report
 
 

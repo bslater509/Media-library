@@ -10,6 +10,7 @@ existing index can still be browsed and curated, but the endpoints that start
 real work (``/api/people/scan``) refuse until it is enabled.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -296,8 +297,11 @@ async def set_threshold(payload: dict[str, Any] = Body(default={})) -> dict[str,
 async def recluster(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     """Re-group every face, re-attaching existing names by nearest centroid."""
     threshold = payload.get("threshold")
-    result = face_service.recluster_people(
-        float(threshold) if threshold is not None else None
+    # Off the event loop: the pass clusters every face and holds SQLite's single
+    # write lock while it rewrites them, so on a large library it takes minutes.
+    result = await asyncio.to_thread(
+        face_service.recluster_people,
+        float(threshold) if threshold is not None else None,
     )
     if not result.get("success"):
         raise HTTPException(

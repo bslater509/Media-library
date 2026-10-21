@@ -9,6 +9,31 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.4] - 2026-10-21
+
+### Fixed
+
+- **"Re-group all" works on a large face index.** The pass hard-refused any
+  library above 200,000 faces (`409 Too many faces to re-cluster in one pass`),
+  and the clustering behind it could not have coped anyway: the chunk-centroid
+  stitch built one distance matrix for *all* chunk centroids, which on a
+  mostly-singleton library is tens of gigabytes (the log's
+  `Unable to allocate 45.8 GiB`), and the name re-attachment compared every old
+  person against every new cluster in a Python double loop — billions of pairs
+  on a library with 163,000 clusters. The stitch now recurses while the centroid
+  set does not fit in a chunk (bounded memory at any face count, with a depth
+  guard so all-singleton input still terminates), embeddings are streamed from
+  the table a page at a time instead of read as one list plus one matrix, name
+  re-attachment compares **named** people only (unnamed clusters are rebuilt by
+  the pass anyway) through a blocked matmul, faces are grouped with one sort
+  instead of a linear scan per cluster, and clusters are written in batched
+  transactions so the pass no longer holds SQLite's write lock for minutes. A
+  name that ended up on two clusters no longer leaves an empty duplicate card
+  behind either (only one of them can win a group). A 317k-face library now
+  re-groups in ~200 s at ~1.6 GB peak instead of failing, and the endpoint runs
+  the pass off the event loop (`asyncio.to_thread`) with a single-pass lock, so
+  the server keeps answering while it works.
+
 ## [1.2.3] - 2026-10-20
 
 ### Fixed
