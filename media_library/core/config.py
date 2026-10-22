@@ -137,6 +137,18 @@ FACE_DETECTION_CONFIDENCE = min(
 FACE_MATCH_THRESHOLD = min(
     1.2, max(0.05, float(os.environ.get("FACE_MATCH_THRESHOLD", "0.36")))
 )
+# How loose one cluster may get: the ceiling for the mean cosine distance between
+# a cluster's faces and its own centroid. Joins are pairwise, so a chain of
+# "each one was close enough" can still put several people on one card — that is
+# what a false match looks like (one person's cluster holding thousands of
+# unrelated faces, mean distance 0.5+). Any cluster past the ceiling is split
+# into the tight groups it was made of, and a fresh face is only allowed to join
+# a cluster while that cluster stays inside it. 0.25 keeps an identity cluster
+# recognisable while still allowing pose and lighting variety; raise it if a
+# real person's faces get split apart, lower it for stricter cards.
+FACE_CLUSTER_MAX_SPREAD = min(
+    1.0, max(0.05, float(os.environ.get("FACE_CLUSTER_MAX_SPREAD", "0.25")))
+)
 # Faces smaller than this (in pixels, on the FACE_SCAN_WIDTH-wide scan image)
 # are ignored: in a crowd or a wide shot they are too small to cluster reliably.
 # The default is the same ~10% of the frame the 480px scan used, now measured on

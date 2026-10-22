@@ -719,6 +719,172 @@ def test_recluster_drops_a_duplicate_name_left_empty(
     assert [(int(r["id"]), int(r["n"])) for r in rows] == [(person_id, 2)]
 
 
+def _arc_matrix(count: int, step: float) -> np.ndarray:
+    """Faces walking along a great circle, each ``step`` from the previous one.
+
+    A chain: every neighbour is close, the ends are far apart. Average linkage at
+    the join threshold puts the whole arc on one cluster, which is exactly the
+    false-match shape this is about.
+    """
+    matrix = np.zeros((count, 128), dtype="float32")
+    for i in range(count):
+        angle = i * step
+        matrix[i, 0] = np.cos(angle)
+        matrix[i, 1] = np.sin(angle)
+    return matrix
+
+
+def test_split_loose_group_cuts_a_loose_cluster_into_tight_parts():
+    """The splitter recurses until every part is inside the cap."""
+    matrix = _arc_matrix(120, 0.04)
+    cap = 0.02
+    assert (
+        face_service._cluster_spread(
+            matrix.sum(axis=0, dtype="float64"), matrix.shape[0]
+        )
+        > cap
+    )
+
+    labels = face_service._split_loose_group(matrix, 0.36, cap)
+    parts = np.unique(labels)
+    assert len(parts) > 1
+    for part in parts:
+        block = matrix[labels == part]
+        if block.shape[0] < face_service._MIN_SPLIT_FACES:
+            continue
+        assert (
+            face_service._cluster_spread(
+                block.sum(axis=0, dtype="float64"), block.shape[0]
+            )
+            <= cap
+        )
+
+
+def test_split_loose_group_leaves_a_coherent_cluster_alone():
+    """One person's faces are not shredded by a sane cap."""
+    matrix = _arc_matrix(40, 0.04)
+    spread = face_service._cluster_spread(
+        matrix.sum(axis=0, dtype="float64"), matrix.shape[0]
+    )
+    assert 0.05 < spread < 0.25
+    labels = face_service._split_loose_group(matrix, 0.36, 0.25)
+    assert len(np.unique(labels)) == 1
+
+
+def test_recluster_never_leaves_a_cluster_looser_than_the_cap(monkeypatch):
+    """A chained blob is split, whatever the joins said."""
+    monkeypatch.setattr(config, "FACE_CLUSTER_MAX_SPREAD", 0.05)
+    face_service.set_threshold(0.36)
+    matrix = _arc_matrix(120, 0.04)
+    with db_conn() as conn, conn:
+        conn.execute("INSERT INTO people (name, created_at) VALUES (NULL, 0)")
+        person_id = int(
+            conn.execute("SELECT id FROM people ORDER BY id DESC LIMIT 1").fetchone()[0]
+        )
+        for i, vec in enumerate(matrix):
+            conn.execute(
+                "INSERT INTO faces (file_path, frame_time, x, y, w, h, score, "
+                "embedding, person_id, created_at) VALUES (?, ?, 0, 0, 1, 1, 0.9, ?, ?, 0)",
+                (f"chain{i}.jpg", -1.0, face_service.pack_embedding(vec), person_id),
+            )
+    report = face_service.recluster_people()
+    assert report["success"] is True
+    assert report["faces"] == 120
+
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT embedding, person_id FROM faces WHERE embedding IS NOT NULL"
+        ).fetchall()
+    seen: dict[int, list[np.ndarray]] = {}
+    for row in rows:
+        seen.setdefault(int(row["person_id"]), []).append(
+            np.frombuffer(row["embedding"], dtype="<f4")
+        )
+    assert len(seen) > 1, "the loose cluster must not stay one cluster"
+    for person, faces in seen.items():
+        block = np.vstack(faces)
+        if block.shape[0] < face_service._MIN_SPLIT_FACES:
+            continue
+        spread = face_service._cluster_spread(
+            block.sum(axis=0, dtype="float64"), block.shape[0]
+        )
+        assert spread <= 0.05 + 1e-6, (person, spread)
+
+
+def test_matcher_refuses_to_grow_a_loose_cluster(sandbox_env):
+    embedding = np.zeros(128, dtype="float32")
+    embedding[0] = 1.0
+    near = np.zeros(128, dtype="float32")
+    near[0] = np.cos(0.2)
+    near[1] = np.sin(0.2)
+    # 10 faces with a spread of 0.30: already past the 0.25 cap.
+    loose = face_service._CentroidMatcher(
+        {1: embedding},
+        0.36,
+        max_spread=0.25,
+        stats=({1: 7.0}, {1: 10}),
+    )
+    assert loose.match(near) == (None, None)
+    # The same cluster inside the cap takes the face.
+    tight = face_service._CentroidMatcher(
+        {1: embedding},
+        0.36,
+        max_spread=0.25,
+        stats=({1: 10.0}, {1: 10}),
+    )
+    assert tight.match(near)[0] == 1
+    # No stats (a cluster created mid-batch) is never refused.
+    unguarded = face_service._CentroidMatcher({1: embedding}, 0.36, max_spread=0.25)
+    assert unguarded.match(near)[0] == 1
+
+
+def test_centroid_stats_track_a_join(sandbox_env):
+    face_service.invalidate_centroids()
+    first = np.zeros(128, dtype="float32")
+    first[0] = 1.0
+    second = np.zeros(128, dtype="float32")
+    second[0] = np.cos(0.2)
+    second[1] = np.sin(0.2)
+    with db_conn() as conn, conn:
+        conn.execute("INSERT INTO people (name, created_at) VALUES (NULL, 0)")
+    face_service.record_scan(
+        "/tmp/stats.jpg",
+        1.0,
+        10,
+        [
+            {
+                "frame_time": -1.0,
+                "x": 0,
+                "y": 0,
+                "w": 10,
+                "h": 10,
+                "score": 0.9,
+                "embedding": first,
+            },
+            {
+                "frame_time": -1.0,
+                "x": 20,
+                "y": 0,
+                "w": 10,
+                "h": 10,
+                "score": 0.9,
+                "embedding": second,
+            },
+        ],
+        {},
+    )
+    face_service.get_centroids()  # rebuild for this test's database
+    norms, counts = face_service.centroid_stats()
+    with db_conn() as conn:
+        rows = conn.execute(
+            "SELECT embedding FROM faces WHERE embedding IS NOT NULL"
+        ).fetchall()
+    matrix = np.vstack([np.frombuffer(r["embedding"], dtype="<f4") for r in rows])
+    expected = float(np.linalg.norm(matrix.sum(axis=0, dtype="float64")))
+    assert int(sum(counts.values())) == 2
+    assert abs(sum(norms.values()) - expected) < 0.05
+
+
 def test_claim_groups_pairs_best_first():
     red = np.zeros(128, dtype="float32")
     red[0] = 1.0
@@ -982,9 +1148,9 @@ def test_record_scan_reuses_one_matcher_per_file(sandbox_env, monkeypatch):
     real_matcher = face_service._CentroidMatcher
 
     class _Counting(real_matcher):
-        def __init__(self, centroids, limit):
+        def __init__(self, centroids, limit, **kwargs):
             builds.append(1)
-            super().__init__(centroids, limit)
+            super().__init__(centroids, limit, **kwargs)
 
     monkeypatch.setattr(face_service, "_CentroidMatcher", _Counting)
     assert face_service.record_scan("/tmp/a.jpg", 1.0, 10, faces, {}) == 6

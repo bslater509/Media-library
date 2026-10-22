@@ -9,6 +9,35 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [1.2.5] - 2026-10-22
+
+### Fixed
+
+- **False face matches are split off their cards.** Every join is pairwise, so a
+  chain of "each face was close enough to the last one" could put several people
+  on one card: the previous pass left "Chloe lamb" holding 16,952 faces whose
+  mean distance to their own centroid was 0.42 (median pairwise distance 0.66 —
+  they are mostly unrelated), and "Dare Taylor" 11,191 at 0.53. A cluster's
+  spread (`1 - |sum of embeddings| / count`, now exact from the block sums the
+  pass already carries) is checked against `FACE_CLUSTER_MAX_SPREAD` (default
+  0.25): anything looser is split by re-clustering it at a tighter threshold,
+  recursing while a piece is still loose and falling back to singletons for a
+  piece that will not come apart. A coherent cluster is left alone, and a named
+  person goes to the tightest piece nearest their centroid. Scanning obeys the
+  same ceiling, so a cluster stops accepting faces once a join would push it
+  past the cap instead of drifting into a blob between re-groups. On a 63k-face
+  sample of a real index the pass left no cluster above the cap and the biggest
+  card dropped from thousands of faces to a few hundred; on a 317k-face library
+  it runs in ~165 s with the service near 1.5 GB. The cap is the dial: raise
+  `FACE_CLUSTER_MAX_SPREAD` (0.30–0.35) for fewer, broader cards and more risk of
+  a wrong match, lower it for stricter ones.
+
+### Changed
+
+- `/people`'s **Re-group all** confirmation and toast now say the pass can take a
+  few minutes on a large library, since it runs off the event loop rather than
+  freezing the page.
+
 ## [1.2.4] - 2026-10-21
 
 ### Fixed

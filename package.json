@@ -1,6 +1,6 @@
 {
   "name": "media-library",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "type": "module",
   "description": "A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.",
   "scripts": {

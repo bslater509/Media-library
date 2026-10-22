@@ -66,10 +66,18 @@ _CLUSTER_CHUNK = 3000
 #: How many times the chunk-centroid stitch may recurse. Every level is bounded
 #: by ``_CLUSTER_CHUNK`` so a library of any size fits in memory; the cap only
 #: guarantees termination on data that refuses to merge (all-singleton input).
-_MAX_CLUSTER_DEPTH = 16
+_MAX_CLUSTER_DEPTH = 4
 
 #: Faces read per query while streaming the embeddings table.
 _RECLUSTER_READ_BATCH = 20000
+
+#: A cluster looser than the cap is split back into tight groups. Each split
+#: re-clusters at this fraction of the threshold, down to the floor: a chain
+#: only breaks when the join distance keeps shrinking.
+_SPLIT_RATIO = 0.8
+_SPLIT_FLOOR = 0.16
+_MIN_SPLIT_FACES = 4
+_MAX_SPLIT_DEPTH = 6
 
 #: Clusters written per transaction during a re-cluster. One transaction for the
 #: whole pass holds SQLite's single write lock for minutes on a large library.
@@ -90,7 +98,13 @@ _LRU_TARGET_RATIO = 0.9
 
 # Centroid cache: rebuilt when ``revision`` changes (external mutations), not on
 # the worker's own inserts (which update it incrementally).
-_CENTROIDS: dict[str, Any] = {"revision": 0, "key": "", "vecs": {}, "counts": {}}
+_CENTROIDS: dict[str, Any] = {
+    "revision": 0,
+    "key": "",
+    "vecs": {},
+    "counts": {},
+    "norms": {},
+}
 _CENTROIDS_LOCK = threading.RLock()
 _REVISION = 0
 
@@ -176,6 +190,19 @@ def threshold_preset_name(value: float | None = None) -> str:
 
 def is_enabled() -> bool:
     return bool(getattr(config, "FACE_RECOGNITION_ENABLED", False))
+
+
+def get_cluster_max_spread() -> float:
+    """Ceiling for how loose one cluster may get (see ``_cluster_spread``).
+
+    Clamped to the match threshold: a cluster looser than the distance a face
+    needed to join it is, by definition, no longer one identity.
+    """
+    try:
+        value = float(getattr(config, "FACE_CLUSTER_MAX_SPREAD", 0.25))
+    except (TypeError, ValueError):
+        value = 0.25
+    return max(0.05, min(1.0, value))
 
 
 def get_face_crop_dir(create: bool = False) -> Path:
@@ -267,6 +294,7 @@ def get_centroids(conn: Any | None = None) -> dict[int, np.ndarray]:
 
     vecs: dict[int, np.ndarray] = {}
     counts: dict[int, int] = {}
+    norms: dict[int, float] = {}
     rows = []
     try:
         owned = conn is None
@@ -296,6 +324,9 @@ def get_centroids(conn: Any | None = None) -> dict[int, np.ndarray]:
         if centroid is not None:
             vecs[person_id] = centroid
             counts[person_id] = matrix.shape[0]
+            norms[person_id] = float(
+                np.linalg.norm(matrix.sum(axis=0, dtype="float64"))
+            )
 
     with _CENTROIDS_LOCK:
         # A rebuild that landed while we were reading is newer than ours and wins
@@ -308,7 +339,22 @@ def get_centroids(conn: Any | None = None) -> dict[int, np.ndarray]:
             _CENTROIDS["key"] = db_key
             _CENTROIDS["vecs"] = vecs
             _CENTROIDS["counts"] = counts
+            _CENTROIDS["norms"] = norms
         return _CENTROIDS["vecs"]
+
+
+def centroid_stats() -> tuple[dict[int, float], dict[int, int]]:
+    """Per-person ``(|sum of embeddings|, face count)`` from the centroid cache.
+
+    These two numbers are all a cluster's spread needs: the mean distance from its
+    faces to its own centroid is ``1 - |sum| / count``. A person missing from the
+    cache has no stats and is left unguarded (a cluster created mid-batch, say).
+    """
+    with _CENTROIDS_LOCK:
+        # The live dicts, read-only for the caller: the matcher takes a snapshot of
+        # the numbers it needs, so copying 100k+ entries per scanned file buys
+        # nothing.
+        return _CENTROIDS.get("norms") or {}, _CENTROIDS.get("counts") or {}
 
 
 def _track_centroid(person_id: int, embedding: np.ndarray) -> None:
@@ -316,13 +362,23 @@ def _track_centroid(person_id: int, embedding: np.ndarray) -> None:
     with _CENTROIDS_LOCK:
         vecs = _CENTROIDS["vecs"]
         counts = _CENTROIDS["counts"]
+        norms = _CENTROIDS["norms"]
         prev = vecs.get(person_id)
         prev_count = int(counts.get(person_id, 0))
+        vec = _normalize(embedding)
         if prev is None or prev_count <= 0:
-            vecs[person_id] = _normalize(embedding)
+            vecs[person_id] = vec
             counts[person_id] = 1
+            norms[person_id] = 1.0
             return
-        merged = (prev * prev_count + _normalize(embedding)) / (prev_count + 1)
+        # |sum + x|^2 = |sum|^2 + 2|sum|(centroid . x) + 1, so the cluster's spread
+        # stays computable without keeping every vector sum.
+        prev_norm = float(norms.get(person_id, 0.0))
+        dot = float(prev @ vec)
+        norms[person_id] = float(
+            np.sqrt(max(0.0, prev_norm * prev_norm + 2.0 * prev_norm * dot + 1.0))
+        )
+        merged = (prev * prev_count + vec) / (prev_count + 1)
         vecs[person_id] = _normalize(merged)
         counts[person_id] = prev_count + 1
 
@@ -362,7 +418,13 @@ class _CentroidMatcher:
     transaction is back to being a handful of inserts.
     """
 
-    def __init__(self, centroids: dict[int, np.ndarray], limit: float) -> None:
+    def __init__(
+        self,
+        centroids: dict[int, np.ndarray],
+        limit: float,
+        max_spread: float | None = None,
+        stats: tuple[dict[int, float], dict[int, int]] | None = None,
+    ) -> None:
         self.limit = float(limit)
         self.ids = list(centroids.keys())
         self._matrix = (
@@ -370,9 +432,35 @@ class _CentroidMatcher:
             if self.ids
             else np.zeros((0, EMBEDDING_DIM), dtype="float32")
         )
+        # A face may only join a cluster that stays inside the cohesion cap: a
+        # cluster that has drifted into several people must not swallow one more.
+        self.max_spread = None if max_spread is None else float(max_spread)
+        self._norms: np.ndarray | None = None
+        self._counts: np.ndarray | None = None
+        if stats is not None and self.max_spread is not None and self.ids:
+            norms_map, counts_map = stats
+            self._norms = np.array(
+                [float(norms_map.get(pid, np.nan)) for pid in self.ids],
+                dtype="float64",
+            )
+            self._counts = np.array(
+                [float(counts_map.get(pid, 0)) for pid in self.ids],
+                dtype="float64",
+            )
         # Clusters created while this batch runs: matched separately so adding
         # one never costs a rebuild of the full matrix.
         self._created: list[tuple[int, np.ndarray]] = []
+
+    def _within_cap(self, sims: np.ndarray) -> np.ndarray:
+        assert self._norms is not None and self._counts is not None
+        norms = self._norms
+        sq = norms * norms + 2.0 * norms * sims + 1.0
+        np.clip(sq, 0.0, None, out=sq)
+        spread = 1.0 - np.sqrt(sq) / (self._counts + 1.0)
+        allowed = spread <= self.max_spread
+        # No stats: an unguarded cluster (created mid-batch), never refuse it.
+        allowed |= ~np.isfinite(norms)
+        return allowed
 
     def match(self, embedding: np.ndarray) -> tuple[int | None, float | None]:
         """Nearest person within the threshold, or ``(None, None)``."""
@@ -380,10 +468,27 @@ class _CentroidMatcher:
         best_id: int | None = None
         best_distance: float | None = None
         if self._matrix.shape[0]:
-            distances = 1.0 - self._matrix @ vec
+            sims = self._matrix @ vec
+            distances = 1.0 - sims
+            if self._norms is not None:
+                distances = np.where(self._within_cap(sims), distances, np.inf)
             idx = int(np.argmin(distances))
-            best_id = self.ids[idx]
-            best_distance = float(distances[idx])
+            if np.isfinite(distances[idx]):
+                best_id = self.ids[idx]
+                best_distance = float(distances[idx])
+                if self._norms is not None and np.isfinite(self._norms[idx]):
+                    # Keep the guard honest for the rest of the batch.
+                    self._norms[idx] = float(
+                        np.sqrt(
+                            max(
+                                0.0,
+                                self._norms[idx] ** 2
+                                + 2.0 * self._norms[idx] * float(sims[idx])
+                                + 1.0,
+                            )
+                        )
+                    )
+                    self._counts[idx] += 1.0
         for person_id, centroid in self._created:
             distance = 1.0 - float(centroid @ vec)
             if best_distance is None or distance < best_distance:
@@ -666,7 +771,12 @@ def record_scan(
     now = time.time()
     # Built before the transaction opens: the per-batch matrix is the expensive
     # part, and the write lock must not be held for it.
-    matcher = _CentroidMatcher(centroids, get_threshold())
+    matcher = _CentroidMatcher(
+        centroids,
+        get_threshold(),
+        max_spread=get_cluster_max_spread(),
+        stats=centroid_stats() if centroids else None,
+    )
     try:
         with db_conn() as conn, conn:
             dismissed, dismissed_vectors = _dismissed_keys(conn, file_path)
@@ -921,15 +1031,33 @@ def _cluster_block(block: np.ndarray, threshold: float) -> np.ndarray:
 
 def _block_groups(
     block: np.ndarray, labels: np.ndarray
-) -> tuple[list[int], list[np.ndarray]]:
-    """Centroid of every cluster in a block, in ``np.unique(labels)`` order."""
+) -> tuple[list[int], list[np.ndarray], list[int]]:
+    """Vector sum and size of every cluster in a block, in label order.
+
+    The sum, not the normalised centroid, is what the cohesion check needs:
+    ``1 - |sum| / count`` is the cluster's mean distance to its own centroid, and
+    that is how a cluster that is really several people shows itself.
+    """
     keys = np.unique(labels)
-    centroids = [_centroid_of(block[labels == key]) for key in keys]
-    return [int(k) for k in keys], centroids  # type: ignore[list-item]
+    sums: list[np.ndarray] = []
+    counts: list[int] = []
+    for key in keys:
+        rows = block[labels == key]
+        sums.append(rows.sum(axis=0, dtype="float64").astype("float32"))
+        counts.append(int(rows.shape[0]))
+    return [int(k) for k in keys], sums, counts
+
+
+def _cluster_spread(sum_vec: Any, count: int) -> float:
+    """Mean cosine distance between a cluster's members and its own centroid."""
+    if count <= 0:
+        return 0.0
+    norm = float(np.linalg.norm(np.asarray(sum_vec, dtype="float64")))
+    return max(0.0, 1.0 - norm / count)
 
 
 def _stitch_blocks(
-    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]],
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray], list[int]]],
     threshold: float,
     depth: int,
 ) -> np.ndarray:
@@ -941,24 +1069,35 @@ def _stitch_blocks(
     one chunk. O(n) memory in the labels and O(clusters) in the centroids,
     whatever the library size.
     """
-    total_rows = int(sum(labels.shape[0] for labels, _keys, _cs in blocks))
-    flat_parts = [c for _labels, _keys, centroids in blocks for c in centroids]
-    if not flat_parts:
+    total_rows = int(sum(labels.shape[0] for labels, *_rest in blocks))
+    flat_count = sum(len(sums) for _labels, _keys, sums, _counts in blocks)
+    if not flat_count:
         return np.zeros(total_rows, dtype="int64")
 
     if depth >= _MAX_CLUSTER_DEPTH:
         # Safety net for data that never merges: keep the blocks' clusters apart
         # rather than recursing forever.
-        group_labels = np.arange(len(flat_parts), dtype="int64")
+        group_labels = np.arange(flat_count, dtype="int64")
     else:
-        group_labels = _cluster_labels(np.vstack(flat_parts), threshold, depth + 1)
+        # One matrix filled in place: the stitched level is the largest
+        # allocation of a re-group, and building it row by row (dropping each
+        # block's sums as they are copied) keeps the peak near what the sums
+        # themselves already cost.
+        flat = np.empty((flat_count, EMBEDDING_DIM), dtype="float32")
+        row = 0
+        for _labels, _keys, sums, _counts in blocks:
+            for sum_vec in sums:
+                flat[row] = _normalize(sum_vec)
+                row += 1
+        group_labels = _cluster_labels(flat, threshold, depth + 1)
+        del flat
 
     out = np.zeros(total_rows, dtype="int64")
     pos = 0
     row = 0
-    for labels, keys, centroids in blocks:
+    for labels, keys, _sums, _counts in blocks:
         block_out = out[pos : pos + labels.shape[0]]
-        for key, _centroid in zip(keys, centroids):
+        for key in keys:
             block_out[labels == key] = int(group_labels[row])
             row += 1
         pos += labels.shape[0]
@@ -980,13 +1119,120 @@ def _cluster_labels(matrix: np.ndarray, threshold: float, depth: int = 0) -> np.
     if n <= _CLUSTER_CHUNK:
         return _cluster_block(matrix, threshold)
 
-    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]] = []
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray], list[int]]] = []
     for lo in range(0, n, _CLUSTER_CHUNK):
         block = matrix[lo : lo + _CLUSTER_CHUNK]
         labels = _cluster_block(block, threshold)
-        keys, centroids = _block_groups(block, labels)
-        blocks.append((labels, keys, centroids))
+        keys, sums, counts = _block_groups(block, labels)
+        blocks.append((labels, keys, sums, counts))
     return _stitch_blocks(blocks, threshold, depth)
+
+
+def _release_memory() -> None:
+    """Return freed heap pages to the OS between split groups.
+
+    Each split allocates and drops a centroid matrix and lets scipy build (and
+    free) its own distance structures. glibc keeps those arenas, so without a trim
+    the pass' RSS ratchets toward the service's memory cap even though the objects
+    are gone.
+    """
+    import gc
+
+    gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
+def _split_group_items(
+    items: list[tuple[int, int, np.ndarray, int]],
+    limit: float,
+    cap: float,
+    depth: int = 0,
+) -> list[list[int]]:
+    """Split a loose cluster by clustering its **block clusters**, not its faces.
+
+    ``items`` are ``(block, key, vector sum, count)`` — the pieces the chunk pass
+    already produced. Their centroids are what the top-level stitch merges, so
+    they are also the right granularity for pulling a loose group apart: a few
+    thousand 128-d vectors per group, exact spreads from the sums, and no need to
+    read the embedding table back. A part made of a single block cluster cannot be
+    split here; the caller falls back to its members for that one.
+
+    Returns groups of indices into ``items``.
+    """
+    if len(items) <= 1:
+        return [[0]] if items else []
+    centroids = np.vstack([_normalize(item[2]) for item in items])
+    labels = _cluster_labels(centroids, limit)
+    out: list[list[int]] = []
+    for key in np.unique(labels):
+        part = [int(j) for j in np.flatnonzero(labels == key)]
+        total = np.sum([items[j][2] for j in part], axis=0)
+        count = sum(items[j][3] for j in part)
+        if (
+            _cluster_spread(total, count) <= cap
+            or depth >= _MAX_SPLIT_DEPTH
+            or limit <= _SPLIT_FLOOR
+        ):
+            out.append(part)
+        else:
+            out.extend(
+                _split_group_items(
+                    [items[j] for j in part],
+                    max(_SPLIT_FLOOR, limit * _SPLIT_RATIO),
+                    cap,
+                    depth + 1,
+                )
+            )
+    return out
+
+
+def _split_loose_group(
+    matrix: np.ndarray, limit: float, cap: float, depth: int = 0
+) -> np.ndarray:
+    """Cut one over-loose cluster into the identities it was made of.
+
+    Every join in a single-pass clustering is within the threshold, but the joins
+    chain: face A is close to B, B to C, and one "person" ends up holding
+    thousands of unrelated faces whose mean distance to their own centroid is
+    several times the threshold. That is what a false match looks like, so a
+    cluster looser than the cap is re-clustered at a tighter threshold and each
+    part that is still too loose is split again — tight groups are left alone,
+    the chain is cut back into identities.
+    """
+    n = matrix.shape[0]
+    labels = _cluster_labels(matrix, limit)
+    out = np.zeros(n, dtype="int64")
+    next_id = 0
+    for key in np.unique(labels):
+        mask = labels == key
+        part = matrix[mask]
+        count = int(part.shape[0])
+        spread = _cluster_spread(part.sum(axis=0, dtype="float64"), count)
+        if spread <= cap:
+            out[mask] = next_id
+            next_id += 1
+            continue
+        if (
+            count < _MIN_SPLIT_FACES
+            or depth >= _MAX_SPLIT_DEPTH
+            or limit <= _SPLIT_FLOOR
+        ):
+            # It will not come apart any further. A cluster that cannot be shown
+            # to be one person is better as singletons than as a false match.
+            out[mask] = next_id + np.arange(count, dtype="int64")
+            next_id += count
+            continue
+        sub = _split_loose_group(
+            part, max(_SPLIT_FLOOR, limit * _SPLIT_RATIO), cap, depth + 1
+        )
+        out[mask] = sub + next_id
+        next_id += int(sub.max()) + 1
+    return out
 
 
 def auto_match_people(
@@ -1252,6 +1498,39 @@ def _claim_groups(
     return claimed
 
 
+def _load_face_embeddings(face_ids: np.ndarray) -> np.ndarray | None:
+    """Embedding matrix for a set of face ids, in the order given.
+
+    Only used for the clusters a re-group decided to split, so it reads a subset
+    of the table instead of holding the whole library in memory.
+    """
+    ids = [int(x) for x in face_ids.tolist()]
+    if not ids:
+        return np.zeros((0, EMBEDDING_DIM), dtype="float32")
+    expected = EMBEDDING_DIM * 4
+    found: dict[int, np.ndarray] = {}
+    try:
+        with db_conn() as conn:
+            for start in range(0, len(ids), SQL_IN_CHUNK):
+                chunk = ids[start : start + SQL_IN_CHUNK]
+                placeholders = ",".join("?" for _ in chunk)
+                for row in conn.execute(
+                    f"SELECT id, embedding FROM faces WHERE id IN ({placeholders})",
+                    chunk,
+                ):
+                    blob = row["embedding"]
+                    if blob and len(blob) == expected:
+                        found[int(row["id"])] = np.frombuffer(blob, dtype="<f4").astype(
+                            "float32", copy=False
+                        )
+    except Exception as e:
+        logger.error(f"[Faces] Could not read faces to split: {e}")
+        return None
+    if len(found) != len(ids):
+        return None
+    return np.vstack([found[i] for i in ids])
+
+
 def _iter_face_embeddings(batch: int = _RECLUSTER_READ_BATCH):
     """Stream ``(face_id, embedding)`` rows in id order, a page at a time.
 
@@ -1317,7 +1596,7 @@ def _recluster_people_pass(
     }
     expected_blob = EMBEDDING_DIM * 4
     face_ids: list[int] = []
-    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray]]] = []
+    blocks: list[tuple[np.ndarray, list[int], list[np.ndarray], list[int]]] = []
     batch_blobs: list[bytes] = []
     too_many = False
 
@@ -1330,8 +1609,8 @@ def _recluster_people_pass(
             "float32", copy=False
         )
         labels = _cluster_block(block, limit)
-        keys, centroids = _block_groups(block, labels)
-        blocks.append((labels, keys, centroids))
+        keys, sums, counts = _block_groups(block, labels)
+        blocks.append((labels, keys, sums, counts))
 
     try:
         for face_id, blob in _iter_face_embeddings():
@@ -1361,6 +1640,7 @@ def _recluster_people_pass(
         report["success"] = True
         return report
 
+    logger.info(f"[Faces] Re-clustering {len(face_ids):,} faces at {limit:.2f}…")
     try:
         labels = blocks[0][0] if len(blocks) == 1 else _stitch_blocks(blocks, limit, 0)
     except Exception as e:
@@ -1371,32 +1651,119 @@ def _recluster_people_pass(
         report["error"] = "Stored embeddings are unreadable"
         return report
 
-    # Group centroids, accumulated from the block clusters (the embedding matrix
-    # itself is gone once the blocks are stitched). Weighted by member count, so a
-    # real cluster outweighs a two-face stray when names are re-attached.
+    # Exact sums and sizes per group, accumulated from the block clusters (the
+    # embedding matrix itself is gone once the blocks are stitched). A sum — not a
+    # weighted centroid — is what makes a cluster's own spread computable, and the
+    # group's block clusters are kept as items so a split can work on them instead
+    # of reading every face back.
     group_sums: dict[int, np.ndarray] = {}
     group_sizes: dict[int, int] = {}
+    group_items: dict[int, list[tuple[int, int, np.ndarray, int]]] = {}
+    block_offsets: list[int] = []
     pos = 0
-    for block_labels, keys, centroids in blocks:
+    for block_index, (block_labels, keys, block_sums, counts) in enumerate(blocks):
+        block_offsets.append(pos)
         local = labels[pos : pos + block_labels.shape[0]]
-        for key, centroid in zip(keys, centroids):
+        for key, sum_vec, count in zip(keys, block_sums, counts):
             mask = block_labels == key
-            size = int(np.count_nonzero(mask))
-            if not size:
+            if not count:
                 continue
             group = int(local[mask][0])
-            group_sizes[group] = group_sizes.get(group, 0) + size
+            group_sizes[group] = group_sizes.get(group, 0) + count
             total = group_sums.get(group)
             group_sums[group] = (
-                centroid * size if total is None else total + centroid * size
+                np.asarray(sum_vec, dtype="float32").copy()
+                if total is None
+                else total + sum_vec
             )
+            group_items.setdefault(group, []).append((block_index, key, sum_vec, count))
         pos += block_labels.shape[0]
+
+    logger.info(
+        f"[Faces] Clustered {len(face_ids):,} faces into {len(group_sums):,} "
+        f"clusters in {time.time() - started:.0f}s"
+    )
+
+    # A cluster looser than the cap is not one person, however the joins were
+    # made: split it back into tight groups before anything is written. Without
+    # this, a chain of "each face was close enough to the last" ends up as one
+    # card holding thousands of unrelated faces.
+    cap = min(limit, get_cluster_max_spread())
+    loose = [
+        group
+        for group, sum_vec in group_sums.items()
+        if _cluster_spread(sum_vec, group_sizes.get(group, 0)) > cap
+    ]
+    if loose:
+        face_id_array = np.asarray(face_ids, dtype="int64")
+        next_group = max(group_sums) + 1
+        split_faces = 0
+        # Start the split at the cap, not at the join threshold: clustering at the
+        # cap usually lands inside it in one pass, where starting loose took every
+        # level of `_SPLIT_RATIO` tightening (and re-clustered most of the group
+        # each time).
+        split_limit = min(limit, cap)
+        for done, group in enumerate(loose, start=1):
+            items = group_items.get(group) or []
+            if not items:
+                continue
+            for index, part in enumerate(_split_group_items(items, split_limit, cap)):
+                total = np.sum([items[j][2] for j in part], axis=0)
+                count = sum(items[j][3] for j in part)
+                group_id = group if index == 0 else next_group
+                if index:
+                    next_group += 1
+                if len(part) == 1 and _cluster_spread(total, count) > cap:
+                    # One block cluster that will not come apart through its
+                    # peers: split its own faces (bounded by one block).
+                    block_index, key, _sum, _count = items[part[0]]
+                    block_labels = blocks[block_index][0]
+                    positions = block_offsets[block_index] + np.flatnonzero(
+                        block_labels == key
+                    )
+                    matrix = _load_face_embeddings(face_id_array[positions])
+                    if matrix is None:
+                        continue
+                    sub_labels = _split_loose_group(matrix, split_limit, cap)
+                    split_faces += int(positions.shape[0])
+                    for sub_index, sub in enumerate(np.unique(sub_labels)):
+                        mask = sub_labels == sub
+                        sub_group = group_id if sub_index == 0 else next_group
+                        if sub_index:
+                            next_group += 1
+                        labels[positions[mask]] = sub_group
+                        block = matrix[mask]
+                        group_sums[sub_group] = block.sum(
+                            axis=0, dtype="float64"
+                        ).astype("float32")
+                        group_sizes[sub_group] = int(block.shape[0])
+                    continue
+                for item_index in part:
+                    block_index, key, _sum, _count = items[item_index]
+                    block_labels = blocks[block_index][0]
+                    rows = block_offsets[block_index] + np.flatnonzero(
+                        block_labels == key
+                    )
+                    labels[rows] = group_id
+                group_sums[group_id] = total
+                group_sizes[group_id] = count
+            if done % 50 == 0:
+                _release_memory()
+                logger.info(
+                    f"[Faces] Split {done:,}/{len(loose):,} over-loose clusters…"
+                )
+        del face_id_array
+        logger.info(
+            f"[Faces] Split {len(loose):,} over-loose clusters at a "
+            f"{cap:.2f} cohesion cap ({split_faces:,} faces re-clustered from "
+            f"single-block clusters)"
+        )
     blocks.clear()
+    group_items.clear()
 
     group_ids = list(group_sums)
     group_centroids = {
-        group: _normalize(vec / float(group_sizes[group]))
-        for group, vec in group_sums.items()
+        group: _normalize(sum_vec) for group, sum_vec in group_sums.items()
     }
     group_sums.clear()
     group_sizes.clear()
