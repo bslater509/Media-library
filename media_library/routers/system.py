@@ -24,7 +24,6 @@ from media_library.services.zip import (
 from media_library.workers import (
     animated_thumb_worker_instance,
     backup_watcher_instance,
-    face_worker_instance,
     h265_worker_instance,
     library_ops_worker_instance,
     metadata_worker_instance,
@@ -54,7 +53,6 @@ _HEALTH_WORKERS = (
     library_ops_worker_instance,
     backup_watcher_instance,
     h265_worker_instance,
-    face_worker_instance,
 )
 
 
@@ -162,9 +160,6 @@ async def get_all_system_status() -> dict[str, Any]:
     # 14. In-place H.265 (x265) conversions (Library lightbox action)
     h265_data = h265_worker_instance.get_status()
 
-    # 15. Face recognition / People (opt-in; "disabled" until enabled)
-    faces_data = face_worker_instance.get_status()
-
     # Calculate overall activity flag so client can adapt poll interval
     is_active = (
         bool(transfers_data.get("active"))
@@ -190,7 +185,6 @@ async def get_all_system_status() -> dict[str, Any]:
         or url_dl_data.get("queued_count", 0) > 0
         or bool(h265_data.get("active"))
         or h265_data.get("queued_count", 0) > 0
-        or faces_data.get("status") == "scanning"
     )
 
     return {
@@ -212,7 +206,6 @@ async def get_all_system_status() -> dict[str, Any]:
         "library_ops": library_ops_data,
         "url_downloads": url_dl_data,
         "h265": h265_data,
-        "faces": faces_data,
     }
 
 

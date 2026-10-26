@@ -1,5 +1,6 @@
 """Database schema creation and migrations."""
 
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -194,69 +195,62 @@ def init_backup_db(custom_path: str | Path | None = None):
             "CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON favorites(created_at DESC)"
         )
 
-        # ---- Face recognition ("People") -------------------------------------
-        # A cluster of visually-similar faces the user can name. Counts are never
-        # stored: they are derived with GROUP BY so a move/delete/re-scan cannot
-        # leave a stale counter behind.
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS people (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            created_at REAL NOT NULL,
-            updated_at REAL
-        )""")
-        # One detected face. ``frame_time`` is -1.0 for images and the seconds
-        # offset for a video hit (never NULL, so the UNIQUE key below is exact:
-        # SQLite treats NULLs as distinct and would accept duplicates).
-        # ``embedding`` is 128 little-endian float32 (512 bytes), L2-normalised.
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS faces (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path TEXT NOT NULL,
-            frame_time REAL NOT NULL DEFAULT -1.0,
-            x INTEGER, y INTEGER, w INTEGER, h INTEGER,
-            score REAL,
-            embedding BLOB,
-            person_id INTEGER,
-            distance REAL,
-            crop TEXT,
-            created_at REAL NOT NULL,
-            UNIQUE(file_path, frame_time, x, y)
-        )""")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_faces_file ON faces(file_path)")
-        # Which files have already been scanned (including ones with no faces at
-        # all, which have no rows in ``faces`` and would otherwise be re-scanned
-        # forever). Keyed on path + the mtime/size the result is valid for.
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS face_scans (
-            file_path TEXT PRIMARY KEY,
-            mtime REAL,
-            size INTEGER,
-            faces_found INTEGER DEFAULT 0,
-            scanned_at REAL NOT NULL
-        )""")
-        # Faces the user rejected as "not a person": kept as a rejection so a
-        # later re-scan of the same file does not re-cluster them. The box is
-        # what identifies the detection, and the embedding is what survives a
-        # change in how frames are sampled (a denser grid moves the timestamp
-        # and box of the representative detection of the same face).
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS dismissed_faces (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_path TEXT NOT NULL,
-            frame_time REAL NOT NULL DEFAULT -1.0,
-            x INTEGER, y INTEGER,
-            embedding BLOB,
-            created_at REAL NOT NULL,
-            UNIQUE(file_path, frame_time, x, y)
-        )""")
-        try:
-            conn.execute("ALTER TABLE dismissed_faces ADD COLUMN embedding BLOB")
-        except sqlite3.OperationalError:
-            pass
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_dismissed_file ON dismissed_faces(file_path)"
-        )
+        # Face recognition ("People") was removed; its four tables are dropped on
+        # every startup so an upgraded index carries none of the old clusters,
+        # embeddings or scan markers (and a restored old backup cannot resurrect
+        # them).
+        for _removed_table in (
+            "people",
+            "faces",
+            "face_scans",
+            "dismissed_faces",
+        ):
+            conn.execute(f"DROP TABLE IF EXISTS {_removed_table}")
+        # The strictness control stored its choice here, and the one-shot purge
+        # marker keeps it from re-walking the cache directories on every boot.
+        conn.execute("DELETE FROM db_meta WHERE key = 'face_match_threshold'")
 
         conn.commit()
+        _purge_face_artifacts(conn)
+
+
+def _purge_face_artifacts(conn) -> None:
+    """Delete the model weights and face crop cache the People feature left behind.
+
+    One-shot: a ``db_meta`` marker records that the purge ran, so a normal startup
+    does not walk those paths again. Never raises — a missing or unreadable path
+    must not stop the server from booting.
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'face_recognition_removed'"
+        ).fetchone()
+        if row:
+            return
+    except sqlite3.Error:
+        return
+
+    try:
+        from media_library.core import config
+
+        crop_dir = Path(config.THUMBNAIL_CACHE_DIR) / "faces"
+        shutil.rmtree(crop_dir, ignore_errors=True)
+        model_dir = Path(config.DATA_DIR) / "models"
+        for name in (
+            "face_detection_yunet_2023mar.onnx",
+            "face_recognition_sface_2021dec.onnx",
+        ):
+            try:
+                (model_dir / name).unlink()
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('face_recognition_removed', '1')"
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass

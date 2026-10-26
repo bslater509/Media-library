@@ -9,6 +9,26 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [2.0.0] - 2026-10-26
+
+### Removed
+
+- **Face recognition and the People pages are gone.** The opt-in feature added in
+  1.x is removed in full: the `FaceWorker` sweep, the YuNet + SFace engine
+  (`services/face_engine.py`), the clustering/curation service
+  (`services/face_service.py`), the `/api/people*` endpoints, the `/people` and
+  `/people/review` pages and their bundles, the People nav tabs, sidebar and
+  drawer links, the Background Tasks card, the Library search `person:` syntax
+  and the `faces` block of `/api/system/status` all no longer exist.
+- **Its data goes with it.** Startup drops the `people`, `faces`, `face_scans`
+  and `dismissed_faces` tables, and a one-shot migration deletes the face crop
+  cache (`THUMBNAIL_CACHE_DIR/faces`) and the two ONNX weights
+  (`DATA_DIR/models`). Moves, renames, deletes, pruning and backup restore no
+  longer touch face rows.
+- **`opencv-contrib-python-headless`** leaves `requirements.txt`: it was only the
+  inference runtime for the face engine. `scipy` stays (imagehash's pHash, i.e.
+  visual duplicate detection, computes its DCT with it).
+
 ## [1.2.5] - 2026-10-22
 
 ### Fixed

@@ -191,7 +191,6 @@ def prune_stale_index_entries(
             "pruned_files": 0,
             "pruned_orphaned_thumbs": 0,
             "pruned_orphaned_anims": 0,
-            "pruned_orphaned_crops": 0,
             "pruned_orphaned_frames": 0,
             "pruned_stale_duplicates": 0,
             "aborted": True,
@@ -202,7 +201,6 @@ def prune_stale_index_entries(
     pruned_files = 0
     pruned_orphaned_thumbs = 0
     pruned_orphaned_anims = 0
-    pruned_orphaned_crops = 0
     pruned_orphaned_frames = 0
     pruned_stale_duplicates = 0
 
@@ -232,7 +230,6 @@ def prune_stale_index_entries(
                     "pruned_files": 0,
                     "pruned_orphaned_thumbs": 0,
                     "pruned_orphaned_anims": 0,
-                    "pruned_orphaned_crops": 0,
                     "pruned_orphaned_frames": 0,
                     "pruned_stale_duplicates": 0,
                     "aborted": True,
@@ -271,15 +268,6 @@ def prune_stale_index_entries(
                 )
 
                 pruned_orphaned_anims = clean_orphaned_animated_previews(conn)
-                # A deleted, renamed or re-encoded file orphans its face crops
-                # too (they are keyed on path + box), so sweep them together.
-                from media_library.services.face_service import (
-                    clean_orphaned_face_crops,
-                    invalidate_centroids,
-                )
-
-                pruned_orphaned_crops = clean_orphaned_face_crops(conn)
-                invalidate_centroids()
 
                 # Frames of videos that are gone (or of the pre-directory
                 # layout, which nothing looks up any more).
@@ -309,12 +297,11 @@ def prune_stale_index_entries(
                 or pruned_files > 0
                 or pruned_orphaned_thumbs > 0
                 or pruned_orphaned_anims > 0
-                or pruned_orphaned_crops > 0
                 or pruned_orphaned_frames > 0
                 or pruned_stale_duplicates > 0
             ):
                 logger.info(
-                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, {pruned_orphaned_anims} orphaned animated previews, {pruned_orphaned_crops} orphaned face crops, {pruned_orphaned_frames} orphaned candidate frames, and {pruned_stale_duplicates} stale duplicate records."
+                    f"[Prune] Removed {pruned_folders} deleted folders, {pruned_files} files, {pruned_orphaned_thumbs} orphaned thumbnails, {pruned_orphaned_anims} orphaned animated previews, {pruned_orphaned_frames} orphaned candidate frames, and {pruned_stale_duplicates} stale duplicate records."
                 )
 
     except Exception as e:
@@ -325,7 +312,6 @@ def prune_stale_index_entries(
         "pruned_files": pruned_files,
         "pruned_orphaned_thumbs": pruned_orphaned_thumbs,
         "pruned_orphaned_anims": pruned_orphaned_anims,
-        "pruned_orphaned_crops": pruned_orphaned_crops,
         "pruned_orphaned_frames": pruned_orphaned_frames,
         "pruned_stale_duplicates": pruned_stale_duplicates,
     }

@@ -114,24 +114,6 @@ describe('Background Tasks modal — analysis workers stay visible', () => {
   });
 });
 
-describe('Background Tasks modal — face sweep throughput', () => {
-  it('both modals carry the rate and ETA readouts', () => {
-    MODALS.forEach(([_label, html]) => {
-      expect(html).toContain('id="faceWorkerRateText"');
-      expect(html).toContain('id="faceWorkerEtaText"');
-    });
-  });
-
-  it('both bundles render a footage rate and an ETA from the status payload', () => {
-    [librarySource, sorterSource].forEach((src) => {
-      expect(src).toMatch(/faceWorkerRateText/);
-      expect(src).toMatch(/faceWorkerEtaText/);
-      // Footage, not file count, drives the estimate.
-      expect(src).toMatch(/realtime_factor/);
-      expect(src).toMatch(/eta_seconds/);
-    });
-  });
-});
 
 describe('Background Tasks modal — output escaping', () => {
   it('escapes transfer/transcode/zip/upload names before innerHTML', () => {

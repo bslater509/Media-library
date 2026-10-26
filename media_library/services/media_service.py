@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 import socket
 import threading
 import time
@@ -18,28 +17,6 @@ from media_library.db.connection import db_conn
 from media_library.db.indexer import add_file_to_index
 
 logger = logging.getLogger(__name__)
-
-#: ``person:anna`` / ``person:"anna smith"`` in the Library search box.
-_PERSON_TOKEN_RE = re.compile(r'person:"([^"]+)"|person:([^\s"]+)', re.IGNORECASE)
-
-
-def split_person_tokens(query: str) -> tuple[str, list[str]]:
-    """Split a search query into free-text words and ``person:`` name filters.
-
-    The token is what makes "search by person" work without a separate search
-    mode: everything else in the box keeps matching filenames and relative
-    folder paths, so ``person:anna iceland`` means "Anna, in Iceland".
-    """
-    names: list[str] = []
-
-    def _take(match: re.Match) -> str:
-        name = (match.group(1) or match.group(2) or "").strip()
-        if name:
-            names.append(name)
-        return " "
-
-    text = _PERSON_TOKEN_RE.sub(_take, query or "")
-    return text.strip(), names
 
 
 def get_lan_ip() -> str:
@@ -198,7 +175,6 @@ def search_backup_index(
     sort_by: str = "name_asc",
     limit: int | None = None,
     return_meta: bool = False,
-    person_ids: list[int] | None = None,
 ) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], bool]:
     """Performs multi-token search in indexed SQLite library.
 
@@ -206,10 +182,6 @@ def search_backup_index(
     (relative to the library root, so the root and its ancestors never match):
     "iceland 2023" finds the clips inside ``…/Iceland 2023/`` even when no
     filename contains those words.
-
-    ``person_ids`` restricts the result to files a known person appears in (the
-    caller resolves ``person:<name>`` tokens first); passing an empty list means
-    the named person matched nobody, which returns no results.
     """
     effective_limit = limit if (limit is not None and limit > 0) else SEARCH_LIMIT
     base_dir = os.path.realpath(state.get("destination_dir") or DEFAULT_DESTINATION_DIR)
@@ -217,9 +189,7 @@ def search_backup_index(
     with db_conn() as conn:
         try:
             words = query.strip().lower().split()
-            if person_ids is not None and not person_ids:
-                return ([], False) if return_meta else []
-            if not words and not person_ids:
+            if not words:
                 return ([], False) if return_meta else []
 
             where_clauses = [
@@ -234,14 +204,6 @@ def search_backup_index(
             params: list[Any] = []
             for w in words:
                 params.extend([f"%{w}%", rel_offset, f"%{w}%"])
-
-            if person_ids:
-                placeholders = ",".join("?" for _ in person_ids)
-                sql += (
-                    " AND f.path IN (SELECT file_path FROM faces "
-                    f"WHERE person_id IN ({placeholders}))"
-                )
-                params.extend(person_ids)
 
             if type_filter and type_filter in ("video", "image"):
                 sql += " AND f.type = ?"

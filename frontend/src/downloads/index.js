@@ -400,7 +400,7 @@ async function clearHistory() {
 
 // ---------------------------------------------------------------- picker
 
-// The drill-down chooser is shared with the People page (see
+// The drill-down chooser is shared with other pages (see
 // shared/folder_picker.js): it renders its own sheet, reads the index only, and
 // hides ZIP archives, which cannot receive a download.
 let targetPicker = null;

@@ -7,6 +7,7 @@ python-dotenv>=1.0.0
 pillow>=10.0.0
 imagehash>=4.3.0
 numpy>=1.24.0
+# imagehash's pHash (visual duplicate detection) computes its DCT with scipy.
 scipy>=1.10.0
 pytest>=8.0.0
 pytest-cov>=5.0.0
@@ -19,10 +20,3 @@ yt-dlp>=2025.1.15
 # Fallback downloader for sites yt-dlp does not support (image boards / file hosts
 # such as bunkr); runs as an isolated subprocess via "python -m gallery_dl"
 gallery-dl>=1.28.0
-
-# Face recognition ("People", opt-in via FACE_RECOGNITION_ENABLED) — the only
-# inference runtime the project needs: FaceDetectorYN (YuNet) + FaceRecognizerSF
-# (SFace) come from OpenCV itself, so there is no torch/onnxruntime dependency.
-# Imported lazily by media_library/services/face_engine.py, so an install without
-# it still starts and simply reports the engine as unavailable.
-opencv-contrib-python-headless>=4.8.0

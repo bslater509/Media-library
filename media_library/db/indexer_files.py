@@ -178,20 +178,6 @@ def update_file_in_index(
                     "UPDATE favorites SET path = ? WHERE path = ?",
                     (new_path, old_path),
                 )
-                # Faces and scan bookkeeping follow the file, so a person's page
-                # survives a move/rename instead of losing its media.
-                conn.execute(
-                    "UPDATE faces SET file_path = ? WHERE file_path = ?",
-                    (new_path, old_path),
-                )
-                conn.execute(
-                    "UPDATE face_scans SET file_path = ? WHERE file_path = ?",
-                    (new_path, old_path),
-                )
-                conn.execute(
-                    "UPDATE dismissed_faces SET file_path = ? WHERE file_path = ?",
-                    (new_path, old_path),
-                )
                 has_thumb = 1 if get_thumbnail_cache_path(new_path).exists() else 0
                 conn.execute(
                     """
@@ -288,12 +274,6 @@ def move_path_in_index(old_path: str, new_path: str, kind: str):
                     "UPDATE favorites SET path = ? || substr(path, ?) WHERE path LIKE ?",
                     (new_path, old_len, old_prefix + "%"),
                 )
-                for table in ("faces", "face_scans", "dismissed_faces"):
-                    conn.execute(
-                        f"UPDATE {table} SET file_path = ? || substr(file_path, ?) "
-                        "WHERE file_path = ? OR file_path LIKE ?",
-                        (new_path, old_len, old_path, old_prefix + "%"),
-                    )
             elif kind == "folder":
                 # Descendant folder rows and their parent pointers.
                 conn.execute(
@@ -319,12 +299,6 @@ def move_path_in_index(old_path: str, new_path: str, kind: str):
                     "UPDATE favorites SET path = ? || substr(path, ?) WHERE path = ? OR path LIKE ?",
                     (new_path, old_len, old_path, old_prefix + "%"),
                 )
-                for table in ("faces", "face_scans", "dismissed_faces"):
-                    conn.execute(
-                        f"UPDATE {table} SET file_path = ? || substr(file_path, ?) "
-                        "WHERE file_path = ? OR file_path LIKE ?",
-                        (new_path, old_len, old_path, old_prefix + "%"),
-                    )
     except Exception as e:
         logger.error(f"Error moving {old_path} -> {new_path} in index: {e}")
 
@@ -340,8 +314,6 @@ def delete_path_from_index(path: str, kind: str):
                     "DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ?",
                     (path, path),
                 )
-                for table in ("faces", "face_scans", "dismissed_faces"):
-                    conn.execute(f"DELETE FROM {table} WHERE file_path = ?", (path,))
                 folder_path = os.path.dirname(path)
                 cur = conn.execute(
                     "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE folder_path = ?",
@@ -360,11 +332,6 @@ def delete_path_from_index(path: str, kind: str):
                     "DELETE FROM favorites WHERE path = ? OR path LIKE ?",
                     (path, prefix + "%"),
                 )
-                for table in ("faces", "face_scans", "dismissed_faces"):
-                    conn.execute(
-                        f"DELETE FROM {table} WHERE file_path = ? OR file_path LIKE ?",
-                        (path, prefix + "%"),
-                    )
             elif kind == "folder":
                 prefix = path + os.sep
                 conn.execute(
@@ -379,10 +346,5 @@ def delete_path_from_index(path: str, kind: str):
                     "DELETE FROM favorites WHERE path = ? OR path LIKE ?",
                     (path, prefix + "%"),
                 )
-                for table in ("faces", "face_scans", "dismissed_faces"):
-                    conn.execute(
-                        f"DELETE FROM {table} WHERE file_path = ? OR file_path LIKE ?",
-                        (path, prefix + "%"),
-                    )
     except Exception as e:
         logger.error(f"Error deleting {path} from index: {e}")

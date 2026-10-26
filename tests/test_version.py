@@ -24,11 +24,11 @@ VERSION_REPORTERS = (
 
 # Pages served through ``routers/views._serve_page`` (the version token is
 # substituted for all of them, even where a template does not use it yet).
-SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics", "/people", "/people/review")
+SERVED_PAGES = ("/", "/sorter", "/downloads", "/analytics")
 
 
 def test_version_is_the_release_version():
-    assert __version__ == "1.2.5"
+    assert __version__ == "2.0.0"
 
 
 def test_package_json_matches_python_version():
@@ -60,9 +60,9 @@ def test_reporters_import_the_version_instead_of_hardcoding_it():
 
 
 def test_no_stale_version_literals_anywhere_in_the_package():
-    """No shipped module may still claim the pre-release version (2.0.0)."""
+    """No shipped module may still claim the pre-release version (1.2.5)."""
     for path in (REPO_ROOT / "media_library").rglob("*.py"):
-        assert "2.0.0" not in path.read_text(encoding="utf-8"), (
+        assert "1.2.5" not in path.read_text(encoding="utf-8"), (
             f"{path.relative_to(REPO_ROOT)} still reports the old version"
         )
 

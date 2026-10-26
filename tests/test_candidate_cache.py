@@ -1,11 +1,9 @@
 """Candidate frame cache housekeeping: binning, orphan sweep, LRU ceiling.
 
-Candidate frames (the 480px stills the thumbnail chooser, the animated preview
-compiler and the face worker pull out of a video) are regenerable, and the face
-sweep now asks for up to ``FACE_VIDEO_MAX_FRAMES`` of them per video — so the
-cache needs the same two guards the animated preview cache has. These tests pin
-the on-disk layout (one directory per video), the orphan sweep, the LRU ceiling
-and the status the faces payload reports.
+Candidate frames (the 480px stills the thumbnail chooser and the animated
+preview compiler pull out of a video) are regenerable, so the cache needs the
+same two guards the animated preview cache has. These tests pin the on-disk
+layout (one directory per video), the orphan sweep and the LRU ceiling.
 """
 
 import math
@@ -19,7 +17,6 @@ from media_library.services.candidate_cache import (
     candidate_cache_usage,
     candidate_dir_name,
     clean_orphaned_candidate_frames,
-    frame_cache_payload,
     get_candidate_cache_dir,
     manage_candidate_cache_lru,
     unlink_candidate_frames,
@@ -182,25 +179,3 @@ def test_lru_is_a_noop_below_the_ceiling_and_throttles(sandbox_env):
     # generation per frame stays cheap.
     second = manage_candidate_cache_lru()
     assert second["skipped"] is True
-
-
-def test_cache_payload_reports_usage_and_cap(sandbox_env):
-    _write_frame(_insert_video(sandbox_env["media_dir"], "clip.mp4"), 0.0, 2048)
-
-    payload = frame_cache_payload()
-
-    assert payload["frame_cache_files"] == 1
-    assert payload["frame_cache_bytes"] == 2048
-    assert payload["frame_cache_size_formatted"]
-    assert payload["frame_cache_max_bytes"] > 0
-    assert payload["frame_cache_max_size_formatted"]
-
-
-def test_face_worker_status_exposes_the_frame_cache(sandbox_env):
-    from media_library.workers import face_worker_instance
-
-    status = face_worker_instance.get_status()
-
-    assert "frame_cache_bytes" in status
-    assert "frame_cache_max_bytes" in status
-    assert "frame_cache_size_formatted" in status

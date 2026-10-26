@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The /downloads page: the target-folder chooser (shared with /people, so the
-// page no longer carries its own picker markup) and the target label it drives.
+// The /downloads page: the target-folder chooser (shared with the mobile sheet,
+// so the page no longer carries its own picker markup) and the target label it
+// drives.
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const templatesDir = path.resolve(here, '../../templates');

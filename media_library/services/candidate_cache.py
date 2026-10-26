@@ -1,7 +1,7 @@
-"""Housekeeping for the candidate-frame cache (thumbnail chooser / face scans).
+"""Housekeeping for the candidate-frame cache (thumbnail chooser / animated previews).
 
-Candidate frames are the 480px JPEG stills that the video thumbnail chooser, the
-animated preview compiler and the face worker extract from a video. They live in
+Candidate frames are the 480px JPEG stills that the video thumbnail chooser and
+the animated preview compiler extract from a video. They live in
 ``THUMBNAIL_CACHE_DIR / "candidates"`` as::
 
     candidates/v<sha256(video_path)[:24]>/cand_<seconds>.jpg
@@ -146,19 +146,6 @@ def candidate_cache_usage(max_age_s: float = _USAGE_TTL_S) -> tuple[int, int]:
 
     _USAGE_CACHE.update(key=key, at=now, files=files, bytes=total)
     return files, total
-
-
-def frame_cache_payload() -> dict[str, Any]:
-    """Status-ready snapshot of the frame cache for the status payload."""
-    files, total = candidate_cache_usage()
-    cap = candidate_cache_max_bytes()
-    return {
-        "frame_cache_files": files,
-        "frame_cache_bytes": total,
-        "frame_cache_size_formatted": format_size(total),
-        "frame_cache_max_bytes": cap,
-        "frame_cache_max_size_formatted": format_size(cap),
-    }
 
 
 def unlink_candidate_frames(rows: Any) -> int:
