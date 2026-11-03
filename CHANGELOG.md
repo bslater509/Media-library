@@ -9,6 +9,30 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [2.0.1] - 2026-11-03
+
+### Fixed
+
+- **High GPU usage in Firefox while browsing the library.** The gallery was
+  the worst case: every tile carried up to five `backdrop-blur` badges (ext,
+  resolution, codec, fps, duration), infinite scroll appends 50 cards at a time
+  and never removes any, so a large folder ended up holding thousands of live
+  blur layers — each one forcing Firefox to re-sample and re-blur its backdrop
+  whenever anything underneath changed. The badges are now plain high-alpha
+  fills, and `backdrop-filter` is gone from every other layer that scrolls or
+  sits over playing video: the pinned library top bar and its two inner rows
+  (sticky, so they re-blurred the whole grid on each scroll frame), the mobile
+  top bars on Library/Downloads/Analytics, the back-to-top button (which kept a
+  live backdrop copy even at `opacity-0`), the ZIP-extract banner, the sorter's
+  sticky video column and mobile bottom action bar, and the lightbox's `.lb-meta`
+  control bar plus the x265 progress panel (which were re-blurring the current
+  video frame as it played). All of those surfaces were 82–95% opaque, so the
+  blur was invisible anyway; their fills were nudged up a few percent to keep
+  the same contrast. Frosted glass remains on modal panels, the drag-and-drop
+  overlay and the mobile sidebar backdrop, none of which scroll. Gallery and
+  folder-cover images also decode asynchronously so a burst of decodes cannot
+  stall scrolling.
+
 ## [2.0.0] - 2026-10-26
 
 ### Removed

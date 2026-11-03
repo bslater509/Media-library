@@ -43,3 +43,6 @@ REJECTED_IMPROVEMENTS.md
 Thumbs.db
 *.swp
 .*.swp
+
+# Local agent-tool artifacts (screenshots, captures)
+.openchamber/

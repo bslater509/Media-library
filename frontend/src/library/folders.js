@@ -436,7 +436,7 @@ function subfolderCardHtml(sub, coverHeight, flexStyle) {
     : `${count} ${count === 1 ? 'file' : 'files'}`;
   const coverUrl = sub.thumb_url || '';
   const coverImg = coverUrl
-    ? `<img src="${coverUrl}" loading="lazy" alt=""
+    ? `<img src="${coverUrl}" loading="lazy" decoding="async" alt=""
          class="absolute inset-0 w-full h-full object-cover transition duration-200 group-hover:scale-105"
          onerror="this.style.display='none'">`
     : '';

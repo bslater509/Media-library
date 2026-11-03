@@ -246,6 +246,7 @@ function renderCards(start, count) {
           data-fallback-thumb="${file.thumb_url}"
           alt="${file.name}" 
           loading="lazy" 
+          decoding="async"
           class="card-thumb w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onerror="if (this.dataset.fallbackThumb && this.src !== this.dataset.fallbackThumb) { this.src = this.dataset.fallbackThumb; } else { this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'%2364748b\\' stroke-width=\\'2\\'><rect width=\\'18\\' height=\\'18\\' x=\\'3\\' y=\\'3\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg>'; }"
         />
@@ -261,28 +262,28 @@ function renderCards(start, count) {
 
         <!-- Top-Left Badges (Extension, Resolution, FPS, ANIM) -->
         <div class="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
-          <span class="card-ext-badge px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold ${file.needs_transcode ? 'text-amber-400 border-amber-500/30' : (isVid ? 'text-emerald-400 border-emerald-500/30' : 'text-slate-300 border-slate-700')} border">
+          <span class="card-ext-badge px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono font-bold ${file.needs_transcode ? 'text-amber-400 border-amber-500/30' : (isVid ? 'text-emerald-400 border-emerald-500/30' : 'text-slate-300 border-slate-700')} border">
             ${extLabel}
           </span>
           ${isVid ? `
-            <span class="card-anim-badge ${isAnimActive ? '' : 'hidden'} px-1 py-0.5 rounded bg-violet-950/80 backdrop-blur-md text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30 shadow flex items-center gap-1"
+            <span class="card-anim-badge ${isAnimActive ? '' : 'hidden'} px-1 py-0.5 rounded bg-violet-950/90 text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30 shadow flex items-center gap-1"
                   title="${isAnimGenerating ? 'Generating animated preview...' : 'Looping animated preview'}">
               <span>ANIM</span>
               <span class="card-anim-spinner inline-block ${isAnimGenerating ? 'animate-spin' : 'hidden'} text-[8px]">⚙️</span>
             </span>
           ` : ''}
           ${resLabel ? `
-            <span class="card-res-badge px-1.5 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[9px] font-mono font-bold text-sky-300 border border-sky-500/30 shadow">
+            <span class="card-res-badge px-1.5 py-0.5 rounded bg-slate-900/90 text-[9px] font-mono font-bold text-sky-300 border border-sky-500/30 shadow">
               ${resLabel}
             </span>
           ` : ''}
           ${codecLabel ? `
-            <span class="card-codec-badge px-1.5 py-0.5 rounded backdrop-blur-md text-[9px] font-mono font-bold border shadow ${codecLabel === 'H.265' ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/30' : 'bg-slate-900/80 text-slate-300 border-slate-700'}" title="Video codec">
+            <span class="card-codec-badge px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border shadow ${codecLabel === 'H.265' ? 'bg-emerald-950/85 text-emerald-300 border-emerald-500/30' : 'bg-slate-900/90 text-slate-300 border-slate-700'}" title="Video codec">
               ${codecLabel}
             </span>
           ` : ''}
           ${isVid && file.fps && file.fps >= 50 ? `
-            <span class="card-fps-badge px-1 py-0.5 rounded bg-slate-900/80 backdrop-blur-md text-[8px] font-mono font-semibold text-slate-300 border border-slate-700 shadow hidden xs:inline">
+            <span class="card-fps-badge px-1 py-0.5 rounded bg-slate-900/90 text-[8px] font-mono font-semibold text-slate-300 border border-slate-700 shadow hidden xs:inline">
               ${Math.round(file.fps)}fps
             </span>
           ` : ''}
@@ -290,7 +291,7 @@ function renderCards(start, count) {
 
         <!-- Bottom-Right Video Duration Badge -->
         ${durLabel ? `
-          <span class="card-duration-badge absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-md text-[10px] font-mono font-bold text-white shadow pointer-events-none z-10 border border-white/10">
+          <span class="card-duration-badge absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-mono font-bold text-white shadow pointer-events-none z-10 border border-white/10">
             ${durLabel}
           </span>
         ` : ''}
@@ -536,7 +537,7 @@ function updateCardsTranscodeStatus(data) {
           const badgeEl = card.querySelector('.card-ext-badge');
           if (badgeEl) {
             badgeEl.textContent = 'MP4';
-            badgeEl.className = 'card-ext-badge absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-md text-[9px] font-mono font-bold text-emerald-400 border border-emerald-500/30';
+            badgeEl.className = 'card-ext-badge absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono font-bold text-emerald-400 border border-emerald-500/30';
           }
           const img = card.querySelector('img');
           if (img) {
