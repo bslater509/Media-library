@@ -34,6 +34,7 @@ function cacheEls() {
   els.recentChips = byId('dlRecentChips');
   els.browseBtn = byId('dlBrowseBtn');
   els.urlsInput = byId('dlUrlsInput');
+  els.passwordInput = byId('dlPasswordInput');
   els.warningText = byId('dlWarningText');
   els.startBtn = byId('dlStartBtn');
   els.startBtnText = byId('dlStartBtnText');
@@ -242,11 +243,15 @@ function splitUrls(raw) {
     .filter((url, i, arr) => arr.indexOf(url) === i);
 }
 
-async function enqueueUrl(url) {
+async function enqueueUrl(url, password) {
+  const body = { url, destination_dir: state.target };
+  // Only sent when the user typed one; password-protected folders are unlocked
+  // server-side and the value is never echoed back in a job payload.
+  if (password) body.password = password;
   const res = await fetch('/api/backup/upload/url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, destination_dir: state.target }),
+    body: JSON.stringify(body),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.detail || res.status);
@@ -278,6 +283,7 @@ async function submitDownloads() {
   }
 
   state.submitting = true;
+  const password = els.passwordInput ? els.passwordInput.value.trim() : '';
   if (els.startBtn) {
     els.startBtn.disabled = true;
     els.startBtnText.textContent = valid.length > 1 ? `Queueing ${valid.length} downloads…` : 'Queueing…';
@@ -294,7 +300,7 @@ async function submitDownloads() {
   try {
     for (const url of valid) {
       try {
-        await enqueueUrl(url);
+        await enqueueUrl(url, password);
         queued += 1;
       } catch (err) {
         failed += 1;
@@ -307,6 +313,10 @@ async function submitDownloads() {
       rememberRecentTarget(state.target);
       state.recent = readRecentTargets();
       renderRecentChips();
+    }
+    if (queued > 0 && els.passwordInput) {
+      // A folder password belongs to one link; don't carry it into the next paste.
+      els.passwordInput.value = '';
     }
     if (els.urlsInput) {
       // Keep lines that weren't queued so the user can fix and re-submit them

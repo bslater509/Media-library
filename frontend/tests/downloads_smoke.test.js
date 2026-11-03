@@ -113,3 +113,48 @@ describe('downloads page folder chooser', () => {
     expect(html).not.toContain('confirmDlPickerBtn');
   });
 });
+
+describe('downloads page folder password', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    localStorage.clear();
+  });
+
+  it('sends the optional folder password with every queued URL', async () => {
+    await boot();
+
+    document.getElementById('dlUrlsInput').value =
+      'https://filester.me/f/61d5dda09c570535?page=1';
+    const pw = document.getElementById('dlPasswordInput');
+    expect(pw).toBeTruthy();
+    pw.value = 'simp';
+
+    document.getElementById('dlStartBtn').click();
+    await flush(12);
+
+    const call = global.fetch.mock.calls.find(
+      ([url]) => String(url) === '/api/backup/upload/url'
+    );
+    expect(call).toBeTruthy();
+    const body = JSON.parse(call[1].body);
+    expect(body.url).toBe('https://filester.me/f/61d5dda09c570535?page=1');
+    expect(body.password).toBe('simp');
+    // The password belongs to that paste, not the next one.
+    expect(pw.value).toBe('');
+  });
+
+  it('omits the password key when the field is empty', async () => {
+    await boot();
+
+    document.getElementById('dlUrlsInput').value = 'https://example.com/album';
+    document.getElementById('dlStartBtn').click();
+    await flush(12);
+
+    const call = global.fetch.mock.calls.find(
+      ([url]) => String(url) === '/api/backup/upload/url'
+    );
+    expect(call).toBeTruthy();
+    expect(JSON.parse(call[1].body)).not.toHaveProperty('password');
+  });
+});

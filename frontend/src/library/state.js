@@ -231,6 +231,7 @@
     // Mobile Downloads tab (inline URL form + live job list)
     mobileDlTargetLabel: document.getElementById('mobileDlTargetLabel'),
     mobileDlUrlInput: document.getElementById('mobileDlUrlInput'),
+    mobileDlPasswordInput: document.getElementById('mobileDlPasswordInput'),
     mobileDlWarningText: document.getElementById('mobileDlWarningText'),
     mobileDlStartBtn: document.getElementById('mobileDlStartBtn'),
     mobileDlSummary: document.getElementById('mobileDlSummary'),

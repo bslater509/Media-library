@@ -31,6 +31,9 @@ MAX_URL_LENGTH = 2048
 class UrlDownloadRequest(BaseModel):
     url: str
     destination_dir: str
+    # Optional folder/file password for hosts that gate a page behind one
+    # (e.g. a filester.me folder). Unlocked server-side, never echoed back.
+    password: str | None = None
 
 
 class UrlCancelRequest(BaseModel):
@@ -39,6 +42,8 @@ class UrlCancelRequest(BaseModel):
 
 class UrlRetryRequest(BaseModel):
     job_id: str
+    # Optional override: adds a password to a job queued without one.
+    password: str | None = None
 
 
 def _validate_destination(destination_dir: str) -> str:
@@ -75,7 +80,9 @@ def enqueue_url_download(req: UrlDownloadRequest) -> dict[str, Any]:
             detail="Neither yt-dlp nor gallery-dl is available on this server. Install them via requirements.txt.",
         )
 
-    job_id = url_download_worker_instance.enqueue(url, destination)
+    job_id = url_download_worker_instance.enqueue(
+        url, destination, (req.password or "").strip() or None
+    )
     logger.info(f"Queued URL download {job_id}: {url} -> {destination}")
     return {"status": "queued", "job_id": job_id}
 
@@ -113,7 +120,9 @@ def retry_url_download(req: UrlRetryRequest) -> dict[str, Any]:
     # Re-validate the original destination before cloning: it may have been
     # deleted or turned into a ZIP archive since the job first ran.
     _validate_destination(entry.get("destination_dir") or "")
-    new_job_id = url_download_worker_instance.retry(req.job_id)
+    new_job_id = url_download_worker_instance.retry(
+        req.job_id, (req.password or "").strip() or None
+    )
     if not new_job_id:
         raise HTTPException(status_code=409, detail="Could not retry this download")
     return {

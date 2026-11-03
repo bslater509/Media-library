@@ -19,6 +19,11 @@ Pipeline per job:
    and progress reporting.
 2. The downloader writes into a per-job staging directory under
    ``UPLOAD_STAGING_DIR`` (local disk; never touches the remote library).
+   When the job carries a **password**, ``services/host_unlock`` submits the
+   page's own password form first and writes the resulting session to a Netscape
+   cookie jar, which both downloaders receive via ``--cookies``. The password
+   never appears on a command line or in a log, and the jar is deleted with the
+   job's staging directory.
 3. Completed files are moved one by one into the user-chosen library folder
    with auto-rename collision handling and an atomic ``.tmp_*`` ->
    ``os.replace`` pattern (FUSE-safe), then the target folder is re-indexed.
@@ -51,6 +56,7 @@ from media_library.core.config import (
 )
 from media_library.core.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from media_library.db.indexer import index_folder
+from media_library.services.host_unlock import unlock_page
 from media_library.workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
@@ -105,7 +111,9 @@ class DownloadCancelled(Exception):
     pass
 
 
-def _build_ytdlp_command(url: str, out_dir: Path) -> list[str]:
+def _build_ytdlp_command(
+    url: str, out_dir: Path, cookies_path: Path | None = None
+) -> list[str]:
     """Assemble the ``python -m yt_dlp`` subprocess command for one job."""
     progress_tpl = (
         'download:{"type":"progress",'
@@ -141,13 +149,25 @@ def _build_ytdlp_command(url: str, out_dir: Path) -> list[str]:
         "--progress-template",
         progress_tpl,
     ]
-    if DOWNLOAD_COOKIES_FILE and os.path.isfile(DOWNLOAD_COOKIES_FILE):
-        cmd += ["--cookies", DOWNLOAD_COOKIES_FILE]
+    cookies = _cookies_file(cookies_path)
+    if cookies:
+        cmd += ["--cookies", cookies]
     cmd.append(url)
     return cmd
 
 
-def _build_gallerydl_command(url: str, out_dir: Path) -> list[str]:
+def _cookies_file(cookies_path: Path | None) -> str | None:
+    """The cookie jar to hand a downloader: an unlocked session wins, else config."""
+    if cookies_path and Path(cookies_path).is_file():
+        return str(cookies_path)
+    if DOWNLOAD_COOKIES_FILE and os.path.isfile(DOWNLOAD_COOKIES_FILE):
+        return DOWNLOAD_COOKIES_FILE
+    return None
+
+
+def _build_gallerydl_command(
+    url: str, out_dir: Path, cookies_path: Path | None = None
+) -> list[str]:
     """Assemble the ``python -m gallery_dl`` subprocess command for one job.
 
     ``directory=[]`` forces a flat layout (gallery-dl otherwise nests files under
@@ -164,8 +184,9 @@ def _build_gallerydl_command(url: str, out_dir: Path) -> list[str]:
         "-o",
         "directory=[]",
     ]
-    if DOWNLOAD_COOKIES_FILE and os.path.isfile(DOWNLOAD_COOKIES_FILE):
-        cmd += ["--cookies", DOWNLOAD_COOKIES_FILE]
+    cookies = _cookies_file(cookies_path)
+    if cookies:
+        cmd += ["--cookies", cookies]
     cmd.append(url)
     return cmd
 
@@ -367,6 +388,23 @@ def _attempt_downloads(
     ``DownloadCancelled`` propagates to the caller.
     """
     last_error: Exception | None = None
+    # A password-protected folder is unlocked here, before any downloader runs:
+    # the session cookies go into a jar both downloaders accept via --cookies, so
+    # they see an authorised page and their own password detection can stay
+    # (brittle) as it is. The jar lives next to the staging dir so a gallery-dl
+    # retry's ``_reset_job_dir`` cannot delete it.
+    cookies_path: Path | None = None
+    if item.get("password"):
+        cookies_path = job_dir.parent / f"{job_dir.name}.cookies.txt"
+        item["unlocked"] = unlock_page(
+            item["url"],
+            item["password"],
+            cookies_path,
+            DOWNLOAD_COOKIES_FILE or None,
+        )
+        if not item["unlocked"]:
+            cookies_path = None
+
     prefer_gallery_dl = _prefers_gallery_dl(item["url"])
     if prefer_gallery_dl and not is_gallery_dl_available():
         return 0, RuntimeError(
@@ -378,16 +416,14 @@ def _attempt_downloads(
         try:
             code, lines = _stream_process(
                 item,
-                _build_ytdlp_command(item["url"], job_dir),
+                _build_ytdlp_command(item["url"], job_dir, cookies_path),
                 lambda line: _apply_ytdlp_line(item, line),
             )
             if code == 0:
                 imported = _finalize_job_files(item, job_dir)
                 if imported:
                     return imported, None
-                last_error = RuntimeError(
-                    "No downloadable media found in URL (live streams / premieres skipped?)"
-                )
+                last_error = RuntimeError(_nothing_found_message(item, "yt-dlp"))
             else:
                 last_error = RuntimeError(f"yt-dlp exited with code {code}")
                 if not _looks_unsupported(lines):
@@ -404,7 +440,7 @@ def _attempt_downloads(
         try:
             code, _ = _stream_process(
                 item,
-                _build_gallerydl_command(item["url"], job_dir),
+                _build_gallerydl_command(item["url"], job_dir, cookies_path),
                 lambda line: _apply_gallerydl_line(item, line, job_dir),
             )
             if code != 0:
@@ -412,13 +448,33 @@ def _attempt_downloads(
             imported = _finalize_job_files(item, job_dir)
             if imported:
                 return imported, None
-            return 0, last_error or RuntimeError("No downloadable media found in URL")
+            # A site gallery-dl matches but that yields no files is usually a
+            # locked page it silently skipped, so say that instead of echoing
+            # yt-dlp's unrelated "unsupported URL".
+            return 0, RuntimeError(_nothing_found_message(item, "gallery-dl"))
         except DownloadCancelled:
             raise
         except Exception as e:
             return 0, e
 
     return 0, last_error
+
+
+def _nothing_found_message(item: dict[str, Any], downloader: str) -> str:
+    """Explain a zero-file download, naming the folder password when relevant."""
+    if item.get("password"):
+        if item.get("unlocked"):
+            return (
+                f"{downloader} found no downloadable media (folder password accepted)"
+            )
+        return (
+            f"{downloader} found no downloadable media — the folder password "
+            "was rejected or there is nothing importable in this link"
+        )
+    return (
+        f"{downloader} found no downloadable media — if this is a "
+        "password-protected folder, set its password when queueing the download"
+    )
 
 
 def _run_ytdlp_job(item: dict[str, Any]) -> None:
@@ -447,6 +503,11 @@ def _run_ytdlp_job(item: dict[str, Any]) -> None:
         item["proc"] = None
         item["completed_at"] = time.time()
         shutil.rmtree(job_dir, ignore_errors=True)
+        # Unlocked session cookies are per-job and single-use.
+        try:
+            (job_dir.parent / f"{job_dir.name}.cookies.txt").unlink()
+        except FileNotFoundError:
+            pass
 
 
 class URLDownloadWorker(BaseWorker):
@@ -459,13 +520,22 @@ class URLDownloadWorker(BaseWorker):
         self.active_jobs: dict[str, dict[str, Any]] = {}
         self.history: list[dict[str, Any]] = []
 
-    def enqueue(self, url: str, destination_dir: str) -> str:
-        """Queue one URL/playlist download job. Returns its job id."""
+    def enqueue(
+        self, url: str, destination_dir: str, password: str | None = None
+    ) -> str:
+        """Queue one URL/playlist download job. Returns its job id.
+
+        ``password`` unlocks a password-protected folder/file page for this job
+        only: it never leaves the process, is never logged, and is never put on a
+        downloader command line (see ``services/host_unlock``).
+        """
         job_id = "dl_" + uuid.uuid4().hex[:12]
         item: dict[str, Any] = {
             "id": job_id,
             "url": url,
             "destination_dir": destination_dir,
+            "password": (password or "").strip() or None,
+            "unlocked": False,
             "status": "queued",
             "created_at": time.time(),
             "started_at": None,
@@ -536,11 +606,13 @@ class URLDownloadWorker(BaseWorker):
                 return self._entry(item)
         return None
 
-    def retry(self, job_id: str) -> str | None:
+    def retry(self, job_id: str, password: str | None = None) -> str | None:
         """Clone a failed or cancelled job as a new queue entry.
 
         Returns the new job id, or None when the original job is unknown or not
-        retryable (completed jobs are never re-downloaded).
+        retryable (completed jobs are never re-downloaded). A ``password``
+        argument overrides the original job's; otherwise it is carried over, so
+        retrying a password-protected download does not lose the password.
         """
         entry = self.find_finished(job_id)
         if not entry:
@@ -551,7 +623,10 @@ class URLDownloadWorker(BaseWorker):
         destination = entry.get("destination_dir")
         if not url or not destination:
             return None
-        return self.enqueue(url, destination)
+        stored = next(
+            (h.get("password") for h in self.history if h.get("id") == job_id), None
+        )
+        return self.enqueue(url, destination, password or stored)
 
     def clear_history(self) -> int:
         """Remove all finished jobs from the retained history.
@@ -601,6 +676,10 @@ class URLDownloadWorker(BaseWorker):
             "playlist_count": item.get("playlist_count", 0),
             "imported_count": item.get("imported_count", 0),
             "downloader": item.get("downloader"),
+            # The password itself never leaves the worker; this flag just lets
+            # the UI show that a job needs (or had) one.
+            "has_password": bool(item.get("password")),
+            "unlocked": bool(item.get("unlocked")),
             "error": item.get("error"),
             "created_at": item.get("created_at"),
             "started_at": item.get("started_at"),

@@ -295,13 +295,19 @@ async function submitMobileUrlDownload() {
     return;
   }
   const target = state.currentPath || state.basePath || '/';
+  const passwordInput = els.mobileDlPasswordInput;
+  const password = passwordInput ? passwordInput.value.trim() : '';
   const startBtn = els.mobileDlStartBtn;
   if (startBtn) startBtn.disabled = true;
   try {
     const res = await fetch('/api/backup/upload/url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, destination_dir: target })
+      body: JSON.stringify(
+        password
+          ? { url, destination_dir: target, password }
+          : { url, destination_dir: target }
+      )
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -309,6 +315,7 @@ async function submitMobileUrlDownload() {
       return;
     }
     if (input) input.value = '';
+    if (passwordInput) passwordInput.value = '';
     showToast('Download queued in background', 'success');
     pollSystemStatus(true);
   } catch (err) {

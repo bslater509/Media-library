@@ -760,3 +760,156 @@ def test_history_and_clear_endpoints(api_client, monkeypatch):
     assert cleared.status_code == 200
     assert cleared.json()["cleared"] == 3
     assert api_client.get("/api/backup/upload/url/history").json()["total"] == 0
+
+
+# ------------------------------------------------- password-protected folders
+
+
+def test_enqueue_keeps_password_private(sandbox_env):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://example.com/folder", str(dest), password="simp"
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+    assert item["password"] == "simp"
+
+    status = url_download_worker_instance.get_status()
+    queued = status["queued"][0]
+    assert queued["has_password"] is True
+    # The secret never reaches a payload the browser renders.
+    assert "password" not in queued
+    assert "simp" not in json.dumps(status)
+
+
+def test_retry_carries_and_overrides_password(sandbox_env):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    worker = url_download_worker_instance
+    job_id = worker.enqueue("https://example.com/folder", str(dest), password="first")
+    _finish(worker, job_id, "failed")
+
+    carried = worker.retry(job_id)
+    assert worker.jobs_map[carried]["password"] == "first"
+
+    overridden = worker.retry(job_id, "second")
+    assert worker.jobs_map[overridden]["password"] == "second"
+
+
+def test_run_job_unlocks_page_and_hands_cookies_to_both_downloaders(
+    sandbox_env, monkeypatch
+):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://filester.me/f/abc", str(dest), password="simp"
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+    job_dir = _staging() / f"dl_{job_id}"
+
+    seen = {}
+
+    def fake_unlock(url, password, cookie_path, existing=None):
+        seen["url"] = url
+        seen["password"] = password
+        cookie_path = Path(cookie_path)
+        cookie_path.write_text("# Netscape HTTP Cookie File\n")
+        return True
+
+    monkeypatch.setattr(f"{WORKER}.unlock_page", fake_unlock)
+
+    commands = []
+
+    def fake_popen(cmd, *a, **k):
+        commands.append(cmd)
+        if len(commands) == 1:
+            return FakeProc(["ERROR: Unsupported URL: https://filester.me/f/abc"], 1)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "clip.mp4").write_bytes(b"\x00\x00\x00 ftypmp42" + b"Q" * 64)
+        return FakeProc([str(job_dir / "clip.mp4")], 0)
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+    _run_ytdlp_job(item)
+
+    assert seen == {"url": "https://filester.me/f/abc", "password": "simp"}
+    assert item["unlocked"] is True
+    assert item["status"] == "completed"
+    jar = str(_staging() / f"dl_{job_id}.cookies.txt")
+    assert "--cookies" in commands[0] and jar in commands[0]
+    assert "--cookies" in commands[1] and jar in commands[1]
+    # The password never appears on a command line.
+    assert all("simp" not in " ".join(cmd) for cmd in commands)
+    # The per-job jar is deleted with the staging directory.
+    assert not Path(jar).exists()
+
+
+def test_run_job_reports_a_rejected_password(sandbox_env, monkeypatch):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://filester.me/f/abc", str(dest), password="wrong"
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+
+    monkeypatch.setattr(f"{WORKER}.unlock_page", lambda *a, **k: False)
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda *a, **k: FakeProc(["nothing"], returncode=0)
+    )
+    _run_ytdlp_job(item)
+
+    assert item["status"] == "failed"
+    assert "password" in item["error"].lower()
+
+
+def test_run_job_suggests_a_password_when_nothing_is_found(sandbox_env, monkeypatch):
+    dest = sandbox_env["media_dir"] / "dest"
+    dest.mkdir()
+    job_id = url_download_worker_instance.enqueue(
+        "https://filester.me/f/abc", str(dest)
+    )
+    item = url_download_worker_instance.jobs_map[job_id]
+
+    monkeypatch.setattr(
+        "subprocess.Popen", lambda *a, **k: FakeProc(["nothing"], returncode=0)
+    )
+    _run_ytdlp_job(item)
+
+    assert item["status"] == "failed"
+    assert "password-protected" in item["error"].lower()
+
+
+def test_enqueue_endpoint_accepts_a_password(api_client, monkeypatch):
+    monkeypatch.setattr(f"{ROUTER}.is_ytdlp_available", lambda: True)
+    from media_library.core.state import state
+
+    r = api_client.post(
+        "/api/backup/upload/url",
+        json={
+            "url": "https://filester.me/f/abc",
+            "destination_dir": state.get("destination_dir"),
+            "password": "simp",
+        },
+    )
+    assert r.status_code == 200
+    job = url_download_worker_instance.jobs_map[r.json()["job_id"]]
+    assert job["password"] == "simp"
+    assert "simp" not in r.text
+
+
+def test_retry_endpoint_accepts_a_password_override(api_client, monkeypatch):
+    monkeypatch.setattr(f"{ROUTER}.is_ytdlp_available", lambda: True)
+    from media_library.core.state import state
+
+    dest = state.get("destination_dir")
+    job_id = api_client.post(
+        "/api/backup/upload/url",
+        json={"url": "https://filester.me/f/abc", "destination_dir": dest},
+    ).json()["job_id"]
+    _finish(url_download_worker_instance, job_id, "failed")
+
+    retry = api_client.post(
+        "/api/backup/upload/url/retry", json={"job_id": job_id, "password": "simp"}
+    )
+    assert retry.status_code == 200
+    clone = url_download_worker_instance.jobs_map[retry.json()["job_id"]]
+    assert clone["password"] == "simp"
