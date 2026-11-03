@@ -23,6 +23,35 @@
   --accent-strong: #d97706;
   --accent-soft: rgba(245, 158, 11, 0.32);
 
+  /* Theme ramps consumed by the compiled Tailwind utilities
+     (`rgb(var(--surface-900) / <alpha-value>)`). theme_head.html overrides
+     these as "R G B" triplets before first paint; these are the stone + amber
+     defaults, so a page still renders correctly if that script never runs. */
+  --surface-50: 250 250 249;
+  --surface-100: 245 245 244;
+  --surface-200: 231 229 228;
+  --surface-300: 214 211 209;
+  --surface-400: 168 162 158;
+  --surface-500: 120 113 108;
+  --surface-600: 87 83 78;
+  --surface-700: 68 64 60;
+  --surface-750: 51 48 44;
+  --surface-800: 41 37 36;
+  --surface-850: 33 30 27;
+  --surface-900: 28 25 23;
+  --surface-950: 12 10 9;
+  --accent-50: 255 251 235;
+  --accent-100: 254 243 198;
+  --accent-200: 253 230 138;
+  --accent-300: 252 211 77;
+  --accent-400: 251 191 36;
+  --accent-500: 245 158 11;
+  --accent-600: 217 119 6;
+  --accent-700: 180 83 9;
+  --accent-800: 146 64 14;
+  --accent-900: 120 53 15;
+  --accent-950: 69 26 3;
+
   /* Glass surfaces */
   --glass-bg: rgba(28, 25, 23, 0.72);
   --glass-bg-strong: rgba(12, 10, 9, 0.82);

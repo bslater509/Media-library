@@ -117,6 +117,23 @@ async function cancelAllTranscodes() {
 }
 let systemPollTimer = null;
 let isPollingSystem = false;
+// A subsystem whose payload is byte-identical to the last one it rendered does
+// not need re-rendering. Idle workers repeat the same body every poll, so this
+// is what keeps the 2-6s poll from rewriting the tasks modal (classes, innerHTML
+// lists, progress widths) several times a minute, which costs a style recalculation
+// plus a repaint of the whole page each time.
+const lastPayloadSignatures = new Map();
+function payloadChanged(key, payload) {
+  let signature;
+  try {
+    signature = JSON.stringify(payload);
+  } catch (_) {
+    return true;
+  }
+  if (lastPayloadSignatures.get(key) === signature) return false;
+  lastPayloadSignatures.set(key, signature);
+  return true;
+}
 // Unified System Status Polling
 async function pollSystemStatus(immediate = false) {
   if (isPollingSystem && !immediate) return;
@@ -134,71 +151,77 @@ async function pollSystemStatus(immediate = false) {
       const data = await res.json();
       if (data.transfers) {
         state.latestTransferData = data.transfers;
-        renderTransferStatus(data.transfers);
+        if (payloadChanged('transfers', data.transfers)) renderTransferStatus(data.transfers);
       }
       if (data.library_ops) {
         state.latestLibraryOpsData = data.library_ops;
-        renderLibraryOpsStatus(data.library_ops);
+        if (payloadChanged('library_ops', data.library_ops)) renderLibraryOpsStatus(data.library_ops);
       }
       if (data.transcode) {
         state.latestTranscodeData = data.transcode;
-        renderTranscodeStatus(data.transcode);
-        updateCardsTranscodeStatus(data.transcode);
+        if (payloadChanged('transcode', data.transcode)) {
+          renderTranscodeStatus(data.transcode);
+          updateCardsTranscodeStatus(data.transcode);
+        }
       }
       if (data.index) {
         state.indexStatus = data.index.status;
         state.latestIndexData = data.index;
-        renderIndexStatus(data.index);
+        if (payloadChanged('index', data.index)) renderIndexStatus(data.index);
       }
       if (data.thumbnails) {
         state.latestThumbData = data.thumbnails;
-        renderThumbnailStatus(data.thumbnails);
+        if (payloadChanged('thumbnails', data.thumbnails)) renderThumbnailStatus(data.thumbnails);
       }
       if (data.animated_thumbnails) {
         state.latestAnimThumbData = data.animated_thumbnails;
-        renderAnimatedThumbStatus(data.animated_thumbnails);
-        updateCardsAnimatedStatus(data.animated_thumbnails);
+        if (payloadChanged('animated_thumbnails', data.animated_thumbnails)) {
+          renderAnimatedThumbStatus(data.animated_thumbnails);
+          updateCardsAnimatedStatus(data.animated_thumbnails);
+        }
       }
       if (data.duplicate_hash) {
         state.latestDupHashData = data.duplicate_hash;
-        renderDuplicateHashStatus(data.duplicate_hash);
+        if (payloadChanged('duplicate_hash', data.duplicate_hash)) renderDuplicateHashStatus(data.duplicate_hash);
       }
       if (data.metadata) {
         state.latestMetadataData = data.metadata;
-        renderMetadataStatus(data.metadata);
+        if (payloadChanged('metadata', data.metadata)) renderMetadataStatus(data.metadata);
       }
       if (data.thumb_hash) {
         state.latestThumbHashData = data.thumb_hash;
-        renderVisualHashStatus(data.thumb_hash);
+        if (payloadChanged('thumb_hash', data.thumb_hash)) renderVisualHashStatus(data.thumb_hash);
       }
       if (data.webp) {
         state.latestWebpData = data.webp;
-        renderWebpStatus(data.webp);
+        if (payloadChanged('webp', data.webp)) renderWebpStatus(data.webp);
       }
       if (data.library_backup) {
         state.latestLibBackupData = data.library_backup;
-        renderLibBackupStatus(data.library_backup);
+        if (payloadChanged('library_backup', data.library_backup)) renderLibBackupStatus(data.library_backup);
       }
       if (data.zip) {
         state.latestZipData = data.zip;
-        renderZipStatus(data.zip);
-        handleZipStatusUpdate(data.zip);
+        if (payloadChanged('zip', data.zip)) {
+          renderZipStatus(data.zip);
+          handleZipStatusUpdate(data.zip);
+        }
       }
       if (data.batch_zip) {
         state.latestBatchZipData = data.batch_zip;
-        renderBatchZipStatus(data.batch_zip);
+        if (payloadChanged('batch_zip', data.batch_zip)) renderBatchZipStatus(data.batch_zip);
       }
       if (data.batch_unzip) {
         state.latestBatchUnpackData = data.batch_unzip;
-        renderBatchUnpackStatus(data.batch_unzip);
+        if (payloadChanged('batch_unzip', data.batch_unzip)) renderBatchUnpackStatus(data.batch_unzip);
       }
       if (data.url_downloads) {
         state.latestUrlDownloadsData = data.url_downloads;
-        renderUrlDownloadsStatus(data.url_downloads);
+        if (payloadChanged('url_downloads', data.url_downloads)) renderUrlDownloadsStatus(data.url_downloads);
       }
       if (data.h265) {
         state.latestH265Data = data.h265;
-        renderH265Status(data.h265);
+        if (payloadChanged('h265', data.h265)) renderH265Status(data.h265);
       }
 
       updateHeaderTaskBadge();
@@ -225,6 +248,7 @@ function pollTranscodeStatus() {
   pollSystemStatus(true);
 }
 // Shared Header Task Badge Updater
+let lastHeaderBadgeSignature = null;
 function updateHeaderTaskBadge() {
   if (!els.transferBadgeBtn) return;
 
@@ -275,6 +299,16 @@ function updateHeaderTaskBadge() {
   const badgeText = formatTaskCount(tasksSummary.count);
   const badgeStatus = tasksSummary.active ? 'Active' : 'Idle';
 
+  updateMobileControlsBadge();
+
+  // Everything below is derived from `taskSources`, so when that payload is
+  // unchanged the whole update (a dozen class toggles, text writes and a
+  // tab-badge pass) can be skipped: an idle server polls every 6s and would
+  // otherwise touch the DOM forever.
+  const badgeSignature = JSON.stringify([taskSources, badgeText, badgeStatus, tasksLabel]);
+  if (badgeSignature === lastHeaderBadgeSignature) return;
+  lastHeaderBadgeSignature = badgeSignature;
+
   // Always keep the desktop button visible so the background tasks modal can
   // be opened anytime
   els.transferBadgeBtn.classList.remove('hidden');
@@ -313,8 +347,6 @@ function updateHeaderTaskBadge() {
       els.mobileTasksCountBadge.classList.toggle('hidden', !badgeText);
     }
   }
-
-  updateMobileControlsBadge();
 
   // Update tab badges and empty state in tasks modal. The tab badge mirrors
   // the same active+queued item count as the header pill, so a nonzero badge
@@ -723,4 +755,4 @@ async function toggleDuplicateHashPause() {
   }
 }
 
-export { LIBOP_BADGES, LIBOP_LABELS, bindUrlDownloadCancelButtons, cancelAllTranscodes, cancelH265, cancelTranscode, cancelUrlDownloadJob, closeConvertAllModal, isPollingSystem, openConvertAllModal, pollSystemStatus, pollTranscodeStatus, pollTransfersStatus, renderDesktopUrlDownloadsStatus, renderH265Status, renderLibraryOpsStatus, renderMobileUrlDownloadsStatus, renderTranscodeStatus, renderTransferStatus, renderUrlDownloadsStatus, submitConvertAll, systemPollTimer, toggleDuplicateHashPause, updateConvertAllBadge, updateHeaderTaskBadge, updateZipTasksSummary };
+export { LIBOP_BADGES, LIBOP_LABELS, bindUrlDownloadCancelButtons, cancelAllTranscodes, cancelH265, cancelTranscode, cancelUrlDownloadJob, closeConvertAllModal, isPollingSystem, openConvertAllModal, payloadChanged, pollSystemStatus, pollTranscodeStatus, pollTransfersStatus, renderDesktopUrlDownloadsStatus, renderH265Status, renderLibraryOpsStatus, renderMobileUrlDownloadsStatus, renderTranscodeStatus, renderTransferStatus, renderUrlDownloadsStatus, submitConvertAll, systemPollTimer, toggleDuplicateHashPause, updateConvertAllBadge, updateHeaderTaskBadge, updateZipTasksSummary };

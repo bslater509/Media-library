@@ -9,6 +9,33 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [2.0.2] - 2026-11-03
+
+### Changed
+
+- **Tailwind CSS is compiled at build time instead of in the browser.** Every
+  page used to pull `https://cdn.tailwindcss.com`, a runtime JIT that re-scans
+  the document on DOM mutations — so the 2–6s status poll alone made it
+  recompile, and scrolling a long gallery recompiled again for every batch of
+  cards. `tailwind.config.js` now scans the templates and frontend sources, and
+  `npm run build` runs the Tailwind CLI after Vite into
+  `static/dist/tailwind.css`, which the pages link directly: one cached static
+  file, no third-party script, no compiler in the page. The utilities resolve
+  their colours through CSS variables (`rgb(var(--surface-900) /
+  <alpha-value>)`), so the accent and OLED/navy palettes are still swapped
+  instantly at runtime — and the hand-maintained `!important` override sheet
+  that used to be regenerated on every theme switch is gone, which also stops
+  it drifting from the classes actually in use.
+
+### Fixed
+
+- **The status poll no longer rewrites the page when nothing changed.** Each
+  subsystem's payload (and the derived header badge) is compared with what was
+  last rendered and skipped when identical, so idle workers stop touching the
+  tasks modal's lists, classes and progress widths every six seconds. On a
+  gallery with hundreds of tiles that DOM churn was a full style recalculation
+  and repaint for no visible change.
+
 ## [2.0.1] - 2026-11-03
 
 ### Fixed
