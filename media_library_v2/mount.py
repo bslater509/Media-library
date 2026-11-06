@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI
 from media_library_v2 import __version__
 from media_library_v2.config import get_settings
 from media_library_v2.routers import analytics as analytics_router
+from media_library_v2.routers import auth as auth_router
 from media_library_v2.routers import backups as backups_router
 from media_library_v2.routers import cleanup as cleanup_router
 from media_library_v2.routers import dedupe as dedupe_router
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 def api_router() -> APIRouter:
     router = APIRouter(prefix="/api/v2")
+    router.include_router(auth_router.router, tags=["auth"])
     router.include_router(system_router.router, tags=["system"])
     router.include_router(library_router.router, tags=["library"])
     router.include_router(media_router.router, tags=["media"])

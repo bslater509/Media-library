@@ -28,6 +28,7 @@ import {
   Skeleton,
 } from '../ui'
 import { buildCapabilities, markOnboardingSeen } from '../../lib/onboarding'
+import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 
 const STEPS = 4
 
@@ -94,7 +95,7 @@ export function OnboardingWizard() {
               <Button variant="ghost" onClick={() => setStep((value) => value - 1)}>
                 Back
               </Button>
-            ) : (
+            ) : IS_MOUNTED_PREVIEW ? (
               <a
                 href="/"
                 className="inline-flex items-center gap-1 text-xs text-fg-subtle hover:text-fg"
@@ -102,7 +103,7 @@ export function OnboardingWizard() {
                 Open the current app
                 <ExternalLink aria-hidden="true" className="size-3" />
               </a>
-            )}
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {step < STEPS - 1 ? (
@@ -130,9 +131,9 @@ function WelcomeStep() {
       <div>
         <h2 className="text-base font-semibold">The library, rebuilt</h2>
         <p className="mt-1 text-sm leading-6 text-fg-muted">
-          This is a from-scratch client and API running beside the app you know.
-          It reads the same library directory and index, so nothing is imported
-          or duplicated.
+          {IS_MOUNTED_PREVIEW
+            ? 'This is a from-scratch client and API running beside the app you know. It reads the same library directory and index, so nothing is imported or duplicated.'
+            : 'A from-scratch client and API over the same library directory and index. Everything you had before is here.'}
         </p>
       </div>
       <ul className="flex flex-col gap-2 text-sm text-fg-muted">
@@ -155,10 +156,12 @@ function WelcomeStep() {
           <span>Light, dark or system theme, with a calm neutral palette.</span>
         </li>
       </ul>
-      <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-[11px] leading-5 text-fg-subtle">
-        This is a preview. A few maintenance tools still live in the current app
-        at <span className="font-mono">/</span>; the next step shows which.
-      </p>
+      {IS_MOUNTED_PREVIEW ? (
+        <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-[11px] leading-5 text-fg-subtle">
+          This is a preview. A few maintenance tools still live in the current app
+          at <span className="font-mono">/</span>; the next step shows which.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -243,7 +246,7 @@ function CapabilitiesStep({ info }: { info: OnboardingInfo | undefined }) {
       </div>
       <div>
         <p className="pb-1.5 text-[10px] font-semibold tracking-wider text-fg-subtle uppercase">
-          Available in this preview
+          {IS_MOUNTED_PREVIEW ? 'Available in this preview' : 'Available'}
         </p>
         <ul className="grid gap-1 sm:grid-cols-2">
           {groups.available.map((item) => (
@@ -257,28 +260,32 @@ function CapabilitiesStep({ info }: { info: OnboardingInfo | undefined }) {
           ))}
         </ul>
       </div>
-      <div>
-        <p className="pb-1.5 text-[10px] font-semibold tracking-wider text-fg-subtle uppercase">
-          Still in the current app
-        </p>
-        <ul className="flex flex-col gap-1">
-          {groups.pending.map((item) => (
-            <li
-              key={item.key}
-              className="flex items-center gap-1.5 text-xs text-fg-muted"
-            >
-              <Clock aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
-              {item.label}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <a
-        href="/"
-        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-accent hover:underline"
-      >
-        Open the current app <ExternalLink className="size-3" />
-      </a>
+      {groups.pending.length ? (
+        <div>
+          <p className="pb-1.5 text-[10px] font-semibold tracking-wider text-fg-subtle uppercase">
+            Still in the current app
+          </p>
+          <ul className="flex flex-col gap-1">
+            {groups.pending.map((item) => (
+              <li
+                key={item.key}
+                className="flex items-center gap-1.5 text-xs text-fg-muted"
+              >
+                <Clock aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
+                {item.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {IS_MOUNTED_PREVIEW ? (
+        <a
+          href="/"
+          className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+        >
+          Open the current app <ExternalLink className="size-3" />
+        </a>
+      ) : null}
     </div>
   )
 }

@@ -13,6 +13,17 @@ snapshot metadata.
 
 ### Added
 
+- **v2 standalone app and shared-password gate.** `media_library_v2/auth.py`
+  implements the same stateless `ml_auth` cookie contract as the current app
+  (same name, payload, key derivation and 400-day sliding lifetime), so a
+  signed-in browser carries over to v2 unchanged. `GET /api/v2/auth/session`
+  reports whether a password is required, `POST /api/v2/auth/login` sets the
+  cookie and `POST /api/v2/auth/logout` clears it for that browser. `v2_app.py`
+  (or `python -m media_library_v2.standalone`) assembles a complete app that
+  serves the React client at `/` — the post-cutover entrypoint — with the API
+  still at `/api/v2`, `/api/health` for the watchdog, and the sign-in screen
+  rendered by the client instead of a server-side page.
+
 - **The v2 rewrite, served beside the current app at `/v2`.** A new
   `media_library_v2/` package (which never imports v1) and a new React 19 +
   TypeScript client in `web/`, built into `static/dist/v2/`. It reads the same
@@ -25,6 +36,10 @@ snapshot metadata.
 - `V2_ENABLED`, `V2_LIBRARY_DIR`, `V2_DB_READ_ONLY`, `V2_WRITES`,
   `V2_UPLOAD_STAGING_DIR`, `V2_BROWSE_LIMIT` and `V2_SEARCH_LIMIT` configuration,
   plus `npm run build:v2`.
+- The v2 client's sign-in screen (`AuthGate`), shown whenever the session endpoint
+  says a password is configured and this browser has no valid cookie; a Sign out
+  control in Settings; and a mount-aware basename so one bundle serves both `/v2`
+  and, after cutover, `/`.
 - **The v2 write path.** Favorites toggle, in-place rename, move (auto-rename /
   skip / error), delete (files and recursive folders) and chunked resumable
   uploads all write to the library and update the shared SQLite index, moving

@@ -24,6 +24,11 @@ target-version = "py310"
 [lint]
 ignore = ["BLE001", "S110", "SIM118"]
 
+[lint.per-file-ignores]
+# The standalone entrypoint loads .env before importing the package so the
+# settings (including APP_PASSWORD) are in the real environment first.
+"media_library_v2/standalone.py" = ["E402"]
+
 [lint.flake8-bugbear]
 extend-immutable-calls = [
     "fastapi.Depends",

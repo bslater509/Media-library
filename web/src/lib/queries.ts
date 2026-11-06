@@ -11,6 +11,7 @@ import {
 import { api, type ConflictPolicy } from './api'
 
 export const queryKeys = {
+  authSession: ['auth', 'session'] as const,
   info: ['info'] as const,
   onboarding: ['onboarding'] as const,
   indexStatus: ['index', 'status'] as const,
@@ -34,6 +35,38 @@ export const queryKeys = {
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   downloadStatus: ['downloads', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
+}
+
+export function useAuthSession() {
+  return useQuery({
+    queryKey: queryKeys.authSession,
+    queryFn: api.authSession,
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: true,
+  })
+}
+
+export function useAuthLogin() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) => api.authLogin(password),
+    onSuccess: (session) => {
+      client.setQueryData(queryKeys.authSession, session)
+      void client.invalidateQueries()
+    },
+  })
+}
+
+export function useAuthLogout() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.authLogout(),
+    onSuccess: (session) => {
+      client.setQueryData(queryKeys.authSession, session)
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' })
+    },
+  })
 }
 
 export function useIndexStatus() {

@@ -433,6 +433,11 @@ export interface ZipBatchStatus {
   finished_at: number | null
 }
 
+export interface AuthSession {
+  enabled: boolean
+  authenticated: boolean
+}
+
 export interface IndexStatus {
   owned: boolean
   runtime: {
@@ -656,6 +661,13 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
+  authSession: () => request<AuthSession>('/auth/session'),
+
+  authLogin: (password: string) =>
+    post<AuthSession>('/auth/login', { password }),
+
+  authLogout: () => post<AuthSession>('/auth/logout', {}),
+
   info: () => request<InfoResponse>('/system/info'),
 
   browse: (options: {

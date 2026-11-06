@@ -136,6 +136,15 @@ class HealthResponse(BaseModel):
     database: str
 
 
+class AuthSession(BaseModel):
+    enabled: bool
+    authenticated: bool
+
+
+class AuthLoginRequest(BaseModel):
+    password: str
+
+
 class FavoritesResponse(BaseModel):
     counts: Counts
     files: list[FileEntry]

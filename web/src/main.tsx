@@ -7,6 +7,7 @@ import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
 import './styles/tailwind.css'
 import { router } from './app/router'
+import { AuthGate } from './components/shell/AuthGate'
 import { TooltipProvider } from './components/ui'
 import { initTheme, useThemeStore } from './lib/stores'
 import { getSystemTheme, type ResolvedTheme } from './lib/theme'
@@ -46,8 +47,10 @@ createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <RouterProvider router={router} />
-        <ThemedToaster />
+        <AuthGate>
+          <RouterProvider router={router} />
+          <ThemedToaster />
+        </AuthGate>
       </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,

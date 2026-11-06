@@ -5,6 +5,7 @@ import { cn } from '../../lib/cn'
 import { useThemeStore } from '../../lib/stores'
 import { Segmented, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '../ui'
 import { MobileSidebarContent } from './Sidebar'
+import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 
 const TABS = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
@@ -81,7 +82,9 @@ export function MobileNav() {
                 Open the current app
                 <ExternalLink aria-hidden="true" className="size-4" />
               </a>
-              <p className="py-3 text-center text-[11px] text-fg-subtle">v2 preview</p>
+              <p className="py-3 text-center text-[11px] text-fg-subtle">
+                {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Library'}
+              </p>
             </div>
           </SheetBody>
         </SheetContent>

@@ -272,15 +272,26 @@ media-library/
 │       ├── url_download_worker.py   # URLDownloadWorker: queued yt-dlp/gallery-dl playlist downloads
 │       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
 │
+├── v2_app.py                        # post-cutover entrypoint: runs the standalone v2 app
 ├── media_library_v2/                # v2 rewrite (see §16): new app, never imports media_library/
 │   ├── __init__.py                  # __version__ = "3.0.0" (its own line while v1 is 2.x)
 │   ├── config.py                    # env/.env-driven settings, no v1 imports
-│   ├── db.py                        # read-only SQLite access (mode=ro)
+│   ├── auth.py                      # shared-password cookie helpers + middleware (v1-compatible)
+│   ├── standalone.py                # standalone FastAPI app serving the SPA at `/`
+│   ├── db.py                        # SQLite access (read-only unless writes are enabled)
 │   ├── paths.py                     # library-root validation, breadcrumbs, formatting
 │   ├── library.py                   # index-only browse/folders/search/favorites/counts
+│   ├── writes.py                    # shared write helper + WriteError
 │   ├── schemas.py                   # Pydantic response models (the OpenAPI contract)
-│   ├── routers/                     # library.py, media.py (range streaming), system.py
-│   ├── views.py                     # /v2 SPA delivery from static/dist/v2/
+│   ├── indexer.py / probe.py / thumbnail_worker.py / runtime.py  # owned crawler, prober, posters, scheduler
+│   ├── thumbnails.py / cache.py     # poster + animated preview generation and cache keys
+│   ├── uploads.py / sorter.py / downloads.py / dedupe.py / webp.py
+│   ├── analytics.py / x265.py / backups.py / restore.py / cleanup.py
+│   ├── zipfs.py / zip_ops.py / zip_webp.py / zip_batch.py / transcode_stream.py
+│   ├── routers/                     # auth, system, library, media, favorites, manage, uploads,
+│   │                                #   sorter, downloads, analytics, dedupe, webp, cleanup, zip,
+│   │                                #   zip_batch, backups, x265
+│   ├── views.py                     # SPA delivery (build_router), /v2 beside v1 or / standalone
 │   └── mount.py                     # mount_v2(app) + build_v2_app() for tests
 │
 ├── web/                             # v2 React client (own package.json + node_modules)
@@ -1123,12 +1134,22 @@ build on any reverse import.
 | `V2_DOWNLOAD_STAGING_DIR` | `${DATA_DIR}/download_staging_v2` | Staging for v2's yt-dlp / gallery-dl jobs |
 | `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
 | `V2_SEARCH_LIMIT` | `1000` | Default search page size |
+| `V2_ZIP_STAGING_DIR` | `ZIP_STAGING_DIR` or `${DATA_DIR}/zip_staging_v2` | Local staging for v2's archive compression |
+| `V2_BACKUP_STAGING_DIR` | `${DATA_DIR}/backup_staging_v2` | Staging for v2's snapshot database/tar |
+| `V2_ALLOW_LIVE_RESTORE` | `false` | Let `/backups/restore` replace the live index (cutover only; otherwise the CLI restore) |
+| `V2_OWN_WORKERS` | `false` | Run v2's crawler, metadata prober, poster sweep and automatic snapshots |
+| `V2_CRAWL_INTERVAL_MINUTES` | `30` | Delay between v2 crawler passes when it owns the workers |
+| `V2_BACKUP_INTERVAL_HOURS` | `6.0` | Automatic v2 snapshot interval when it owns the workers |
+| `X265_PRESET` / `X265_CRF` | `medium` / `18` | In-place HEVC encode settings for v2's x265 queue |
 
 ### API v2 (all under `/api/v2`)
 
 | Route | Purpose |
 |---|---|
-| `GET /health` | v2 liveness + database reachability |
+| `GET /auth/session` | `{enabled, authenticated}`; public, so the client can decide whether to show its sign-in screen. Also refreshes a cookie older than 30 days |
+| `POST /auth/login` | JSON `{password}`; sets the signed `ml_auth` cookie, `401` on a wrong password (auth disabled returns `{enabled:false}`) |
+| `POST /auth/logout` | Clears the cookie; affects only the calling browser |
+| `GET /health` | v2 liveness + database reachability (standalone also exposes `/api/health`) |
 | `GET /system/info` | version, library root, totals, per-feature capability flags |
 | `GET /system/status` | index totals plus worker ownership (`shared-v1`) |
 | `GET /library/browse?path=&offset=&limit=&type=&favorite=&sort=` | subfolders, files, breadcrumbs, exact total, `next_offset`, `indexed`; `type` (`video`/`image`), `favorite` and `sort` narrow the media list |
@@ -1251,8 +1272,23 @@ fallback to frame 0), and MKV/AVI/WMV/FLV files play through a live fragmented-M
 transcode so no clip is unplayable in the viewer. Every write updates the shared index
 and the cached artwork.
 
-Pending (see the v2 rewrite plan): the `/` cutover, which also means porting the auth
-gate into v2 and flipping `V2_OWN_WORKERS` on.
+**Standalone operation is ready.** `media_library_v2/auth.py` carries the same
+stateless `ml_auth` cookie contract as the current app (same name, payload, key
+derivation, 400-day lifetime), so a signed-in browser stays signed in across the
+cutover; both apps read the same `APP_PASSWORD`. The
+standalone app (`v2_app.py` / `python -m media_library_v2.standalone`) serves the
+client at `/`, keeps `/api/v2` as the API base, and gates every `/api/` route behind
+the cookie (`/api/v2/auth/*`, `/api/v2/health`, `/api/health` and `/static/*` stay
+public). Unauthenticated page requests still receive the SPA shell; every data call
+is an API call, so nothing leaks, and the React `AuthGate` renders the sign-in screen
+in place. Beside v1 the same `/api/v2/auth/session` call is answered `401` by v1's
+middleware, and the client redirects to v1's `/login`. `load_environment()` (called
+only by `main`, never at import) loads `.env` before the app is built, so importing
+the module has no side effects and the suite stays off the developer's settings.
+
+Pending: the `/` cutover itself — point the systemd unit at `v2_app.py`, set
+`V2_OWN_WORKERS=true`, and retire v1's crawler. Nothing else is missing from the auth
+or standalone layer.
 
 The v2 crawler is incremental (`folders.dir_mtime`), indexes ZIP archives as virtual
 folders (re-checking each known archive even when its parent folder is unchanged),

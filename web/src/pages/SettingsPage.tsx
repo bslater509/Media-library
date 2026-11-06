@@ -1,8 +1,23 @@
 import type { ReactNode } from 'react'
-import { ExternalLink, HardDrive, Info, RefreshCw, Sparkles } from 'lucide-react'
-import { useIndexStatus, useIndexSync, useInfo } from '../lib/queries'
+import {
+  ExternalLink,
+  HardDrive,
+  Info,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react'
+import {
+  useAuthLogout,
+  useAuthSession,
+  useIndexStatus,
+  useIndexSync,
+  useInfo,
+} from '../lib/queries'
 import { toast } from 'sonner'
 import { TILE_ROW_HEIGHT, useDensityStore, useOnboardingStore, useThemeStore } from '../lib/stores'
+import { IS_MOUNTED_PREVIEW } from '../lib/base'
 import {
   Badge,
   Button,
@@ -14,13 +29,15 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'The final cutover and standalone auth', phase: 'later' },
+  { label: 'The `/` cutover and v2-owned workers by default', phase: 'later' },
 ]
 
 export function SettingsPage() {
   const info = useInfo()
   const index = useIndexStatus()
   const syncIndex = useIndexSync()
+  const session = useAuthSession()
+  const signOut = useAuthLogout()
   const theme = useThemeStore((state) => state.mode)
   const setTheme = useThemeStore((state) => state.setMode)
   const scale = useDensityStore((state) => state.scale)
@@ -200,6 +217,41 @@ export function SettingsPage() {
         </CardBody>
       </Card>
 
+      {session.data?.enabled ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck aria-hidden="true" className="size-4 text-fg-subtle" />
+              Account
+            </CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-2 text-sm text-fg-muted">
+            <p>
+              This browser is signed in with the shared password. Signing out only
+              affects this browser; the password itself is unchanged.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-fit"
+              disabled={signOut.isPending}
+              onClick={() =>
+                signOut.mutate(undefined, {
+                  onSuccess: () => toast.success('Signed out'),
+                  onError: (error) =>
+                    toast.error(
+                      error instanceof Error ? error.message : 'Could not sign out',
+                    ),
+                })
+              }
+            >
+              <LogOut aria-hidden="true" className="size-3.5" />
+              Sign out
+            </Button>
+          </CardBody>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -231,17 +283,21 @@ export function SettingsPage() {
         </CardHeader>
         <CardBody className="flex flex-col gap-2 text-sm text-fg-muted">
           <p>
-            v2 preview{info.data ? ` ${info.data.version}` : ''} — a from-scratch rewrite
-            running beside the current app. Both read the same library and index.
+            {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Media Library'}
+            {info.data ? ` ${info.data.version}` : ''} — a from-scratch client and
+            API over the same library and index
+            {IS_MOUNTED_PREVIEW ? ' as the current app' : ''}.
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            <a
-              href="/"
-              className="inline-flex w-fit items-center gap-1.5 font-medium text-accent hover:underline"
-            >
-              Open the current app
-              <ExternalLink aria-hidden="true" className="size-3.5" />
-            </a>
+            {IS_MOUNTED_PREVIEW ? (
+              <a
+                href="/"
+                className="inline-flex w-fit items-center gap-1.5 font-medium text-accent hover:underline"
+              >
+                Open the current app
+                <ExternalLink aria-hidden="true" className="size-3.5" />
+              </a>
+            ) : null}
             <Button
               variant="secondary"
               size="sm"

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useInfo, useRootFolders } from '../../lib/queries'
+import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 
 const NAV = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
@@ -38,7 +39,9 @@ export function Sidebar() {
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold tracking-tight">Media Library</p>
-          <p className="truncate text-[11px] text-fg-subtle">v2 preview</p>
+          <p className="truncate text-[11px] text-fg-subtle">
+            {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Library'}
+          </p>
         </div>
       </div>
 

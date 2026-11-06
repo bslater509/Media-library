@@ -10,7 +10,7 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 > sorter, URL/playlist downloads, the analytics dashboard, dedupe,
 > ZIP browsing/compression/unpacking (with batches and archive WebP), WebP optimisation, empty-folder
 > cleanup, library snapshots, in-place x265, live MKV/AVI playback, a guided welcome
-> tour and an optional v2-owned worker runtime are live there; everything else is listed as roadmap until its phase
+> tour, an optional v2-owned worker runtime and a standalone entrypoint (`v2_app.py`) with the same shared-password gate are live there; everything else is listed as roadmap until its phase
 > lands. The current app at `/` is unchanged. Build the client with
 > `npm --prefix web install && npm --prefix web run build`.
 
