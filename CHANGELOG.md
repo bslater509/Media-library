@@ -13,6 +13,13 @@ snapshot metadata.
 
 ### Added
 
+- **v2 multi-select and bulk actions.** The library grid gains checkbox,
+  Ctrl/Cmd-click and Shift-range selection, a Select media toggle, Ctrl/Cmd+A,
+  Delete/Escape shortcuts and a floating action bar: star or unstar, move,
+  delete, optimise the selected images to WebP, and batch rename (prefix,
+  suffix or find-and-replace) with a live preview. New endpoints:
+  `POST /favorites/batch`, `POST /manage/bulk-rename`, and `paths` on
+  `POST /webp/optimize` so a selection converts exactly itself.
 - **v2 standalone app and shared-password gate.** `media_library_v2/auth.py`
   implements the same stateless `ml_auth` cookie contract as the current app
   (same name, payload, key derivation and 400-day sliding lifetime), so a

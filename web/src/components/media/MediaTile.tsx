@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Check,
   FolderInput,
   MoreVertical,
   Pencil,
@@ -33,6 +34,9 @@ interface MediaTileProps {
   hint?: string | null
   onOpen: () => void
   onAction?: (action: FileAction, file: FileEntry) => void
+  selected?: boolean
+  selectionMode?: boolean
+  onSelect?: (event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 const CODE_BADGE = 'bg-black/65 text-white/90'
@@ -45,6 +49,9 @@ export function MediaTile({
   hint,
   onOpen,
   onAction,
+  selected = false,
+  selectionMode = false,
+  onSelect,
 }: MediaTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const duration = formatDuration(file.duration)
@@ -59,7 +66,10 @@ export function MediaTile({
 
   return (
     <div
-      className="group relative shrink-0"
+      className={cn(
+        'group relative shrink-0 rounded-md',
+        selected && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
+      )}
       style={{ width, height }}
       onContextMenu={(event) => {
         if (!onAction) return
@@ -69,9 +79,20 @@ export function MediaTile({
     >
       <button
         type="button"
-        onClick={onOpen}
+        onClick={(event) => {
+          if (
+            onSelect &&
+            (selectionMode || event.metaKey || event.ctrlKey || event.shiftKey)
+          ) {
+            event.preventDefault()
+            onSelect(event)
+            return
+          }
+          onOpen()
+        }}
         title={file.name}
         aria-label={`${file.name}${duration ? `, ${duration}` : ''}`}
+        aria-pressed={onSelect ? selected : undefined}
         className={cn(
           'absolute inset-0 block h-full w-full overflow-hidden rounded-md bg-surface-2',
           'outline-none ring-accent-ring transition-shadow focus-visible:ring-2',
@@ -140,6 +161,29 @@ export function MediaTile({
           </span>
         ) : null}
       </button>
+
+      {onSelect ? (
+        <button
+          type="button"
+          aria-label={selected ? `Deselect ${file.name}` : `Select ${file.name}`}
+          aria-pressed={selected}
+          title={selected ? 'Deselect' : 'Select'}
+          onClick={(event) => {
+            event.stopPropagation()
+            onSelect(event)
+          }}
+          className={cn(
+            'absolute top-1 left-1 z-10 flex size-5 items-center justify-center rounded-sm border transition-opacity',
+            selected
+              ? 'border-accent bg-accent text-accent-fg opacity-100'
+              : 'border-white/70 bg-black/45 text-transparent opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+            selectionMode && !selected && 'opacity-100',
+            'max-md:opacity-100',
+          )}
+        >
+          <Check aria-hidden="true" className="size-3.5" />
+        </button>
+      ) : null}
 
       {onAction ? (
         <div className="absolute top-1 right-1 z-10">

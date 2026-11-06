@@ -40,13 +40,19 @@ def pending_count(folder: str | None = None) -> int:
     return int(row["n"] or 0)
 
 
-def _pending_rows(limit: int, folder: str | None = None) -> list[Any]:
+def _pending_rows(
+    limit: int, folder: str | None = None, paths: list[str] | None = None
+) -> list[Any]:
     sql = (
         f"SELECT path, name, folder_path, ext, size, mtime FROM files "
         f"WHERE type = 'image' AND ext IN ({','.join('?' for _ in _CONVERTIBLE)}) "
         "AND COALESCE(webp_optimized, 0) = 0"
     )
     params: list[Any] = sorted(_CONVERTIBLE)
+    if paths:
+        placeholders = ",".join("?" for _ in paths)
+        sql += f" AND path IN ({placeholders})"
+        params.extend(paths)
     if folder:
         sql += " AND folder_path = ?"
         params.append(folder)
@@ -182,7 +188,11 @@ def _convert_one(path: str, quality: int, skip_larger: bool) -> dict[str, Any]:
     }
 
 
-def optimize_batch(limit: int = 20, folder: str | None = None) -> dict[str, Any]:
+def optimize_batch(
+    limit: int = 20,
+    folder: str | None = None,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
     """Convert up to ``limit`` pending images; safe to call repeatedly."""
     settings = get_settings()
     # Native WebP rows need no conversion; mark them so they leave the queue.
@@ -191,7 +201,10 @@ def optimize_batch(limit: int = 20, folder: str | None = None) -> dict[str, Any]
             "UPDATE files SET webp_optimized = 1 WHERE ext = '.webp' "
             "AND COALESCE(webp_optimized, 0) = 0"
         )
-    rows = _pending_rows(limit, folder)
+    # An explicit selection is converted whole (bounded by the request cap);
+    # the worker's batch limit only governs the folder/library sweep.
+    effective_limit = min(500, max(1, len(paths))) if paths else limit
+    rows = _pending_rows(effective_limit, folder, paths)
     converted = 0
     skipped = 0
     failed = 0

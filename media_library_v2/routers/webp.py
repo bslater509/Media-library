@@ -26,7 +26,7 @@ async def status() -> dict:
 async def optimize(payload: WebpOptimizeRequest) -> dict:
     try:
         return await asyncio.to_thread(
-            webp.optimize_batch, payload.limit, payload.folder
+            webp.optimize_batch, payload.limit, payload.folder, payload.paths
         )
     except Exception as exc:
         raise as_http_error(exc) from exc

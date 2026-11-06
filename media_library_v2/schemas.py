@@ -6,7 +6,7 @@ a real contract that the TypeScript client is generated from.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -176,6 +176,17 @@ class FavoriteResponse(BaseModel):
     counts: FavoriteCounts
 
 
+class FavoriteBatchRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=500)
+    action: Literal["add", "remove", "toggle"] = "toggle"
+
+
+class FavoriteBatchResponse(BaseModel):
+    updated: int
+    counts: FavoriteCounts
+    failed: list[Failure] = Field(default_factory=list)
+
+
 class RenameRequest(BaseModel):
     path: str
     name: str
@@ -184,6 +195,20 @@ class RenameRequest(BaseModel):
 class RenameResponse(BaseModel):
     path: str
     file: FileEntry | None = None
+
+
+class RenameItem(BaseModel):
+    path: str
+    name: str
+
+
+class BulkRenameRequest(BaseModel):
+    renames: list[RenameItem] = Field(min_length=1, max_length=500)
+
+
+class BulkRenameResponse(BaseModel):
+    renamed: list[str]
+    failed: list[Failure] = Field(default_factory=list)
 
 
 class DeleteRequest(BaseModel):
@@ -513,6 +538,7 @@ class WebpStatus(BaseModel):
 class WebpOptimizeRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     folder: str | None = None
+    paths: list[str] | None = Field(default=None, max_length=500)
 
 
 class WebpOptimizeResponse(BaseModel):

@@ -11,6 +11,13 @@ interface JustifiedGridProps {
   hintFor?: (file: FileEntry) => string | null
   onOpen: (index: number) => void
   onAction?: (action: FileAction, file: FileEntry) => void
+  selectedIds?: ReadonlySet<string>
+  selectionMode?: boolean
+  onSelect?: (
+    file: FileEntry,
+    index: number,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => void
 }
 
 /** Aspect used for layout: probed dimensions, clamped, 1:1 when unknown. */
@@ -30,6 +37,9 @@ export function JustifiedGrid({
   hintFor,
   onOpen,
   onAction,
+  selectedIds,
+  selectionMode = false,
+  onSelect,
 }: JustifiedGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
@@ -78,6 +88,11 @@ export function JustifiedGrid({
                 hint={hintFor?.(item) ?? null}
                 onOpen={() => onOpen(index)}
                 onAction={onAction}
+                selected={selectedIds?.has(item.path) ?? false}
+                selectionMode={selectionMode}
+                onSelect={
+                  onSelect ? (event) => onSelect(item, index, event) : undefined
+                }
               />
             )
           })}

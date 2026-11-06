@@ -139,9 +139,20 @@ export interface FavoriteResponse {
   counts: FavoriteCounts
 }
 
+export interface FavoriteBatchResult {
+  updated: number
+  counts: FavoriteCounts
+  failed: { path: string; error: string }[]
+}
+
 export interface RenameResponse {
   path: string
   file: FileEntry | null
+}
+
+export interface BulkRenameResult {
+  renamed: string[]
+  failed: { path: string; error: string }[]
 }
 
 export interface OperationFailure {
@@ -711,6 +722,12 @@ export const api = {
   toggleFavorite: (path: string) =>
     post<FavoriteResponse>('/favorites/toggle', { path }),
 
+  favoriteBatch: (paths: string[], action: 'add' | 'remove' | 'toggle') =>
+    post<FavoriteBatchResult>('/favorites/batch', { paths, action }),
+
+  bulkRename: (renames: { path: string; name: string }[]) =>
+    post<BulkRenameResult>('/manage/bulk-rename', { renames }),
+
   rename: (path: string, name: string) =>
     post<RenameResponse>('/manage/rename', { path, name }),
 
@@ -826,8 +843,8 @@ export const api = {
 
   webpStatus: () => request<WebpStatus>('/webp/status'),
 
-  webpOptimize: (limit = 20) =>
-    post<WebpOptimizeResult>('/webp/optimize', { limit }),
+  webpOptimize: (limit = 20, paths?: string[]) =>
+    post<WebpOptimizeResult>('/webp/optimize', paths ? { limit, paths } : { limit }),
 
   emptyFolders: () => request<EmptyFolders>('/folders/empty'),
 

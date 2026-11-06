@@ -1158,7 +1158,9 @@ build on any reverse import.
 | `GET /library/search?q=&type=&sort=&limit=&offset=` | multi-word filename **or** relative-folder match, exact total + `truncated` |
 | `GET /library/favorites?type=` | favorites newest-first plus global counts |
 | `POST /favorites/toggle` | star/unstar one file, returns fresh all/videos/images counts |
+| `POST /favorites/batch` | star, unstar or toggle many files in one transaction (`paths`, `action`); unindexed paths are reported in `failed` |
 | `POST /manage/rename` | rename a file in place (index row, favorite and artwork follow) |
+| `POST /manage/bulk-rename` | apply many `{path, name}` renames, continuing past individual failures (the client previews prefix / suffix / find-and-replace patterns) |
 | `POST /manage/delete` | delete files, folders (recursive) or ZIP archives (their virtual members too) + artwork |
 | `POST /manage/folders` | create a real subfolder and index it |
 | `POST /manage/move` | move files with `auto_rename` / `skip` / `error` conflict policy |
@@ -1192,7 +1194,7 @@ build on any reverse import.
 | `POST /dedupe/resolve` | keep one file, delete the rest; content mode verifies every deletion first |
 | `POST /dedupe/ignore` / `GET /dedupe/ignored` / `POST /dedupe/unignore` | false-positive pair management |
 | `GET /webp/status` | pending loose images, saved bytes, converted/skipped, quality |
-| `POST /webp/optimize` | convert one batch (`limit`, optional `folder`), off-loop |
+| `POST /webp/optimize` | convert one batch (`limit`, optional `folder`, or an explicit `paths` selection which is converted whole), off-loop |
 | `GET /folders/empty` | leaf folders with no files and no child folders |
 | `POST /folders/empty/delete` | remove selected empty folders (OS junk tolerated) |
 | `GET /zip/check?path=` | compression eligibility (images, no videos, no nested archives, no name collision) |
@@ -1259,7 +1261,9 @@ atomic replace, index and poster update, batch/folder scope), **empty-folder
 cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
 archives are indexed by the shared crawler, a missing member is extracted into a bounded
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-the **Tools hub**, **in-place x265 conversion** (serial libx265 queue, live
+the **Tools hub**, **multi-select with bulk actions** (checkbox / Ctrl-click /
+Shift-range selection, select all, then move, delete, star, batch rename with a live
+preview, and WebP conversion of the selected images), **in-place x265 conversion** (serial libx265 queue, live
 percent/fps/speed/ETA, cancel, atomic commit, index/poster rewrite), **library snapshots**
 (v2 writes a compacted DB copy plus a
 poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a

@@ -9,6 +9,8 @@ from fastapi import APIRouter
 from media_library_v2 import library, writes
 from media_library_v2.routers.common import as_http_error
 from media_library_v2.schemas import (
+    BulkRenameRequest,
+    BulkRenameResponse,
     CreateFolderRequest,
     CreateFolderResponse,
     DeleteRequest,
@@ -31,6 +33,18 @@ async def rename(payload: RenameRequest) -> dict:
     except Exception as exc:
         raise as_http_error(exc) from exc
     return {"path": result["path"], "file": entry}
+
+
+@router.post("/manage/bulk-rename", response_model=BulkRenameResponse)
+async def bulk_rename(payload: BulkRenameRequest) -> dict:
+    """Rename many files; each failure is reported without stopping the rest."""
+    try:
+        return await asyncio.to_thread(
+            writes.bulk_rename,
+            [item.model_dump() for item in payload.renames],
+        )
+    except Exception as exc:
+        raise as_http_error(exc) from exc
 
 
 @router.post("/manage/delete", response_model=DeleteResponse)

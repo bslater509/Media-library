@@ -191,6 +191,65 @@ def toggle_favorite(path: str) -> dict[str, Any]:
     return {"path": target, "is_favorite": is_favorite, "counts": counts}
 
 
+def set_favorites(paths: list[str], action: str = "toggle") -> dict[str, Any]:
+    """Star, unstar or toggle many files in one transaction."""
+    if action not in ("add", "remove", "toggle"):
+        raise WriteError("Unknown favorite action", 400)
+    resolved: list[str] = []
+    failed: list[dict[str, str]] = []
+    for raw in paths:
+        try:
+            resolved.append(resolve_library_path(raw))
+        except Exception as exc:
+            failed.append({"path": raw, "error": str(exc)})
+    updated = 0
+    with writer() as conn, conn:
+        if resolved:
+            placeholders = ",".join("?" for _ in resolved)
+            indexed = {
+                row["path"]
+                for row in conn.execute(
+                    f"SELECT path FROM files WHERE path IN ({placeholders})", resolved
+                ).fetchall()
+            }
+            existing = {
+                row["path"]
+                for row in conn.execute(
+                    f"SELECT path FROM favorites WHERE path IN ({placeholders})",
+                    resolved,
+                ).fetchall()
+            }
+            now = time.time()
+            for path in resolved:
+                if path not in indexed:
+                    failed.append({"path": path, "error": "Not indexed"})
+                    continue
+                wants = action == "add" or (action == "toggle" and path not in existing)
+                if wants and path not in existing:
+                    conn.execute(
+                        "INSERT INTO favorites (path, created_at) VALUES (?, ?)",
+                        (path, now),
+                    )
+                elif not wants and path in existing:
+                    conn.execute("DELETE FROM favorites WHERE path = ?", (path,))
+                updated += 1
+        counts = _favorite_counts(conn)
+    return {"updated": updated, "counts": counts, "failed": failed}
+
+
+def bulk_rename(items: list[dict[str, str]]) -> dict[str, Any]:
+    """Rename many files, reporting each failure independently."""
+    renamed: list[str] = []
+    failed: list[dict[str, str]] = []
+    for item in items:
+        path = str(item.get("path", ""))
+        try:
+            renamed.append(rename_file(path, str(item.get("name", "")))["path"])
+        except Exception as exc:
+            failed.append({"path": path, "error": str(exc)})
+    return {"renamed": renamed, "failed": failed}
+
+
 def rename_file(path: str, name: str) -> dict[str, Any]:
     target = _resolve_file(path)
     new_name = _validate_name(name)

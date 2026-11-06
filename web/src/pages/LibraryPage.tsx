@@ -9,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   ImageOff,
+  ListChecks,
   Loader2,
   RefreshCw,
   Star,
@@ -21,10 +22,12 @@ import type { FileEntry, FolderEntry } from '../lib/api'
 import { cn } from '../lib/cn'
 import {
   invalidateLibrary,
+  useFavoriteBatch,
   useInfiniteBrowse,
   useInfo,
   useMoveFiles,
   useToggleFavorite,
+  useWebpOptimize,
 } from '../lib/queries'
 import { TILE_ROW_HEIGHT, useDensityStore, type TileScale } from '../lib/stores'
 import { Badge, Button, EmptyState, IconButton, Segmented, Select, Skeleton } from '../components/ui'
@@ -41,7 +44,9 @@ import { JustifiedGrid } from '../components/media/JustifiedGrid'
 import { MediaLightbox } from '../components/media/MediaLightbox'
 import type { FileAction } from '../components/media/MediaTile'
 import { DeleteDialog, NewFolderDialog, RenameDialog } from '../components/manage/LibraryDialogs'
+import { BulkRenameDialog } from '../components/manage/BulkRenameDialog'
 import { FolderPicker } from '../components/manage/FolderPicker'
+import { SelectionBar } from '../components/manage/SelectionBar'
 import { UploadDialog } from '../components/manage/UploadDialog'
 
 export function LibraryPage() {
@@ -77,8 +82,14 @@ export function LibraryPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [zipPending, setZipPending] = useState<'compress' | 'unpack' | null>(null)
   const [zipBusy, setZipBusy] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false)
+  const selectionAnchor = useRef<number | null>(null)
   const toggleFavorite = useToggleFavorite()
   const moveFiles = useMoveFiles()
+  const favoriteBatch = useFavoriteBatch()
+  const webpOptimize = useWebpOptimize()
   const queryClient = useQueryClient()
 
   // A palette result can deep-link straight into the viewer.
@@ -133,6 +144,150 @@ export function LibraryPage() {
 
   const filtered = typeFilter !== 'all' || favoritesOnly || sort !== 'name_asc'
   const clearFilters = () => patchParams({ type: null, fav: null, sort: null })
+
+  const selectedFiles = useMemo(
+    () => files.filter((file) => selectedPaths.has(file.path)),
+    [files, selectedPaths],
+  )
+  const allSelected = files.length > 0 && selectedFiles.length === files.length
+  const allFavorite =
+    selectedFiles.length > 0 && selectedFiles.every((file) => file.is_favorite)
+  const selectedImages = selectedFiles.filter((file) => file.type === 'image')
+
+  const clearSelection = () => {
+    setSelectedPaths(new Set())
+    setSelectionMode(false)
+    selectionAnchor.current = null
+  }
+
+  const selectAll = () => {
+    setSelectedPaths(new Set(files.map((file) => file.path)))
+    selectionAnchor.current = null
+  }
+
+  const selectFile = (
+    file: FileEntry,
+    index: number,
+    event: React.MouseEvent<HTMLElement>,
+  ) => {
+    setSelectionMode(true)
+    if (event.shiftKey && selectionAnchor.current !== null) {
+      const start = Math.min(selectionAnchor.current, index)
+      const end = Math.max(selectionAnchor.current, index)
+      setSelectedPaths((previous) => {
+        const next = new Set(previous)
+        for (let cursor = start; cursor <= end; cursor += 1) {
+          const item = files[cursor]
+          if (item) next.add(item.path)
+        }
+        return next
+      })
+      return
+    }
+    selectionAnchor.current = index
+    setSelectedPaths((previous) => {
+      const next = new Set(previous)
+      if (next.has(file.path)) next.delete(file.path)
+      else next.add(file.path)
+      return next
+    })
+  }
+
+  // Leaving a folder ends the selection; filtering drops rows that are no
+  // longer visible so a bulk action never touches an unseen file.
+  useEffect(() => {
+    clearSelection()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first?.path])
+
+  useEffect(() => {
+    setSelectedPaths((previous) => {
+      if (!previous.size) return previous
+      const available = new Set(files.map((file) => file.path))
+      const next = new Set([...previous].filter((path) => available.has(path)))
+      return next.size === previous.size ? previous : next
+    })
+  }, [files])
+
+  useEffect(() => {
+    if (!selectionMode) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable
+      if (typing) return
+      if (event.key === 'Escape') {
+        clearSelection()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        selectAll()
+        return
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedFiles.length) {
+        event.preventDefault()
+        setDeleteTargets(selectedFiles)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionMode, files, selectedFiles])
+
+  const runFavoriteBatch = () => {
+    if (!selectedFiles.length) return
+    favoriteBatch.mutate(
+      {
+        paths: selectedFiles.map((file) => file.path),
+        action: allFavorite ? 'remove' : 'add',
+      },
+      {
+        onSuccess: (result) => {
+          toast.success(
+            allFavorite
+              ? `Removed ${result.updated} from favorites`
+              : `Added ${result.updated} to favorites`,
+          )
+        },
+        onError: (error) =>
+          toast.error(
+            error instanceof Error ? error.message : 'Could not update favorites',
+          ),
+      },
+    )
+  }
+
+  const runWebpBatch = () => {
+    if (!selectedImages.length) return
+    webpOptimize.mutate(
+      {
+        limit: selectedImages.length,
+        paths: selectedImages.map((file) => file.path),
+      },
+      {
+        onSuccess: (result) => {
+          if (result.failed) {
+            toast.error(
+              `${result.converted} converted, ${result.failed} failed (${result.saved_formatted} saved)`,
+            )
+          } else {
+            toast.success(
+              `${result.converted} converted to WebP, ${result.saved_formatted} saved`,
+            )
+          }
+          clearSelection()
+        },
+        onError: (error) =>
+          toast.error(
+            error instanceof Error ? error.message : 'WebP conversion failed',
+          ),
+      },
+    )
+  }
 
   const handleAction = (action: FileAction, file: FileEntry) => {
     if (action === 'favorite' || action === 'unfavorite') {
@@ -214,6 +369,7 @@ export function LibraryPage() {
       }
       setMoveOpen(false)
       setMoveTargets([])
+      clearSelection()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Move failed')
     }
@@ -286,6 +442,18 @@ export function LibraryPage() {
                 { value: 'l', label: 'L', title: 'Large tiles' },
               ]}
             />
+            <IconButton
+              aria-label={selectionMode ? 'Exit selection mode' : 'Select media'}
+              title={selectionMode ? 'Exit selection mode' : 'Select media'}
+              variant={selectionMode ? 'secondary' : 'ghost'}
+              onClick={() => {
+                if (selectionMode) clearSelection()
+                else setSelectionMode(true)
+              }}
+              disabled={!files.length}
+            >
+              <ListChecks />
+            </IconButton>
             <IconButton
               aria-label="New folder"
               title="New folder"
@@ -456,6 +624,9 @@ export function LibraryPage() {
                     targetRowHeight={rowHeight}
                     onOpen={setLightboxIndex}
                     onAction={handleAction}
+                    selectedIds={selectedPaths}
+                    selectionMode={selectionMode}
+                    onSelect={selectFile}
                   />
                 </>
               ) : null}
@@ -505,6 +676,37 @@ export function LibraryPage() {
         )}
       </div>
 
+      {selectedPaths.size > 0 ? (
+        <SelectionBar
+          count={selectedFiles.length}
+          total={files.length}
+          allSelected={allSelected}
+          allFavorite={allFavorite}
+          imageCount={selectedImages.length}
+          busy={favoriteBatch.isPending || webpOptimize.isPending}
+          onSelectAll={selectAll}
+          onClear={clearSelection}
+          onFavorite={runFavoriteBatch}
+          onMove={() => {
+            setMoveTargets(selectedFiles)
+            setMoveOpen(true)
+          }}
+          onRename={() => setBulkRenameOpen(true)}
+          onWebp={runWebpBatch}
+          onDelete={() => setDeleteTargets(selectedFiles)}
+        />
+      ) : null}
+
+      {bulkRenameOpen ? (
+        <BulkRenameDialog
+          files={selectedFiles}
+          onClose={() => {
+            setBulkRenameOpen(false)
+            clearSelection()
+          }}
+        />
+      ) : null}
+
       {lightboxIndex !== null ? (
         <MediaLightbox
           files={files}
@@ -521,7 +723,10 @@ export function LibraryPage() {
       ) : null}
 
       <RenameDialog file={renameTarget} onClose={() => setRenameTarget(null)} />
-      <DeleteDialog files={deleteTargets} onClose={() => setDeleteTargets([])} />
+      <DeleteDialog files={deleteTargets} onClose={() => {
+          setDeleteTargets([])
+          clearSelection()
+        }} />
       <NewFolderDialog
         parent={currentPath || null}
         open={newFolderOpen}

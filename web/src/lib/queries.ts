@@ -211,6 +211,29 @@ export function useToggleFavorite() {
   })
 }
 
+export function useFavoriteBatch() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      paths,
+      action,
+    }: {
+      paths: string[]
+      action: 'add' | 'remove' | 'toggle'
+    }) => api.favoriteBatch(paths, action),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useBulkRename() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (renames: { path: string; name: string }[]) =>
+      api.bulkRename(renames),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
 export function useRenameFile() {
   const client = useQueryClient()
   return useMutation({
@@ -583,7 +606,10 @@ export function useWebpStatus() {
 export function useWebpOptimize() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (limit: number) => api.webpOptimize(limit),
+    mutationFn: (input: number | { limit: number; paths: string[] }) =>
+      typeof input === 'number'
+        ? api.webpOptimize(input)
+        : api.webpOptimize(input.limit, input.paths),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['webp'] })
       void invalidateLibrary(client)
