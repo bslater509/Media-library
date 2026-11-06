@@ -6,6 +6,8 @@ a real contract that the TypeScript client is generated from.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -382,3 +384,20 @@ class DownloadRetryResponse(BaseModel):
 
 class DownloadClearResponse(BaseModel):
     cleared: int
+
+
+# --- analytics -------------------------------------------------------------
+
+
+class AnalyticsOverview(BaseModel):
+    generated_at: float
+    library_root: str
+    limits: dict[str, int]
+    totals: dict[str, Any]
+    by_type: list[dict[str, Any]]
+    by_extension: dict[str, Any]
+    folders: dict[str, Any]
+    largest_files: list[FileEntry]
+    quality: dict[str, Any]
+    reclaimable: dict[str, Any]
+    health: dict[str, Any]

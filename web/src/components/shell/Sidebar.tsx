@@ -4,6 +4,7 @@ import {
   Download,
   ExternalLink,
   Folder,
+  Gauge,
   LayoutGrid,
   Search,
   Settings,
@@ -16,6 +17,7 @@ const NAV = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
   { to: '/sorter', label: 'Sorter', icon: Clapperboard },
   { to: '/downloads', label: 'Downloads', icon: Download },
+  { to: '/analytics', label: 'Analytics', icon: Gauge },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/favorites', label: 'Favorites', icon: Star },
 ]

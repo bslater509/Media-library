@@ -7,7 +7,7 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 > **v2 preview at `/v2`.** A from-scratch rewrite (new React client, new API layer,
 > same library and index) is being built beside the current app. Browse, search,
 > favorites, media streaming, the new gallery, uploads, rename/move/delete, the keyboard
-> sorter and URL/playlist downloads are live there; everything else is listed as roadmap until its phase
+> sorter, URL/playlist downloads and the analytics dashboard are live there; everything else is listed as roadmap until its phase
 > lands. The current app at `/` is unchanged. Build the client with
 > `npm --prefix web install && npm --prefix web run build`.
 

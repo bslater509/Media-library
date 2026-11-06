@@ -1159,6 +1159,7 @@ build on any reverse import.
 | `POST /downloads/cancel` | cancel a queued/running job and clean its staging |
 | `POST /downloads/retry` | clone a failed/cancelled job (completed jobs are never re-run) |
 | `POST /downloads/clear-history` | drop finished jobs, keeping active/queued |
+| `GET /analytics/overview?folder_limit=&file_limit=&refresh=` | index-only dashboard: totals, folder rollup/treemap/ranking, largest files, quality buckets, reclaimable space, health; memoised 30 s |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1193,12 +1194,15 @@ resumable), rename, move, delete (files and folders), create folder, favorite
 toggling**, the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
 one-key move, create-and-move, undo, rename, delete, live transcoding for non-web
 containers) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, batch
-queueing, live progress, cancel, retry, paginated history, clear). Every write updates
-the shared index and the cached artwork.
+queueing, live progress, cancel, retry, paginated history, clear) and the
+**Analytics dashboard** (KPI strip, zoomable storage treemap, largest folders, media
+mix, extensions, reclaimable space, largest files, quality histogram and health pills —
+every figure from the index, memoised for 30 s). Every write updates the shared index
+and the cached artwork.
 
-Pending (see the v2 rewrite plan): dedupe, ZIP, WebP, analytics, backups, onboarding and
-the `/` redirect. Until those land, `/v2` reports `features: false` for them and the UI
-shows them as roadmap items rather than broken screens.
+Pending (see the v2 rewrite plan): dedupe, ZIP, WebP, backups, onboarding and the `/`
+redirect. Until those land, `/v2` reports `features: false` for them and the UI shows
+them as roadmap items rather than broken screens.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports

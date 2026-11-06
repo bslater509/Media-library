@@ -13,6 +13,7 @@ from fastapi import APIRouter, FastAPI
 
 from media_library_v2 import __version__
 from media_library_v2.config import get_settings
+from media_library_v2.routers import analytics as analytics_router
 from media_library_v2.routers import downloads as downloads_router
 from media_library_v2.routers import favorites as favorites_router
 from media_library_v2.routers import library as library_router
@@ -36,6 +37,7 @@ def api_router() -> APIRouter:
     router.include_router(uploads_router.router, tags=["uploads"])
     router.include_router(sorter_router.router, tags=["sorter"])
     router.include_router(downloads_router.router, tags=["downloads"])
+    router.include_router(analytics_router.router, tags=["analytics"])
     return router
 
 

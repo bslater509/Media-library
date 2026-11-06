@@ -271,6 +271,68 @@ export interface DownloadEnqueueResponse {
   rejected: Array<{ url: string; error: string }>
 }
 
+export interface AnalyticsTreeNode {
+  name: string
+  path: string
+  bytes: number
+  files: number
+  share: number
+  is_group: boolean
+  children?: Array<{ name: string; path: string; bytes: number; files: number }>
+}
+
+export interface AnalyticsOverview {
+  generated_at: number
+  library_root: string
+  limits: { folders: number; files: number }
+  totals: {
+    files: number
+    folders: number
+    zips: number
+    videos: number
+    images: number
+    bytes: number
+    runtime: number
+    runtime_formatted: string
+    size_formatted: string
+  }
+  by_type: Array<{ type: string; files: number; bytes: number; share: number }>
+  by_extension: {
+    items: Array<{ ext: string; files: number; bytes: number; share: number }>
+    total_files: number
+  }
+  folders: {
+    root: string
+    root_bytes: number
+    root_files: number
+    top: AnalyticsTreeNode[]
+    largest: AnalyticsTreeNode[]
+    folder_count: number
+  }
+  largest_files: FileEntry[]
+  quality: {
+    buckets: Array<{ label: string; count: number }>
+    probed: number
+    high_fps: number
+    runtime: number
+    runtime_formatted: string
+  }
+  reclaimable: {
+    duplicates: { groups: number; files: number; bytes: number; size_formatted: string }
+    webp: { saved_bytes: number; saved_formatted: string; converted: number; pending: number }
+    zip: { folders: number; bytes: number; size_formatted: string }
+    empty_folders: number
+  }
+  health: {
+    missing_thumbnails: number
+    unprobed: number
+    missing_visual_hashes: number
+    missing_animated: number
+    needs_transcode: number
+    ignored_pairs: number
+  }
+}
+
 export type ConflictPolicy = 'auto_rename' | 'skip' | 'error'
 
 type ParamValue = string | number | boolean | null | undefined
@@ -448,4 +510,11 @@ export const api = {
 
   downloadHistory: (limit = 50, offset = 0) =>
     request<DownloadHistory>('/downloads/history', { limit, offset }),
+
+  analyticsOverview: (refresh = false, folderLimit = 15, fileLimit = 25) =>
+    request<AnalyticsOverview>('/analytics/overview', {
+      refresh: refresh || undefined,
+      folder_limit: folderLimit,
+      file_limit: fileLimit,
+    }),
 }

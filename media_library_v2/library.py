@@ -378,6 +378,11 @@ def favorites(type_filter: str | None = None) -> dict:
     }
 
 
+def shape_file_row(row) -> dict:
+    """Public row shaper (analytics reuses the browse entry shape)."""
+    return _file_entry(row)
+
+
 def get_file(path: str) -> dict | None:
     """One shaped file entry by path, or None when it is not indexed."""
     with reader() as conn:

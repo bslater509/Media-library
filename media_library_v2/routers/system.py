@@ -41,7 +41,7 @@ async def info() -> dict:
             "downloads": True,
             "dedupe": False,
             "zip": False,
-            "analytics": False,
+            "analytics": True,
             "workers": False,
         },
     }

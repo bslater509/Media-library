@@ -48,6 +48,15 @@ snapshot metadata.
   the gallery-dl fallback (unsupported sites, piracy blocklist refusals and
   `gofile.io` hosts), finished files import through the atomic indexed write
   path, and `V2_DOWNLOAD_STAGING_DIR` holds in-flight files.
+- **The v2 Analytics dashboard.** `/v2/analytics`: KPI strip, zoomable/roamable
+  storage treemap with click-through to the folder, largest-folders ranking,
+  media-mix donut, top extensions, reclaimable space (duplicate candidates,
+  WebP savings, ZIP-eligible folders, empty folders), largest files with
+  thumbnails, resolution histogram and health pills. Every figure is computed
+  from SQLite alone — the test suite poisons `os.walk`/`os.scandir`/`os.stat`
+  during the request — and the payload is memoised for 30 seconds (`refresh=1`
+  bypasses). ECharts is lazy-loaded with the page, so it never weighs on the
+  rest of the app.
 
 ## [2.0.2] - 2026-11-03
 

@@ -312,3 +312,11 @@ export function useDownloadClear() {
     },
   })
 }
+
+export function useAnalyticsOverview(refreshNonce = 0) {
+  return useQuery({
+    queryKey: ['analytics', refreshNonce],
+    queryFn: () => api.analyticsOverview(refreshNonce > 0),
+    staleTime: 30_000,
+  })
+}

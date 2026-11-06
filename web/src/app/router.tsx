@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { createBrowserRouter, Navigate, useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { AppShell } from '../components/shell/AppShell'
@@ -5,10 +6,14 @@ import { EmptyState } from '../components/ui'
 import { DownloadsPage } from '../pages/DownloadsPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { LibraryPage } from '../pages/LibraryPage'
-import { NotFoundPage, RoadmapPage } from '../pages/RoadmapPage'
+import { NotFoundPage, PageLoading } from '../pages/RoadmapPage'
 import { SearchPage } from '../pages/SearchPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { SorterPage } from '../pages/SorterPage'
+
+const AnalyticsPage = lazy(() =>
+  import('../pages/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })),
+)
 
 function RouteError() {
   const error = useRouteError()
@@ -55,17 +60,9 @@ export const router = createBrowserRouter(
         {
           path: 'analytics',
           element: (
-            <RoadmapPage
-              title="Analytics"
-              description="An index-only overview of the whole collection: storage by folder, media mix, largest files, reclaimable space and library health — computed from SQLite, never from a filesystem walk."
-              available={[
-                'Storage treemap and largest-folder ranking',
-                'Media mix and top extensions',
-                'Reclaimable space and health checks',
-                'Largest-file previews',
-              ]}
-              v1Path="/analytics"
-            />
+            <Suspense fallback={<PageLoading />}>
+              <AnalyticsPage />
+            </Suspense>
           ),
         },
         { path: 'settings', element: <SettingsPage /> },
