@@ -13,6 +13,10 @@ snapshot metadata.
 
 ### Added
 
+- **v2 owns the housekeeping sweeps.** With `V2_OWN_WORKERS=true` the runtime now
+  also drains the loose-image WebP queue and the content/visual duplicate hash
+  queues in small batches, writes a snapshot on shutdown, and redirects old
+  `/v2/...` bookmarks to the same path at `/`.
 - **v2 folder rename and startup auto-restore.** Folders and ZIP archives can be
   renamed from the library header; every indexed descendant folder, file,
   favorite and ignored duplicate pair is rewritten in one transaction and cached

@@ -25,8 +25,8 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from media_library_v2 import __version__, auth, backups
@@ -71,6 +71,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        try:
+            backups.create_snapshot()
+            logger.info("[v2] Wrote a shutdown snapshot")
+        except Exception:
+            logger.exception("[v2] Shutdown snapshot failed")
         stop_runtime()
 
 
@@ -103,6 +108,20 @@ def build_standalone_app() -> FastAPI:
 
     # Static assets must be mounted before the SPA catch-all. Vite's build uses
     # the absolute base /static/dist/v2/, which works at both mount points.
+    @app.api_route("/v2", methods=["GET", "HEAD"], include_in_schema=False)
+    async def v2_root_redirect():
+        """Old bookmarks from the side-by-side preview keep working."""
+        return RedirectResponse(url="/", status_code=307)
+
+    @app.api_route(
+        "/v2/{spa_path:path}", methods=["GET", "HEAD"], include_in_schema=False
+    )
+    async def v2_deep_redirect(spa_path: str, request: Request):
+        target = f"/{spa_path}"
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(url=target, status_code=307)
+
     static_root = settings.static_dir
     if (static_root / "dist").is_dir():
         app.mount("/static", StaticFiles(directory=str(static_root)), name="static")

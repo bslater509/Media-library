@@ -151,3 +151,13 @@ def test_preview_mount_still_serves_under_v2(open_client):
     response = client.get("/v2/library")
     assert response.status_code in (200, 503)
     assert "text/html" in response.headers["content-type"]
+
+
+def test_old_v2_urls_redirect_to_the_root_app(open_client):
+    root = open_client.get("/v2", follow_redirects=False)
+    assert root.status_code == 307
+    assert root.headers["location"] == "/"
+
+    deep = open_client.get("/v2/library?path=/x%20y", follow_redirects=False)
+    assert deep.status_code == 307
+    assert deep.headers["location"] == "/library?path=/x%20y"

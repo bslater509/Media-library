@@ -188,3 +188,27 @@ def test_runtime_stays_off_while_v1_owns_the_workers(workers_env):
     assert status["owned"] is False
     assert status["started"] is False
     runtime.stop_runtime()
+
+
+def test_owned_runtime_starts_every_sweep(workers_env, monkeypatch):
+    monkeypatch.setenv("V2_OWN_WORKERS", "true")
+    v2_config.reload_settings()
+    from media_library_v2 import runtime
+
+    try:
+        assert runtime.start_runtime() is True
+        status = runtime.runtime_status()
+        assert status["started"] is True
+        for key in (
+            "crawler",
+            "metadata",
+            "thumbnails",
+            "webp",
+            "content_hashes",
+            "visual_hashes",
+            "backups",
+        ):
+            assert status[key] is True, key
+    finally:
+        runtime.stop_runtime()
+        v2_config.reload_settings()

@@ -1137,7 +1137,7 @@ build on any reverse import.
 | `V2_ZIP_STAGING_DIR` | `ZIP_STAGING_DIR` or `${DATA_DIR}/zip_staging_v2` | Local staging for v2's archive compression |
 | `V2_BACKUP_STAGING_DIR` | `${DATA_DIR}/backup_staging_v2` | Staging for v2's snapshot database/tar |
 | `V2_ALLOW_LIVE_RESTORE` | `false` | Let `/backups/restore` replace the live index (cutover only; otherwise the CLI restore) |
-| `V2_OWN_WORKERS` | `false` | Run v2's crawler, metadata prober, poster sweep and automatic snapshots |
+| `V2_OWN_WORKERS` | `false` | Run v2's crawler, metadata prober, poster sweep, loose-image WebP sweep, content/visual duplicate hashing and automatic snapshots |
 | `V2_CRAWL_INTERVAL_MINUTES` | `30` | Delay between v2 crawler passes when it owns the workers |
 | `V2_BACKUP_INTERVAL_HOURS` | `6.0` | Automatic v2 snapshot interval when it owns the workers |
 | `X265_PRESET` / `X265_CRF` | `medium` / `18` | In-place HEVC encode settings for v2's x265 queue |
@@ -1306,6 +1306,12 @@ the module has no side effects and the suite stays off the developer's settings.
 Pending: the `/` cutover itself — point the systemd unit at `v2_app.py`, set
 `V2_OWN_WORKERS=true`, and retire v1's crawler. Nothing else is missing from the auth
 or standalone layer.
+
+The owned runtime also drains the loose-image WebP queue and the content/visual
+duplicate hash queues in small batches, releasing heap between batches, so the
+post-cutover app keeps the housekeeping the current app did in the background.
+Standalone shuts down with a snapshot (best effort) and redirects old `/v2`
+bookmarks to the same path at the root.
 
 The v2 crawler is incremental (`folders.dir_mtime`), indexes ZIP archives as virtual
 folders (re-checking each known archive even when its parent folder is unchanged),
