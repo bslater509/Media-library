@@ -407,6 +407,32 @@ export interface ZipUnpackResult {
   removed: string
 }
 
+export interface X265Job {
+  id: string
+  source_path: string
+  output_path: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  percent: number
+  fps: string
+  speed: string
+  eta: string
+  error: string
+  duration: number
+  audio_mode: string
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+}
+
+export interface X265Status {
+  active: X265Job | null
+  queued: X265Job[]
+  job: X265Job | null
+  active_count: number
+  queued_count: number
+  history: X265Job[]
+}
+
 export interface OnboardingInfo {
   version: string
   library_root: string
@@ -757,6 +783,15 @@ export const api = {
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
 
   onboardingInfo: () => request<OnboardingInfo>('/system/onboarding'),
+
+  x265Start: (path: string) =>
+    post<X265Job>('/transcode/x265', { path }),
+
+  x265Status: (path: string) =>
+    request<X265Status>('/transcode/x265/status', { path }),
+
+  x265Cancel: (jobId: string) =>
+    post<{ cancelled: string }>('/transcode/x265/cancel', { job_id: jobId }),
 
   backupStatus: () => request<BackupStatus>('/backups/status'),
 

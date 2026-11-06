@@ -67,6 +67,9 @@ class Settings:
     thumbnail_dir: Path
     upload_staging_dir: Path
     sorter_state_path: Path
+    transcode_dir: Path
+    x265_preset: str
+    x265_crf: int
     backup_dir: Path
     backup_staging_dir: Path
     allow_live_restore: bool
@@ -125,6 +128,9 @@ def load_settings() -> Settings:
             "V2_SOURCE_DIR", Path(_env_str("INCOMING_DIR") or data_dir / "incoming")
         ),
         db_path=_resolve_db_path(data_dir),
+        transcode_dir=_env_path("TRANSCODE_DIR", data_dir / "transcodes"),
+        x265_preset=_env_str("X265_PRESET") or "medium",
+        x265_crf=max(0, min(51, _env_int("X265_CRF", 18, minimum=0))),
         backup_dir=_env_path(
             "LIBRARY_BACKUP_DIR",
             _resolve_library_dir(data_dir) / ".media_library_backup",

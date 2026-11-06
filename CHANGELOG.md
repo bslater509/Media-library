@@ -90,6 +90,12 @@ snapshot metadata.
   what is live versus still in the current app, appearance) backed by
   `GET /api/v2/system/onboarding`. It opens once, is replayable from Settings and
   the command palette, and persists dismissal in `v2_onboarding_done`.
+- **In-place x265 conversion in v2.** The viewer's "Convert to H.265" action
+  (`Minimize2`) queues a serial `libx265 -preset medium -crf 18` re-encode with
+  audio copied when MP4-compatible, shows live percent/fps/speed/ETA in a
+  floating panel, and supports cancel. The commit is atomic (cross-device safe),
+  non-MP4 sources become an `.mp4` sibling, and the index/poster/animations are
+  rewritten. `X265_PRESET` and `X265_CRF` tune it.
 
 ## [2.0.2] - 2026-11-03
 

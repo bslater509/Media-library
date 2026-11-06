@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createPortal } from 'react-dom'
 import {
   ChevronLeft,
@@ -9,6 +11,8 @@ import {
   FolderOpen,
   Gauge,
   Info,
+  Loader2,
+  Minimize2,
   Pencil,
   Repeat,
   Star,
@@ -16,13 +20,14 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { FileEntry } from '../../lib/api'
+import { api, type FileEntry, type X265Job } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import {
   codecLabel,
   formatClock,
   formatDuration,
   imageLabel,
+  isHevc,
   resolutionLabel,
 } from '../../lib/format'
 import type { FileAction } from './MediaTile'
@@ -51,6 +56,74 @@ export function MediaLightbox({
   const [loop, setLoop] = useState(false)
   const [speed, setSpeed] = useState<number>(1)
   const [showInfo, setShowInfo] = useState(false)
+  const [x265, setX265] = useState<X265Job | null>(null)
+  const queryClient = useQueryClient()
+  const x265Active = x265?.status === 'queued' || x265?.status === 'running'
+
+  useEffect(() => {
+    let cancelled = false
+    setX265(null)
+    api
+      .x265Status(file.path)
+      .then((result) => {
+        if (cancelled) return
+        if (result.job && ['queued', 'running'].includes(result.job.status)) {
+          setX265(result.job)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [file.path])
+
+  useEffect(() => {
+    if (!x265 || !['queued', 'running'].includes(x265.status)) return
+    let cancelled = false
+    const timer = window.setInterval(async () => {
+      try {
+        const result = await api.x265Status(file.path)
+        if (cancelled || !result.job) return
+        setX265(result.job)
+        if (result.job.status === 'completed') {
+          window.clearInterval(timer)
+          toast.success('Converted to H.265')
+          void queryClient.invalidateQueries({ queryKey: ['browse'] })
+          onClose()
+        } else if (['failed', 'cancelled'].includes(result.job.status)) {
+          window.clearInterval(timer)
+          if (result.job.status === 'failed') {
+            toast.error(result.job.error || 'Conversion failed')
+          }
+        }
+      } catch {
+        /* transient poll error; the next tick retries */
+      }
+    }, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [x265?.id, x265?.status, file.path, onClose, queryClient])
+
+  const startConversion = async () => {
+    try {
+      const job = await api.x265Start(file.path)
+      setX265(job)
+      toast.info('Converting to H.265…')
+    } catch (error) {
+      try {
+        const result = await api.x265Status(file.path)
+        if (result.job && ['queued', 'running'].includes(result.job.status)) {
+          setX265(result.job)
+          return
+        }
+      } catch {
+        /* fall through to the error toast */
+      }
+      toast.error(error instanceof Error ? error.message : 'Could not start conversion')
+    }
+  }
 
   const next = useCallback(() => {
     if (index < files.length - 1) onIndexChange(index + 1)
@@ -213,6 +286,72 @@ export function MediaLightbox({
         ) : null}
       </div>
 
+      {x265 ? (
+        <div className="absolute inset-x-3 bottom-28 z-20 mx-auto max-w-lg rounded-md border border-white/15 bg-slate-900/95 p-3 text-white shadow-e2 sm:inset-x-auto sm:right-4 sm:bottom-32 sm:w-96">
+          <div className="flex items-center gap-2">
+            <Loader2
+              aria-hidden="true"
+              className={
+                x265Active ? 'size-4 animate-spin text-accent' : 'size-4 text-white/50'
+              }
+            />
+            <p className="min-w-0 flex-1 truncate text-xs font-medium">
+              {x265.status === 'completed'
+                ? 'Converted to H.265'
+                : x265.status === 'failed'
+                  ? 'Conversion failed'
+                  : x265.status === 'cancelled'
+                    ? 'Conversion cancelled'
+                    : 'Converting to H.265…'}
+            </p>
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-white/60">
+              {Math.round(x265.percent)}%
+            </span>
+            {!x265Active ? (
+              <button
+                type="button"
+                aria-label="Dismiss conversion status"
+                onClick={() => setX265(null)}
+                className="text-white/55 hover:text-white"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/15">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-500"
+              style={{ width: `${Math.max(2, Math.min(100, x265.percent))}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-white/55">
+            <span className="truncate">
+              {x265.error
+                ? x265.error
+                : [
+                    x265.fps ? `${x265.fps} fps` : '',
+                    x265.speed ? `${x265.speed}` : '',
+                    x265.eta ? `ETA ${x265.eta}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'One job runs at a time'}
+            </span>
+            {x265Active ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void api.x265Cancel(x265.id).catch(() => {})
+                  toast.info('Cancelling…')
+                }}
+                className="shrink-0 rounded-sm border border-white/20 px-2 py-0.5 text-white/75 hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <footer className="shrink-0 border-t border-white/10 bg-black/70">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-[11px] text-white/70 sm:px-4">
           <span className="font-mono">{file.size_formatted}</span>
@@ -257,6 +396,22 @@ export function MediaLightbox({
                   <Repeat />
                 </IconButton>
               </>
+            ) : null}
+            {isVideo && !isHevc(file.video_codec) ? (
+              <IconButton
+                aria-label="Convert to H.265 / HEVC"
+                title="Convert to x265 / HEVC"
+                size={32}
+                className="text-white/75 hover:bg-white/10 hover:text-white"
+                onClick={() => void startConversion()}
+                disabled={x265Active}
+              >
+                {x265Active ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Minimize2 />
+                )}
+              </IconButton>
             ) : null}
             <IconButton
               aria-label="Toggle details"

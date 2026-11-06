@@ -26,6 +26,7 @@ from media_library_v2.routers import sorter as sorter_router
 from media_library_v2.routers import system as system_router
 from media_library_v2.routers import uploads as uploads_router
 from media_library_v2.routers import webp as webp_router
+from media_library_v2.routers import x265 as x265_router
 from media_library_v2.routers import zip as zip_router
 from media_library_v2.views import router as views_router
 
@@ -48,6 +49,7 @@ def api_router() -> APIRouter:
     router.include_router(cleanup_router.router, tags=["cleanup"])
     router.include_router(zip_router.router, tags=["zip"])
     router.include_router(backups_router.router, tags=["backups"])
+    router.include_router(x265_router.router, tags=["x265"])
     return router
 
 

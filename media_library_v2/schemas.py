@@ -657,6 +657,40 @@ class OnboardingInfo(BaseModel):
     tools: dict[str, bool]
 
 
+class X265Job(BaseModel):
+    id: str
+    source_path: str
+    output_path: str | None = None
+    status: str
+    percent: float
+    fps: str
+    speed: str
+    eta: str
+    error: str
+    duration: float
+    audio_mode: str
+    created_at: float
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+class X265Status(BaseModel):
+    active: X265Job | None = None
+    queued: list[X265Job]
+    job: X265Job | None = None
+    active_count: int
+    queued_count: int
+    history: list[X265Job]
+
+
+class X265Request(BaseModel):
+    path: str
+
+
+class X265CancelRequest(BaseModel):
+    job_id: str
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

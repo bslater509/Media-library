@@ -14,7 +14,7 @@ import {
 
 const ROADMAP = [
   { label: 'Batch ZIP and archive WebP tools', phase: 'later' },
-  { label: 'In-place x265 conversion and background workers', phase: 'later' },
+  { label: 'Background workers and archive WebP rewrites', phase: 'later' },
 ]
 
 export function SettingsPage() {

@@ -346,6 +346,11 @@ def create_folder(parent: str, name: str) -> dict[str, Any]:
     return {"path": target, "name": clean}
 
 
+def unique_target(destination: str, name: str, occupied: set[str] | None = None) -> str:
+    """Public wrapper for callers that need collision-free naming."""
+    return _unique_target(destination, name, occupied or set())
+
+
 def _unique_target(destination: str, name: str, occupied: set[str]) -> str:
     stem, ext = os.path.splitext(name)
     counter = 1

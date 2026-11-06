@@ -31,7 +31,7 @@ const PENDING: Capability[] = [
     label: 'Background probes, thumbnail sweeps and auto-transcoding',
     available: false,
   },
-  { key: 'x265', label: 'In-place x265 / HEVC conversion', available: false },
+
   { key: 'batch', label: 'Batch ZIP and archive WebP tools', available: false },
 ]
 
@@ -52,6 +52,7 @@ export function buildCapabilities(
     { key: 'zip', label: 'ZIP browse, compress, unpack', available: !!flags.zip },
     { key: 'analytics', label: 'Analytics dashboard', available: !!flags.analytics },
     { key: 'backups', label: 'Library snapshots', available: !!flags.backups },
+    { key: 'x265', label: 'In-place x265 / HEVC conversion', available: !!flags.x265 },
   ].filter((row) => row.available)
   return { available, pending: PENDING }
 }

@@ -51,6 +51,7 @@ async def info() -> dict:
             "analytics": True,
             "workers": False,
             "backups": True,
+            "x265": True,
         },
     }
 
@@ -89,6 +90,7 @@ async def onboarding() -> dict:
             "zip": True,
             "analytics": True,
             "backups": True,
+            "x265": True,
             "workers": False,
         },
         "index": {

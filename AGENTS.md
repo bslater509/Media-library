@@ -1180,6 +1180,9 @@ build on any reverse import.
 | `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
 | `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
 | `GET /system/onboarding` | first-run tour data: library/source paths, counts, index root, backup, downloaders, feature flags |
+| `POST /transcode/x265` | queue an in-place HEVC re-encode of one video (`409` if already HEVC or already queued) |
+| `GET /transcode/x265/status?path=` | active/queued job, the job for a path, and recent history |
+| `POST /transcode/x265/cancel` | cancel an active (kills ffmpeg) or queued job |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1224,7 +1227,9 @@ atomic replace, index and poster update, batch/folder scope), **empty-folder
 cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
 archives are indexed by the shared crawler, a missing member is extracted into a bounded
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-the **Tools hub**, **library snapshots** (v2 writes a compacted DB copy plus a
+the **Tools hub**, **in-place x265 conversion** (serial libx265 queue, live
+percent/fps/speed/ETA, cancel, atomic commit, index/poster rewrite), **library snapshots**
+(v2 writes a compacted DB copy plus a
 poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a
 service-stopped restore CLI; live restore stays disabled until the cutover) and a
 **first-run onboarding tour** (4 steps: welcome, library/index health, what is live vs
@@ -1233,8 +1238,7 @@ dismissal persisted under `v2_onboarding_done`). Every write updates the shared 
 and the cached artwork.
 
 Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surfaces are
-x265 conversion, batch ZIP and archive WebP rewrites, and v2's own background
-workers.
+batch ZIP and archive WebP rewrites, and v2's own background workers.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1262,6 +1266,14 @@ removing the source folder. Unpacking extracts into a temporary sibling (skippin
 members) and renames it into place. Both replace the affected `folders`/`files` rows in
 one transaction; a crash between the disk change and the commit leaves rows that v1's
 crawler reconciles.
+
+x265 jobs run one at a time (`libx265 -preset medium -crf 18`, overridable through
+`X265_PRESET`/`X265_CRF`), audio stream-copied when MP4-compatible else AAC 192k, and
+commit with a cross-device-safe `os.replace`. Non-MP4 sources become an `.mp4` sibling
+and the original is removed; the index row is rewritten (`video_codec='hevc'`,
+`needs_transcode=0`, hashes cleared, `has_thumb=0`) and the stale poster/preview are
+deleted. If the index has no duration yet, one ffprobe call supplies it so progress is
+accurate from the first second. Jobs and history are in memory.
 
 Snapshots live in `.media_library_backup/v2/` so v1's scheduled `library.db` /
 `thumbnails.tar` are never overwritten. The DB copy uses `sqlite3.backup` followed by
