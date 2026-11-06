@@ -207,32 +207,14 @@ def verify_snapshot() -> dict[str, Any]:
     }
 
 
-def restore_snapshot(
-    target_db: Path | None = None,
-    target_thumbnails: Path | None = None,
-    *,
-    allow_live: bool | None = None,
+def _restore_from(
+    db_source: Path, tar_source: Path, db_target: Path, thumbs_target: Path
 ) -> dict[str, Any]:
-    """Restore the snapshot into explicit targets (service-stopped operation)."""
-    settings = get_settings()
-    allowed = settings.allow_live_restore if allow_live is None else allow_live
-    db_target = Path(target_db) if target_db else settings.db_path
-    thumbs_target = (
-        Path(target_thumbnails) if target_thumbnails else settings.thumbnail_dir
-    )
-    if not allowed and db_target.resolve() == settings.db_path.resolve():
-        raise writes.WriteError(
-            "Live restore is disabled while v1 owns the index. Stop the service "
-            "and run `python -m media_library_v2.restore`, or set "
-            "V2_ALLOW_LIVE_RESTORE=true after the cutover.",
-            409,
-        )
+    """Copy a validated snapshot database into place and unpack its posters."""
+    if not db_source.is_file() or not tar_source.is_file():
+        raise writes.WriteError("No snapshot found", 404)
 
-    db_path, tar_path, _meta_path = _paths()
-    if not db_path.is_file() or not tar_path.is_file():
-        raise writes.WriteError("No v2 snapshot found", 404)
-
-    check = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    check = sqlite3.connect(f"file:{db_source}?mode=ro", uri=True)
     try:
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise writes.WriteError("Snapshot database is corrupt", 400)
@@ -242,12 +224,12 @@ def restore_snapshot(
 
     db_target.parent.mkdir(parents=True, exist_ok=True)
     temp_db = db_target.with_name(f".restore-{uuid.uuid4().hex}.db")
-    shutil.copyfile(db_path, temp_db)
+    shutil.copyfile(db_source, temp_db)
     os.replace(temp_db, db_target)
 
     thumbs_target.mkdir(parents=True, exist_ok=True)
     restored = 0
-    with tarfile.open(tar_path) as archive:
+    with tarfile.open(tar_source) as archive:
         for member in archive:
             if not member.isfile() or not os.path.basename(member.name).startswith(
                 "thumb_"
@@ -273,3 +255,72 @@ def restore_snapshot(
         "folders": folders,
         "restart_required": True,
     }
+
+
+def auto_restore_if_missing() -> dict[str, Any]:
+    """Restore the index on startup when it is missing or empty.
+
+    The v2 snapshot is preferred; the current app's ``<library backup>/
+    library.db`` + ``thumbnails.tar`` pair is the fallback, so a first
+    standalone boot after the cutover can recover from the snapshot that already
+    exists. A non-empty index is never touched.
+    """
+    settings = get_settings()
+    present, files, folders = _index_health(settings.db_path)
+    if present and (files or folders):
+        return {"restored": False, "reason": "index present", "files": files}
+    candidates = [
+        (snapshot_dir() / _DB, snapshot_dir() / _TAR, "v2"),
+        (settings.backup_dir / _DB, settings.backup_dir / _TAR, "v1"),
+    ]
+    for db_source, tar_source, label in candidates:
+        if db_source.is_file() and tar_source.is_file():
+            result = _restore_from(
+                db_source, tar_source, settings.db_path, settings.thumbnail_dir
+            )
+            return {**result, "source": label}
+    return {"restored": False, "reason": "no usable snapshot"}
+
+
+def _index_health(path: Path) -> tuple[bool, int, int]:
+    if not path.is_file():
+        return False, 0, 0
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return False, 0, 0
+    try:
+        files, folders = _counts(conn)
+    except sqlite3.Error:
+        return False, 0, 0
+    finally:
+        conn.close()
+    return True, files, folders
+
+
+def restore_snapshot(
+    target_db: Path | None = None,
+    target_thumbnails: Path | None = None,
+    *,
+    allow_live: bool | None = None,
+) -> dict[str, Any]:
+    """Restore the snapshot into explicit targets (service-stopped operation)."""
+    settings = get_settings()
+    allowed = settings.allow_live_restore if allow_live is None else allow_live
+    db_target = Path(target_db) if target_db else settings.db_path
+    thumbs_target = (
+        Path(target_thumbnails) if target_thumbnails else settings.thumbnail_dir
+    )
+    if not allowed and db_target.resolve() == settings.db_path.resolve():
+        raise writes.WriteError(
+            "Live restore is disabled while v1 owns the index. Stop the service "
+            "and run `python -m media_library_v2.restore`, or set "
+            "V2_ALLOW_LIVE_RESTORE=true after the cutover.",
+            409,
+        )
+
+    db_path, tar_path, _meta_path = _paths()
+    if not db_path.is_file() or not tar_path.is_file():
+        raise writes.WriteError("No v2 snapshot found", 404)
+
+    return _restore_from(db_path, tar_path, db_target, thumbs_target)

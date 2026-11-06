@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -172,3 +173,46 @@ def test_router_snapshot_status_verify_and_download(backup_env):
 
     refused = client.post("/api/v2/backups/restore")
     assert refused.status_code == 409
+
+
+def test_auto_restore_recovers_a_missing_index(backup_env):
+    backups.create_snapshot()
+    db_path = backup_env["db_path"]
+    db_path.unlink()
+    for poster in backup_env["thumbs"].glob("thumb_*.jpg"):
+        poster.unlink()
+
+    result = backups.auto_restore_if_missing()
+    assert result["restored"] is True
+    assert result["source"] == "v2"
+    assert result["files"] == 2
+    assert db_path.is_file()
+    assert len(list(backup_env["thumbs"].glob("thumb_*.jpg"))) == 3
+
+
+def test_auto_restore_leaves_a_present_index_alone(backup_env):
+    backups.create_snapshot()
+    result = backups.auto_restore_if_missing()
+    assert result["restored"] is False
+    assert result["reason"] == "index present"
+
+
+def test_auto_restore_falls_back_to_the_current_app_snapshot(backup_env):
+    backups.create_snapshot()
+    root = backup_env["backup_dir"] / "v2"
+    for name in ("library.db", "thumbnails.tar"):
+        shutil.copyfile(root / name, backup_env["backup_dir"] / name)
+    shutil.rmtree(root)
+    backup_env["db_path"].unlink()
+
+    result = backups.auto_restore_if_missing()
+    assert result["restored"] is True
+    assert result["source"] == "v1"
+    assert result["files"] == 2
+
+
+def test_auto_restore_reports_when_no_snapshot_exists(backup_env):
+    backup_env["db_path"].unlink()
+    result = backups.auto_restore_if_missing()
+    assert result["restored"] is False
+    assert result["reason"] == "no usable snapshot"

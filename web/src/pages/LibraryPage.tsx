@@ -8,6 +8,7 @@ import {
   Clapperboard,
   Folder,
   FolderOpen,
+  FolderPen,
   FolderPlus,
   ImageOff,
   ListChecks,
@@ -45,7 +46,12 @@ import {
 import { JustifiedGrid } from '../components/media/JustifiedGrid'
 import { MediaLightbox } from '../components/media/MediaLightbox'
 import type { FileAction } from '../components/media/MediaTile'
-import { DeleteDialog, NewFolderDialog, RenameDialog } from '../components/manage/LibraryDialogs'
+import {
+  DeleteDialog,
+  NewFolderDialog,
+  RenameDialog,
+  RenameFolderDialog,
+} from '../components/manage/LibraryDialogs'
 import { BulkRenameDialog } from '../components/manage/BulkRenameDialog'
 import { FolderPicker } from '../components/manage/FolderPicker'
 import { SelectionBar } from '../components/manage/SelectionBar'
@@ -87,6 +93,7 @@ export function LibraryPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false)
+  const [renameFolderOpen, setRenameFolderOpen] = useState(false)
   const selectionAnchor = useRef<number | null>(null)
   const toggleFavorite = useToggleFavorite()
   const moveFiles = useMoveFiles()
@@ -458,6 +465,14 @@ export function LibraryPage() {
               <ListChecks />
             </IconButton>
             <IconButton
+              aria-label="Rename this folder"
+              title="Rename folder"
+              onClick={() => setRenameFolderOpen(true)}
+              disabled={!currentPath || !root || currentPath === root}
+            >
+              <FolderPen />
+            </IconButton>
+            <IconButton
               aria-label="New folder"
               title="New folder"
               onClick={() => setNewFolderOpen(true)}
@@ -758,6 +773,18 @@ export function LibraryPage() {
           setDeleteTargets([])
           clearSelection()
         }} />
+      <RenameFolderDialog
+        folder={
+          currentPath && root && currentPath !== root
+            ? {
+                path: currentPath,
+                name: breadcrumbs[breadcrumbs.length - 1]?.name ?? currentPath,
+              }
+            : null
+        }
+        onClose={() => setRenameFolderOpen(false)}
+        onRenamed={(newPath) => navigateTo(newPath)}
+      />
       <NewFolderDialog
         parent={currentPath || null}
         open={newFolderOpen}

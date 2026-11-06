@@ -15,6 +15,8 @@ from media_library_v2.schemas import (
     CreateFolderResponse,
     DeleteRequest,
     DeleteResponse,
+    FolderRenameRequest,
+    FolderRenameResponse,
     MoveRequest,
     MoveResponse,
     RenameRequest,
@@ -52,6 +54,15 @@ async def delete(payload: DeleteRequest) -> dict:
     """Delete one or more files, updating the index and cached artwork."""
     try:
         return await asyncio.to_thread(writes.delete_files, payload.paths)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.post("/manage/folders/rename", response_model=FolderRenameResponse)
+async def rename_folder(payload: FolderRenameRequest) -> dict:
+    """Rename a folder or ZIP archive and rewrite its indexed subtree."""
+    try:
+        return await asyncio.to_thread(writes.rename_folder, payload.path, payload.name)
     except Exception as exc:
         raise as_http_error(exc) from exc
 

@@ -13,6 +13,14 @@ snapshot metadata.
 
 ### Added
 
+- **v2 folder rename and startup auto-restore.** Folders and ZIP archives can be
+  renamed from the library header; every indexed descendant folder, file,
+  favorite and ignored duplicate pair is rewritten in one transaction and cached
+  posters move to their new keys, so a rename never regenerates artwork or
+  orphans favorites. The standalone app now restores a missing or empty index
+  from the v2 snapshot at startup, falling back to the current app's snapshot,
+  and never touches a non-empty index. The Tools hub also queues animated
+  previews for every video that lacks one.
 - **v2 sorter duplicate warning.** The sorter compares the current incoming clip's
   quick hash (128 KB head + size, the same format the dedupe tools use) with the
   shared index and shows an amber "Already in the library" banner with the first

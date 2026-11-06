@@ -23,7 +23,7 @@ from typing import Any
 
 from media_library_v2.cache import animated_path, thumbnail_path
 from media_library_v2.config import get_settings
-from media_library_v2.db import writer
+from media_library_v2.db import reader, writer
 from media_library_v2.paths import format_size, resolve_library_path, stable_id
 
 _UPLOAD_ID_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
@@ -378,6 +378,145 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
         _remove_thumbs(path, mtime, size)
 
     return {"deleted": [target for target, *_rest in deleted], "failed": failed}
+
+
+def rename_folder(raw_path: str, name: str) -> dict[str, Any]:
+    """Rename a real folder or a ZIP archive, rewriting the index subtree.
+
+    Cached posters and animated previews are moved to the new cache keys, so a
+    renamed folder keeps its artwork instead of regenerating every poster.
+    """
+    from media_library_v2 import zipfs
+
+    target = resolve_library_path(raw_path)
+    is_zip = os.path.isfile(target) and target.lower().endswith(".zip")
+    if not is_zip and not os.path.isdir(target):
+        raise WriteError("Only folders or ZIP archives can be renamed here", 400)
+    clean = _validate_name(name)
+    new_path = os.path.join(os.path.dirname(target), clean)
+    if new_path == target:
+        return {"path": target, "name": clean}
+    if os.path.exists(new_path):
+        raise WriteError("An item with that name already exists", 409)
+
+    prefix = target + os.sep
+    cut = len(prefix)
+    with reader() as conn:
+        rows = conn.execute(
+            "SELECT path, mtime, size FROM files "
+            "WHERE path = ? OR substr(path, 1, ?) = ?",
+            (target, cut, prefix),
+        ).fetchall()
+        is_zip_indexed = conn.execute(
+            "SELECT is_zip FROM folders WHERE path = ?", (target,)
+        ).fetchone()
+
+    os.rename(target, new_path)
+    try:
+        with writer() as conn, conn:
+            conn.execute(
+                "UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE path = ?",
+                (new_path, clean, os.path.dirname(new_path), target),
+            )
+            if is_zip or (is_zip_indexed is not None and is_zip_indexed["is_zip"]):
+                conn.execute(
+                    "UPDATE files SET folder_path = ? WHERE folder_path = ?",
+                    (new_path, target),
+                )
+                conn.execute(
+                    "UPDATE files SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                    (new_path, cut, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE favorites SET path = ? || substr(path, ?) "
+                    "WHERE path LIKE ?",
+                    (new_path, cut, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE ignored_duplicates SET "
+                    "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
+                    "ELSE path1 END, "
+                    "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
+                    "ELSE path2 END "
+                    "WHERE path1 LIKE ? OR path2 LIKE ?",
+                    (
+                        prefix + "%",
+                        new_path,
+                        cut,
+                        prefix + "%",
+                        new_path,
+                        cut,
+                        prefix + "%",
+                        prefix + "%",
+                    ),
+                )
+            else:
+                conn.execute(
+                    "UPDATE folders SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                    (new_path, cut, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE folders SET parent_path = ? || substr(parent_path, ?) "
+                    "WHERE parent_path = ? OR parent_path LIKE ?",
+                    (new_path, cut, target, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE files SET path = ? || substr(path, ?) "
+                    "WHERE path = ? OR path LIKE ?",
+                    (new_path, cut, target, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE files SET folder_path = ? || substr(folder_path, ?) "
+                    "WHERE folder_path = ? OR folder_path LIKE ?",
+                    (new_path, cut, target, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE favorites SET path = ? || substr(path, ?) "
+                    "WHERE path = ? OR path LIKE ?",
+                    (new_path, cut, target, prefix + "%"),
+                )
+                conn.execute(
+                    "UPDATE ignored_duplicates SET "
+                    "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
+                    "ELSE path1 END, "
+                    "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
+                    "ELSE path2 END "
+                    "WHERE path1 = ? OR path2 = ? OR path1 LIKE ? OR path2 LIKE ?",
+                    (
+                        prefix + "%",
+                        new_path,
+                        cut,
+                        prefix + "%",
+                        new_path,
+                        cut,
+                        target,
+                        target,
+                        prefix + "%",
+                        prefix + "%",
+                    ),
+                )
+            _recompute_folder(conn, os.path.dirname(target))
+            _recompute_folder(conn, os.path.dirname(new_path))
+    except Exception:
+        os.rename(new_path, target)
+        raise
+
+    for row in rows:
+        suffix = row["path"][len(target) :]
+        _move_thumbs(
+            row["path"],
+            new_path + suffix,
+            float(row["mtime"] or 0),
+            int(row["size"] or 0),
+        )
+
+    if is_zip or (is_zip_indexed is not None and is_zip_indexed["is_zip"]):
+        try:
+            zipfs.purge_cache(target)
+        except OSError:
+            pass
+
+    return {"path": new_path, "name": clean}
 
 
 def create_folder(parent: str, name: str) -> dict[str, Any]:

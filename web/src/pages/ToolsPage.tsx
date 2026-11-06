@@ -2,16 +2,24 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import {
   Archive,
+  Clapperboard,
   Copy,
   DatabaseBackup,
   FolderX,
   Gauge,
   ImageDown,
+  Loader2,
   Wrench,
 } from 'lucide-react'
-import { useDedupeStatus } from '../lib/queries'
+import { toast } from 'sonner'
+import {
+  useAnimatedStatus,
+  useDedupeStatus,
+  useGenerateAnimatedBatch,
+} from '../lib/queries'
 import {
   Badge,
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -31,6 +39,9 @@ interface Tool {
 
 export function ToolsPage() {
   const status = useDedupeStatus()
+  const animated = useAnimatedStatus()
+  const generateAll = useGenerateAnimatedBatch()
+  const pendingPreviews = animated.data?.pending ?? 0
 
   const tools: Tool[] = [
     {
@@ -56,7 +67,7 @@ export function ToolsPage() {
     {
       title: 'WebP optimizer',
       description:
-        'Convert loose images to WebP atomically, with a running space-saved total. Archive members stay with the current app.',
+        'Convert loose images to WebP atomically, with a running space-saved total. Archive members are converted from the ZIP page.',
       icon: <ImageDown />,
       to: '/tools/images',
       cta: 'Optimize images',
@@ -99,6 +110,67 @@ export function ToolsPage() {
           shared index; snapshot restore runs with the service stopped.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Clapperboard aria-hidden="true" className="size-4 text-fg-subtle" />
+              Animated previews
+            </CardTitle>
+            <Badge variant={pendingPreviews ? 'accent' : 'success'}>
+              {animated.data
+                ? `${animated.data.ready.toLocaleString()} / ${animated.data.total.toLocaleString()}`
+                : '—'}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardBody className="flex flex-col gap-3">
+          <p className="text-xs leading-5 text-fg-muted">
+            Looping 480px WebP previews for video tiles, generated on demand from
+            the viewer or queued here for every video that does not have one.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              disabled={!pendingPreviews || generateAll.isPending}
+              onClick={() =>
+                generateAll.mutate(
+                  { all_videos: true },
+                  {
+                    onSuccess: (result) =>
+                      result.added
+                        ? toast.success(
+                            `${result.added.toLocaleString()} preview${result.added === 1 ? '' : 's'} queued`,
+                          )
+                        : toast.info('Every video already has a preview'),
+                    onError: (error) =>
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : 'Could not queue previews',
+                      ),
+                  },
+                )
+              }
+            >
+              {generateAll.isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Clapperboard />
+              )}
+              {pendingPreviews
+                ? `Generate ${pendingPreviews.toLocaleString()} previews`
+                : 'All videos have previews'}
+            </Button>
+            {animated.data?.active ? (
+              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-subtle">
+                working on {animated.data.active}
+              </span>
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-2">
         {tools.map((tool) => (

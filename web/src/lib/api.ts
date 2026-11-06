@@ -766,6 +766,12 @@ export const api = {
   bulkRename: (renames: { path: string; name: string }[]) =>
     post<BulkRenameResult>('/manage/bulk-rename', { renames }),
 
+  renameFolder: (path: string, name: string) =>
+    post<{ path: string; name: string }>('/manage/folders/rename', {
+      path,
+      name,
+    }),
+
   rename: (path: string, name: string) =>
     post<RenameResponse>('/manage/rename', { path, name }),
 

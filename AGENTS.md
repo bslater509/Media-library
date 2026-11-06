@@ -1163,6 +1163,7 @@ build on any reverse import.
 | `POST /manage/bulk-rename` | apply many `{path, name}` renames, continuing past individual failures (the client previews prefix / suffix / find-and-replace patterns) |
 | `POST /manage/delete` | delete files, folders (recursive) or ZIP archives (their virtual members too) + artwork |
 | `POST /manage/folders` | create a real subfolder and index it |
+| `POST /manage/folders/rename` | rename a folder or ZIP archive in place, rewriting every descendant folder/file/favorite/ignored-pair path and moving cached posters to the new keys |
 | `POST /manage/move` | move files with `auto_rename` / `skip` / `error` conflict policy |
 | `GET /uploads/status?upload_id=` | bytes already staged, for resuming |
 | `POST /uploads/chunk` | append a chunk at its explicit byte offset (duplicates acked, gaps `409`) |
@@ -1206,7 +1207,7 @@ build on any reverse import.
 | `GET /zip/batch/status` | batch mode, running/paused/completed, progress, current item, errors |
 | `POST /zip/batch/pause` / `/resume` / `/cancel` | pause between items, resume, or stop the queue |
 | `POST /zip/webp/optimize` | rewrite an archive's JPEG/PNG/BMP/TIFF members to WebP in place, preserving other members |
-| `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag |
+| `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag (the standalone app auto-restores a missing/empty index from it at startup, falling back to the current app's snapshot) |
 | `POST /backups/snapshot` | live SQLite backup (VACUUM-compacted) + poster tar + meta into `.media_library_backup/v2/` |
 | `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
 | `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
@@ -1269,7 +1270,8 @@ atomic replace, index and poster update, batch/folder scope), **empty-folder
 cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
 archives are indexed by the shared crawler, a missing member is extracted into a bounded
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-the **Tools hub**, **multi-select with bulk actions** (checkbox / Ctrl-click /
+the **Tools hub** (including a whole-library animated-preview queue),
+**multi-select with bulk actions** (checkbox / Ctrl-click /
 Shift-range selection, select all, then move, delete, star, batch rename with a live
 preview, and WebP conversion of the selected images), **the poster chooser and
 animated previews** (sampled frames with "use current position", a per-video

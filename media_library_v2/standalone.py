@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from media_library_v2 import __version__, auth
+from media_library_v2 import __version__, auth, backups
 from media_library_v2.config import get_settings, reload_settings
 from media_library_v2.db import is_available
 from media_library_v2.mount import api_router
@@ -55,6 +55,18 @@ async def lifespan(app: FastAPI):
             "[v2] V2_OWN_WORKERS is false: no crawler, metadata probes, posters "
             "or automatic snapshots will run"
         )
+    try:
+        restored = backups.auto_restore_if_missing()
+        if restored.get("restored"):
+            logger.warning(
+                "[v2] Restored the index from the %s snapshot (%s files, %s folders)",
+                restored.get("source"),
+                restored.get("files"),
+                restored.get("folders"),
+            )
+    except Exception:
+        logger.exception("[v2] Could not check the startup snapshot")
+
     start_runtime()
     try:
         yield

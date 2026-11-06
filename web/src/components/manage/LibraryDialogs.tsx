@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { FolderPlus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { FileEntry } from '../../lib/api'
-import { useCreateFolder, useDeleteFiles, useRenameFile } from '../../lib/queries'
+import {
+  useCreateFolder,
+  useDeleteFiles,
+  useRenameFile,
+  useRenameFolder,
+} from '../../lib/queries'
 import {
   Button,
   Dialog,
@@ -208,6 +213,83 @@ export function NewFolderDialog({ parent, open, onClose }: NewFolderDialogProps)
           </Button>
           <Button onClick={() => void submit()} disabled={create.isPending || !name.trim()}>
             {create.isPending ? 'Creating…' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+
+interface RenameFolderDialogProps {
+  folder: { path: string; name: string } | null
+  onClose: () => void
+  onRenamed: (newPath: string) => void
+}
+
+/** Rename the current folder (or ZIP archive) in place. */
+export function RenameFolderDialog({
+  folder,
+  onClose,
+  onRenamed,
+}: RenameFolderDialogProps) {
+  const [name, setName] = useState('')
+  const rename = useRenameFolder()
+
+  useEffect(() => {
+    setName(folder?.name ?? '')
+  }, [folder])
+
+  const submit = async () => {
+    if (!folder) return
+    const clean = name.trim()
+    if (!clean || clean === folder.name) {
+      onClose()
+      return
+    }
+    try {
+      const result = await rename.mutateAsync({ path: folder.path, name: clean })
+      toast.success('Folder renamed')
+      onRenamed(result.path)
+      onClose()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Rename failed')
+    }
+  }
+
+  return (
+    <Dialog
+      open={folder !== null}
+      onOpenChange={(open) => (open ? undefined : onClose())}
+    >
+      <DialogContent aria-describedby={undefined} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil aria-hidden="true" className="size-4 text-fg-subtle" />
+            Rename folder
+          </DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submit()
+            }}
+            aria-label="New folder name"
+            autoFocus
+          />
+          <p className="mt-2 text-xs text-fg-subtle">
+            Every indexed file, favorite and cached poster under it follows. A
+            name that already exists is refused.
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={rename.isPending}>
+            {rename.isPending ? 'Renaming…' : 'Rename'}
           </Button>
         </DialogFooter>
       </DialogContent>

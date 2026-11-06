@@ -225,6 +225,15 @@ export function useFavoriteBatch() {
   })
 }
 
+export function useRenameFolder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, name }: { path: string; name: string }) =>
+      api.renameFolder(path, name),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
 export function useBulkRename() {
   const client = useQueryClient()
   return useMutation({

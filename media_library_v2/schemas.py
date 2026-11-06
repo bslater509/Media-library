@@ -259,6 +259,16 @@ class DeleteResponse(BaseModel):
     failed: list[Failure]
 
 
+class FolderRenameRequest(BaseModel):
+    path: str
+    name: str
+
+
+class FolderRenameResponse(BaseModel):
+    path: str
+    name: str
+
+
 class CreateFolderRequest(BaseModel):
     parent: str
     name: str
