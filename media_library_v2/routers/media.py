@@ -223,9 +223,9 @@ async def get_thumbnail(path: str, kind: str = "static"):
     """Serve a cached poster frame (``static``) or animated preview."""
     if not path:
         raise HTTPException(status_code=400, detail="A path is required")
-    target = Path(path)
-    if not target.is_absolute():
-        raise HTTPException(status_code=400, detail="A path is required")
+    # Clamp first, like every media read: an index row from another library
+    # root must never turn this endpoint into an arbitrary-file reader.
+    path = resolve_library_path(path)
     mtime, size, _file_type, _has_thumb = _row_stat(path)
     key = _thumb_key(path, mtime, size)
     settings = get_settings()

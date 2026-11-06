@@ -333,3 +333,11 @@ def test_browse_dispatches_off_the_event_loop(v2_env, monkeypatch):
     asyncio.run(library_router.browse())
 
     assert seen["thread"] != threading.get_ident()
+
+
+def test_thumbnail_endpoint_rejects_paths_outside_the_library(v2_env):
+    """A stale row from another library root must not become a file reader."""
+    response = v2_env["client"].get(
+        "/api/v2/thumbnails", params={"path": "/etc/passwd"}
+    )
+    assert response.status_code == 403

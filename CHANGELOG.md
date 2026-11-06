@@ -56,6 +56,9 @@ snapshot metadata.
   Settings roadmap lists the real remaining gaps (ZIP-member editing and
   pre-transcoding) instead of the finished cutover, and the backup/index guidance
   matches the owned runtime.
+- **v2's thumbnail endpoint clamps its path to the library root** before looking
+  the row up, so a stale index row from another library root can never turn it
+  into an arbitrary-file reader.
 
 ## [3.0.0] - 2026-11-06
 
