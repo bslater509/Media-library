@@ -6,19 +6,33 @@ import {
   ChevronLeft,
   Folder,
   FolderOpen,
+  FolderPlus,
   ImageOff,
   Loader2,
   RefreshCw,
   Star,
+  UploadCloud,
   ZoomIn,
 } from 'lucide-react'
-import type { FolderEntry } from '../lib/api'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import type { FileEntry, FolderEntry } from '../lib/api'
 import { cn } from '../lib/cn'
+import {
+  invalidateLibrary,
+  useInfiniteBrowse,
+  useInfo,
+  useMoveFiles,
+  useToggleFavorite,
+} from '../lib/queries'
 import { TILE_ROW_HEIGHT, useDensityStore, type TileScale } from '../lib/stores'
-import { useInfiniteBrowse, useInfo } from '../lib/queries'
 import { Badge, Button, EmptyState, IconButton, Segmented, Select, Skeleton } from '../components/ui'
 import { JustifiedGrid } from '../components/media/JustifiedGrid'
 import { MediaLightbox } from '../components/media/MediaLightbox'
+import type { FileAction } from '../components/media/MediaTile'
+import { DeleteDialog, NewFolderDialog, RenameDialog } from '../components/manage/LibraryDialogs'
+import { FolderPicker } from '../components/manage/FolderPicker'
+import { UploadDialog } from '../components/manage/UploadDialog'
 
 export function LibraryPage() {
   const [params, setParams] = useSearchParams()
@@ -45,6 +59,15 @@ export function LibraryPage() {
   )
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null)
+  const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([])
+  const [moveTargets, setMoveTargets] = useState<FileEntry[]>([])
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const toggleFavorite = useToggleFavorite()
+  const moveFiles = useMoveFiles()
+  const queryClient = useQueryClient()
 
   // A palette result can deep-link straight into the viewer.
   useEffect(() => {
@@ -98,6 +121,49 @@ export function LibraryPage() {
 
   const filtered = typeFilter !== 'all' || favoritesOnly || sort !== 'name_asc'
   const clearFilters = () => patchParams({ type: null, fav: null, sort: null })
+
+  const handleAction = (action: FileAction, file: FileEntry) => {
+    if (action === 'favorite' || action === 'unfavorite') {
+      toggleFavorite.mutate(file.path, {
+        onSuccess: (result) =>
+          toast.success(
+            result.is_favorite ? 'Added to favorites' : 'Removed from favorites',
+          ),
+        onError: (error) =>
+          toast.error(error instanceof Error ? error.message : 'Could not update favorite'),
+      })
+      return
+    }
+    if (action === 'rename') setRenameTarget(file)
+    if (action === 'move') {
+      setMoveTargets([file])
+      setMoveOpen(true)
+    }
+    if (action === 'delete') setDeleteTargets([file])
+  }
+
+  const confirmMove = async (destination: string) => {
+    try {
+      const result = await moveFiles.mutateAsync({
+        paths: moveTargets.map((file) => file.path),
+        destination,
+        conflict: 'auto_rename',
+      })
+      if (result.failed.length) {
+        toast.error(`${result.moved.length} moved, ${result.failed.length} failed`)
+      } else if (result.moved.length === 0) {
+        toast.info('Nothing to move')
+      } else {
+        toast.success(
+          `${result.moved.length} ${result.moved.length === 1 ? 'file' : 'files'} moved`,
+        )
+      }
+      setMoveOpen(false)
+      setMoveTargets([])
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Move failed')
+    }
+  }
 
   const currentPath = first?.path ?? requestedPath ?? info.data?.library_root ?? ''
   const root = first?.root ?? info.data?.library_root ?? ''
@@ -166,6 +232,31 @@ export function LibraryPage() {
                 { value: 'l', label: 'L', title: 'Large tiles' },
               ]}
             />
+            <IconButton
+              aria-label="New folder"
+              title="New folder"
+              onClick={() => setNewFolderOpen(true)}
+              disabled={!currentPath}
+            >
+              <FolderPlus />
+            </IconButton>
+            <Button
+              size="sm"
+              className="hidden sm:inline-flex"
+              onClick={() => setUploadOpen(true)}
+              disabled={!currentPath}
+            >
+              <UploadCloud /> Upload
+            </Button>
+            <IconButton
+              aria-label="Upload files"
+              title="Upload files"
+              className="sm:hidden"
+              onClick={() => setUploadOpen(true)}
+              disabled={!currentPath}
+            >
+              <UploadCloud />
+            </IconButton>
             <IconButton
               aria-label="Refresh folder"
               title="Refresh"
@@ -292,6 +383,7 @@ export function LibraryPage() {
                     files={files}
                     targetRowHeight={rowHeight}
                     onOpen={setLightboxIndex}
+                    onAction={handleAction}
                   />
                 </>
               ) : null}
@@ -347,8 +439,46 @@ export function LibraryPage() {
           index={lightboxIndex}
           onIndexChange={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
+          onAction={(action, file) => {
+            if (action !== 'favorite' && action !== 'unfavorite') {
+              setLightboxIndex(null)
+            }
+            handleAction(action, file)
+          }}
         />
       ) : null}
+
+      <RenameDialog file={renameTarget} onClose={() => setRenameTarget(null)} />
+      <DeleteDialog files={deleteTargets} onClose={() => setDeleteTargets([])} />
+      <NewFolderDialog
+        parent={currentPath || null}
+        open={newFolderOpen}
+        onClose={() => setNewFolderOpen(false)}
+      />
+      <FolderPicker
+        open={moveOpen}
+        onOpenChange={(open) => {
+          setMoveOpen(open)
+          if (!open) setMoveTargets([])
+        }}
+        title={
+          moveTargets.length === 1
+            ? `Move “${moveTargets[0]?.name ?? ''}”`
+            : `Move ${moveTargets.length} files`
+        }
+        initialPath={info.data?.library_root ?? null}
+        busy={moveFiles.isPending}
+        onPick={(destination) => void confirmMove(destination)}
+      />
+      <UploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        folder={currentPath}
+        onCompleted={() => {
+          void invalidateLibrary(queryClient)
+          setUploadOpen(false)
+        }}
+      />
     </div>
   )
 }

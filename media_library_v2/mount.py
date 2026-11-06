@@ -13,9 +13,12 @@ from fastapi import APIRouter, FastAPI
 
 from media_library_v2 import __version__
 from media_library_v2.config import get_settings
+from media_library_v2.routers import favorites as favorites_router
 from media_library_v2.routers import library as library_router
+from media_library_v2.routers import manage as manage_router
 from media_library_v2.routers import media as media_router
 from media_library_v2.routers import system as system_router
+from media_library_v2.routers import uploads as uploads_router
 from media_library_v2.views import router as views_router
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,9 @@ def api_router() -> APIRouter:
     router.include_router(system_router.router, tags=["system"])
     router.include_router(library_router.router, tags=["library"])
     router.include_router(media_router.router, tags=["media"])
+    router.include_router(favorites_router.router, tags=["favorites"])
+    router.include_router(manage_router.router, tags=["manage"])
+    router.include_router(uploads_router.router, tags=["uploads"])
     return router
 
 

@@ -1086,10 +1086,19 @@ build on any reverse import.
 - One process, one port: `mount_v2(app)` adds `/api/v2` and the `/v2` SPA to the v1
   FastAPI app (so `systemctl restart media-library` still applies every change). A mount
   failure is logged and swallowed so v2 can never take v1 down.
-- v2 opens the index **read-only** (`V2_DB_READ_ONLY=true`, `mode=ro` + `PRAGMA
-  query_only`). The v1 crawler owns writes. WAL lets both read concurrently.
+- **One index.** v2 writes into the index v1 owns (`V2_DB_READ_ONLY=false` by default).
+  That is deliberate: a second database would drift, need its own crawler on the FUSE
+  mount, and force a migration every time v1 learned something new. With one index,
+  v1's metadata and thumbnail workers pick up v2's uploads automatically and every list,
+  search and count in both apps agrees. `V2_DB_READ_ONLY=true` (or `V2_WRITES=false`)
+  restores the earlier read-only behaviour and makes every mutation answer `503`.
+- All mutations run off the event loop (`asyncio.to_thread`) and update SQLite in a
+  short transaction. Filesystem work happens first; a move/rename is rolled back if the
+  index write fails, and a crash between the two leaves a row that v1's crawler
+  reconciles. Cached posters/animated previews are **moved** to the new cache key on
+  rename/move and deleted with the file, so artwork survives a move in both apps.
 - Browse/search/folders/counts are index-only. No v2 request walks the filesystem except
-  byte-range media streaming and serving an already-cached thumbnail.
+  byte-range media streaming, an already-cached thumbnail, and an explicit mutation.
 - v2 reuses v1's thumbnail cache byte-for-byte: key
   `sha256(f"{path}_{mtime}_{size}")[:24]`, poster `thumb_<key>.jpg`, animated
   `animated/anim_<key>.webp`. Never change the key function — it would orphan the cache.
@@ -1102,7 +1111,9 @@ build on any reverse import.
 |---|---|---|
 | `V2_ENABLED` | `true` | Mount `/v2` and `/api/v2` at all |
 | `V2_LIBRARY_DIR` | `LIBRARY_DIR` | Library root v2 reads/serves |
-| `V2_DB_READ_ONLY` | `true` | Open the index with `mode=ro`; flip when v2 owns its database |
+| `V2_DB_READ_ONLY` | `false` | Open the index read-only; mutations then return `503` |
+| `V2_WRITES` | `true` | Master switch for v2's uploads/manage/favorite endpoints |
+| `V2_UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging_v2` | Staging for v2's resumable uploads |
 | `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
 | `V2_SEARCH_LIMIT` | `1000` | Default search page size |
 
@@ -1118,6 +1129,15 @@ build on any reverse import.
 | `GET /library/folders/search?q=&limit=` | folders by name anywhere (command palette jumps) |
 | `GET /library/search?q=&type=&sort=&limit=&offset=` | multi-word filename **or** relative-folder match, exact total + `truncated` |
 | `GET /library/favorites?type=` | favorites newest-first plus global counts |
+| `POST /favorites/toggle` | star/unstar one file, returns fresh all/videos/images counts |
+| `POST /manage/rename` | rename a file in place (index row, favorite and artwork follow) |
+| `POST /manage/delete` | delete files and/or folders recursively (index subtree + artwork) |
+| `POST /manage/folders` | create a real subfolder and index it |
+| `POST /manage/move` | move files with `auto_rename` / `skip` / `error` conflict policy |
+| `GET /uploads/status?upload_id=` | bytes already staged, for resuming |
+| `POST /uploads/chunk` | append a chunk at its explicit byte offset (duplicates acked, gaps `409`) |
+| `POST /uploads/finalize` | verify the staged size, atomically commit, index the file |
+| `POST /uploads/cancel` | discard a staged upload |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1147,10 +1167,11 @@ lightbox are bundled — no CDN request.
 
 Live now: system/health, browse, folders, search, favorites, media streaming, thumbnails,
 the React shell, library gallery, lightbox, command palette, keyboard reference, search,
-favorites, theme light/dark/system, mobile bottom navigation.
+favorites, theme light/dark/system, mobile bottom navigation, **uploads (chunked and
+resumable), rename, move, delete (files and folders), create folder and favorite
+toggling** — every write updating the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): v2's own indexer/workers, uploads,
-move/rename/delete, sorter, downloads, dedupe, ZIP, WebP, analytics, backups,
-onboarding and the `/` redirect. Until those land, `/v2` reports
-`features: false` for them and the UI shows them as roadmap items rather than
-broken screens.
+Pending (see the v2 rewrite plan): the sorter, downloads, dedupe, ZIP, WebP, analytics,
+backups, onboarding and the `/` redirect. Until those land, `/v2` reports
+`features: false` for them and the UI shows them as roadmap items rather than broken
+screens.

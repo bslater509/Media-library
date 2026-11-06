@@ -54,12 +54,16 @@ class Settings:
     library_dir: Path
     db_path: Path
     thumbnail_dir: Path
+    upload_staging_dir: Path
     static_dir: Path
     enabled: bool
     db_read_only: bool
+    writes_enabled: bool
     browse_limit: int
     search_limit: int
     native_video_exts: frozenset[str]
+    video_exts: frozenset[str]
+    image_exts: frozenset[str]
 
     @property
     def api_prefix(self) -> str:
@@ -96,12 +100,38 @@ def load_settings() -> Settings:
         library_dir=_resolve_library_dir(data_dir),
         db_path=_resolve_db_path(data_dir),
         thumbnail_dir=_env_path("THUMBNAIL_DIR", data_dir / "thumbnails"),
+        upload_staging_dir=_env_path(
+            "V2_UPLOAD_STAGING_DIR", data_dir / "upload_staging_v2"
+        ),
         static_dir=(BASE_DIR / "static").resolve(),
         enabled=_env_bool("V2_ENABLED", True),
-        db_read_only=_env_bool("V2_DB_READ_ONLY", True),
+        db_read_only=_env_bool("V2_DB_READ_ONLY", False),
+        writes_enabled=_env_bool("V2_WRITES", True),
         browse_limit=_env_int("V2_BROWSE_LIMIT", 120),
         search_limit=_env_int("V2_SEARCH_LIMIT", 1000),
         native_video_exts=frozenset({".mp4", ".m4v", ".webm", ".mov", ".ogv", ".ogg"}),
+        video_exts=frozenset(
+            {
+                ".mp4",
+                ".m4v",
+                ".mkv",
+                ".webm",
+                ".avi",
+                ".mov",
+                ".wmv",
+                ".flv",
+                ".ts",
+                ".m2ts",
+                ".mpg",
+                ".mpeg",
+                ".vob",
+                ".3gp",
+                ".asf",
+            }
+        ),
+        image_exts=frozenset(
+            {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg"}
+        ),
     )
 
 

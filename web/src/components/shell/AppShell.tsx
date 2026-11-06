@@ -241,12 +241,16 @@ function IntroDialog() {
               and jump anywhere with ⌘K / Ctrl-K.
             </li>
             <li className="flex gap-2">
+              <span className="text-accent">•</span> Upload, rename, move, delete and
+              star files right here, with resumable uploads.
+            </li>
+            <li className="flex gap-2">
               <span className="text-accent">•</span> Light, dark or system theme.
             </li>
           </ul>
           <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs leading-5 text-fg-muted">
-            Still in the current app for now: uploads, moving and renaming, the sorter,
-            downloads, duplicates, ZIP tools and analytics.
+            Still in the current app for now: the sorter, downloads, duplicates, ZIP
+            tools and analytics.
           </p>
         </DialogBody>
         <DialogFooter className="flex items-center justify-between gap-2">

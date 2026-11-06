@@ -50,6 +50,32 @@ def reader() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+class DatabaseReadOnlyError(RuntimeError):
+    """Raised when a mutation is attempted while v2 is configured read-only."""
+
+
+def writes_available() -> bool:
+    settings = get_settings()
+    return settings.writes_enabled and not settings.db_read_only
+
+
+@contextmanager
+def writer() -> Iterator[sqlite3.Connection]:
+    """Yield a writable connection, or raise when writes are disabled.
+
+    Callers run the whole transaction off the event loop (AGENTS.md Rule 3):
+    every ``writes.py`` function is synchronous and invoked via
+    ``asyncio.to_thread`` from the router.
+    """
+    if not writes_available():
+        raise DatabaseReadOnlyError("Writes are disabled (V2_WRITES / V2_DB_READ_ONLY)")
+    conn = connect(read_only=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def is_available() -> bool:
     """True when the index file exists and answers a trivial query."""
     settings = get_settings()

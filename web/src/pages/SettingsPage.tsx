@@ -12,7 +12,6 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'Uploads, move, rename and delete', phase: 'next' },
   { label: 'Video sorter and undo', phase: 'next' },
   { label: 'URL and playlist downloads', phase: 'next' },
   { label: 'Duplicate detection and resolution', phase: 'later' },

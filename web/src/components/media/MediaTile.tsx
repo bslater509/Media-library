@@ -1,8 +1,30 @@
-import { Star } from 'lucide-react'
+import { useState } from 'react'
+import {
+  FolderInput,
+  MoreVertical,
+  Pencil,
+  Star,
+  StarOff,
+  Trash2,
+} from 'lucide-react'
 import type { FileEntry } from '../../lib/api'
 import { cn } from '../../lib/cn'
-import { codecLabel, formatDuration, isHevc, imageLabel, resolutionLabel } from '../../lib/format'
+import { codecLabel, formatDuration, imageLabel, isHevc, resolutionLabel } from '../../lib/format'
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
+} from '../ui'
 import { MediaPlaceholder, MediaImage } from './MediaImage'
+
+export type FileAction =
+  | 'favorite'
+  | 'unfavorite'
+  | 'rename'
+  | 'move'
+  | 'delete'
 
 interface MediaTileProps {
   file: FileEntry
@@ -10,12 +32,21 @@ interface MediaTileProps {
   width: number
   hint?: string | null
   onOpen: () => void
+  onAction?: (action: FileAction, file: FileEntry) => void
 }
 
 const CODE_BADGE = 'bg-black/65 text-white/90'
 
-/** One justified-grid cell: poster, badges and a hover filename strip. */
-export function MediaTile({ file, height, width, hint, onOpen }: MediaTileProps) {
+/** One justified-grid cell: poster, badges and an actions menu. */
+export function MediaTile({
+  file,
+  height,
+  width,
+  hint,
+  onOpen,
+  onAction,
+}: MediaTileProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const duration = formatDuration(file.duration)
   const resolution =
     file.type === 'image'
@@ -27,87 +58,135 @@ export function MediaTile({ file, height, width, hint, onOpen }: MediaTileProps)
   const isVideo = file.type === 'video'
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title={file.name}
-      aria-label={`${file.name}${duration ? `, ${duration}` : ''}`}
-      className={cn(
-        'group relative block h-full w-full overflow-hidden rounded-md bg-surface-2',
-        'outline-none ring-accent-ring transition-shadow focus-visible:ring-2',
-        'hover:shadow-e1',
-      )}
+    <div
+      className="group relative shrink-0"
       style={{ width, height }}
+      onContextMenu={(event) => {
+        if (!onAction) return
+        event.preventDefault()
+        setMenuOpen(true)
+      }}
     >
-      {file.has_thumb || file.type === 'image' ? (
-        <MediaImage file={file} />
-      ) : (
-        <MediaPlaceholder />
-      )}
+      <button
+        type="button"
+        onClick={onOpen}
+        title={file.name}
+        aria-label={`${file.name}${duration ? `, ${duration}` : ''}`}
+        className={cn(
+          'absolute inset-0 block h-full w-full overflow-hidden rounded-md bg-surface-2',
+          'outline-none ring-accent-ring transition-shadow focus-visible:ring-2',
+          'hover:shadow-e1',
+        )}
+      >
+        {file.has_thumb || file.type === 'image' ? (
+          <MediaImage file={file} />
+        ) : (
+          <MediaPlaceholder />
+        )}
 
-      {/* Readability scrims, only where a badge sits. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent opacity-70"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/60 to-transparent opacity-80"
-      />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/45 to-transparent opacity-70"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/60 to-transparent opacity-80"
+        />
 
-      <div className="pointer-events-none absolute inset-x-1.5 top-1.5 flex items-start justify-between gap-1">
-        <div className="flex flex-wrap items-center gap-1">
-          {resolution ? (
-            <span className="rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] leading-4 font-semibold text-white/95 tabular-nums">
-              {resolution}
-            </span>
-          ) : null}
-          {fps ? (
-            <span className="rounded-sm bg-black/60 px-1 py-0.5 text-[10px] leading-4 font-medium text-white/80 tabular-nums">
-              {fps}
-            </span>
-          ) : null}
+        <div className="pointer-events-none absolute inset-x-1.5 top-1.5 flex items-start justify-between gap-1">
+          <div className="flex flex-wrap items-center gap-1 pr-7">
+            {resolution ? (
+              <span className="rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] leading-4 font-semibold text-white/95 tabular-nums">
+                {resolution}
+              </span>
+            ) : null}
+            {fps ? (
+              <span className="rounded-sm bg-black/60 px-1 py-0.5 text-[10px] leading-4 font-medium text-white/80 tabular-nums">
+                {fps}
+              </span>
+            ) : null}
+            {codec ? (
+              <span
+                className={cn(
+                  'rounded-sm px-1.5 py-0.5 text-[10px] leading-4 font-semibold',
+                  isHevc(file.video_codec) ? 'bg-emerald-600/85 text-white' : CODE_BADGE,
+                )}
+              >
+                {codec}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {codec ? (
-            <span
-              className={cn(
-                'rounded-sm px-1.5 py-0.5 text-[10px] leading-4 font-semibold',
-                isHevc(file.video_codec) ? 'bg-emerald-600/85 text-white' : CODE_BADGE,
-              )}
-            >
-              {codec}
-            </span>
-          ) : null}
-          {favorite ? (
-            <span className="rounded-sm bg-black/65 p-0.5 text-amber-300">
-              <Star aria-hidden="true" className="size-3 fill-amber-300" />
-            </span>
-          ) : null}
-        </div>
-      </div>
 
-      <div className="pointer-events-none absolute inset-x-1.5 bottom-1.5 flex items-end justify-between gap-2">
-        <span className="flex min-w-0 flex-col rounded-sm bg-black/55 px-1.5 py-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          <span className="truncate text-[11px] leading-4 font-medium text-white/90">
-            {file.name}
+        <div className="pointer-events-none absolute inset-x-1.5 bottom-1.5 flex items-end justify-between gap-2">
+          <span className="flex min-w-0 flex-col rounded-sm bg-black/55 px-1.5 py-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <span className="truncate text-[11px] leading-4 font-medium text-white/90">
+              {file.name}
+            </span>
+            {hint ? (
+              <span className="truncate text-[10px] leading-3 text-white/60">{hint}</span>
+            ) : null}
           </span>
-          {hint ? (
-            <span className="truncate text-[10px] leading-3 text-white/60">{hint}</span>
+          {isVideo && duration ? (
+            <span className="shrink-0 rounded-sm bg-black/75 px-1.5 py-0.5 text-[10px] leading-4 font-semibold text-white tabular-nums">
+              {duration}
+            </span>
           ) : null}
-        </span>
-        {isVideo && duration ? (
-          <span className="shrink-0 rounded-sm bg-black/75 px-1.5 py-0.5 text-[10px] leading-4 font-semibold text-white tabular-nums">
-            {duration}
+        </div>
+
+        {favorite ? (
+          <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-sm bg-black/65 p-0.5 text-amber-300 group-hover:opacity-0">
+            <Star aria-hidden="true" className="size-3 fill-amber-300" />
           </span>
         ) : null}
-      </div>
+      </button>
 
-      {isVideo && file.has_animated ? (
-        <span className="pointer-events-none absolute top-1.5 left-1/2 -translate-x-1/2 rounded-sm bg-accent/85 px-1 py-0.5 text-[9px] leading-3 font-bold tracking-[0.08em] text-white uppercase opacity-0 transition-opacity group-hover:opacity-100">
-          anim
-        </span>
+      {onAction ? (
+        <div className="absolute top-1 right-1 z-10">
+          <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+            <MenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Actions for ${file.name}`}
+                title="Actions"
+                className={cn(
+                  'inline-flex size-6 items-center justify-center rounded-sm bg-black/60 text-white/85',
+                  'opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100',
+                  'focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent-ring',
+                  'max-md:opacity-100',
+                )}
+              >
+                <MoreVertical aria-hidden="true" className="size-3.5" />
+              </button>
+            </MenuTrigger>
+            <MenuContent>
+              <MenuItem
+                onSelect={() => onAction(favorite ? 'unfavorite' : 'favorite', file)}
+              >
+                {favorite ? (
+                  <StarOff aria-hidden="true" className="size-4" />
+                ) : (
+                  <Star aria-hidden="true" className="size-4" />
+                )}
+                {favorite ? 'Remove favorite' : 'Add to favorites'}
+              </MenuItem>
+              <MenuItem onSelect={() => onAction('rename', file)}>
+                <Pencil aria-hidden="true" className="size-4" />
+                Rename
+              </MenuItem>
+              <MenuItem onSelect={() => onAction('move', file)}>
+                <FolderInput aria-hidden="true" className="size-4" />
+                Move to…
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem variant="danger" onSelect={() => onAction('delete', file)}>
+                <Trash2 aria-hidden="true" className="size-4" />
+                Delete
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        </div>
       ) : null}
-    </button>
+    </div>
   )
 }

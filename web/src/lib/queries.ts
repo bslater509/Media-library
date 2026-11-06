@@ -3,9 +3,12 @@
 import {
   keepPreviousData,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
+  type QueryClient,
 } from '@tanstack/react-query'
-import { api } from './api'
+import { api, type ConflictPolicy } from './api'
 
 export const queryKeys = {
   info: ['info'] as const,
@@ -109,5 +112,66 @@ export function useFavorites(type = 'all') {
     queryKey: queryKeys.favorites(type),
     queryFn: () => api.favorites(type === 'all' ? undefined : type),
     staleTime: 15_000,
+  })
+}
+
+/** Invalidate everything a mutation can make stale. */
+export function invalidateLibrary(client: QueryClient): Promise<unknown> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ['browse'] }),
+    client.invalidateQueries({ queryKey: ['folders'] }),
+    client.invalidateQueries({ queryKey: ['search'] }),
+    client.invalidateQueries({ queryKey: ['favorites'] }),
+    client.invalidateQueries({ queryKey: ['info'] }),
+  ])
+}
+
+export function useToggleFavorite() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string) => api.toggleFavorite(path),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useRenameFile() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, name }: { path: string; name: string }) =>
+      api.rename(path, name),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useDeleteFiles() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (paths: string[]) => api.deleteFiles(paths),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useCreateFolder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ parent, name }: { parent: string; name: string }) =>
+      api.createFolder(parent, name),
+    onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useMoveFiles() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      paths,
+      destination,
+      conflict,
+    }: {
+      paths: string[]
+      destination: string
+      conflict: ConflictPolicy
+    }) => api.moveFiles(paths, destination, conflict),
+    onSuccess: () => invalidateLibrary(client),
   })
 }

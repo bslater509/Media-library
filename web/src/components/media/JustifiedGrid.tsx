@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FileEntry } from '../../lib/api'
 import { clamp, resolutionLabel } from '../../lib/format'
 import { layoutRows } from '../../lib/justified'
-import { MediaTile } from './MediaTile'
+import { MediaTile, type FileAction } from './MediaTile'
 
 interface JustifiedGridProps {
   files: FileEntry[]
@@ -10,6 +10,7 @@ interface JustifiedGridProps {
   gap?: number
   hintFor?: (file: FileEntry) => string | null
   onOpen: (index: number) => void
+  onAction?: (action: FileAction, file: FileEntry) => void
 }
 
 /** Aspect used for layout: probed dimensions, clamped, 1:1 when unknown. */
@@ -28,6 +29,7 @@ export function JustifiedGrid({
   gap = 8,
   hintFor,
   onOpen,
+  onAction,
 }: JustifiedGridProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
@@ -75,6 +77,7 @@ export function JustifiedGrid({
                 width={tileWidth}
                 hint={hintFor?.(item) ?? null}
                 onOpen={() => onOpen(index)}
+                onAction={onAction}
               />
             )
           })}

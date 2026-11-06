@@ -5,10 +5,15 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  FolderInput,
   FolderOpen,
   Gauge,
   Info,
+  Pencil,
   Repeat,
+  Star,
+  StarOff,
+  Trash2,
   X,
 } from 'lucide-react'
 import type { FileEntry } from '../../lib/api'
@@ -20,6 +25,7 @@ import {
   imageLabel,
   resolutionLabel,
 } from '../../lib/format'
+import type { FileAction } from './MediaTile'
 import { IconButton } from '../ui'
 
 interface MediaLightboxProps {
@@ -27,6 +33,7 @@ interface MediaLightboxProps {
   index: number
   onIndexChange: (index: number) => void
   onClose: () => void
+  onAction?: (action: FileAction, file: FileEntry) => void
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
@@ -37,6 +44,7 @@ export function MediaLightbox({
   index,
   onIndexChange,
   onClose,
+  onAction,
 }: MediaLightboxProps) {
   const file = files[index]
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -259,6 +267,50 @@ export function MediaLightbox({
             >
               <Info />
             </IconButton>
+            {onAction ? (
+              <>
+                <IconButton
+                  aria-label={file.is_favorite ? 'Remove favorite' : 'Add favorite'}
+                  title={file.is_favorite ? 'Remove favorite' : 'Add favorite'}
+                  size={32}
+                  className={cn(
+                    'text-white/75 hover:bg-white/10 hover:text-white',
+                    file.is_favorite && 'text-amber-300',
+                  )}
+                  onClick={() => onAction(file.is_favorite ? 'unfavorite' : 'favorite', file)}
+                >
+                  {file.is_favorite ? <Star className="fill-current" /> : <StarOff />}
+                </IconButton>
+                <IconButton
+                  aria-label="Rename file"
+                  title="Rename"
+                  size={32}
+                  className="text-white/75 hover:bg-white/10 hover:text-white"
+                  onClick={() => onAction('rename', file)}
+                >
+                  <Pencil />
+                </IconButton>
+                <IconButton
+                  aria-label="Move file"
+                  title="Move to…"
+                  size={32}
+                  className="text-white/75 hover:bg-white/10 hover:text-white"
+                  onClick={() => onAction('move', file)}
+                >
+                  <FolderInput />
+                </IconButton>
+                <IconButton
+                  aria-label="Delete file"
+                  title="Delete"
+                  variant="danger"
+                  size={32}
+                  className="text-danger/90 hover:bg-danger/20"
+                  onClick={() => onAction('delete', file)}
+                >
+                  <Trash2 />
+                </IconButton>
+              </>
+            ) : null}
             <a
               href={`/?folder=${encodeURIComponent(file.folder_path)}`}
               aria-label="Manage in the current app"

@@ -141,3 +141,108 @@ class ThumbnailCandidates(BaseModel):
     duration: float | None = None
     interval: float
     frames: list[dict[str, float | str]]
+
+
+# --- mutations -------------------------------------------------------------
+
+
+class FavoriteRequest(BaseModel):
+    path: str
+
+
+class FavoriteCounts(BaseModel):
+    all: int
+    videos: int
+    images: int
+
+
+class FavoriteResponse(BaseModel):
+    path: str
+    is_favorite: bool
+    counts: FavoriteCounts
+
+
+class RenameRequest(BaseModel):
+    path: str
+    name: str
+
+
+class RenameResponse(BaseModel):
+    path: str
+    file: FileEntry | None = None
+
+
+class DeleteRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=500)
+
+
+class Failure(BaseModel):
+    path: str
+    error: str
+
+
+class DeleteResponse(BaseModel):
+    deleted: list[str]
+    failed: list[Failure]
+
+
+class CreateFolderRequest(BaseModel):
+    parent: str
+    name: str
+
+
+class CreateFolderResponse(BaseModel):
+    path: str
+    name: str
+
+
+class MoveRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=500)
+    destination: str
+    conflict: str = "auto_rename"
+
+
+class MoveItem(BaseModel):
+    source: str | None = None
+    target: str | None = None
+    path: str | None = None
+    reason: str | None = None
+
+
+class MoveResponse(BaseModel):
+    moved: list[MoveItem]
+    skipped: list[MoveItem]
+    failed: list[Failure]
+
+
+class UploadStatusResponse(BaseModel):
+    upload_id: str
+    exists: bool
+    received_bytes: int
+
+
+class UploadChunkResponse(BaseModel):
+    received_bytes: int
+    duplicate: bool
+
+
+class UploadFinalizeRequest(BaseModel):
+    upload_id: str
+    name: str
+    folder: str
+    total_size: int | None = None
+    conflict: str = "auto_rename"
+
+
+class UploadFinalizeResponse(BaseModel):
+    skipped: bool
+    path: str
+    file: FileEntry | None = None
+
+
+class UploadCancelRequest(BaseModel):
+    upload_id: str
+
+
+class UploadCancelResponse(BaseModel):
+    cancelled: bool

@@ -125,6 +125,70 @@ export class ApiError extends Error {
   }
 }
 
+export interface FavoriteCounts {
+  all: number
+  videos: number
+  images: number
+}
+
+export interface FavoriteResponse {
+  path: string
+  is_favorite: boolean
+  counts: FavoriteCounts
+}
+
+export interface RenameResponse {
+  path: string
+  file: FileEntry | null
+}
+
+export interface OperationFailure {
+  path: string
+  error: string
+}
+
+export interface DeleteResponse {
+  deleted: string[]
+  failed: OperationFailure[]
+}
+
+export interface MoveItem {
+  source?: string
+  target?: string
+  path?: string
+  reason?: string
+}
+
+export interface MoveResponse {
+  moved: MoveItem[]
+  skipped: MoveItem[]
+  failed: OperationFailure[]
+}
+
+export interface CreateFolderResponse {
+  path: string
+  name: string
+}
+
+export interface UploadStatus {
+  upload_id: string
+  exists: boolean
+  received_bytes: number
+}
+
+export interface UploadChunkResponse {
+  received_bytes: number
+  duplicate: boolean
+}
+
+export interface UploadFinalizeResponse {
+  skipped: boolean
+  path: string
+  file: FileEntry | null
+}
+
+export type ConflictPolicy = 'auto_rename' | 'skip' | 'error'
+
 type ParamValue = string | number | boolean | null | undefined
 
 function buildUrl(path: string, params?: Record<string, ParamValue>): string {
@@ -162,6 +226,14 @@ async function request<T>(
   }
 
   return (await response.json()) as T
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, undefined, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 export const api = {
@@ -204,4 +276,50 @@ export const api = {
 
   favorites: (type?: string) =>
     request<FavoritesResponse>('/library/favorites', { type }),
+
+  toggleFavorite: (path: string) =>
+    post<FavoriteResponse>('/favorites/toggle', { path }),
+
+  rename: (path: string, name: string) =>
+    post<RenameResponse>('/manage/rename', { path, name }),
+
+  deleteFiles: (paths: string[]) =>
+    post<DeleteResponse>('/manage/delete', { paths }),
+
+  createFolder: (parent: string, name: string) =>
+    post<CreateFolderResponse>('/manage/folders', { parent, name }),
+
+  moveFiles: (paths: string[], destination: string, conflict: ConflictPolicy) =>
+    post<MoveResponse>('/manage/move', { paths, destination, conflict }),
+
+  uploadStatus: (uploadId: string) =>
+    request<UploadStatus>('/uploads/status', { upload_id: uploadId }),
+
+  uploadChunk: async (uploadId: string, offset: number, chunk: Blob) => {
+    const form = new FormData()
+    form.set('upload_id', uploadId)
+    form.set('offset', String(offset))
+    form.set('file', chunk, 'chunk')
+    const response = await fetch(`${API_BASE}/uploads/chunk`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: form,
+    })
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string }
+      throw new ApiError(response.status, body.detail ?? 'Chunk upload failed')
+    }
+    return (await response.json()) as UploadChunkResponse
+  },
+
+  uploadFinalize: (payload: {
+    upload_id: string
+    name: string
+    folder: string
+    total_size: number
+    conflict?: ConflictPolicy
+  }) => post<UploadFinalizeResponse>('/uploads/finalize', payload),
+
+  uploadCancel: (uploadId: string) =>
+    post<{ cancelled: boolean }>('/uploads/cancel', { upload_id: uploadId }),
 }

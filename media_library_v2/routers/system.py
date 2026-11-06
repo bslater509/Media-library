@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from media_library_v2 import __version__, library
 from media_library_v2.config import get_settings
-from media_library_v2.db import is_available
+from media_library_v2.db import is_available, writes_available
 from media_library_v2.schemas import HealthResponse, InfoResponse, StatusResponse
 
 router = APIRouter()
@@ -24,6 +24,7 @@ async def info() -> dict:
         raise HTTPException(
             status_code=503, detail=f"Index unavailable: {exc}"
         ) from exc
+    writable = writes_available()
     return {
         "version": __version__,
         "library_root": str(settings.library_dir),
@@ -31,11 +32,11 @@ async def info() -> dict:
         "features": {
             "browse": True,
             "search": True,
-            "favorites": True,
+            "favorites": writable,
             "media_stream": True,
             "thumbnails": True,
-            "uploads": False,
-            "manage": False,
+            "uploads": writable,
+            "manage": writable,
             "sorter": False,
             "downloads": False,
             "dedupe": False,

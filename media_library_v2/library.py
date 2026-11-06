@@ -376,3 +376,19 @@ def favorites(type_filter: str | None = None) -> dict:
         "counts": counts_payload,
         "files": [_file_entry(r) for r in rows],
     }
+
+
+def get_file(path: str) -> dict | None:
+    """One shaped file entry by path, or None when it is not indexed."""
+    with reader() as conn:
+        row = conn.execute(
+            """
+            SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END
+                   AS is_favorite
+            FROM files f
+            LEFT JOIN favorites fav ON f.path = fav.path
+            WHERE f.path = ?
+            """,
+            (path,),
+        ).fetchone()
+    return _file_entry(row) if row else None

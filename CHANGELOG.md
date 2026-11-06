@@ -22,8 +22,17 @@ snapshot metadata.
   gallery, the lightbox, the command palette and light/dark/system themes.
   Everything else is reported as `features: false` and shown as roadmap until
   its phase lands. See `AGENTS.md` §16.
-- `V2_ENABLED`, `V2_LIBRARY_DIR`, `V2_DB_READ_ONLY`, `V2_BROWSE_LIMIT` and
-  `V2_SEARCH_LIMIT` configuration, plus `npm run build:v2`.
+- `V2_ENABLED`, `V2_LIBRARY_DIR`, `V2_DB_READ_ONLY`, `V2_WRITES`,
+  `V2_UPLOAD_STAGING_DIR`, `V2_BROWSE_LIMIT` and `V2_SEARCH_LIMIT` configuration,
+  plus `npm run build:v2`.
+- **The v2 write path.** Favorites toggle, in-place rename, move (auto-rename /
+  skip / error), delete (files and recursive folders) and chunked resumable
+  uploads all write to the library and update the shared SQLite index, moving
+  or removing cached posters with the file. Every mutation runs off the event
+  loop and rolls the filesystem change back if the index write fails.
+- The v2 client gains a tile action menu (right-click or ⋯), inline rename and
+  delete dialogs, a folder picker for moves, a new-folder dialog, an upload
+  dialog with per-file progress and a visible favorite toggle in the viewer.
 
 ## [2.0.2] - 2026-11-03
 
