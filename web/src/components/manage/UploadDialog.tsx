@@ -3,7 +3,7 @@ import { Check, FileUp, Loader2, UploadCloud, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type ConflictPolicy } from '../../lib/api'
 import { cn } from '../../lib/cn'
-import { uploadFile, type UploadProgress } from '../../lib/upload'
+import { makeUploadId, uploadFile, type UploadProgress } from '../../lib/upload'
 import {
   Badge,
   Button,
@@ -61,6 +61,25 @@ export function UploadDialog({
     })
   }
 
+  /** Mark a file failed under its real upload id, so rows never collide. */
+  const markFailed = (file: File, message: string) => {
+    const uploadId = makeUploadId(file)
+    setItems((current) => {
+      const index = current.findIndex(
+        (item) => item.uploadId === uploadId || item.file === file,
+      )
+      if (index === -1) {
+        return [
+          ...current,
+          { file, uploadId, sent: 0, total: file.size, state: 'error', error: message },
+        ]
+      }
+      const next = current.slice()
+      next[index] = { ...next[index], uploadId, state: 'error', error: message }
+      return next
+    })
+  }
+
   const start = async (files: File[]) => {
     if (!files.length || busy) return
     if (files.length > 40) {
@@ -76,6 +95,7 @@ export function UploadDialog({
     let failed = 0
 
     for (const file of files) {
+      if (controller.signal.aborted) break
       try {
         const result = await uploadFile(
           file,
@@ -87,24 +107,13 @@ export function UploadDialog({
         else uploaded += 1
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
-          upsert({
-            file,
-            uploadId: '',
-            sent: 0,
-            total: file.size,
-            state: 'error',
-            error: 'Cancelled',
-          })
+          markFailed(file, 'Cancelled')
         } else {
           failed += 1
-          upsert({
+          markFailed(
             file,
-            uploadId: '',
-            sent: 0,
-            total: file.size,
-            state: 'error',
-            error: error instanceof Error ? error.message : 'Upload failed',
-          })
+            error instanceof Error ? error.message : 'Upload failed',
+          )
         }
       }
     }

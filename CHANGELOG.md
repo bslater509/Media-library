@@ -47,6 +47,10 @@ snapshot metadata.
   chooser frames whose index rows are gone (a delete, rename or archive rewrite
   made outside the app) are removed after a crawl, mirroring the current app's
   prune; an empty index never triggers a sweep.
+- **v2 upload errors keep one row per file.** A failed or cancelled upload used to
+  be reported under an empty upload id, so a second failure overwrote the first
+  row and a cancelled file left its original row spinning forever; errors now
+  update the file's own row.
 
 ## [3.0.0] - 2026-11-06
 

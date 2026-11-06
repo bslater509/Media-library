@@ -190,8 +190,9 @@ export function BackupsPage() {
           ) : (
             <>
               <p className="text-xs leading-5 text-fg-muted">
-                Restore stays disabled while the current app owns the index.
-                Replacing the database under running writers can corrupt it.
+                Live restore is disabled by <code>V2_ALLOW_LIVE_RESTORE</code>.
+                Replacing the database under running writers can corrupt it, so use
+                the stopped-service command below.
               </p>
               <div className="rounded-md border border-border bg-surface-2 px-3 py-2">
                 <p className="text-[10px] font-semibold tracking-wider text-fg-subtle uppercase">
@@ -259,7 +260,7 @@ export function BackupsPage() {
         <EmptyState
           icon={<CheckCircle2 />}
           title="Backups run on demand in v2"
-          description="The current app still creates its automatic snapshot every few hours; v2 adds an independent, downloadable copy."
+          description="The owned runtime also snapshots automatically on an interval and at shutdown; this page creates, verifies or restores one by hand."
         />
       ) : null}
     </div>
