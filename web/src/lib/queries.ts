@@ -12,6 +12,7 @@ import { api, type ConflictPolicy } from './api'
 
 export const queryKeys = {
   info: ['info'] as const,
+  onboarding: ['onboarding'] as const,
   browse: (path: string | null) => ['browse', path] as const,
   folders: (path: string | null) => ['folders', path] as const,
   folderSearch: (query: string) => ['folders', 'search', query] as const,
@@ -31,6 +32,14 @@ export const queryKeys = {
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   downloadStatus: ['downloads', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
+}
+
+export function useOnboardingInfo() {
+  return useQuery({
+    queryKey: queryKeys.onboarding,
+    queryFn: api.onboardingInfo,
+    staleTime: 60_000,
+  })
 }
 
 export function useInfo() {

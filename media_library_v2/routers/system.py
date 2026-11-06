@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 
 from fastapi import APIRouter, HTTPException
 
 from media_library_v2 import __version__, library
 from media_library_v2.config import get_settings
-from media_library_v2.db import is_available, writes_available
-from media_library_v2.schemas import HealthResponse, InfoResponse, StatusResponse
+from media_library_v2.db import is_available, reader, writes_available
+from media_library_v2.schemas import (
+    HealthResponse,
+    InfoResponse,
+    OnboardingInfo,
+    StatusResponse,
+)
 
 router = APIRouter()
 
@@ -46,6 +52,56 @@ async def info() -> dict:
             "workers": False,
             "backups": True,
         },
+    }
+
+
+@router.get("/system/onboarding", response_model=OnboardingInfo)
+async def onboarding() -> dict:
+    """Everything the first-run tour needs, in one request."""
+    settings = get_settings()
+    totals = library.counts()
+    with reader() as conn:
+        root_row = conn.execute(
+            "SELECT last_scanned FROM folders WHERE path = ?",
+            (str(settings.library_dir),),
+        ).fetchone()
+    from media_library_v2 import backups, downloads
+
+    snapshot = backups.status()
+    return {
+        "version": __version__,
+        "library_root": str(settings.library_dir),
+        "source_dir": str(settings.source_dir),
+        "source_available": os.path.isdir(str(settings.source_dir)),
+        "counts": totals,
+        "features": {
+            "browse": True,
+            "search": True,
+            "favorites": writes_available(),
+            "media_stream": True,
+            "thumbnails": True,
+            "uploads": writes_available(),
+            "manage": writes_available(),
+            "sorter": writes_available(),
+            "downloads": True,
+            "dedupe": writes_available(),
+            "webp": writes_available(),
+            "zip": True,
+            "analytics": True,
+            "backups": True,
+            "workers": False,
+        },
+        "index": {
+            "root_indexed": root_row is not None,
+            "folders": totals["folders"],
+            "files": totals["files"],
+            "last_scanned": root_row["last_scanned"] if root_row else None,
+        },
+        "backup": {
+            "exists": bool(snapshot.get("exists")),
+            "created_at_str": snapshot.get("created_at_str"),
+        },
+        "tools": downloads.tools_available(),
     }
 
 

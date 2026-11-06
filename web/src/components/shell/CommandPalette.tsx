@@ -9,11 +9,12 @@ import {
   LayoutGrid,
   Search,
   Settings,
+  Sparkles,
   Star,
   Video,
 } from 'lucide-react'
 import { useFolderSearch, useSearch } from '../../lib/queries'
-import { usePaletteStore } from '../../lib/stores'
+import { useOnboardingStore, usePaletteStore } from '../../lib/stores'
 import { Dialog, DialogContent, DialogTitle } from '../ui'
 import { formatDuration, resolutionLabel } from '../../lib/format'
 
@@ -30,6 +31,7 @@ export function CommandPalette() {
   const open = usePaletteStore((state) => state.open)
   const setOpen = usePaletteStore((state) => state.setOpen)
   const navigate = useNavigate()
+  const setOnboardingOpen = useOnboardingStore((state) => state.setOpen)
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
 
@@ -74,8 +76,14 @@ export function CommandPalette() {
         icon: <Settings className="size-4" />,
         run: () => navigate('/settings'),
       },
+      {
+        id: 'onboarding',
+        label: 'Show welcome tour',
+        icon: <Sparkles className="size-4" />,
+        run: () => setOnboardingOpen(true),
+      },
     ],
-    [navigate],
+    [navigate, setOnboardingOpen],
   )
 
   const close = () => setOpen(false)

@@ -407,6 +407,23 @@ export interface ZipUnpackResult {
   removed: string
 }
 
+export interface OnboardingInfo {
+  version: string
+  library_root: string
+  source_dir: string
+  source_available: boolean
+  counts: Counts
+  features: Record<string, boolean>
+  index: {
+    root_indexed: boolean
+    folders: number
+    files: number
+    last_scanned: number | null
+  }
+  backup: { exists: boolean; created_at_str: string | null }
+  tools: { ytdlp: boolean; gallery_dl: boolean }
+}
+
 export interface BackupStatus {
   exists: boolean
   directory: string
@@ -738,6 +755,8 @@ export const api = {
     post<ZipCompressResult>('/zip/compress', { path }),
 
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
+
+  onboardingInfo: () => request<OnboardingInfo>('/system/onboarding'),
 
   backupStatus: () => request<BackupStatus>('/backups/status'),
 

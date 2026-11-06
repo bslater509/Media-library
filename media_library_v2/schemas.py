@@ -633,6 +633,30 @@ class BackupRestoreResponse(BaseModel):
     restart_required: bool
 
 
+class OnboardingIndex(BaseModel):
+    root_indexed: bool
+    folders: int
+    files: int
+    last_scanned: float | None = None
+
+
+class OnboardingBackup(BaseModel):
+    exists: bool
+    created_at_str: str | None = None
+
+
+class OnboardingInfo(BaseModel):
+    version: str
+    library_root: str
+    source_dir: str
+    source_available: bool
+    counts: Counts
+    features: dict[str, bool]
+    index: OnboardingIndex
+    backup: OnboardingBackup
+    tools: dict[str, bool]
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

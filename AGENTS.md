@@ -1179,6 +1179,7 @@ build on any reverse import.
 | `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
 | `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
 | `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
+| `GET /system/onboarding` | first-run tour data: library/source paths, counts, index root, backup, downloaders, feature flags |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1223,12 +1224,17 @@ atomic replace, index and poster update, batch/folder scope), **empty-folder
 cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
 archives are indexed by the shared crawler, a missing member is extracted into a bounded
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-the **Tools hub** and **library snapshots** (v2 writes a compacted DB copy plus a
+the **Tools hub**, **library snapshots** (v2 writes a compacted DB copy plus a
 poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a
-service-stopped restore CLI; live restore stays disabled until the cutover). Every write
-updates the shared index and the cached artwork.
+service-stopped restore CLI; live restore stays disabled until the cutover) and a
+**first-run onboarding tour** (4 steps: welcome, library/index health, what is live vs
+still in the current app, appearance; replayable from Settings or the command palette,
+dismissal persisted under `v2_onboarding_done`). Every write updates the shared index
+and the cached artwork.
 
-Pending (see the v2 rewrite plan): onboarding and the `/` redirect.
+Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surfaces are
+x265 conversion, batch ZIP and archive WebP rewrites, and v2's own background
+workers.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports

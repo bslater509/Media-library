@@ -10,16 +10,9 @@ import {
   Sun,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { usePaletteStore, useThemeStore } from '../../lib/stores'
+import { useOnboardingStore, usePaletteStore, useThemeStore } from '../../lib/stores'
 import type { ThemeMode } from '../../lib/theme'
 import {
-  Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   IconButton,
   Menu,
   MenuContent,
@@ -31,6 +24,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '../ui'
+import { OnboardingWizard } from '../onboarding/OnboardingWizard'
+import { hasSeenOnboarding } from '../../lib/onboarding'
 import { Sidebar, MobileSidebarContent } from './Sidebar'
 import { MobileNav } from './MobileNav'
 import { CommandPalette } from './CommandPalette'
@@ -40,6 +35,11 @@ export function AppShell() {
   const setPaletteOpen = usePaletteStore((state) => state.setOpen)
   const [navOpen, setNavOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const setOnboardingOpen = useOnboardingStore((state) => state.setOpen)
+
+  useEffect(() => {
+    if (!hasSeenOnboarding()) setOnboardingOpen(true)
+  }, [setOnboardingOpen])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -121,7 +121,7 @@ export function AppShell() {
 
       <MobileNav />
       <CommandPalette />
-      <IntroDialog />
+      <OnboardingWizard />
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
@@ -194,72 +194,5 @@ function ThemeMenu() {
         ))}
       </MenuContent>
     </Menu>
-  )
-}
-
-const INTRO_KEY = 'v2_intro_dismissed'
-
-/** First-run explanation. Honest about what the preview can and cannot do yet. */
-function IntroDialog() {
-  const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    try {
-      setOpen(window.localStorage.getItem(INTRO_KEY) !== '1')
-    } catch {
-      setOpen(true)
-    }
-  }, [])
-
-  const dismiss = () => {
-    try {
-      window.localStorage.setItem(INTRO_KEY, '1')
-    } catch {
-      /* ignore */
-    }
-    setOpen(false)
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : dismiss())}>
-      <DialogContent aria-describedby={undefined} className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Welcome to the new Media Library</DialogTitle>
-        </DialogHeader>
-        <DialogBody className="flex flex-col gap-4">
-          <p className="text-sm leading-6 text-fg-muted">
-            This is the rebuilt interface, running beside the app you know. It reads
-            the same library and index, so nothing needs to be re-imported.
-          </p>
-          <ul className="flex flex-col gap-2 text-sm text-fg-muted">
-            <li className="flex gap-2">
-              <span className="text-accent">•</span> Justified gallery, fullscreen
-              viewer and byte-range video.
-            </li>
-            <li className="flex gap-2">
-              <span className="text-accent">•</span> Search filenames or folder names,
-              and jump anywhere with ⌘K / Ctrl-K.
-            </li>
-            <li className="flex gap-2">
-              <span className="text-accent">•</span> Upload, rename, move, delete and
-              star files right here, with resumable uploads.
-            </li>
-            <li className="flex gap-2">
-              <span className="text-accent">•</span> Light, dark or system theme.
-            </li>
-          </ul>
-          <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs leading-5 text-fg-muted">
-            Still in the current app for now: the sorter, downloads, duplicates, ZIP
-            tools and analytics.
-          </p>
-        </DialogBody>
-        <DialogFooter className="flex items-center justify-between gap-2">
-          <a href="/" className="text-xs text-fg-subtle hover:text-fg">
-            Open the current app
-          </a>
-          <Button onClick={dismiss}>Start browsing</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

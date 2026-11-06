@@ -86,6 +86,10 @@ snapshot metadata.
   download. Restore is deliberately disabled while v1 owns the index; the page
   documents `python -m media_library_v2.restore --yes` for a service-stopped
   recovery, and `V2_ALLOW_LIVE_RESTORE` enables the in-app path after cutover.
+- **First-run onboarding in v2.** A four-step tour (welcome, library/index health,
+  what is live versus still in the current app, appearance) backed by
+  `GET /api/v2/system/onboarding`. It opens once, is replayable from Settings and
+  the command palette, and persists dismissal in `v2_onboarding_done`.
 
 ## [2.0.2] - 2026-11-03
 

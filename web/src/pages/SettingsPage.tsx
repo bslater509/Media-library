@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import { ExternalLink, HardDrive, Info, Sparkles } from 'lucide-react'
 import { useInfo } from '../lib/queries'
-import { TILE_ROW_HEIGHT, useDensityStore, useThemeStore } from '../lib/stores'
+import { TILE_ROW_HEIGHT, useDensityStore, useOnboardingStore, useThemeStore } from '../lib/stores'
 import {
   Badge,
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -12,7 +13,8 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'ZIP virtual folders and batch tools', phase: 'later' },
+  { label: 'Batch ZIP and archive WebP tools', phase: 'later' },
+  { label: 'In-place x265 conversion and background workers', phase: 'later' },
 ]
 
 export function SettingsPage() {
@@ -21,6 +23,7 @@ export function SettingsPage() {
   const setTheme = useThemeStore((state) => state.setMode)
   const scale = useDensityStore((state) => state.scale)
   const setScale = useDensityStore((state) => state.setScale)
+  const setOnboardingOpen = useOnboardingStore((state) => state.setOpen)
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-3 py-6 sm:px-5">
@@ -138,13 +141,22 @@ export function SettingsPage() {
             v2 preview{info.data ? ` ${info.data.version}` : ''} — a from-scratch rewrite
             running beside the current app. Both read the same library and index.
           </p>
-          <a
-            href="/"
-            className="inline-flex w-fit items-center gap-1.5 font-medium text-accent hover:underline"
-          >
-            Open the current app
-            <ExternalLink aria-hidden="true" className="size-3.5" />
-          </a>
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href="/"
+              className="inline-flex w-fit items-center gap-1.5 font-medium text-accent hover:underline"
+            >
+              Open the current app
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setOnboardingOpen(true)}
+            >
+              Show welcome tour
+            </Button>
+          </div>
         </CardBody>
       </Card>
     </div>

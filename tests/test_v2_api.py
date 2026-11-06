@@ -265,6 +265,21 @@ def test_browse_filters_by_type_favorites_and_sort(v2_env):
     assert [f["name"] for f in by_name_desc["files"]] == ["harbour.jpg", "aurora.mp4"]
 
 
+def test_onboarding_endpoint_describes_the_setup(v2_env):
+    client = v2_env["client"]
+    payload = client.get("/api/v2/system/onboarding").json()
+    assert payload["version"] == "3.0.0"
+    assert payload["library_root"] == str(v2_env["library"])
+    assert payload["source_available"] == os.path.isdir(payload["source_dir"])
+    assert payload["counts"]["files"] == 2
+    assert payload["index"]["root_indexed"] is True
+    assert payload["index"]["files"] == 2
+    assert payload["features"]["browse"] is True
+    assert payload["features"]["workers"] is False
+    assert payload["backup"]["exists"] is False
+    assert set(payload["tools"]) == {"ytdlp", "gallery_dl"}
+
+
 def test_system_info_reports_totals(v2_env):
     client = v2_env["client"]
     info = client.get("/api/v2/system/info").json()

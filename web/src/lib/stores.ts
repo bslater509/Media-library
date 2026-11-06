@@ -62,6 +62,16 @@ export const useDensityStore = create<DensityState>((set) => ({
   },
 }))
 
+interface OnboardingState {
+  open: boolean
+  setOpen: (open: boolean) => void
+}
+
+export const useOnboardingStore = create<OnboardingState>((set) => ({
+  open: false,
+  setOpen: (open) => set({ open }),
+}))
+
 interface PaletteState {
   open: boolean
   setOpen: (open: boolean) => void
