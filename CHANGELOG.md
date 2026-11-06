@@ -40,6 +40,14 @@ snapshot metadata.
   count and progress. Moves import through the same atomic, indexed write path as
   uploads; undo moves the clip back and removes its index row.
 - `V2_SOURCE_DIR` and `V2_SORTER_STATE` configuration.
+- **The v2 Downloads page.** `/v2/downloads` queues one or more URLs (validated
+  client and server side) into a chosen library folder, with recent-target
+  chips, a folder picker, live per-job progress (speed/ETA/playlist position),
+  cancel, retry of failed/cancelled jobs, paginated history, clear, and
+  downloader availability badges. yt-dlp runs as an isolated subprocess with
+  the gallery-dl fallback (unsupported sites, piracy blocklist refusals and
+  `gofile.io` hosts), finished files import through the atomic indexed write
+  path, and `V2_DOWNLOAD_STAGING_DIR` holds in-flight files.
 
 ## [2.0.2] - 2026-11-03
 

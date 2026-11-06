@@ -67,6 +67,9 @@ class Settings:
     thumbnail_dir: Path
     upload_staging_dir: Path
     sorter_state_path: Path
+    download_staging_dir: Path
+    download_concurrency: int
+    download_cookies_file: str
     static_dir: Path
     enabled: bool
     db_read_only: bool
@@ -121,6 +124,11 @@ def load_settings() -> Settings:
         sorter_state_path=_env_path(
             "V2_SORTER_STATE", data_dir / "v2_sorter_state.json"
         ),
+        download_staging_dir=_env_path(
+            "V2_DOWNLOAD_STAGING_DIR", data_dir / "download_staging_v2"
+        ),
+        download_concurrency=_env_int("DOWNLOAD_WORKER_CONCURRENCY", 2),
+        download_cookies_file=_env_str("DOWNLOAD_COOKIES_FILE"),
         static_dir=(BASE_DIR / "static").resolve(),
         enabled=_env_bool("V2_ENABLED", True),
         db_read_only=_env_bool("V2_DB_READ_ONLY", False),

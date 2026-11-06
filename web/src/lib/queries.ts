@@ -21,6 +21,8 @@ export const queryKeys = {
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
+  downloadStatus: ['downloads', 'status'] as const,
+  downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
 }
 
 export function useInfo() {
@@ -247,6 +249,66 @@ export function useSorterCreateFolder() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.sorterConfig })
       void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useDownloadStatus() {
+  return useQuery({
+    queryKey: queryKeys.downloadStatus,
+    queryFn: api.downloadStatus,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'active' ? 1000 : 5000,
+    staleTime: 0,
+  })
+}
+
+export function useDownloadHistory(limit = 50) {
+  return useQuery({
+    queryKey: queryKeys.downloadHistory(limit),
+    queryFn: () => api.downloadHistory(limit, 0),
+    refetchInterval: 5000,
+    staleTime: 0,
+  })
+}
+
+export function useDownloadQueue() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ urls, destination }: { urls: string[]; destination: string }) =>
+      api.downloadQueue(urls, destination),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['downloads'] })
+    },
+  })
+}
+
+export function useDownloadCancel() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) => api.downloadCancel(jobId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['downloads'] })
+    },
+  })
+}
+
+export function useDownloadRetry() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) => api.downloadRetry(jobId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['downloads'] })
+    },
+  })
+}
+
+export function useDownloadClear() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.downloadClearHistory(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['downloads'] })
     },
   })
 }

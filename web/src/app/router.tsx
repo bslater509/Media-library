@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { AppShell } from '../components/shell/AppShell'
 import { EmptyState } from '../components/ui'
+import { DownloadsPage } from '../pages/DownloadsPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { LibraryPage } from '../pages/LibraryPage'
 import { NotFoundPage, RoadmapPage } from '../pages/RoadmapPage'
@@ -50,22 +51,7 @@ export const router = createBrowserRouter(
         { path: 'search', element: <SearchPage /> },
         { path: 'favorites', element: <FavoritesPage /> },
         { path: 'sorter', element: <SorterPage /> },
-        {
-          path: 'downloads',
-          element: (
-            <RoadmapPage
-              title="Downloads"
-              description="Queue several URLs or playlists at once and watch them land: best-quality video with an automatic gallery-dl fallback for image boards and file hosts."
-              available={[
-                'Batch queueing with per-URL validation',
-                'yt-dlp with gallery-dl fallback',
-                'Live speed, ETA and per-job cancel',
-                'Retry, paginated history and clear',
-              ]}
-              v1Path="/downloads"
-            />
-          ),
-        },
+        { path: 'downloads', element: <DownloadsPage /> },
         {
           path: 'analytics',
           element: (

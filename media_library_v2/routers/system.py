@@ -38,7 +38,7 @@ async def info() -> dict:
             "uploads": writable,
             "manage": writable,
             "sorter": writable,
-            "downloads": False,
+            "downloads": True,
             "dedupe": False,
             "zip": False,
             "analytics": False,

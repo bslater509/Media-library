@@ -1116,6 +1116,7 @@ build on any reverse import.
 | `V2_UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging_v2` | Staging for v2's resumable uploads |
 | `V2_SOURCE_DIR` | `INCOMING_DIR` | Incoming folder the v2 sorter reviews |
 | `V2_SORTER_STATE` | `${DATA_DIR}/v2_sorter_state.json` | Recent sorter destinations (undo is in memory) |
+| `V2_DOWNLOAD_STAGING_DIR` | `${DATA_DIR}/download_staging_v2` | Staging for v2's yt-dlp / gallery-dl jobs |
 | `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
 | `V2_SEARCH_LIMIT` | `1000` | Default search page size |
 
@@ -1152,6 +1153,12 @@ build on any reverse import.
 | `GET /sorter/stream` | HTTP 206 streaming from the incoming folder |
 | `GET /sorter/transcode` | live FFmpeg fragmented-MP4 stream for non-web containers |
 | `GET /sorter/thumbnail` | lazily generated 1 s poster for the queue |
+| `POST /downloads/queue` | queue one or more URLs into a library folder (`rejected` lists invalid/duplicate lines) |
+| `GET /downloads/status` | active + queued jobs, recent history, tool availability, concurrency |
+| `GET /downloads/history?limit=&offset=` | finished jobs, newest first, paginated |
+| `POST /downloads/cancel` | cancel a queued/running job and clean its staging |
+| `POST /downloads/retry` | clone a failed/cancelled job (completed jobs are never re-run) |
+| `POST /downloads/clear-history` | drop finished jobs, keeping active/queued |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1183,14 +1190,18 @@ Live now: system/health, browse, folders, search, favorites, media streaming, th
 the React shell, library gallery, lightbox, command palette, keyboard reference, search,
 favorites, theme light/dark/system, mobile bottom navigation, **uploads (chunked and
 resumable), rename, move, delete (files and folders), create folder, favorite
-toggling**, and the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
+toggling**, the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
 one-key move, create-and-move, undo, rename, delete, live transcoding for non-web
-containers). Every write updates the shared index and the cached artwork.
+containers) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, batch
+queueing, live progress, cancel, retry, paginated history, clear). Every write updates
+the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): downloads, dedupe, ZIP, WebP, analytics, backups,
-onboarding and the `/` redirect. Until those land, `/v2` reports `features: false` for
-them and the UI shows them as roadmap items rather than broken screens.
+Pending (see the v2 rewrite plan): dedupe, ZIP, WebP, analytics, backups, onboarding and
+the `/` redirect. Until those land, `/v2` reports `features: false` for them and the UI
+shows them as roadmap items rather than broken screens.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
-through the same atomic move + index path as uploads.
+through the same atomic move + index path as uploads. The download queue and its 500-row
+history are also in memory (as in v1): a restart drops history and stops running jobs,
+and staging directories older than 24 h are swept when the next job is queued.

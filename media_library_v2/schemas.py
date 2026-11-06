@@ -308,3 +308,77 @@ class SorterPathRequest(BaseModel):
 class SorterFolderRequest(BaseModel):
     parent: str
     name: str
+
+
+# --- downloads -------------------------------------------------------------
+
+
+class DownloadJob(BaseModel):
+    id: str
+    url: str
+    destination: str
+    status: str
+    percent: float
+    downloaded_bytes: int
+    total_bytes: int
+    speed: str
+    eta: str
+    title: str
+    downloader: str
+    error: str
+    files: list[str]
+    playlist_index: int | None = None
+    playlist_count: int | None = None
+    created_at: float
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+class DownloadRejected(BaseModel):
+    url: str
+    error: str
+
+
+class DownloadEnqueueRequest(BaseModel):
+    urls: list[str] = Field(min_length=1, max_length=50)
+    destination: str
+
+
+class DownloadEnqueueResponse(BaseModel):
+    jobs: list[DownloadJob]
+    rejected: list[DownloadRejected]
+
+
+class DownloadTools(BaseModel):
+    ytdlp: bool
+    gallery_dl: bool
+
+
+class DownloadStatusResponse(BaseModel):
+    status: str
+    concurrency: int
+    tools: DownloadTools
+    active: list[DownloadJob]
+    queued: list[DownloadJob]
+    active_count: int
+    queued_count: int
+    history: list[DownloadJob]
+
+
+class DownloadHistoryResponse(BaseModel):
+    items: list[DownloadJob]
+    total: int
+    limit: int
+    offset: int
+
+
+class DownloadJobRequest(BaseModel):
+    job_id: str
+
+
+class DownloadRetryResponse(BaseModel):
+    job: DownloadJob
+
+
+class DownloadClearResponse(BaseModel):
+    cleared: int

@@ -227,6 +227,50 @@ export interface SorterConfig {
   undo_count: number
 }
 
+export interface DownloadJob {
+  id: string
+  url: string
+  destination: string
+  status: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+  percent: number
+  downloaded_bytes: number
+  total_bytes: number
+  speed: string
+  eta: string
+  title: string
+  downloader: string
+  error: string
+  files: string[]
+  playlist_index: number | null
+  playlist_count: number | null
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+}
+
+export interface DownloadStatus {
+  status: string
+  concurrency: number
+  tools: { ytdlp: boolean; gallery_dl: boolean }
+  active: DownloadJob[]
+  queued: DownloadJob[]
+  active_count: number
+  queued_count: number
+  history: DownloadJob[]
+}
+
+export interface DownloadHistory {
+  items: DownloadJob[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface DownloadEnqueueResponse {
+  jobs: DownloadJob[]
+  rejected: Array<{ url: string; error: string }>
+}
+
 export type ConflictPolicy = 'auto_rename' | 'skip' | 'error'
 
 type ParamValue = string | number | boolean | null | undefined
@@ -387,4 +431,21 @@ export const api = {
 
   sorterThumbnail: (path: string) =>
     `${API_BASE}/sorter/thumbnail?path=${encodeURIComponent(path)}`,
+
+  downloadStatus: () => request<DownloadStatus>('/downloads/status'),
+
+  downloadQueue: (urls: string[], destination: string) =>
+    post<DownloadEnqueueResponse>('/downloads/queue', { urls, destination }),
+
+  downloadCancel: (jobId: string) =>
+    post<{ cancelled: string }>('/downloads/cancel', { job_id: jobId }),
+
+  downloadRetry: (jobId: string) =>
+    post<{ job: DownloadJob }>('/downloads/retry', { job_id: jobId }),
+
+  downloadClearHistory: () =>
+    post<{ cleared: number }>('/downloads/clear-history', {}),
+
+  downloadHistory: (limit = 50, offset = 0) =>
+    request<DownloadHistory>('/downloads/history', { limit, offset }),
 }

@@ -1,6 +1,7 @@
 import { Link, NavLink, useSearchParams } from 'react-router'
 import {
   Clapperboard,
+  Download,
   ExternalLink,
   Folder,
   LayoutGrid,
@@ -14,6 +15,7 @@ import { useInfo, useRootFolders } from '../../lib/queries'
 const NAV = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
   { to: '/sorter', label: 'Sorter', icon: Clapperboard },
+  { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/favorites', label: 'Favorites', icon: Star },
 ]
