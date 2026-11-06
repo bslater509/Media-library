@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router'
 import {
   ExternalLink,
+  Keyboard,
   Menu as MenuIcon,
   Monitor,
   Moon,
@@ -33,16 +34,30 @@ import {
 import { Sidebar, MobileSidebarContent } from './Sidebar'
 import { MobileNav } from './MobileNav'
 import { CommandPalette } from './CommandPalette'
+import { ShortcutsDialog } from './ShortcutsDialog'
 
 export function AppShell() {
   const setPaletteOpen = usePaletteStore((state) => state.setOpen)
   const [navOpen, setNavOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable
+
       if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         setPaletteOpen(true)
+        return
+      }
+      if (event.key === '?' && !typing) {
+        event.preventDefault()
+        setShortcutsOpen(true)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -79,6 +94,14 @@ export function AppShell() {
             >
               <Search />
             </IconButton>
+            <IconButton
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              className="hidden sm:inline-flex"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <Keyboard />
+            </IconButton>
             <ThemeMenu />
             <a
               href="/"
@@ -99,6 +122,7 @@ export function AppShell() {
       <MobileNav />
       <CommandPalette />
       <IntroDialog />
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetContent>

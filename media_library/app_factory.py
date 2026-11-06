@@ -191,12 +191,11 @@ def create_app(
 
     # The rewritten client and API, served beside v1 at /v2 while it reaches
     # parity. A failure here must never take the live v1 app down.
-    if run_startup_workers:
-        try:
-            from media_library_v2.mount import mount_v2
+    try:
+        from media_library_v2.mount import mount_v2
 
-            mount_v2(app)
-        except Exception:
-            logger.exception("[v2] Failed to mount the v2 application")
+        mount_v2(app)
+    except Exception:
+        logger.exception("[v2] Failed to mount the v2 application")
 
     return app

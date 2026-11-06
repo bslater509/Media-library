@@ -102,13 +102,52 @@ def tracked_files() -> list[str]:
     return [line for line in _git("ls-files").splitlines() if line.strip()]
 
 
+# Vendored binary assets (fonts, images, bundles) are not source text: a byte
+# sequence inside a compressed glyph table can look like an email address or a
+# home path by chance, so both scans skip them.
+_BINARY_SUFFIXES = {
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".pdf",
+    ".zip",
+    ".gz",
+    ".mp3",
+    ".mp4",
+    ".mov",
+    ".webm",
+    ".wasm",
+    ".jar",
+    ".so",
+    ".dll",
+    ".exe",
+    ".db",
+    ".sqlite",
+}
+
+
+def _tracked_text(rel_path: str) -> str | None:
+    if Path(rel_path).suffix.lower() in _BINARY_SUFFIXES:
+        return None
+    try:
+        return (REPO_ROOT / rel_path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:  # pragma: no cover - unreadable tracked file
+        return None
+
+
 def test_no_forbidden_patterns_in_tracked_files(tracked_files):
     offenders: list[str] = []
     for rel_path in tracked_files:
-        path = REPO_ROOT / rel_path
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:  # pragma: no cover - unreadable tracked file
+        text = _tracked_text(rel_path)
+        if text is None:
             continue
         for pattern, description in FORBIDDEN_PATTERNS:
             match = pattern.search(text)
@@ -122,10 +161,8 @@ def test_no_forbidden_patterns_in_tracked_files(tracked_files):
 def test_only_generic_email_addresses_in_tracked_files(tracked_files):
     offenders: list[str] = []
     for rel_path in tracked_files:
-        path = REPO_ROOT / rel_path
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:  # pragma: no cover - unreadable tracked file
+        text = _tracked_text(rel_path)
+        if text is None:
             continue
         for email in EMAIL_RE.findall(text):
             if not email.lower().endswith(ALLOWED_EMAIL_DOMAINS):

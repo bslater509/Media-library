@@ -1,8 +1,14 @@
 """Configuration for the v2 application.
 
 Deliberately independent of ``media_library`` (the v1 package): it reads the
-same ``.env`` and the same environment variable names so one configuration
-file drives both apps, but it imports none of v1's modules.
+same environment variable names so one configuration drives both apps, but it
+imports none of v1's modules.
+
+It does **not** call ``load_dotenv``. The composition root that imports this
+package (today v1's ``create_app``, which has already loaded ``.env``) owns
+dotenv loading; a future standalone v2 entrypoint must load it before import.
+Loading it here made a late import re-inject ``APP_PASSWORD`` from ``.env``
+after a test had deliberately removed it.
 """
 
 from __future__ import annotations
@@ -11,10 +17,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
 
 _TRUE = {"1", "true", "yes", "on"}
 

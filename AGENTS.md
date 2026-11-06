@@ -1146,8 +1146,8 @@ lightbox are bundled — no CDN request.
 ### Status
 
 Live now: system/health, browse, folders, search, favorites, media streaming, thumbnails,
-the React shell, library gallery, lightbox, command palette, search, favorites, theme
-light/dark/system, mobile bottom navigation.
+the React shell, library gallery, lightbox, command palette, keyboard reference, search,
+favorites, theme light/dark/system, mobile bottom navigation.
 
 Pending (see the v2 rewrite plan): v2's own indexer/workers, uploads,
 move/rename/delete, sorter, downloads, dedupe, ZIP, WebP, analytics, backups,
