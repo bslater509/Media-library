@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -27,6 +28,10 @@ from media_library_v2.db import reader, writer
 from media_library_v2.paths import format_size, resolve_library_path, stable_id
 
 _UPLOAD_ID_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+
+_gc_lock = threading.Lock()
+_gc_checked_at = 0.0
+_GC_INTERVAL_SECONDS = 3600
 
 
 class WriteError(Exception):
@@ -46,6 +51,7 @@ def _validate_name(name: str) -> str:
         or "/" in clean
         or "\\" in clean
         or "\x00" in clean
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in clean)
         or clean.startswith(".")
         or len(clean) > 255
     ):
@@ -415,80 +421,95 @@ def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
             "UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE path = ?",
             (target, name, parent, source),
         )
+        # Prefix tests use ``substr(...) = ?`` rather than ``LIKE``: a folder
+        # name may contain ``_`` or ``%``, which LIKE would treat as wildcards
+        # and rewrite a sibling subtree ("my_folder" also matching "myXfolder").
         if zip_entry:
             conn.execute(
                 "UPDATE files SET folder_path = ? WHERE folder_path = ?",
                 (target, source),
             )
             conn.execute(
-                "UPDATE files SET path = ? || substr(path, ?) WHERE path LIKE ?",
-                (target, cut, prefix + "%"),
+                "UPDATE files SET path = ? || substr(path, ?) "
+                "WHERE substr(path, 1, ?) = ?",
+                (target, cut, cut, prefix),
             )
             conn.execute(
-                "UPDATE favorites SET path = ? || substr(path, ?) WHERE path LIKE ?",
-                (target, cut, prefix + "%"),
+                "UPDATE favorites SET path = ? || substr(path, ?) "
+                "WHERE substr(path, 1, ?) = ?",
+                (target, cut, cut, prefix),
             )
             conn.execute(
                 "UPDATE ignored_duplicates SET "
-                "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
-                "ELSE path1 END, "
-                "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
-                "ELSE path2 END "
-                "WHERE path1 LIKE ? OR path2 LIKE ?",
+                "path1 = CASE WHEN substr(path1, 1, ?) = ? "
+                "THEN ? || substr(path1, ?) ELSE path1 END, "
+                "path2 = CASE WHEN substr(path2, 1, ?) = ? "
+                "THEN ? || substr(path2, ?) ELSE path2 END "
+                "WHERE substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
                 (
-                    prefix + "%",
+                    cut,
+                    prefix,
                     target,
                     cut,
-                    prefix + "%",
+                    cut,
+                    prefix,
                     target,
                     cut,
-                    prefix + "%",
-                    prefix + "%",
+                    cut,
+                    prefix,
+                    cut,
+                    prefix,
                 ),
             )
         else:
             conn.execute(
-                "UPDATE folders SET path = ? || substr(path, ?) WHERE path LIKE ?",
-                (target, cut, prefix + "%"),
+                "UPDATE folders SET path = ? || substr(path, ?) "
+                "WHERE substr(path, 1, ?) = ?",
+                (target, cut, cut, prefix),
             )
             conn.execute(
                 "UPDATE folders SET parent_path = ? || substr(parent_path, ?) "
-                "WHERE parent_path = ? OR parent_path LIKE ?",
-                (target, cut, source, prefix + "%"),
+                "WHERE parent_path = ? OR substr(parent_path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
             )
             conn.execute(
                 "UPDATE files SET path = ? || substr(path, ?) "
-                "WHERE path = ? OR path LIKE ?",
-                (target, cut, source, prefix + "%"),
+                "WHERE path = ? OR substr(path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
             )
             conn.execute(
                 "UPDATE files SET folder_path = ? || substr(folder_path, ?) "
-                "WHERE folder_path = ? OR folder_path LIKE ?",
-                (target, cut, source, prefix + "%"),
+                "WHERE folder_path = ? OR substr(folder_path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
             )
             conn.execute(
                 "UPDATE favorites SET path = ? || substr(path, ?) "
-                "WHERE path = ? OR path LIKE ?",
-                (target, cut, source, prefix + "%"),
+                "WHERE path = ? OR substr(path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
             )
             conn.execute(
                 "UPDATE ignored_duplicates SET "
-                "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
-                "ELSE path1 END, "
-                "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
-                "ELSE path2 END "
-                "WHERE path1 = ? OR path2 = ? OR path1 LIKE ? OR path2 LIKE ?",
+                "path1 = CASE WHEN substr(path1, 1, ?) = ? "
+                "THEN ? || substr(path1, ?) ELSE path1 END, "
+                "path2 = CASE WHEN substr(path2, 1, ?) = ? "
+                "THEN ? || substr(path2, ?) ELSE path2 END "
+                "WHERE path1 = ? OR path2 = ? "
+                "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
                 (
-                    prefix + "%",
+                    cut,
+                    prefix,
                     target,
                     cut,
-                    prefix + "%",
+                    cut,
+                    prefix,
                     target,
                     cut,
                     source,
                     source,
-                    prefix + "%",
-                    prefix + "%",
+                    cut,
+                    prefix,
+                    cut,
+                    prefix,
                 ),
             )
         _recompute_folder(conn, os.path.dirname(source))
@@ -668,10 +689,43 @@ def move_files(
 # ---------------------------------------------------------------------------
 
 
+def _gc_stale_staging() -> None:
+    """Drop abandoned staged uploads, at most once an hour.
+
+    A closed tab leaves its ``.part`` file behind; v1 sweeps its staging area
+    at startup, and v2 has no startup hook when it is mounted beside v1, so the
+    sweep is throttled here instead. The TTL matches v1's
+    ``UPLOAD_STAGING_TTL_HOURS`` so an interrupted upload still resumes.
+    """
+    global _gc_checked_at
+    now = time.monotonic()
+    if now - _gc_checked_at < _GC_INTERVAL_SECONDS:
+        return
+    if not _gc_lock.acquire(blocking=False):
+        return
+    try:
+        if now - _gc_checked_at < _GC_INTERVAL_SECONDS:
+            return
+        _gc_checked_at = now
+        staging = get_settings().upload_staging_dir
+        if not staging.is_dir():
+            return
+        cutoff = time.time() - (get_settings().upload_staging_ttl_hours * 3600)
+        for entry in staging.glob("*.part"):
+            try:
+                if entry.stat().st_mtime < cutoff:
+                    entry.unlink(missing_ok=True)
+            except OSError:
+                continue
+    finally:
+        _gc_lock.release()
+
+
 def _staging_file(upload_id: str) -> Path:
     clean = (upload_id or "").strip().lower()
     if not 6 <= len(clean) <= 80 or any(ch not in _UPLOAD_ID_CHARS for ch in clean):
         raise WriteError("Invalid upload id", 400)
+    _gc_stale_staging()
     staging = get_settings().upload_staging_dir
     staging.mkdir(parents=True, exist_ok=True)
     return staging / f"{clean}.part"

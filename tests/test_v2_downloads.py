@@ -356,3 +356,16 @@ def test_router_reports_status_history_and_clear(download_env, monkeypatch):
     client.post("/api/v2/downloads/clear-history")
     history = client.get("/api/v2/downloads/history").json()
     assert history == {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+
+def test_finish_is_idempotent(download_env):
+    """A cancelled queued job must land in history exactly once."""
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    manager.jobs[job["id"]] = job
+    job["status"] = "cancelled"
+
+    manager._finish(job)
+    manager._finish(job)
+
+    assert len(manager.history) == 1

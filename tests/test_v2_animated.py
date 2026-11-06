@@ -255,3 +255,18 @@ def test_artwork_writes_are_refused_read_only(media_env, monkeypatch):
         ).status_code
         == 503
     )
+
+
+def test_worker_thread_is_cleared_when_the_queue_drains(monkeypatch):
+    """A dead thread object must not hide a queue item from ``_ensure_thread``."""
+    calls: list[str] = []
+    monkeypatch.setattr(animated, "generate", lambda path: calls.append(path))
+    animated.cancel()
+    animated.enqueue(["drain-check.mp4"])
+
+    deadline = time.time() + 5
+    while animated._thread is not None and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert calls == ["drain-check.mp4"]
+    assert animated._thread is None

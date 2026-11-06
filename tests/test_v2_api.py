@@ -314,3 +314,22 @@ def test_v2_never_imports_v1():
                 if module == "media_library" or module.startswith("media_library."):
                     offenders.append(f"{path}: {module}")
     assert not offenders, offenders
+
+
+def test_browse_dispatches_off_the_event_loop(v2_env, monkeypatch):
+    """The one directory stat browse needs must not block the loop (Rule 2)."""
+    import asyncio
+    import threading
+
+    from media_library_v2.routers import library as library_router
+
+    seen: dict[str, int] = {}
+
+    def fake_browse(*args, **kwargs):
+        seen["thread"] = threading.get_ident()
+        return {"path": "/", "files": [], "folders": []}
+
+    monkeypatch.setattr(library_router.library, "browse", fake_browse)
+    asyncio.run(library_router.browse())
+
+    assert seen["thread"] != threading.get_ident()

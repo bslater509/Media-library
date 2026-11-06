@@ -288,3 +288,30 @@ def test_router_reports_status_and_validates(x265_env):
         "/api/v2/transcode/x265", json={"path": str(x265_env["hevc"])}
     )
     assert already.status_code == 409
+
+
+def test_index_rewrite_runs_off_the_event_loop(x265_env, monkeypatch):
+    """The commit's write transaction must not run on the loop (AGENTS Rule 3)."""
+    import threading
+
+    from media_library_v2 import x265 as x265_module
+
+    manager = X265Manager()
+    manager.run = _fake_run(manager, b"encoded")  # type: ignore[method-assign]
+    real_update = x265_module._update_index
+    seen: list[int] = []
+
+    def record(*args, **kwargs):
+        seen.append(threading.get_ident())
+        real_update(*args, **kwargs)
+
+    monkeypatch.setattr(x265_module, "_update_index", record)
+
+    async def scenario():
+        await manager.enqueue(str(x265_env["mp4"]))
+        await manager._task
+
+    loop_thread = threading.get_ident()
+    asyncio.run(scenario())
+    assert seen, "the index commit did not run"
+    assert seen[0] != loop_thread

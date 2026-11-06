@@ -1111,9 +1111,12 @@ build on any reverse import.
   index write fails, and a crash between the two leaves a row that v1's crawler
   reconciles. Cached posters/animated previews are **moved** to the new cache key on
   rename/move and deleted with the file, so artwork survives a move in both apps.
-- Browse/search/folders/counts are index-only. No v2 request walks the filesystem except
-  byte-range media streaming, an already-cached thumbnail, an on-demand poster (ffmpeg
-  for videos, Pillow for images, ZIP members extracted first), and an explicit mutation.
+- Browse/search/folders/counts are index-only. Browse and the folder tree make one
+  `os.path.isdir` check on the requested folder (so a stale bookmark clamps to
+  its parent) and run it in a worker thread, never on the event loop. No other v2
+  read walks the filesystem except byte-range media streaming, an already-cached
+  thumbnail, an on-demand poster (ffmpeg for videos, Pillow for images, ZIP
+  members extracted first), and an explicit mutation.
 - Non-web containers play through `GET /media/transcode` (shared
   `transcode_stream.build_command`, also used by the sorter); the file entry carries a
   `transcode_url` and the viewer picks it when `playable` is false.
@@ -1132,6 +1135,7 @@ build on any reverse import.
 | `V2_DB_READ_ONLY` | `false` | Open the index read-only; mutations then return `503` |
 | `V2_WRITES` | `true` | Master switch for v2's uploads/manage/favorite endpoints |
 | `V2_UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging_v2` | Staging for v2's resumable uploads |
+| `UPLOAD_STAGING_TTL_HOURS` | `24.0` | Shared with v1: how long an interrupted v2 upload keeps its staged chunks before the throttled hourly sweep removes them |
 | `V2_SOURCE_DIR` | `INCOMING_DIR` | Incoming folder the v2 sorter reviews |
 | `V2_SORTER_STATE` | `${DATA_DIR}/v2_sorter_state.json` | Recent sorter destinations (undo is in memory) |
 | `V2_DOWNLOAD_STAGING_DIR` | `${DATA_DIR}/download_staging_v2` | Staging for v2's yt-dlp / gallery-dl jobs |
@@ -1370,7 +1374,10 @@ the same validated single-item compress/unpack. State is in memory.
 
 x265 jobs run one at a time (`libx265 -preset medium -crf 18`, overridable through
 `X265_PRESET`/`X265_CRF`), audio stream-copied when MP4-compatible else AAC 192k, and
-commit with a cross-device-safe `os.replace`. Non-MP4 sources become an `.mp4` sibling
+commit with a cross-device-safe `os.replace`. The commit (including the full copy
+when the transcode directory and the library are different filesystems) and the
+index rewrite both run in worker threads, so a long conversion never blocks the
+event loop. Non-MP4 sources become an `.mp4` sibling
 and the original is removed; the index row is rewritten (`video_codec='hevc'`,
 `needs_transcode=0`, hashes cleared, `has_thumb=0`) and the stale poster/preview are
 deleted. If the index has no duration yet, one ffprobe call supplies it so progress is

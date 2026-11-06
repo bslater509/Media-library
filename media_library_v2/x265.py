@@ -279,22 +279,14 @@ class X265Manager:
                 job["error"] = tail or f"ffmpeg exited with {code}"
                 return
 
-            target = source
-            if os.path.splitext(source)[1].lower() != ".mp4":
-                candidate = os.path.splitext(source)[0] + ".mp4"
-                if os.path.exists(candidate):
-                    candidate = writes.unique_target(
-                        os.path.dirname(source), os.path.basename(candidate), set()
-                    )
-                target = candidate
-            _commit(str(temp), target)
-            if target != source:
-                try:
-                    os.remove(source)
-                except OSError:
-                    pass
-            stat = os.stat(target)
-            _update_index(job, source, target, stat.st_size, stat.st_mtime, audio)
+            target, size, mtime = await asyncio.to_thread(
+                _commit_output, source, str(temp)
+            )
+            # Off the event loop: this transaction waits for SQLite's single
+            # write lock and would otherwise stall every request (Rule 3).
+            await asyncio.to_thread(
+                _update_index, job, source, target, size, mtime, audio
+            )
             job["output_path"] = target
             job["percent"] = 100.0
             job["status"] = "completed"
@@ -386,6 +378,31 @@ def _commit(temp: str, target: str) -> None:
                 os.remove(commit_tmp)
             except OSError:
                 pass
+
+
+def _commit_output(source: str, temp: str) -> tuple[str, int, int]:
+    """Move the encoded file into the library and return ``(path, size, mtime)``.
+
+    Runs in a worker thread: committing across filesystems copies the whole
+    clip over the (possibly remote) library mount, which must never block the
+    event loop.
+    """
+    target = source
+    if os.path.splitext(source)[1].lower() != ".mp4":
+        candidate = os.path.splitext(source)[0] + ".mp4"
+        if os.path.exists(candidate):
+            candidate = writes.unique_target(
+                os.path.dirname(source), os.path.basename(candidate), set()
+            )
+        target = candidate
+    _commit(temp, target)
+    if target != source:
+        try:
+            os.remove(source)
+        except OSError:
+            pass
+    stat = os.stat(target)
+    return target, stat.st_size, stat.st_mtime
 
 
 def _update_index(

@@ -570,3 +570,23 @@ def test_upload_cancel_removes_staging(write_env):
     response = client.post("/api/v2/uploads/cancel", json={"upload_id": upload_id})
     assert response.json() == {"cancelled": True}
     assert not list(write_env["staging"].glob("*.part"))
+
+
+def test_abandoned_upload_staging_is_swept(write_env, monkeypatch):
+    """A closed tab's staged file is removed after the TTL, a fresh one is kept."""
+    import time
+
+    from media_library_v2 import writes
+
+    stale = write_env["staging"] / "staleupload01.part"
+    stale.write_bytes(b"old")
+    fresh = write_env["staging"] / "freshupload1.part"
+    fresh.write_bytes(b"new")
+    old = time.time() - 48 * 3600
+    os.utime(stale, (old, old))
+
+    monkeypatch.setattr(writes, "_gc_checked_at", 0.0)
+    writes.staged_size("anotherid123")
+
+    assert not stale.exists()
+    assert fresh.exists()

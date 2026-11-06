@@ -66,6 +66,7 @@ class Settings:
     db_path: Path
     thumbnail_dir: Path
     upload_staging_dir: Path
+    upload_staging_ttl_hours: float
     sorter_state_path: Path
     transcode_dir: Path
     own_workers: bool
@@ -149,6 +150,7 @@ def load_settings() -> Settings:
         upload_staging_dir=_env_path(
             "V2_UPLOAD_STAGING_DIR", data_dir / "upload_staging_v2"
         ),
+        upload_staging_ttl_hours=float(_env_str("UPLOAD_STAGING_TTL_HOURS") or 24.0),
         sorter_state_path=_env_path(
             "V2_SORTER_STATE", data_dir / "v2_sorter_state.json"
         ),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query
@@ -33,13 +34,16 @@ async def browse(
 ) -> dict:
     """List subfolders and media in one folder, index-only."""
     try:
-        return library.browse(
+        # Off the event loop: browse confirms the target is a real directory,
+        # which is one FUSE round trip the loop must not wait on (Rule 2).
+        return await asyncio.to_thread(
+            library.browse,
             path,
-            offset=offset,
-            limit=limit,
-            type_filter=type,
-            favorites_only=favorite,
-            sort=sort,
+            offset,
+            limit,
+            type,
+            favorite,
+            sort,
         )
     except sqlite3.Error as exc:
         raise _guard(exc) from exc
@@ -49,7 +53,7 @@ async def browse(
 async def folders(path: str | None = Query(None)) -> dict:
     """List a folder's immediate children for the navigation tree."""
     try:
-        return library.list_folders(path)
+        return await asyncio.to_thread(library.list_folders, path)
     except sqlite3.Error as exc:
         raise _guard(exc) from exc
 

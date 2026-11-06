@@ -269,3 +269,66 @@ def test_cannot_move_a_folder_into_itself(rename_env):
     assert response.status_code == 200
     assert response.json()["failed"][0]["error"] == "Cannot move a folder into itself"
     assert (library / "A" / "sub").is_dir()
+
+
+def test_rename_does_not_rewrite_a_sibling_matching_the_like_pattern(rename_env):
+    """Prefix edits are exact: ``_``/``%`` in one name must not touch another."""
+    library = rename_env["library"]
+    source = library / "my_folder"
+    sibling = library / "myXfolder"
+    (source / "sub").mkdir(parents=True)
+    sibling.mkdir()
+    (source / "sub" / "keep.jpg").write_bytes(b"k" * 10)
+    (sibling / "other.jpg").write_bytes(b"o" * 10)
+
+    with sqlite3.connect(rename_env["db_path"]) as conn:
+        for folder in (source, source / "sub", sibling):
+            conn.execute(
+                "INSERT INTO folders (path, name, parent_path, file_count, "
+                "subfolder_count, total_size, is_zip) VALUES (?,?,?,?,?,?,?)",
+                (
+                    str(folder),
+                    folder.name,
+                    str(folder.parent),
+                    0,
+                    0,
+                    0,
+                    0,
+                ),
+            )
+        for media in (source / "sub" / "keep.jpg", sibling / "other.jpg"):
+            stat = media.stat()
+            conn.execute(
+                "INSERT INTO files (path, name, folder_path, type, ext, size, "
+                "size_formatted, mtime, needs_transcode, has_thumb) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    str(media),
+                    media.name,
+                    str(media.parent),
+                    "image",
+                    ".jpg",
+                    stat.st_size,
+                    "10 B",
+                    stat.st_mtime,
+                    0,
+                    1,
+                ),
+            )
+
+    response = rename_env["client"].post(
+        "/api/v2/manage/folders/rename",
+        json={"path": str(source), "name": "renamed"},
+    )
+    assert response.status_code == 200, response.text
+
+    with sqlite3.connect(rename_env["db_path"]) as conn:
+        files = {row[0] for row in conn.execute("SELECT path FROM files")}
+        folders = {row[0] for row in conn.execute("SELECT path FROM folders")}
+    # The renamed subtree moved...
+    assert str(library / "renamed" / "sub" / "keep.jpg") in files
+    assert str(library / "renamed" / "sub") in folders
+    # ...and the one-character-different sibling is untouched.
+    assert str(sibling / "other.jpg") in files
+    assert str(library / "renamedXfolder") not in folders
+    assert str(library / "renamedXfolder" / "other.jpg") not in files

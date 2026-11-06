@@ -396,6 +396,9 @@ class DownloadManager:
     # -- job control ---------------------------------------------------
 
     def _finish(self, job: dict[str, Any]) -> None:
+        if job.get("_finished"):
+            return
+        job["_finished"] = True
         job.pop("_cancel", None)
         job.pop("_process", None)
         job["finished_at"] = job.get("finished_at") or time.time()

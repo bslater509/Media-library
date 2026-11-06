@@ -1,9 +1,12 @@
 """Index-only library reads for v2.
 
 Nothing in this module stats a media file: browse, folders, search and counts
-all come from SQLite rows, so a remote FUSE library stays instant. The only
-filesystem access in the request path is inside ``media.py``, where byte-range
-streaming genuinely needs the file.
+all come from SQLite rows, so a remote FUSE library stays instant. Browse and
+``list_folders`` check whether the target path is a real directory (or an
+indexed archive) so a stale path clamps to its parent; those one or two stats
+run in a worker thread, never on the event loop (see ``routers/library.py``).
+The only other filesystem access in the request path is inside ``media.py``,
+where byte-range streaming genuinely needs the file.
 """
 
 from __future__ import annotations

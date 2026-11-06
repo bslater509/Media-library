@@ -11,6 +11,31 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Fixed
+
+- **v2 folder/ZIP moves rewrote a sibling subtree when a name contained `_` or
+  `%`.** The index rewrite matched the moved path's prefix with SQL `LIKE`, so
+  `my_folder` also matched `myXfolder` and relocated that folder's files,
+  favorites and ignored pairs. Prefix edits now compare with
+  `substr(path, 1, N) = prefix`, so only the moved subtree changes.
+- **v2 x265 conversion no longer stalls the event loop.** Committing the encoded
+  file (a full copy over the library mount when it is a different filesystem)
+  and its SQLite rewrite now run in worker threads, so a large conversion
+  cannot freeze every HTTP request while it copies.
+- **v2 abandoned upload staging is swept.** A closed upload tab used to leave its
+  `.part` file forever; staged uploads older than `UPLOAD_STAGING_TTL_HOURS`
+  (default 24 h) are now removed by a throttled hourly sweep, while a resumable
+  upload within the window is untouched.
+- **v2 animated preview queue could strand a job.** A video enqueued while the
+  worker was draining saw the dying thread as still alive and never started a
+  replacement; the worker now clears its thread reference under the queue lock.
+- **v2 cancelled queued downloads land in history once** instead of being
+  appended a second time when the spawned task observes the cancel.
+- **v2 browse/folder listing checks the directory off the event loop**, so the
+  one FUSE round trip can no longer block the server.
+- **v2 rejects control characters in file/folder names** at rename, create and
+  upload-finalize, which also keeps an uploaded name safe in download headers.
+
 ## [3.0.0] - 2026-11-06
 
 ### Added

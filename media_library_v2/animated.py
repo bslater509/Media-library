@@ -221,11 +221,16 @@ def _ensure_thread() -> None:
 
 
 def _loop() -> None:
+    global _thread
     while True:
         with _lock:
             if not _queue:
                 _state.update(status="idle", active=None, queued=0)
                 _seen.clear()
+                # Mark the worker as gone *before* releasing the lock: a caller
+                # that appends right after this block must start a new thread
+                # rather than observe the dying one as still alive and return.
+                _thread = None
                 return
             path = _queue.popleft()
             _state.update(status="working", active=path, queued=len(_queue))
