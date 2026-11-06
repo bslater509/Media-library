@@ -595,6 +595,52 @@ export function useZipUnpack() {
   })
 }
 
+export function useAnimatedStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['thumbnails', 'animated', 'status'],
+    queryFn: api.animatedStatus,
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'working' || query.state.data?.status === 'queued'
+        ? 2000
+        : false,
+    staleTime: 5_000,
+  })
+}
+
+export function useGenerateAnimated() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string) => api.generateAnimated(path),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['thumbnails', 'animated'] })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useGenerateAnimatedBatch() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { folder?: string; all_videos?: boolean }) =>
+      api.generateAnimatedBatch(input),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['thumbnails', 'animated'] })
+    },
+  })
+}
+
+export function useSetPoster() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, timestamp }: { path: string; timestamp: number }) =>
+      api.setPoster(path, timestamp),
+    onSuccess: () => {
+      void invalidateLibrary(client)
+    },
+  })
+}
+
 export function useWebpStatus() {
   return useQuery({
     queryKey: queryKeys.webpStatus,

@@ -385,6 +385,38 @@ export interface ZipCheck {
   reason: string
 }
 
+export interface ThumbnailFrame {
+  timestamp: number
+  label: string
+  url: string
+}
+
+export interface ThumbnailCandidates {
+  path: string
+  duration: number | null
+  interval: number
+  frames: ThumbnailFrame[]
+}
+
+export interface PosterResult {
+  path: string
+  timestamp: number
+  thumb_mtime: number
+}
+
+export interface AnimatedStatus {
+  added: number
+  status: string
+  active: string | null
+  queued: number
+  completed: number
+  failed: number
+  total: number
+  pending: number
+  ready: number
+  failed_total: number
+}
+
 export interface ZipCandidate {
   path: string
   name: string
@@ -879,6 +911,26 @@ export const api = {
   indexStatus: () => request<IndexStatus>('/system/index/status'),
 
   indexSync: () => post<{ started: boolean }>('/system/index/sync', {}),
+
+  thumbnailCandidates: (path: string, interval = 30, count?: number) =>
+    request<ThumbnailCandidates>('/thumbnails/candidates', {
+      path,
+      interval,
+      count,
+    }),
+
+  setPoster: (path: string, timestamp: number) =>
+    post<PosterResult>('/thumbnails/poster', { path, timestamp }),
+
+  generateAnimated: (path: string) =>
+    post<AnimatedStatus>('/thumbnails/animated', { path }),
+
+  generateAnimatedBatch: (input: { folder?: string; all_videos?: boolean }) =>
+    post<AnimatedStatus>('/thumbnails/animated/batch', input),
+
+  animatedStatus: () => request<AnimatedStatus>('/thumbnails/animated/status'),
+
+  cancelAnimated: () => post<AnimatedStatus>('/thumbnails/animated/cancel', {}),
 
   x265Start: (path: string) =>
     post<X265Job>('/transcode/x265', { path }),

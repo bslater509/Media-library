@@ -95,8 +95,8 @@ export function ToolsPage() {
           Tools
         </h1>
         <p className="text-xs text-fg-muted">
-          Maintenance that changes the library. Dedupe is native to v2; the rest
-          still runs in the current app until its phase lands.
+          Maintenance that changes the library. Everything here runs against the
+          shared index; snapshot restore runs with the service stopped.
         </p>
       </div>
 

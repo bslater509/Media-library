@@ -74,7 +74,8 @@ export function ImagesPage() {
         <p className="text-xs text-fg-muted">
           Converts loose JPEG/PNG images to WebP, atomically replaces the
           original, and moves the cached poster with it. Images inside ZIP
-          archives stay with the current app.
+          archives are converted from the ZIP page (or when the archive is
+          browsed).
         </p>
       </div>
 
@@ -123,7 +124,7 @@ export function ImagesPage() {
         <EmptyState
           icon={<Sparkles />}
           title="Every loose image is already WebP"
-          description="Archive members are optimised by the current app when you browse them."
+          description="Archive members are converted from the ZIP page; loose images are all done."
         />
       ) : (
         <p className="text-xs leading-5 text-fg-subtle">

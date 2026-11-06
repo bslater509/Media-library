@@ -12,16 +12,24 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from media_library_v2 import zipfs
+from media_library_v2 import animated, thumbnails, zipfs
 from media_library_v2.cache import cache_key
 from media_library_v2.config import get_settings
-from media_library_v2.db import reader
+from media_library_v2.db import reader, writes_available
 from media_library_v2.paths import (
     is_zip_member,
     resolve_existing_file,
     resolve_library_path,
 )
 from media_library_v2.routers.common import as_http_error
+from media_library_v2.schemas import (
+    AnimatedBatchRequest,
+    AnimatedRequest,
+    AnimatedStatus,
+    PosterRequest,
+    PosterResponse,
+    ThumbnailCandidates,
+)
 from media_library_v2.thumbnails import generate_thumbnail
 from media_library_v2.transcode_stream import build_command, relay
 
@@ -245,6 +253,81 @@ async def get_thumbnail(path: str, kind: str = "static"):
         media_type=media_type,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@router.get("/thumbnails/candidates", response_model=ThumbnailCandidates)
+async def thumbnail_candidates(
+    path: str, interval: float = 30.0, count: int | None = None
+) -> dict:
+    """Evenly spaced frames the poster chooser can offer."""
+    try:
+        return await asyncio.to_thread(thumbnails.candidates, path, interval, count)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.get("/thumbnails/frame")
+async def thumbnail_frame(path: str, timestamp: float):
+    """One 480px candidate frame, cached per video and timestamp."""
+    try:
+        candidate = await asyncio.to_thread(thumbnails.frame, path, timestamp)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+    return FileResponse(
+        candidate,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.post("/thumbnails/poster", response_model=PosterResponse)
+async def thumbnail_set_poster(payload: PosterRequest) -> dict:
+    """Replace a video's poster with the chosen frame."""
+    if not writes_available():
+        raise HTTPException(status_code=503, detail="Writes are disabled")
+    try:
+        return await asyncio.to_thread(
+            thumbnails.set_poster, payload.path, payload.timestamp
+        )
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.post("/thumbnails/animated", response_model=AnimatedStatus)
+async def thumbnail_animated(payload: AnimatedRequest) -> dict:
+    """Queue one video for an animated preview."""
+    if not writes_available():
+        raise HTTPException(status_code=503, detail="Writes are disabled")
+    try:
+        added = await asyncio.to_thread(animated.enqueue, [payload.path])
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+    return {**animated.status(), "added": added}
+
+
+@router.post("/thumbnails/animated/batch", response_model=AnimatedStatus)
+async def thumbnail_animated_batch(payload: AnimatedBatchRequest) -> dict:
+    """Queue every video in a folder (or the whole library) without a preview."""
+    if not writes_available():
+        raise HTTPException(status_code=503, detail="Writes are disabled")
+    try:
+        added = await asyncio.to_thread(
+            animated.enqueue_batch, payload.folder, payload.all_videos, payload.limit
+        )
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+    return {**animated.status(), "added": added}
+
+
+@router.get("/thumbnails/animated/status", response_model=AnimatedStatus)
+async def thumbnail_animated_status() -> dict:
+    return await asyncio.to_thread(animated.status)
+
+
+@router.post("/thumbnails/animated/cancel", response_model=AnimatedStatus)
+async def thumbnail_animated_cancel() -> dict:
+    await asyncio.to_thread(animated.cancel)
+    return animated.status()
 
 
 @router.get("/thumbnails/exists")

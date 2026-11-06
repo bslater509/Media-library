@@ -49,7 +49,7 @@ export function FavoritesPage() {
         <EmptyState
           icon={<Star />}
           title="No favorites yet"
-          description="Star a file from the current app and it appears here — favorites are stored in the index, not in this preview."
+          description="Star any file in the library and it appears here — favorites live in the shared index."
           action={
             <Link to="/library" className="text-sm text-accent hover:underline">
               Browse the library

@@ -5,8 +5,10 @@ import { createPortal } from 'react-dom'
 import {
   ChevronLeft,
   ChevronRight,
+  Clapperboard,
   Download,
   ExternalLink,
+  Film,
   FolderInput,
   FolderOpen,
   Gauge,
@@ -21,7 +23,10 @@ import {
   X,
 } from 'lucide-react'
 import { api, type FileEntry, type X265Job } from '../../lib/api'
+import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 import { cn } from '../../lib/cn'
+import { useGenerateAnimated } from '../../lib/queries'
+import { PosterChooser } from './PosterChooser'
 import {
   codecLabel,
   formatClock,
@@ -57,8 +62,17 @@ export function MediaLightbox({
   const [speed, setSpeed] = useState<number>(1)
   const [showInfo, setShowInfo] = useState(false)
   const [x265, setX265] = useState<X265Job | null>(null)
+  const [posterVersion, setPosterVersion] = useState(0)
+  const [chooserOpen, setChooserOpen] = useState(false)
+  const [chooserTime, setChooserTime] = useState(0)
+  const generateAnimated = useGenerateAnimated()
   const queryClient = useQueryClient()
   const x265Active = x265?.status === 'queued' || x265?.status === 'running'
+
+  useEffect(() => {
+    setPosterVersion(0)
+    setChooserOpen(false)
+  }, [file.path])
 
   useEffect(() => {
     let cancelled = false
@@ -190,6 +204,9 @@ export function MediaLightbox({
   const videoSrc = file.playable
     ? file.media_url
     : (file.transcode_url ?? file.media_url)
+  const posterSrc = file.has_thumb
+    ? `${file.thumb_url}${posterVersion ? `&v=${posterVersion}` : ''}`
+    : undefined
 
   return createPortal(
     <div
@@ -246,7 +263,7 @@ export function MediaLightbox({
             key={file.id}
             ref={videoRef}
             src={videoSrc}
-            poster={file.has_thumb ? file.thumb_url : undefined}
+            poster={posterSrc}
             controls
             autoPlay
             loop={loop}
@@ -257,7 +274,7 @@ export function MediaLightbox({
         ) : (
           <img
             key={file.id}
-            src={file.has_thumb ? file.thumb_url : file.media_url}
+            src={posterSrc ?? file.media_url}
             alt={file.name}
             className="max-h-full max-w-full object-contain"
             onClick={(event) => event.stopPropagation()}
@@ -378,6 +395,47 @@ export function MediaLightbox({
                 </IconButton>
                 <span className="w-8 text-center font-mono">{speed}×</span>
                 <IconButton
+                  aria-label="Choose poster frame"
+                  title="Thumbnail chooser"
+                  size={32}
+                  className="text-white/75 hover:bg-white/10 hover:text-white"
+                  onClick={() => {
+                    setChooserTime(videoRef.current?.currentTime ?? 0)
+                    setChooserOpen(true)
+                  }}
+                >
+                  <Film />
+                </IconButton>
+                <IconButton
+                  aria-label="Generate animated preview"
+                  title="Generate animated preview"
+                  size={32}
+                  className="text-white/75 hover:bg-white/10 hover:text-white"
+                  onClick={() =>
+                    generateAnimated.mutate(file.path, {
+                      onSuccess: (status) =>
+                        toast.success(
+                          status.queued
+                            ? 'Animated preview queued'
+                            : 'Animated preview ready',
+                        ),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : 'Could not generate the preview',
+                        ),
+                    })
+                  }
+                  disabled={generateAnimated.isPending}
+                >
+                  {generateAnimated.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Clapperboard />
+                  )}
+                </IconButton>
+                <IconButton
                   aria-label="Toggle loop"
                   title="Loop (L)"
                   size={32}
@@ -460,15 +518,17 @@ export function MediaLightbox({
                 </IconButton>
               </>
             ) : null}
-            <a
-              href={`/?folder=${encodeURIComponent(file.folder_path)}`}
-              aria-label="Manage in the current app"
-              title="Open this folder in the current app (move, rename, delete)"
-              className="inline-flex size-8 items-center justify-center rounded-sm text-white/75 hover:bg-white/10 hover:text-white"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <FolderOpen className="size-4" />
-            </a>
+            {IS_MOUNTED_PREVIEW ? (
+              <a
+                href={`/?folder=${encodeURIComponent(file.folder_path)}`}
+                aria-label="Manage in the current app"
+                title="Open this folder in the current app (move, rename, delete)"
+                className="inline-flex size-8 items-center justify-center rounded-sm text-white/75 hover:bg-white/10 hover:text-white"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <FolderOpen className="size-4" />
+              </a>
+            ) : null}
             <a
               href={`${file.media_url}&download=true`}
               download={file.name}
@@ -508,6 +568,15 @@ export function MediaLightbox({
           </dl>
         ) : null}
       </footer>
+
+      {chooserOpen ? (
+        <PosterChooser
+          file={file}
+          currentTime={chooserTime}
+          onClose={() => setChooserOpen(false)}
+          onApplied={(stamp) => setPosterVersion(stamp)}
+        />
+      ) : null}
     </div>,
     document.body,
   )

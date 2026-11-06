@@ -499,8 +499,8 @@ export function AnalyticsPage() {
 
       <p className="pb-2 text-center text-[11px] text-fg-subtle">
         Every number comes from the SQLite index — no folder walk, no remote stat.{' '}
-        <a href="/" className="inline-flex items-center gap-1 text-accent hover:underline">
-          Clean up in the current app <ExternalLink className="size-3" />
+        <a href="/tools" className="inline-flex items-center gap-1 text-accent hover:underline">
+          Clean up in Tools <ExternalLink className="size-3" />
         </a>
       </p>
     </div>

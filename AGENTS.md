@@ -1219,6 +1219,13 @@ build on any reverse import.
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /media/transcode?path=&ss=` | live fragmented-MP4 stream for containers the browser cannot play (ZIP members extracted first) |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
+| `GET /thumbnails/candidates?path=&interval=&count=` | evenly spaced poster-chooser frames (at least 8, at most 60, from the indexed duration) |
+| `GET /thumbnails/frame?path=&timestamp=` | one 480px candidate frame, cached per video and timestamp |
+| `POST /thumbnails/poster` | replace a video's poster with the frame at `timestamp`; updates `has_thumb`/`thumb_mtime` so the URL cache-busts |
+| `POST /thumbnails/animated` | queue one video for an animated WebP preview |
+| `POST /thumbnails/animated/batch` | queue every preview-less video in a `folder` (or `all_videos`) |
+| `GET /thumbnails/animated/status` | live queue, completed/failed counts and pending/ready totals from the index |
+| `POST /thumbnails/animated/cancel` | drop the waiting queue (the running encode finishes) |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
 
 Conventions: explicit Pydantic `response_model` on every route, `problem+json`-ready
@@ -1263,7 +1270,10 @@ archives are indexed by the shared crawler, a missing member is extracted into a
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
 the **Tools hub**, **multi-select with bulk actions** (checkbox / Ctrl-click /
 Shift-range selection, select all, then move, delete, star, batch rename with a live
-preview, and WebP conversion of the selected images), **in-place x265 conversion** (serial libx265 queue, live
+preview, and WebP conversion of the selected images), **the poster chooser and
+animated previews** (sampled frames with "use current position", a per-video
+generate action, and a folder-wide batch queue that samples ~24 frames into a
+looping WebP), **in-place x265 conversion** (serial libx265 queue, live
 percent/fps/speed/ETA, cancel, atomic commit, index/poster rewrite), **library snapshots**
 (v2 writes a compacted DB copy plus a
 poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a

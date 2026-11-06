@@ -157,6 +157,40 @@ class ThumbnailCandidates(BaseModel):
     frames: list[dict[str, float | str]]
 
 
+class PosterRequest(BaseModel):
+    path: str
+    timestamp: float = Field(ge=0)
+
+
+class PosterResponse(BaseModel):
+    path: str
+    timestamp: float
+    thumb_mtime: float
+
+
+class AnimatedRequest(BaseModel):
+    path: str
+
+
+class AnimatedBatchRequest(BaseModel):
+    folder: str | None = None
+    all_videos: bool = False
+    limit: int = Field(default=500, ge=1, le=5000)
+
+
+class AnimatedStatus(BaseModel):
+    added: int = 0
+    status: str
+    active: str | None = None
+    queued: int
+    completed: int
+    failed: int
+    total: int
+    pending: int
+    ready: int
+    failed_total: int
+
+
 # --- mutations -------------------------------------------------------------
 
 

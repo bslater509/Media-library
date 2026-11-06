@@ -5,6 +5,7 @@ import {
   Archive,
   ArchiveRestore,
   ChevronLeft,
+  Clapperboard,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -23,6 +24,7 @@ import { cn } from '../lib/cn'
 import {
   invalidateLibrary,
   useFavoriteBatch,
+  useGenerateAnimatedBatch,
   useInfiniteBrowse,
   useInfo,
   useMoveFiles,
@@ -90,6 +92,7 @@ export function LibraryPage() {
   const moveFiles = useMoveFiles()
   const favoriteBatch = useFavoriteBatch()
   const webpOptimize = useWebpOptimize()
+  const generateAnimatedBatch = useGenerateAnimatedBatch()
   const queryClient = useQueryClient()
 
   // A palette result can deep-link straight into the viewer.
@@ -462,6 +465,34 @@ export function LibraryPage() {
             >
               <FolderPlus />
             </IconButton>
+            {!first?.is_zip ? (
+              <IconButton
+                aria-label="Generate animated previews for this folder"
+                title="Generate animated previews"
+                onClick={() =>
+                  generateAnimatedBatch.mutate(
+                    { folder: currentPath },
+                    {
+                      onSuccess: (status) =>
+                        status.added
+                          ? toast.success(
+                              `${status.added} preview${status.added === 1 ? '' : 's'} queued`,
+                            )
+                          : toast.info('Every video here already has a preview'),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : 'Could not queue previews',
+                        ),
+                    },
+                  )
+                }
+                disabled={generateAnimatedBatch.isPending}
+              >
+                <Clapperboard />
+              </IconButton>
+            ) : null}
             {first?.is_zip ? (
               <IconButton
                 aria-label="Unpack this archive"

@@ -13,6 +13,16 @@ snapshot metadata.
 
 ### Added
 
+- **v2 poster chooser and animated previews.** Video slides gained a thumbnail
+  chooser: eight-or-more evenly spaced frames sampled from the clip, a "use
+  current position" shortcut, and a poster that cache-busts immediately after it
+  is set. Videos can also generate a looping animated WebP preview on demand,
+  and the library toolbar queues every preview-less video in the current folder.
+  Frames are cached per video/timestamp, previews use the same cache key as the
+  current app (so a move or delete keeps or removes the artwork correctly), and
+  failures are recorded so a broken file is not retried forever. New endpoints:
+  `/thumbnails/candidates`, `/thumbnails/frame`, `/thumbnails/poster` and the
+  `/thumbnails/animated` queue.
 - **v2 multi-select and bulk actions.** The library grid gains checkbox,
   Ctrl/Cmd-click and Shift-range selection, a Select media toggle, Ctrl/Cmd+A,
   Delete/Escape shortcuts and a floating action bar: star or unstar, move,
