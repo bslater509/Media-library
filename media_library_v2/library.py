@@ -131,7 +131,7 @@ ORDER BY LOWER(fo.name)
 
 def _folder_row(conn: sqlite3.Connection, path: str) -> sqlite3.Row | None:
     return conn.execute(
-        "SELECT path, name, file_count FROM folders WHERE path = ?", (path,)
+        "SELECT path, name, file_count, is_zip FROM folders WHERE path = ?", (path,)
     ).fetchone()
 
 
@@ -227,6 +227,9 @@ def browse(
         "limit": capped_limit,
         "next_offset": capped_offset + len(files) if has_more else None,
         "indexed": folder_row is not None,
+        "is_zip": bool(folder_row["is_zip"])
+        if folder_row
+        else target.lower().endswith(".zip"),
     }
 
 

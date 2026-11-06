@@ -1170,6 +1170,10 @@ build on any reverse import.
 | `POST /webp/optimize` | convert one batch (`limit`, optional `folder`), off-loop |
 | `GET /folders/empty` | leaf folders with no files and no child folders |
 | `POST /folders/empty/delete` | remove selected empty folders (OS junk tolerated) |
+| `GET /zip/check?path=` | compression eligibility (images, no videos, no nested archives, no name collision) |
+| `POST /zip/compress` | archive a folder on local staging, verify, commit atomically, replace the index subtree with archive members |
+| `POST /zip/unpack` | safe extraction to a sibling folder, delete the ZIP, re-index the extracted tree |
+| `GET /zip/overview` | compress candidates, indexed archives and extraction-cache usage |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1211,13 +1215,14 @@ every figure from the index, memoised for 30 s), **dedupe** (content groups from
 shared `quick_hash`, visual clusters from `thumb_hash`, batched hashing, full-verify
 before content deletion, ignore/unignore), **WebP optimisation** (loose images,
 atomic replace, index and poster update, batch/folder scope), **empty-folder
-cleanup**, **ZIP virtual folders** (browse and member streaming; archives are indexed by
-the shared crawler, and a missing member is extracted into a bounded local cache) and
-the **Tools hub**. Every write updates the shared index and the cached artwork.
+cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
+archives are indexed by the shared crawler, a missing member is extracted into a bounded
+local cache, and compress/unpack rewrite the affected index subtree in one transaction)
+and the **Tools hub**. Every write updates the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): ZIP compression/unpacking, backups, onboarding and
-the `/` redirect. Until those land, `/v2` reports `features: false` for them and the UI
-shows them as roadmap items rather than broken screens.
+Pending (see the v2 rewrite plan): backups, onboarding and the `/` redirect. Until those
+land, `/v2` reports `features: false` for them and the UI shows them as roadmap items
+rather than broken screens.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1230,8 +1235,7 @@ Dedupe reuses v1's hash formats exactly (`quick_hash = sha256(first 128 KB + siz
 Content deletion is always preceded by a full byte comparison; visual clusters use
 complete linkage (every member within pHash distance 2 of every other) and are capped at
 12 files, so a chain of vaguely similar scenes cannot become a mass-delete suggestion.
-The Tools hub links the not-yet-ported tools (ZIP compression/unpacking, backups) to
-the current app.
+The Tools hub links the not-yet-ported tool (backups) to the current app.
 
 ZIP members stream by extracting **one** member into `ZIP_CACHE_DIR/v2_<hash>/` (bounded
 by `ZIP_CACHE_MAX_SIZE_GB`, LRU-trimmed); the cache filename is a hash, so Zip Slip is
@@ -1239,3 +1243,10 @@ structurally impossible. Missing image posters are generated on demand for loose
 and ZIP members (`thumbnails.py`), which keeps archive grids cheap. WebP conversion
 reuses `WEBP_QUALITY` / `WEBP_SKIP_LARGER`, moves the cached poster to the new key and
 clears the content hashes; native `.webp` rows are marked optimised without conversion.
+
+Compression builds the archive on local `V2_ZIP_STAGING_DIR` (or `ZIP_STAGING_DIR`),
+verifies it with `testzip()`, copies it to a sibling `.tmp` and `os.replace`s it before
+removing the source folder. Unpacking extracts into a temporary sibling (skipping `..`
+members) and renames it into place. Both replace the affected `folders`/`files` rows in
+one transaction; a crash between the disk change and the commit leaves rows that v1's
+crawler reconciles.

@@ -64,12 +64,10 @@ export function ToolsPage() {
     {
       title: 'ZIP archives',
       description:
-        'Archives already open as virtual folders in the Library (v2). Compression, unpacking and batch jobs still run in the current app.',
+        'Compress leaf image folders into archives or unpack an archive back into a folder. Archives also open as virtual folders in the Library.',
       icon: <Archive />,
-      href: '/',
-      cta: 'Compress / unpack in the current app',
-      badge: 'browse in v2',
-      badgeVariant: 'accent',
+      to: '/tools/zip',
+      cta: 'Compress or unpack',
     },
     {
       title: 'Library backup',

@@ -76,6 +76,7 @@ class BrowseResponse(BaseModel):
     limit: int
     next_offset: int | None = None
     indexed: bool = True
+    is_zip: bool = False
 
 
 class FoldersResponse(BaseModel):
@@ -534,6 +535,57 @@ class EmptyDeleteResponse(BaseModel):
     deleted: list[str]
     failed: list[Failure]
     remaining: int
+
+
+class ZipCheck(BaseModel):
+    path: str
+    target: str
+    eligible: bool
+    images: int
+    videos: int
+    reason: str
+
+
+class ZipCompressRequest(BaseModel):
+    path: str
+
+
+class ZipCompressResponse(BaseModel):
+    archive: str
+    members: int
+    bytes: int
+    size_formatted: str
+    removed: str
+
+
+class ZipUnpackRequest(BaseModel):
+    path: str
+
+
+class ZipUnpackResponse(BaseModel):
+    folder: str
+    files: int
+    removed: str
+
+
+class ZipCandidate(BaseModel):
+    path: str
+    name: str
+    file_count: int
+    size_formatted: str
+
+
+class ZipArchive(BaseModel):
+    path: str
+    name: str
+    file_count: int
+    size_formatted: str
+
+
+class ZipOverview(BaseModel):
+    folders: list[ZipCandidate]
+    archives: list[ZipArchive]
+    cache: dict[str, Any]
 
 
 class AnalyticsOverview(BaseModel):

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import {
   AlertTriangle,
   Archive,
+  ArchiveRestore,
   ChevronLeft,
   Folder,
   FolderOpen,
@@ -27,6 +28,15 @@ import {
 } from '../lib/queries'
 import { TILE_ROW_HEIGHT, useDensityStore, type TileScale } from '../lib/stores'
 import { Badge, Button, EmptyState, IconButton, Segmented, Select, Skeleton } from '../components/ui'
+import { api } from '../lib/api'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui'
 import { JustifiedGrid } from '../components/media/JustifiedGrid'
 import { MediaLightbox } from '../components/media/MediaLightbox'
 import type { FileAction } from '../components/media/MediaTile'
@@ -65,6 +75,8 @@ export function LibraryPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [zipPending, setZipPending] = useState<'compress' | 'unpack' | null>(null)
+  const [zipBusy, setZipBusy] = useState(false)
   const toggleFavorite = useToggleFavorite()
   const moveFiles = useMoveFiles()
   const queryClient = useQueryClient()
@@ -140,6 +152,48 @@ export function LibraryPage() {
       setMoveOpen(true)
     }
     if (action === 'delete') setDeleteTargets([file])
+  }
+
+  const requestCompress = async () => {
+    if (!currentPath) return
+    try {
+      const check = await api.zipCheck(currentPath)
+      if (!check.eligible) {
+        toast.error(check.reason || 'This folder cannot be archived')
+        return
+      }
+      setZipPending('compress')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not check the folder')
+    }
+  }
+
+  const runZipAction = async () => {
+    if (!zipPending || !currentPath) return
+    setZipBusy(true)
+    try {
+      if (zipPending === 'compress') {
+        const result = await api.zipCompress(currentPath)
+        toast.success(
+          `${result.members} file${result.members === 1 ? '' : 's'} archived (${result.size_formatted})`,
+        )
+        setZipPending(null)
+        if (parent) navigateTo(parent)
+        else void query.refetch()
+      } else {
+        const result = await api.zipUnpack(currentPath)
+        toast.success(
+          `${result.files} file${result.files === 1 ? '' : 's'} restored`,
+        )
+        setZipPending(null)
+        navigateTo(result.folder)
+      }
+      await invalidateLibrary(queryClient)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'ZIP operation failed')
+    } finally {
+      setZipBusy(false)
+    }
   }
 
   const confirmMove = async (destination: string) => {
@@ -236,15 +290,33 @@ export function LibraryPage() {
               aria-label="New folder"
               title="New folder"
               onClick={() => setNewFolderOpen(true)}
-              disabled={!currentPath}
+              disabled={!currentPath || first?.is_zip}
             >
               <FolderPlus />
             </IconButton>
+            {first?.is_zip ? (
+              <IconButton
+                aria-label="Unpack this archive"
+                title="Unpack this archive"
+                onClick={() => setZipPending('unpack')}
+              >
+                <ArchiveRestore />
+              </IconButton>
+            ) : (
+              <IconButton
+                aria-label="Compress this folder to ZIP"
+                title="Compress this folder to ZIP"
+                onClick={() => void requestCompress()}
+                disabled={!currentPath}
+              >
+                <Archive />
+              </IconButton>
+            )}
             <Button
               size="sm"
               className="hidden sm:inline-flex"
               onClick={() => setUploadOpen(true)}
-              disabled={!currentPath}
+              disabled={!currentPath || first?.is_zip}
             >
               <UploadCloud /> Upload
             </Button>
@@ -253,7 +325,7 @@ export function LibraryPage() {
               title="Upload files"
               className="sm:hidden"
               onClick={() => setUploadOpen(true)}
-              disabled={!currentPath}
+              disabled={!currentPath || first?.is_zip}
             >
               <UploadCloud />
             </IconButton>
@@ -470,6 +542,50 @@ export function LibraryPage() {
         busy={moveFiles.isPending}
         onPick={(destination) => void confirmMove(destination)}
       />
+      <Dialog
+        open={zipPending !== null}
+        onOpenChange={(open) => (open ? undefined : setZipPending(null))}
+      >
+        <DialogContent aria-describedby={undefined} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {zipPending === 'compress'
+                ? 'Compress this folder?'
+                : 'Unpack this archive?'}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <p className="text-sm leading-6 text-fg-muted">
+              {zipPending === 'compress'
+                ? 'The folder is replaced by a ZIP archive and its files become archive members. The original folder is removed.'
+                : 'The archive is extracted into a sibling folder and the ZIP is deleted. Existing names are never overwritten.'}
+            </p>
+            <p className="mt-2 truncate font-mono text-[11px] text-fg-subtle">
+              {currentPath}
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setZipPending(null)}
+              disabled={zipBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void runZipAction()} disabled={zipBusy}>
+              {zipBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : zipPending === 'compress' ? (
+                <Archive />
+              ) : (
+                <ArchiveRestore />
+              )}
+              {zipPending === 'compress' ? 'Compress' : 'Unpack'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <UploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}

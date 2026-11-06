@@ -22,6 +22,7 @@ export const queryKeys = {
   sorterQueue: ['sorter', 'queue'] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
   webpStatus: ['webp', 'status'] as const,
+  zipOverview: ['zip', 'overview'] as const,
   emptyFolders: ['empty', 'folders'] as const,
   dedupeStatus: ['dedupe', 'status'] as const,
   dedupeGroups: (mode: string, limit: number) =>
@@ -398,6 +399,36 @@ export function useDedupeUnignore() {
       api.dedupeUnignore(path1, path2),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useZipOverview() {
+  return useQuery({
+    queryKey: queryKeys.zipOverview,
+    queryFn: api.zipOverview,
+    staleTime: 10_000,
+  })
+}
+
+export function useZipCompress() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string) => api.zipCompress(path),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['zip'] })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useZipUnpack() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string) => api.zipUnpack(path),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['zip'] })
+      void invalidateLibrary(client)
     },
   })
 }

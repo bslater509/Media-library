@@ -14,6 +14,7 @@ import { SearchPage } from '../pages/SearchPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { SorterPage } from '../pages/SorterPage'
 import { ToolsPage } from '../pages/ToolsPage'
+import { ZipPage } from '../pages/ZipPage'
 
 const AnalyticsPage = lazy(() =>
   import('../pages/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })),
@@ -73,6 +74,7 @@ export const router = createBrowserRouter(
         { path: 'tools/dedupe', element: <DedupePage /> },
         { path: 'tools/images', element: <ImagesPage /> },
         { path: 'tools/empty', element: <EmptyFoldersPage /> },
+        { path: 'tools/zip', element: <ZipPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],

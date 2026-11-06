@@ -73,6 +73,7 @@ export interface BrowseResponse {
   limit: number
   next_offset: number | null
   indexed: boolean
+  is_zip: boolean
 }
 
 export interface FoldersResponse {
@@ -363,6 +364,49 @@ export interface EmptyDeleteResult {
   remaining: number
 }
 
+export interface ZipCheck {
+  path: string
+  target: string
+  eligible: boolean
+  images: number
+  videos: number
+  reason: string
+}
+
+export interface ZipCandidate {
+  path: string
+  name: string
+  file_count: number
+  size_formatted: string
+}
+
+export interface ZipOverview {
+  folders: ZipCandidate[]
+  archives: ZipArrayItem[]
+  cache: { files: number; bytes: number; size_formatted: string }
+}
+
+export interface ZipArrayItem {
+  path: string
+  name: string
+  file_count: number
+  size_formatted: string
+}
+
+export interface ZipCompressResult {
+  archive: string
+  members: number
+  bytes: number
+  size_formatted: string
+  removed: string
+}
+
+export interface ZipUnpackResult {
+  folder: string
+  files: number
+  removed: string
+}
+
 export interface AnalyticsTreeNode {
   name: string
   path: string
@@ -640,6 +684,15 @@ export const api = {
 
   deleteEmptyFolders: (paths: string[]) =>
     post<EmptyDeleteResult>('/folders/empty/delete', { paths }),
+
+  zipCheck: (path: string) => request<ZipCheck>('/zip/check', { path }),
+
+  zipOverview: () => request<ZipOverview>('/zip/overview'),
+
+  zipCompress: (path: string) =>
+    post<ZipCompressResult>('/zip/compress', { path }),
+
+  zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
 
   analyticsOverview: (refresh = false, folderLimit = 15, fileLimit = 25) =>
     request<AnalyticsOverview>('/analytics/overview', {

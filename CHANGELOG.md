@@ -73,6 +73,12 @@ snapshot metadata.
   and ZIP members. `/v2/tools/images` converts loose images to WebP in batches
   (atomic replace, index + poster update, `WEBP_QUALITY`/`WEBP_SKIP_LARGER`), and
   `/v2/tools/empty` removes selected empty leaf folders while tolerating OS junk.
+- **ZIP compression and unpacking in v2.** `/v2/tools/zip` lists image folders
+  ready to archive and indexed archives. Compression builds on local staging,
+  verifies with `testzip()`, commits atomically, deletes the source folder and
+  replaces its index subtree with archive members; unpacking extracts safely to
+  a sibling folder, deletes the archive and re-indexes the extracted tree. The
+  same actions are available in the Library toolbar for the folder on screen.
 
 ## [2.0.2] - 2026-11-03
 
