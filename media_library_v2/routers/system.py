@@ -44,6 +44,7 @@ async def info() -> dict:
             "zip": True,
             "analytics": True,
             "workers": False,
+            "backups": True,
         },
     }
 

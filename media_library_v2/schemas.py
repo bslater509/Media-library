@@ -588,6 +588,51 @@ class ZipOverview(BaseModel):
     cache: dict[str, Any]
 
 
+class BackupStatus(BaseModel):
+    exists: bool
+    directory: str
+    created_at: float | None = None
+    created_at_str: str | None = None
+    version: str | None = None
+    files: int | None = None
+    folders: int | None = None
+    thumbnails: int | None = None
+    db_bytes: int
+    db_size_formatted: str
+    tar_bytes: int
+    tar_size_formatted: str
+    allow_live_restore: bool
+
+
+class BackupSnapshotResponse(BaseModel):
+    success: bool
+    created_at: float
+    files: int
+    folders: int
+    thumbnails: int
+    db_bytes: int
+    tar_bytes: int
+    directory: str
+
+
+class BackupVerifyResponse(BaseModel):
+    snapshot_integrity: str
+    live_integrity: str
+    files: int
+    folders: int
+    thumbnails: int
+    meta_present: bool
+
+
+class BackupRestoreResponse(BaseModel):
+    restored: bool
+    database: str
+    thumbnails: int
+    files: int
+    folders: int
+    restart_required: bool
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

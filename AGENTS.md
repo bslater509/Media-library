@@ -1174,6 +1174,11 @@ build on any reverse import.
 | `POST /zip/compress` | archive a folder on local staging, verify, commit atomically, replace the index subtree with archive members |
 | `POST /zip/unpack` | safe extraction to a sibling folder, delete the ZIP, re-index the extracted tree |
 | `GET /zip/overview` | compress candidates, indexed archives and extraction-cache usage |
+| `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag |
+| `POST /backups/snapshot` | live SQLite backup (VACUUM-compacted) + poster tar + meta into `.media_library_backup/v2/` |
+| `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
+| `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
+| `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1218,11 +1223,12 @@ atomic replace, index and poster update, batch/folder scope), **empty-folder
 cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
 archives are indexed by the shared crawler, a missing member is extracted into a bounded
 local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-and the **Tools hub**. Every write updates the shared index and the cached artwork.
+the **Tools hub** and **library snapshots** (v2 writes a compacted DB copy plus a
+poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a
+service-stopped restore CLI; live restore stays disabled until the cutover). Every write
+updates the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): backups, onboarding and the `/` redirect. Until those
-land, `/v2` reports `features: false` for them and the UI shows them as roadmap items
-rather than broken screens.
+Pending (see the v2 rewrite plan): onboarding and the `/` redirect.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1250,3 +1256,11 @@ removing the source folder. Unpacking extracts into a temporary sibling (skippin
 members) and renames it into place. Both replace the affected `folders`/`files` rows in
 one transaction; a crash between the disk change and the commit leaves rows that v1's
 crawler reconciles.
+
+Snapshots live in `.media_library_backup/v2/` so v1's scheduled `library.db` /
+`thumbnails.tar` are never overwritten. The DB copy uses `sqlite3.backup` followed by
+`VACUUM` (the live index carries a large freelist), the tar contains only top-level
+`thumb_*.jpg` files, and meta is swapped in last so a half-written snapshot is never
+reported. Restore replaces the DB and posters only with `V2_ALLOW_LIVE_RESTORE=true`
+(post-cutover); otherwise use `python -m media_library_v2.restore --yes` with the
+service stopped.

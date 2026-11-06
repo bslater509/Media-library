@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { AppShell } from '../components/shell/AppShell'
 import { EmptyState } from '../components/ui'
+import { BackupsPage } from '../pages/BackupsPage'
 import { DedupePage } from '../pages/DedupePage'
 import { DownloadsPage } from '../pages/DownloadsPage'
 import { EmptyFoldersPage } from '../pages/EmptyFoldersPage'
@@ -75,6 +76,7 @@ export const router = createBrowserRouter(
         { path: 'tools/images', element: <ImagesPage /> },
         { path: 'tools/empty', element: <EmptyFoldersPage /> },
         { path: 'tools/zip', element: <ZipPage /> },
+        { path: 'tools/backup', element: <BackupsPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],

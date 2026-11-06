@@ -23,6 +23,7 @@ export const queryKeys = {
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
   webpStatus: ['webp', 'status'] as const,
   zipOverview: ['zip', 'overview'] as const,
+  backupStatus: ['backups', 'status'] as const,
   emptyFolders: ['empty', 'folders'] as const,
   dedupeStatus: ['dedupe', 'status'] as const,
   dedupeGroups: (mode: string, limit: number) =>
@@ -399,6 +400,39 @@ export function useDedupeUnignore() {
       api.dedupeUnignore(path1, path2),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useBackupStatus() {
+  return useQuery({
+    queryKey: queryKeys.backupStatus,
+    queryFn: api.backupStatus,
+    staleTime: 10_000,
+  })
+}
+
+export function useBackupSnapshot() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.backupSnapshot(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.backupStatus })
+    },
+  })
+}
+
+export function useBackupVerify() {
+  return useMutation({ mutationFn: () => api.backupVerify() })
+}
+
+export function useBackupRestore() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.backupRestore(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.backupStatus })
+      void invalidateLibrary(client)
     },
   })
 }

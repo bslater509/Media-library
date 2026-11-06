@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI
 from media_library_v2 import __version__
 from media_library_v2.config import get_settings
 from media_library_v2.routers import analytics as analytics_router
+from media_library_v2.routers import backups as backups_router
 from media_library_v2.routers import cleanup as cleanup_router
 from media_library_v2.routers import dedupe as dedupe_router
 from media_library_v2.routers import downloads as downloads_router
@@ -46,6 +47,7 @@ def api_router() -> APIRouter:
     router.include_router(webp_router.router, tags=["webp"])
     router.include_router(cleanup_router.router, tags=["cleanup"])
     router.include_router(zip_router.router, tags=["zip"])
+    router.include_router(backups_router.router, tags=["backups"])
     return router
 
 

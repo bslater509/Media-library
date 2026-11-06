@@ -407,6 +407,51 @@ export interface ZipUnpackResult {
   removed: string
 }
 
+export interface BackupStatus {
+  exists: boolean
+  directory: string
+  created_at: number | null
+  created_at_str: string | null
+  version: string | null
+  files: number | null
+  folders: number | null
+  thumbnails: number | null
+  db_bytes: number
+  db_size_formatted: string
+  tar_bytes: number
+  tar_size_formatted: string
+  allow_live_restore: boolean
+}
+
+export interface BackupSnapshotResult {
+  success: boolean
+  created_at: number
+  files: number
+  folders: number
+  thumbnails: number
+  db_bytes: number
+  tar_bytes: number
+  directory: string
+}
+
+export interface BackupVerifyResult {
+  snapshot_integrity: string
+  live_integrity: string
+  files: number
+  folders: number
+  thumbnails: number
+  meta_present: boolean
+}
+
+export interface BackupRestoreResult {
+  restored: boolean
+  database: string
+  thumbnails: number
+  files: number
+  folders: number
+  restart_required: boolean
+}
+
 export interface AnalyticsTreeNode {
   name: string
   path: string
@@ -693,6 +738,14 @@ export const api = {
     post<ZipCompressResult>('/zip/compress', { path }),
 
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
+
+  backupStatus: () => request<BackupStatus>('/backups/status'),
+
+  backupSnapshot: () => post<BackupSnapshotResult>('/backups/snapshot', {}),
+
+  backupVerify: () => request<BackupVerifyResult>('/backups/verify'),
+
+  backupRestore: () => post<BackupRestoreResult>('/backups/restore', {}),
 
   analyticsOverview: (refresh = false, folderLimit = 15, fileLimit = 25) =>
     request<AnalyticsOverview>('/analytics/overview', {

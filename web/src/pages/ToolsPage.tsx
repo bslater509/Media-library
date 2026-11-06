@@ -72,12 +72,10 @@ export function ToolsPage() {
     {
       title: 'Library backup',
       description:
-        'Snapshot the database and thumbnail cache into the library folder and restore it on a fresh machine.',
+        'Snapshot the index and cached posters into the library folder, verify the copy, download it, or restore it with the service stopped.',
       icon: <DatabaseBackup />,
-      href: '/',
-      cta: 'Open in the current app',
-      badge: 'current app',
-      badgeVariant: 'outline',
+      to: '/tools/backup',
+      cta: 'Manage backups',
     },
     {
       title: 'Analytics',

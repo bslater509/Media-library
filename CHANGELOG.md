@@ -79,6 +79,13 @@ snapshot metadata.
   replaces its index subtree with archive members; unpacking extracts safely to
   a sibling folder, deletes the archive and re-indexes the extracted tree. The
   same actions are available in the Library toolbar for the folder on screen.
+- **Library snapshots in v2.** `/v2/tools/backup` creates a compacted copy of
+  the SQLite index plus a tar of cached posters in
+  `.media_library_backup/v2/` (v1's automatic snapshot is left untouched),
+  reports counts/sizes, verifies both databases, and offers the two files for
+  download. Restore is deliberately disabled while v1 owns the index; the page
+  documents `python -m media_library_v2.restore --yes` for a service-stopped
+  recovery, and `V2_ALLOW_LIVE_RESTORE` enables the in-app path after cutover.
 
 ## [2.0.2] - 2026-11-03
 

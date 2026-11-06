@@ -67,6 +67,9 @@ class Settings:
     thumbnail_dir: Path
     upload_staging_dir: Path
     sorter_state_path: Path
+    backup_dir: Path
+    backup_staging_dir: Path
+    allow_live_restore: bool
     download_staging_dir: Path
     download_concurrency: int
     download_cookies_file: str
@@ -122,6 +125,14 @@ def load_settings() -> Settings:
             "V2_SOURCE_DIR", Path(_env_str("INCOMING_DIR") or data_dir / "incoming")
         ),
         db_path=_resolve_db_path(data_dir),
+        backup_dir=_env_path(
+            "LIBRARY_BACKUP_DIR",
+            _resolve_library_dir(data_dir) / ".media_library_backup",
+        ),
+        backup_staging_dir=_env_path(
+            "V2_BACKUP_STAGING_DIR", data_dir / "backup_staging_v2"
+        ),
+        allow_live_restore=_env_bool("V2_ALLOW_LIVE_RESTORE", False),
         thumbnail_dir=_env_path("THUMBNAIL_DIR", data_dir / "thumbnails"),
         upload_staging_dir=_env_path(
             "V2_UPLOAD_STAGING_DIR", data_dir / "upload_staging_v2"
