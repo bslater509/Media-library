@@ -187,6 +187,46 @@ export interface UploadFinalizeResponse {
   file: FileEntry | null
 }
 
+export interface SorterItem {
+  id: string
+  name: string
+  path: string
+  size: number
+  size_formatted: string
+  mtime: number
+  ext: string
+  playable: boolean
+  needs_transcode: boolean
+  stream_url: string
+  transcode_url: string | null
+}
+
+export interface SorterDestination {
+  path: string
+  name: string
+  file_count?: number | null
+  subfolder_count?: number | null
+}
+
+export interface SorterQueue {
+  source_dir: string
+  available: boolean
+  items: SorterItem[]
+  undo_count: number
+  moved?: { source: string; target: string } | null
+  restored?: string | null
+  path?: string | null
+}
+
+export interface SorterConfig {
+  source_dir: string
+  source_available: boolean
+  library_root: string
+  recent_destinations: SorterDestination[]
+  queue_count: number
+  undo_count: number
+}
+
 export type ConflictPolicy = 'auto_rename' | 'skip' | 'error'
 
 type ParamValue = string | number | boolean | null | undefined
@@ -322,4 +362,29 @@ export const api = {
 
   uploadCancel: (uploadId: string) =>
     post<{ cancelled: boolean }>('/uploads/cancel', { upload_id: uploadId }),
+
+  sorterConfig: () => request<SorterConfig>('/sorter/config'),
+
+  sorterQueue: () => request<SorterQueue>('/sorter/queue'),
+
+  sorterRefresh: () => post<SorterQueue>('/sorter/refresh', {}),
+
+  sorterDestinations: (query: string, limit = 30) =>
+    request<SorterDestination[]>('/sorter/destinations', { q: query, limit }),
+
+  sorterCreateFolder: (parent: string, name: string) =>
+    post<SorterDestination>('/sorter/folders', { parent, name }),
+
+  sorterMove: (path: string, destination: string) =>
+    post<SorterQueue>('/sorter/move', { path, destination }),
+
+  sorterUndo: () => post<SorterQueue>('/sorter/undo', {}),
+
+  sorterRename: (path: string, name: string) =>
+    post<SorterQueue>('/sorter/rename', { path, name }),
+
+  sorterDelete: (path: string) => post<SorterQueue>('/sorter/delete', { path }),
+
+  sorterThumbnail: (path: string) =>
+    `${API_BASE}/sorter/thumbnail?path=${encodeURIComponent(path)}`,
 }

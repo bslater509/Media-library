@@ -33,6 +33,13 @@ snapshot metadata.
 - The v2 client gains a tile action menu (right-click or ⋯), inline rename and
   delete dialogs, a folder picker for moves, a new-folder dialog, an upload
   dialog with per-file progress and a visible favorite toggle in the viewer.
+- **The v2 Video Sorter.** A dedicated `/v2/sorter` workspace: the incoming
+  folder scanned one level deep, a preloaded player with live FFmpeg transcoding
+  for non-web containers, six remembered destinations bound to keys 1–6, folder
+  search with Enter-to-move, create-and-move, undo, rename and delete, session
+  count and progress. Moves import through the same atomic, indexed write path as
+  uploads; undo moves the clip back and removes its index row.
+- `V2_SOURCE_DIR` and `V2_SORTER_STATE` configuration.
 
 ## [2.0.2] - 2026-11-03
 

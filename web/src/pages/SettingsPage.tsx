@@ -12,7 +12,6 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'Video sorter and undo', phase: 'next' },
   { label: 'URL and playlist downloads', phase: 'next' },
   { label: 'Duplicate detection and resolution', phase: 'later' },
   { label: 'ZIP virtual folders and batch tools', phase: 'later' },

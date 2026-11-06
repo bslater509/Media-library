@@ -1114,6 +1114,8 @@ build on any reverse import.
 | `V2_DB_READ_ONLY` | `false` | Open the index read-only; mutations then return `503` |
 | `V2_WRITES` | `true` | Master switch for v2's uploads/manage/favorite endpoints |
 | `V2_UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging_v2` | Staging for v2's resumable uploads |
+| `V2_SOURCE_DIR` | `INCOMING_DIR` | Incoming folder the v2 sorter reviews |
+| `V2_SORTER_STATE` | `${DATA_DIR}/v2_sorter_state.json` | Recent sorter destinations (undo is in memory) |
 | `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
 | `V2_SEARCH_LIMIT` | `1000` | Default search page size |
 
@@ -1138,6 +1140,18 @@ build on any reverse import.
 | `POST /uploads/chunk` | append a chunk at its explicit byte offset (duplicates acked, gaps `409`) |
 | `POST /uploads/finalize` | verify the staged size, atomically commit, index the file |
 | `POST /uploads/cancel` | discard a staged upload |
+| `GET /sorter/config` | incoming path + availability, recent destinations, queue/undo counts |
+| `GET /sorter/queue` | videos in the incoming folder (one level, 1.5 s cache) |
+| `POST /sorter/refresh` | rescan the incoming folder |
+| `GET /sorter/destinations?q=&limit=` | index-only destination folder search |
+| `POST /sorter/folders` | create a destination and remember it |
+| `POST /sorter/move` | import one incoming clip into a library folder, indexed |
+| `POST /sorter/undo` | move the last import back and drop its index row |
+| `POST /sorter/rename` | rename a file still in the incoming folder |
+| `POST /sorter/delete` | delete a file from the incoming folder |
+| `GET /sorter/stream` | HTTP 206 streaming from the incoming folder |
+| `GET /sorter/transcode` | live FFmpeg fragmented-MP4 stream for non-web containers |
+| `GET /sorter/thumbnail` | lazily generated 1 s poster for the queue |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1168,10 +1182,15 @@ lightbox are bundled — no CDN request.
 Live now: system/health, browse, folders, search, favorites, media streaming, thumbnails,
 the React shell, library gallery, lightbox, command palette, keyboard reference, search,
 favorites, theme light/dark/system, mobile bottom navigation, **uploads (chunked and
-resumable), rename, move, delete (files and folders), create folder and favorite
-toggling** — every write updating the shared index and the cached artwork.
+resumable), rename, move, delete (files and folders), create folder, favorite
+toggling**, and the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
+one-key move, create-and-move, undo, rename, delete, live transcoding for non-web
+containers). Every write updates the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): the sorter, downloads, dedupe, ZIP, WebP, analytics,
-backups, onboarding and the `/` redirect. Until those land, `/v2` reports
-`features: false` for them and the UI shows them as roadmap items rather than broken
-screens.
+Pending (see the v2 rewrite plan): downloads, dedupe, ZIP, WebP, analytics, backups,
+onboarding and the `/` redirect. Until those land, `/v2` reports `features: false` for
+them and the UI shows them as roadmap items rather than broken screens.
+
+The sorter's undo stack is in memory and is lost on restart; recent destinations persist
+in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
+through the same atomic move + index path as uploads.

@@ -17,6 +17,7 @@ from media_library_v2.routers import favorites as favorites_router
 from media_library_v2.routers import library as library_router
 from media_library_v2.routers import manage as manage_router
 from media_library_v2.routers import media as media_router
+from media_library_v2.routers import sorter as sorter_router
 from media_library_v2.routers import system as system_router
 from media_library_v2.routers import uploads as uploads_router
 from media_library_v2.views import router as views_router
@@ -32,6 +33,7 @@ def api_router() -> APIRouter:
     router.include_router(favorites_router.router, tags=["favorites"])
     router.include_router(manage_router.router, tags=["manage"])
     router.include_router(uploads_router.router, tags=["uploads"])
+    router.include_router(sorter_router.router, tags=["sorter"])
     return router
 
 

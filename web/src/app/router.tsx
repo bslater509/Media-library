@@ -7,6 +7,7 @@ import { LibraryPage } from '../pages/LibraryPage'
 import { NotFoundPage, RoadmapPage } from '../pages/RoadmapPage'
 import { SearchPage } from '../pages/SearchPage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { SorterPage } from '../pages/SorterPage'
 
 function RouteError() {
   const error = useRouteError()
@@ -48,22 +49,7 @@ export const router = createBrowserRouter(
         { path: 'library', element: <LibraryPage /> },
         { path: 'search', element: <SearchPage /> },
         { path: 'favorites', element: <FavoritesPage /> },
-        {
-          path: 'sorter',
-          element: (
-            <RoadmapPage
-              title="Video sorter"
-              description="The rapid keyboard workflow for clearing the incoming folder: 1–6 to move, / to search destinations, Enter to commit, U to undo — all with a pre-buffered video and background transfers."
-              available={[
-                'Pre-buffered autoplay review of every incoming clip',
-                'One-touch moves and create-and-move',
-                'Non-blocking transfers with a full undo stack',
-                'Automatic MP4 transcoding for unsupported containers',
-              ]}
-              v1Path="/sorter"
-            />
-          ),
-        },
+        { path: 'sorter', element: <SorterPage /> },
         {
           path: 'downloads',
           element: (

@@ -17,13 +17,23 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Read .env without mutating os.environ: the composition root (v1's
+# ``create_app``) owns the real environment, and loading values into
+# ``os.environ`` here would re-inject a variable a test deliberately removed.
+_DOTENV = dotenv_values(BASE_DIR / ".env")
 
 _TRUE = {"1", "true", "yes", "on"}
 
 
 def _env_str(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        value = _DOTENV.get(name, "")
+    return (value or default).strip()
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -32,10 +42,10 @@ def _env_path(name: str, default: Path) -> Path:
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
+    raw = _env_str(name)
+    if not raw:
         return default
-    return raw.strip().lower() in _TRUE
+    return raw.lower() in _TRUE
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
@@ -52,9 +62,11 @@ class Settings:
     base_dir: Path
     data_dir: Path
     library_dir: Path
+    source_dir: Path
     db_path: Path
     thumbnail_dir: Path
     upload_staging_dir: Path
+    sorter_state_path: Path
     static_dir: Path
     enabled: bool
     db_read_only: bool
@@ -98,10 +110,16 @@ def load_settings() -> Settings:
         base_dir=BASE_DIR,
         data_dir=data_dir,
         library_dir=_resolve_library_dir(data_dir),
+        source_dir=_env_path(
+            "V2_SOURCE_DIR", Path(_env_str("INCOMING_DIR") or data_dir / "incoming")
+        ),
         db_path=_resolve_db_path(data_dir),
         thumbnail_dir=_env_path("THUMBNAIL_DIR", data_dir / "thumbnails"),
         upload_staging_dir=_env_path(
             "V2_UPLOAD_STAGING_DIR", data_dir / "upload_staging_v2"
+        ),
+        sorter_state_path=_env_path(
+            "V2_SORTER_STATE", data_dir / "v2_sorter_state.json"
         ),
         static_dir=(BASE_DIR / "static").resolve(),
         enabled=_env_bool("V2_ENABLED", True),

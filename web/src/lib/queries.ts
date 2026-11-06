@@ -18,6 +18,9 @@ export const queryKeys = {
   search: (query: string, type: string, sort: string) =>
     ['search', query, type, sort] as const,
   favorites: (type: string) => ['favorites', type] as const,
+  sorterConfig: ['sorter', 'config'] as const,
+  sorterQueue: ['sorter', 'queue'] as const,
+  sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
 }
 
 export function useInfo() {
@@ -173,5 +176,77 @@ export function useMoveFiles() {
       conflict: ConflictPolicy
     }) => api.moveFiles(paths, destination, conflict),
     onSuccess: () => invalidateLibrary(client),
+  })
+}
+
+export function useSorterConfig() {
+  return useQuery({
+    queryKey: queryKeys.sorterConfig,
+    queryFn: api.sorterConfig,
+    staleTime: 10_000,
+  })
+}
+
+export function useSorterQueue() {
+  return useQuery({
+    queryKey: queryKeys.sorterQueue,
+    queryFn: api.sorterQueue,
+    staleTime: 5_000,
+  })
+}
+
+export function useSorterDestinations(query: string) {
+  const trimmed = query.trim()
+  return useQuery({
+    queryKey: queryKeys.sorterDestinations(trimmed),
+    queryFn: () => api.sorterDestinations(trimmed),
+    enabled: trimmed.length > 0,
+    staleTime: 20_000,
+  })
+}
+
+function useSorterMutation<TArgs>(
+  fn: (args: TArgs) => Promise<import('./api').SorterQueue>,
+) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (payload) => {
+      client.setQueryData(queryKeys.sorterQueue, payload)
+      void client.invalidateQueries({ queryKey: queryKeys.sorterConfig })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useSorterMove() {
+  return useSorterMutation(({ path, destination }: { path: string; destination: string }) =>
+    api.sorterMove(path, destination),
+  )
+}
+
+export function useSorterUndo() {
+  return useSorterMutation(() => api.sorterUndo())
+}
+
+export function useSorterRename() {
+  return useSorterMutation(({ path, name }: { path: string; name: string }) =>
+    api.sorterRename(path, name),
+  )
+}
+
+export function useSorterDelete() {
+  return useSorterMutation(({ path }: { path: string }) => api.sorterDelete(path))
+}
+
+export function useSorterCreateFolder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ parent, name }: { parent: string; name: string }) =>
+      api.sorterCreateFolder(parent, name),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.sorterConfig })
+      void invalidateLibrary(client)
+    },
   })
 }

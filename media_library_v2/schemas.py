@@ -246,3 +246,65 @@ class UploadCancelRequest(BaseModel):
 
 class UploadCancelResponse(BaseModel):
     cancelled: bool
+
+
+# --- sorter ----------------------------------------------------------------
+
+
+class SorterItem(BaseModel):
+    id: str
+    name: str
+    path: str
+    size: int
+    size_formatted: str
+    mtime: float
+    ext: str
+    playable: bool
+    needs_transcode: bool
+    stream_url: str
+    transcode_url: str | None = None
+
+
+class SorterDestination(BaseModel):
+    path: str
+    name: str
+    file_count: int | None = None
+    subfolder_count: int | None = None
+
+
+class SorterQueueResponse(BaseModel):
+    source_dir: str
+    available: bool
+    items: list[SorterItem]
+    undo_count: int
+    moved: dict | None = None
+    restored: str | None = None
+    path: str | None = None
+
+
+class SorterConfigResponse(BaseModel):
+    source_dir: str
+    source_available: bool
+    library_root: str
+    recent_destinations: list[SorterDestination]
+    queue_count: int
+    undo_count: int
+
+
+class SorterMoveRequest(BaseModel):
+    path: str
+    destination: str
+
+
+class SorterRenameRequest(BaseModel):
+    path: str
+    name: str
+
+
+class SorterPathRequest(BaseModel):
+    path: str
+
+
+class SorterFolderRequest(BaseModel):
+    parent: str
+    name: str

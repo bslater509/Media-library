@@ -110,7 +110,11 @@ async def stream_media(request: Request, path: str, download: bool = False):
             status_code=501,
             detail="ZIP member streaming is not available in this build",
         )
-    target = resolve_existing_file(path)
+    return await stream_path(request, resolve_existing_file(path), download=download)
+
+
+async def stream_path(request: Request, target: str, download: bool = False):
+    """Range-stream any validated file path (shared with the sorter)."""
     stat = await _stat(target)
     file_size = stat.st_size
     etag = f'"{file_size:x}-{int(stat.st_mtime):x}"'

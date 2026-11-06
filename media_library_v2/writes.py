@@ -52,6 +52,11 @@ def _validate_name(name: str) -> str:
     return clean
 
 
+def validate_name(name: str) -> str:
+    """Public wrapper so the sorter can validate a new filename."""
+    return _validate_name(name)
+
+
 def _resolve_file(raw: str) -> str:
     target = resolve_library_path(raw)
     if not os.path.isfile(target):
@@ -549,6 +554,64 @@ def cancel_upload(upload_id: str) -> dict[str, Any]:
     removed = path.is_file()
     path.unlink(missing_ok=True)
     return {"cancelled": removed}
+
+
+def index_external_file(path: str) -> None:
+    """Index a file that arrived from outside the library (sorter import)."""
+    with writer() as conn, conn:
+        _index_new_file(conn, path)
+        _recompute_folder(conn, os.path.dirname(path))
+
+
+def remove_index_entry(path: str) -> None:
+    """Drop one file from the index and its cached artwork (sorter undo)."""
+    try:
+        mtime, size = _file_stats(path)
+    except OSError:
+        mtime, size = 0.0, 0
+    with writer() as conn, conn:
+        row = conn.execute(
+            "SELECT mtime, size FROM files WHERE path = ?", (path,)
+        ).fetchone()
+        if row is not None:
+            mtime = float(row["mtime"] or 0)
+            size = int(row["size"] or 0)
+        conn.execute("DELETE FROM files WHERE path = ?", (path,))
+        conn.execute("DELETE FROM favorites WHERE path = ?", (path,))
+        _recompute_folder(conn, os.path.dirname(path))
+    _remove_thumbs(path, mtime, size)
+
+
+def import_file(
+    source: str, destination: str, conflict: str = "auto_rename"
+) -> dict[str, Any]:
+    """Move an external file into the library and index it (sorter moves)."""
+    if conflict not in ("auto_rename", "skip", "error"):
+        raise WriteError("Unknown conflict policy", 400)
+    if not os.path.isfile(source):
+        raise WriteError("Source file not found", 404)
+    dest = _resolve_dir(destination)
+    name = os.path.basename(source)
+    target = os.path.join(dest, name)
+    if os.path.exists(target):
+        if conflict == "skip":
+            return {"skipped": True, "source": source, "target": target}
+        if conflict == "error":
+            raise WriteError("Destination already exists", 409)
+        target = _unique_target(dest, name, set())
+    try:
+        shutil.move(source, target)
+    except OSError as exc:
+        raise WriteError(f"Could not move the file: {exc}", 500) from exc
+    try:
+        index_external_file(target)
+    except Exception:
+        try:
+            shutil.move(target, source)
+        except OSError:
+            pass
+        raise
+    return {"skipped": False, "source": source, "target": target}
 
 
 def file_id(path: str) -> str:
