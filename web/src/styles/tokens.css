@@ -1,0 +1,87 @@
+/*
+ * Design tokens — light-first neutral graphite palette.
+ *
+ * Every value is a plain CSS custom property so the whole UI can be re-themed
+ * by swapping a single class on <html>. Tailwind utilities never hardcode a
+ * colour: they resolve through the @theme mapping in tailwind.css.
+ *
+ *   light  : :root
+ *   dark   : .dark on <html> (set by src/lib/theme.ts, including for "system")
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces — page, raised panels, nested panels, hover/selected fills */
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f1f2f4;
+  --surface-3: #e9eaee;
+  --border: #e6e7ea;
+  --border-strong: #d3d5da;
+
+  /* Text */
+  --fg: #17181b;
+  --fg-muted: #5b5f68;
+  --fg-subtle: #8b8f98;
+
+  /* Brand */
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --accent-soft: #eaf0ff;
+  --accent-ring: rgb(37 99 235 / 0.45);
+
+  /* Semantic */
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --danger-fg: #ffffff;
+  --info: #0369a1;
+
+  /* Shape */
+  --radius: 10px;
+  --radius-sm: 7px;
+  --radius-lg: 14px;
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgb(16 18 22 / 0.06), 0 1px 3px rgb(16 18 22 / 0.05);
+  --shadow-2:
+    0 18px 40px -18px rgb(16 18 22 / 0.28), 0 6px 14px -8px rgb(16 18 22 / 0.16);
+
+  /* Typography */
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: #0b0c0e;
+  --surface: #141518;
+  --surface-2: #1b1d21;
+  --surface-3: #23262b;
+  --border: #2a2c31;
+  --border-strong: #3a3d44;
+
+  --fg: #ecedef;
+  --fg-muted: #a2a6ae;
+  --fg-subtle: #7a7f88;
+
+  --accent: #5b8dff;
+  --accent-fg: #0b0c0e;
+  --accent-soft: #172238;
+  --accent-ring: rgb(91 141 255 / 0.5);
+
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --danger-fg: #0b0c0e;
+  --info: #7dd3fc;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 20px 45px -18px rgb(0 0 0 / 0.7), 0 6px 16px -8px rgb(0 0 0 / 0.6);
+}

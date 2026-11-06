@@ -1,0 +1,160 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@plugin '@tailwindcss/typography';
+
+/*
+ * Tailwind theme bridge.
+ *
+ * `inline` is required: the utilities must resolve the token custom property
+ * at the element that uses them, so a `.dark` class anywhere in the tree (not
+ * only on <html>) re-themes everything below it without a second stylesheet.
+ */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--accent-ring);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-info: var(--info);
+
+  /*
+   * `--font-sans`, `--font-mono`, `--radius-sm` and `--radius-lg` are already
+   * Tailwind theme variables, and their utilities emit `var(--<name>)`. The
+   * tokens above declare exactly those names, so they are the values the
+   * utilities resolve to — mapping them here would only emit a self-reference.
+   */
+  --radius-md: var(--radius);
+  --radius-xl: var(--radius-lg);
+
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+}
+
+@layer base {
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tailwind v4 leaves border-color at currentColor; make the token the default. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  ::selection {
+    background-color: var(--accent-soft);
+    color: var(--fg);
+  }
+
+  :focus-visible {
+    outline: none;
+  }
+
+  ::placeholder {
+    color: var(--fg-subtle);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Motion primitives used by dialog / sheet / menu. Only the open state
+ * animates, so Radix Presence unmounts instantly on close. */
+@layer utilities {
+  .anim-overlay[data-state='open'] {
+    animation: ml-fade-in 140ms ease-out both;
+  }
+
+  .anim-panel[data-state='open'] {
+    animation: ml-pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .anim-sheet[data-state='open'] {
+    animation: ml-sheet-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-overlay[data-state='open'],
+  .anim-panel[data-state='open'],
+  .anim-sheet[data-state='open'] {
+    animation: none;
+  }
+}
+
+@keyframes ml-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ml-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ml-sheet-up {
+  from {
+    transform: translateY(14%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

@@ -46,3 +46,6 @@ Thumbs.db
 
 # Local agent-tool artifacts (screenshots, captures)
 .openchamber/
+
+# TypeScript incremental build info (v2 client)
+*.tsbuildinfo

@@ -6,6 +6,8 @@
   "scripts": {
     "build": "vite build && npm run build:css",
     "build:css": "tailwindcss -i ./frontend/src/styles/tailwind.css -o ./static/dist/tailwind.css --minify",
+    "build:v2": "npm --prefix web install && npm --prefix web run build",
+    "dev:v2": "npm --prefix web run dev",
     "dev": "vite",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -9,6 +9,22 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [Unreleased]
+
+### Added
+
+- **The v2 rewrite, served beside the current app at `/v2`.** A new
+  `media_library_v2/` package (which never imports v1) and a new React 19 +
+  TypeScript client in `web/`, built into `static/dist/v2/`. It reads the same
+  library and index as v1, with the index opened read-only, and reuses v1's
+  thumbnail cache byte-for-byte. Live now: browse, folder navigation, search,
+  favorites, byte-range media streaming, thumbnails, the new app shell, the
+  gallery, the lightbox, the command palette and light/dark/system themes.
+  Everything else is reported as `features: false` and shown as roadmap until
+  its phase lands. See `AGENTS.md` §16.
+- `V2_ENABLED`, `V2_LIBRARY_DIR`, `V2_DB_READ_ONLY`, `V2_BROWSE_LIMIT` and
+  `V2_SEARCH_LIMIT` configuration, plus `npm run build:v2`.
+
 ## [2.0.2] - 2026-11-03
 
 ### Changed

@@ -272,6 +272,21 @@ media-library/
 │       ├── url_download_worker.py   # URLDownloadWorker: queued yt-dlp/gallery-dl playlist downloads
 │       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
 │
+├── media_library_v2/                # v2 rewrite (see §16): new app, never imports media_library/
+│   ├── __init__.py                  # __version__ = "3.0.0" (its own line while v1 is 2.x)
+│   ├── config.py                    # env/.env-driven settings, no v1 imports
+│   ├── db.py                        # read-only SQLite access (mode=ro)
+│   ├── paths.py                     # library-root validation, breadcrumbs, formatting
+│   ├── library.py                   # index-only browse/folders/search/favorites/counts
+│   ├── schemas.py                   # Pydantic response models (the OpenAPI contract)
+│   ├── routers/                     # library.py, media.py (range streaming), system.py
+│   ├── views.py                     # /v2 SPA delivery from static/dist/v2/
+│   └── mount.py                     # mount_v2(app) + build_v2_app() for tests
+│
+├── web/                             # v2 React client (own package.json + node_modules)
+│   ├── src/                         # app/, routes/, features/, components/ui, lib/
+│   └── vite.config.ts               # builds into static/dist/v2/ with base /static/dist/v2/
+│
 ├── frontend/                        # Vite frontend source code & Vitest test suite
 │   ├── src/                         # ES modules for app and library
 │   │   ├── app/                     # Video Sorter UI logic, split into feature modules:
@@ -1052,3 +1067,90 @@ Before concluding your turn or submitting your work, complete this verification 
 8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass (CI gates on them).
 9. [ ] **Frontend Escaping**: Every user-controlled string rendered into the DOM (filename, folder name, download title, server error text) goes through `textContent` or `escapeHtml()`; the toast helpers (`frontend/src/library/utils.js`, `frontend/src/app/state.js`) are text-only by construction and must stay that way — a filename is not trusted input.
 10. [ ] **Heavy/Opt-in Features Stay Local**: Anything that adds an inference runtime, a downloaded model or real CPU cost stays **off by default** behind its env switch, imports its dependency lazily so a missing install degrades to a clear status instead of a crash, and verifies any downloaded artefact. (The tree currently ships no such feature; keep data that a feature derives on this machine.)
+
+---
+
+## 16. v2 Rewrite — Served Beside v1 at `/v2`
+
+The application is being rewritten in full (`media_library_v2/` + `web/`) while the
+current v1 app keeps running untouched at `/`. `/v2` is the product line; the cutover
+release is **3.0.0** and `media_library.__version__` only moves at that point.
+
+**Hard rule: `media_library_v2` never imports `media_library`.** The direction is
+one-way — v1's `create_app()` imports `media_library_v2.mount` and mounts it, never the
+reverse. `tests/test_v2_api.py::test_v2_never_imports_v1` walks the AST and fails the
+build on any reverse import.
+
+### Coexistence and data
+
+- One process, one port: `mount_v2(app)` adds `/api/v2` and the `/v2` SPA to the v1
+  FastAPI app (so `systemctl restart media-library` still applies every change). A mount
+  failure is logged and swallowed so v2 can never take v1 down.
+- v2 opens the index **read-only** (`V2_DB_READ_ONLY=true`, `mode=ro` + `PRAGMA
+  query_only`). The v1 crawler owns writes. WAL lets both read concurrently.
+- Browse/search/folders/counts are index-only. No v2 request walks the filesystem except
+  byte-range media streaming and serving an already-cached thumbnail.
+- v2 reuses v1's thumbnail cache byte-for-byte: key
+  `sha256(f"{path}_{mtime}_{size}")[:24]`, poster `thumb_<key>.jpg`, animated
+  `animated/anim_<key>.webp`. Never change the key function — it would orphan the cache.
+- v1's auth middleware is app-wide, so `/api/v2/*` is protected (401) and `/v2/*`
+  redirects to the login page when `APP_PASSWORD` is set.
+
+### New configuration (v2)
+
+| Variable | Default | Description |
+|---|---|---|
+| `V2_ENABLED` | `true` | Mount `/v2` and `/api/v2` at all |
+| `V2_LIBRARY_DIR` | `LIBRARY_DIR` | Library root v2 reads/serves |
+| `V2_DB_READ_ONLY` | `true` | Open the index with `mode=ro`; flip when v2 owns its database |
+| `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
+| `V2_SEARCH_LIMIT` | `1000` | Default search page size |
+
+### API v2 (all under `/api/v2`)
+
+| Route | Purpose |
+|---|---|
+| `GET /health` | v2 liveness + database reachability |
+| `GET /system/info` | version, library root, totals, per-feature capability flags |
+| `GET /system/status` | index totals plus worker ownership (`shared-v1`) |
+| `GET /library/browse?path=&offset=&limit=` | subfolders, files, breadcrumbs, exact total, `next_offset`, `indexed` |
+| `GET /library/folders?path=` | immediate child folders only (sidebar tree) |
+| `GET /library/folders/search?q=&limit=` | folders by name anywhere (command palette jumps) |
+| `GET /library/search?q=&type=&sort=&limit=&offset=` | multi-word filename **or** relative-folder match, exact total + `truncated` |
+| `GET /library/favorites?type=` | favorites newest-first plus global counts |
+| `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
+| `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
+| `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
+
+Conventions: explicit Pydantic `response_model` on every route, `problem+json`-ready
+`detail` errors, path-based addressing validated by `paths.resolve_library_path`
+(403 outside the root), and stable 16-char `id` fields for React keys.
+
+### Client
+
+`web/` is its own npm project (separate `node_modules`) so React 19, Vite 8, Tailwind 4
+and TypeScript 7 cannot disturb v1's Tailwind 3/Vite 5 build. It builds into
+`static/dist/v2/` with `base: '/static/dist/v2/'` and the SPA is served from
+`media_library_v2/views.py`.
+
+```bash
+npm --prefix web install       # first time
+npm --prefix web run build     # or: npm run build:v2
+npm --prefix web run dev       # proxies /api and /static to :8888
+```
+
+The deep-link route is `/v2` + `/v2/{path:path}` → `index.html`; client routes are
+`/v2/library?path=…`, `/v2/search?q=…`, `/v2/favorites`, and so on. Fonts, icons and the
+lightbox are bundled — no CDN request.
+
+### Status
+
+Live now: system/health, browse, folders, search, favorites, media streaming, thumbnails,
+the React shell, library gallery, lightbox, command palette, search, favorites, theme
+light/dark/system, mobile bottom navigation.
+
+Pending (see the v2 rewrite plan): v2's own indexer/workers, uploads,
+move/rename/delete, sorter, downloads, dedupe, ZIP, WebP, analytics, backups,
+onboarding and the `/` redirect. Until those land, `/v2` reports
+`features: false` for them and the UI shows them as roadmap items rather than
+broken screens.

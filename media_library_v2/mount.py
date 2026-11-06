@@ -1,0 +1,58 @@
+"""Composition root for v2.
+
+``mount_v2`` adds the v2 API and SPA to an existing FastAPI app (v1's, while
+both run side by side). ``build_v2_app`` assembles the same routes into a
+standalone app for tests and, later, for the post-cutover entrypoint.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, FastAPI
+
+from media_library_v2 import __version__
+from media_library_v2.config import get_settings
+from media_library_v2.routers import library as library_router
+from media_library_v2.routers import media as media_router
+from media_library_v2.routers import system as system_router
+from media_library_v2.views import router as views_router
+
+logger = logging.getLogger(__name__)
+
+
+def api_router() -> APIRouter:
+    router = APIRouter(prefix="/api/v2")
+    router.include_router(system_router.router, tags=["system"])
+    router.include_router(library_router.router, tags=["library"])
+    router.include_router(media_router.router, tags=["media"])
+    return router
+
+
+def mount_v2(app: FastAPI) -> bool:
+    """Attach v2 to ``app``; returns False when disabled or on failure."""
+    settings = get_settings()
+    if not settings.enabled:
+        logger.info("[v2] Disabled by V2_ENABLED")
+        return False
+    app.include_router(api_router())
+    app.include_router(views_router)
+    logger.info(
+        "[v2] Mounted at /v2 (db=%s read_only=%s)",
+        settings.db_path,
+        settings.db_read_only,
+    )
+    return True
+
+
+def build_v2_app() -> FastAPI:
+    """A standalone v2 app for tests and integration checks."""
+    app = FastAPI(
+        title="Media Library v2",
+        version=__version__,
+        docs_url="/api/v2/docs",
+        openapi_url="/api/v2/openapi.json",
+    )
+    app.include_router(api_router())
+    app.include_router(views_router)
+    return app
