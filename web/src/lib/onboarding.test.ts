@@ -16,17 +16,13 @@ describe('buildCapabilities', () => {
       'search',
       'sorter',
     ])
-    expect(groups.pending.map((item) => item.key)).toEqual([
-      'workers',
-      'x265',
-      'batch',
-    ])
+    expect(groups.pending.map((item) => item.key)).toEqual(['workers'])
   })
 
   it('handles a missing feature map', () => {
     const groups = buildCapabilities(undefined)
     expect(groups.available).toEqual([])
-    expect(groups.pending).toHaveLength(3)
+    expect(groups.pending).toHaveLength(1)
   })
 })
 

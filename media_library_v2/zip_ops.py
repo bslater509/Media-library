@@ -207,6 +207,15 @@ def _index_tree(conn, root: str) -> int:
     return count
 
 
+def index_archive(conn, archive: str, infos: list[zipfile.ZipInfo]) -> int:
+    """Public wrapper used by the archive WebP rewrite."""
+    return _index_archive(conn, archive, infos)
+
+
+def clear_archive_members(conn, archive: str) -> None:
+    conn.execute("DELETE FROM files WHERE folder_path = ?", (archive,))
+
+
 def check_folder(folder: str) -> dict[str, Any]:
     root = resolve_library_path(folder)
     if not os.path.isdir(root):

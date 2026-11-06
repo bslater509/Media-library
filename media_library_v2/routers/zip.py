@@ -6,7 +6,7 @@ import asyncio
 
 from fastapi import APIRouter, Query
 
-from media_library_v2 import zip_ops
+from media_library_v2 import zip_ops, zip_webp
 from media_library_v2.routers.common import as_http_error
 from media_library_v2.schemas import (
     ZipCheck,
@@ -15,6 +15,8 @@ from media_library_v2.schemas import (
     ZipOverview,
     ZipUnpackRequest,
     ZipUnpackResponse,
+    ZipWebpRequest,
+    ZipWebpResponse,
 )
 
 router = APIRouter()
@@ -40,6 +42,14 @@ async def compress(payload: ZipCompressRequest) -> dict:
 async def unpack(payload: ZipUnpackRequest) -> dict:
     try:
         return await asyncio.to_thread(zip_ops.unpack_archive, payload.path)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.post("/zip/webp/optimize", response_model=ZipWebpResponse)
+async def optimize_archive(payload: ZipWebpRequest) -> dict:
+    try:
+        return await asyncio.to_thread(zip_webp.optimize_archive, payload.path)
     except Exception as exc:
         raise as_http_error(exc) from exc
 

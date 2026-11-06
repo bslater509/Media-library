@@ -43,11 +43,20 @@ def _safe_inner(inner: str) -> str:
     return "/".join(parts)
 
 
-def _cache_root(archive: str) -> Path:
+def _cache_path(archive: str) -> Path:
     digest = hashlib.sha256(archive.encode("utf-8", "surrogatepass")).hexdigest()[:16]
-    root = get_settings().zip_cache_dir / f"v2_{digest}"
+    return get_settings().zip_cache_dir / f"v2_{digest}"
+
+
+def _cache_root(archive: str) -> Path:
+    root = _cache_path(archive)
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def cache_dir_for(archive: str) -> Path:
+    """The extraction-cache directory for one archive (used by tests/tools)."""
+    return _cache_path(archive)
 
 
 def _cache_target(archive: str, inner: str) -> Path:
@@ -166,8 +175,7 @@ def cache_usage() -> dict[str, int]:
 
 
 def purge_cache(archive: str) -> None:
-    root = _cache_root(archive)
-    shutil.rmtree(root, ignore_errors=True)
+    shutil.rmtree(_cache_path(archive), ignore_errors=True)
 
 
 # Re-exported for callers that only need the clock in tests.

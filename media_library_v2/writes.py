@@ -235,7 +235,8 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                 prepared.append((target, "folder", 0.0, 0))
             elif os.path.isfile(target):
                 mtime, size = _file_stats(target)
-                prepared.append((target, "file", mtime, size))
+                kind = "zip" if target.lower().endswith(".zip") else "file"
+                prepared.append((target, kind, mtime, size))
             else:
                 raise WriteError("Not found", 404)
         except WriteError as exc:
@@ -263,12 +264,13 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
             parent = os.path.dirname(target)
             if parent and parent != target:
                 parent_folders.add(parent)
-            if kind == "folder":
+            if kind in ("folder", "zip"):
                 prefix = target + os.sep
                 rows = conn.execute(
                     "SELECT path, mtime, size FROM files WHERE folder_path = ? "
-                    "OR substr(folder_path, 1, ?) = ?",
-                    (target, len(prefix), prefix),
+                    "OR substr(folder_path, 1, ?) = ? OR path = ? "
+                    "OR substr(path, 1, ?) = ?",
+                    (target, len(prefix), prefix, target, len(prefix), prefix),
                 ).fetchall()
                 doomed_thumbs.extend(
                     (row["path"], float(row["mtime"] or 0), int(row["size"] or 0))
@@ -293,6 +295,10 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                     "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
                     (target, target, len(prefix), prefix, len(prefix), prefix),
                 )
+                if kind == "zip":
+                    # The archive's own row holds the virtual folder; members
+                    # were removed by the prefix clauses above.
+                    conn.execute("DELETE FROM folders WHERE path = ?", (target,))
             else:
                 doomed_thumbs.append((target, mtime, size))
                 conn.execute("DELETE FROM files WHERE path = ?", (target,))

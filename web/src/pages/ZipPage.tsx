@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import {
   Archive,
@@ -6,12 +7,13 @@ import {
   ArrowRight,
   Loader2,
   FolderArchive,
+  ImageDown,
   Pause,
   Play,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ZipArrayItem, ZipCandidate } from '../lib/api'
+import { api, type ZipArrayItem, type ZipCandidate } from '../lib/api'
 import {
   useZipBatch,
   useZipBatchCancel,
@@ -36,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
+  IconButton,
   Progress,
   Spinner,
 } from '../components/ui'
@@ -50,6 +53,9 @@ export function ZipPage() {
   const unpack = useZipUnpack()
   const [pending, setPending] = useState<Pending | null>(null)
   const [confirmBatch, setConfirmBatch] = useState<'compress' | 'unpack' | null>(null)
+  const [webpTarget, setWebpTarget] = useState<ZipArrayItem | null>(null)
+  const [webpBusy, setWebpBusy] = useState(false)
+  const queryClient = useQueryClient()
   const batch = useZipBatch()
   const startBatch = useZipBatchStart()
   const pauseBatch = useZipBatchPause()
@@ -70,6 +76,28 @@ export function ZipPage() {
     }
     lastBatchStatus.current = status
   }, [batchStatus?.status, overview])
+
+  const optimizeWebp = async () => {
+    if (!webpTarget) return
+    setWebpBusy(true)
+    try {
+      const result = await api.zipOptimizeWebp(webpTarget.path)
+      toast.success(
+        result.changed
+          ? `${result.converted} image${result.converted === 1 ? '' : 's'} converted to WebP · ${result.saved_formatted} saved`
+          : 'No image in this archive needed conversion',
+      )
+      setWebpTarget(null)
+      void overview.refetch()
+      void queryClient.invalidateQueries({ queryKey: ['zip'] })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not rewrite the archive',
+      )
+    } finally {
+      setWebpBusy(false)
+    }
+  }
 
   const beginBatch = () => {
     if (!confirmBatch) return
@@ -326,6 +354,14 @@ export function ZipPage() {
                     <span className="shrink-0 text-[10px] text-fg-subtle">
                       {archive.file_count} files · {archive.size_formatted}
                     </span>
+                    <IconButton
+                      aria-label={`Convert images to WebP in ${archive.name}`}
+                      title="Convert images to WebP inside this archive"
+                      size={28}
+                      onClick={() => setWebpTarget(archive)}
+                    >
+                      <ImageDown />
+                    </IconButton>
                     <Button
                       size="sm"
                       variant="secondary"
@@ -387,6 +423,44 @@ export function ZipPage() {
                 <ArchiveRestore />
               )}
               {pending?.kind === 'compress' ? 'Compress folder' : 'Unpack archive'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={webpTarget !== null}
+        onOpenChange={(open) => (open ? undefined : setWebpTarget(null))}
+      >
+        <DialogContent aria-describedby={undefined} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Convert images to WebP in “{webpTarget?.name}”?</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <p className="text-sm leading-6 text-fg-muted">
+              Every JPEG, PNG, BMP and TIFF member is re-encoded to WebP; all
+              other files are copied unchanged. The archive is rebuilt on local
+              staging, verified, then swapped in atomically.
+            </p>
+            <p className="mt-2 truncate font-mono text-[11px] text-fg-subtle">
+              {webpTarget?.path}
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setWebpTarget(null)}
+              disabled={webpBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void optimizeWebp()} disabled={webpBusy}>
+              {webpBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ImageDown />
+              )}
+              Convert images
             </Button>
           </DialogFooter>
         </DialogContent>

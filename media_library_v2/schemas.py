@@ -710,6 +710,21 @@ class ZipBatchStatus(BaseModel):
     finished_at: float | None = None
 
 
+class ZipWebpRequest(BaseModel):
+    path: str
+
+
+class ZipWebpResponse(BaseModel):
+    archive: str
+    changed: bool
+    converted: int
+    skipped: int
+    saved_bytes: int
+    saved_formatted: str
+    members: int
+    size_formatted: str | None = None
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

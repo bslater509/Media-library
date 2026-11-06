@@ -407,6 +407,17 @@ export interface ZipUnpackResult {
   removed: string
 }
 
+export interface ZipWebpResult {
+  archive: string
+  changed: boolean
+  converted: number
+  skipped: number
+  saved_bytes: number
+  saved_formatted: string
+  members: number
+  size_formatted?: string | null
+}
+
 export interface ZipBatchStatus {
   mode: 'compress' | 'unpack' | null
   status: 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
@@ -795,6 +806,9 @@ export const api = {
     post<ZipCompressResult>('/zip/compress', { path }),
 
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
+
+  zipOptimizeWebp: (path: string) =>
+    post<ZipWebpResult>('/zip/webp/optimize', { path }),
 
   zipBatchStatus: () => request<ZipBatchStatus>('/zip/batch/status'),
 

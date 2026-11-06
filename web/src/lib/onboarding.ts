@@ -32,7 +32,6 @@ const PENDING: Capability[] = [
     available: false,
   },
 
-  { key: 'batch', label: 'Batch ZIP and archive WebP tools', available: false },
 ]
 
 export function buildCapabilities(

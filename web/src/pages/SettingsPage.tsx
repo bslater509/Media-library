@@ -13,7 +13,6 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'Archive WebP rewrites', phase: 'later' },
   { label: 'Background workers and archive WebP rewrites', phase: 'later' },
 ]
 

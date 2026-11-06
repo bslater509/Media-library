@@ -238,6 +238,54 @@ def test_rename_recomputes_type_from_the_new_extension(write_env):
     assert back.json()["file"]["needs_transcode"] is False
 
 
+def test_delete_a_zip_archive_removes_its_members(write_env):
+    client = write_env["client"]
+    archive = write_env["library"] / "Trip" / "bundle.zip"
+    archive.write_bytes(b"PK\x03\x04fake")
+    member = f"{archive}/inside.jpg"
+    with _db(write_env) as conn:
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, file_count, "
+            "subfolder_count, last_scanned, is_zip, total_size) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (str(archive), "bundle.zip", str(archive.parent), 1, 0, 1.0, 1, 9),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, "
+            "size_formatted, mtime, needs_transcode, has_thumb) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (member, "inside.jpg", str(archive), "image", ".jpg", 9, "9 B", 1.0, 0, 0),
+        )
+        conn.execute(
+            "INSERT INTO favorites (path, created_at) VALUES (?, ?)", (member, 1.0)
+        )
+
+    response = client.post("/api/v2/manage/delete", json={"paths": [str(archive)]})
+    assert response.status_code == 200, response.text
+    assert response.json()["deleted"] == [str(archive)]
+    assert not archive.exists()
+
+    with _db(write_env) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM folders WHERE path = ?", (str(archive),)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM files WHERE folder_path = ?", (str(archive),)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM favorites WHERE path = ?", (member,)
+            ).fetchone()[0]
+            == 0
+        )
+
+
 def test_delete_a_folder_recursively(write_env):
     client = write_env["client"]
     folder = write_env["library"] / "Trip"

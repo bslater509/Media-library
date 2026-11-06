@@ -101,6 +101,15 @@ snapshot metadata.
   time, with live progress, current item, error list, pause/resume between
   items and cancel. Each item reuses the validated single-archive path, so a
   batch never leaves a half-written archive.
+- **Archive WebP rewriting in v2.** Each archive in the ZIP tools has a
+  "Convert images" action: JPEG/PNG/BMP/TIFF members become WebP (PNG
+  losslessly), other members are copied unchanged, favorites are remapped, the
+  member cache is purged and the index is re-synced. The archive is rebuilt on
+  local staging, verified with `testzip()` and swapped in atomically;
+  `WEBP_SKIP_LARGER` keeps an original when the WebP would be bigger.
+- **Deleting a ZIP archive now removes its virtual members** from the index
+  (and their cached posters and favorites), instead of leaving orphan member
+  rows for the crawler to prune.
 
 ## [2.0.2] - 2026-11-03
 

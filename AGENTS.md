@@ -1134,7 +1134,7 @@ build on any reverse import.
 | `GET /library/favorites?type=` | favorites newest-first plus global counts |
 | `POST /favorites/toggle` | star/unstar one file, returns fresh all/videos/images counts |
 | `POST /manage/rename` | rename a file in place (index row, favorite and artwork follow) |
-| `POST /manage/delete` | delete files and/or folders recursively (index subtree + artwork) |
+| `POST /manage/delete` | delete files, folders (recursive) or ZIP archives (their virtual members too) + artwork |
 | `POST /manage/folders` | create a real subfolder and index it |
 | `POST /manage/move` | move files with `auto_rename` / `skip` / `error` conflict policy |
 | `GET /uploads/status?upload_id=` | bytes already staged, for resuming |
@@ -1177,6 +1177,7 @@ build on any reverse import.
 | `POST /zip/batch/start` | run a sequential compress/unpack batch (all candidates or explicit `paths`) |
 | `GET /zip/batch/status` | batch mode, running/paused/completed, progress, current item, errors |
 | `POST /zip/batch/pause` / `/resume` / `/cancel` | pause between items, resume, or stop the queue |
+| `POST /zip/webp/optimize` | rewrite an archive's JPEG/PNG/BMP/TIFF members to WebP in place, preserving other members |
 | `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag |
 | `POST /backups/snapshot` | live SQLite backup (VACUUM-compacted) + poster tar + meta into `.media_library_backup/v2/` |
 | `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
@@ -1240,8 +1241,8 @@ still in the current app, appearance; replayable from Settings or the command pa
 dismissal persisted under `v2_onboarding_done`). Every write updates the shared index
 and the cached artwork.
 
-Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surfaces are
-archive WebP rewrites and v2's own background workers.
+Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surface is
+v2's own background workers.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1269,6 +1270,13 @@ removing the source folder. Unpacking extracts into a temporary sibling (skippin
 members) and renames it into place. Both replace the affected `folders`/`files` rows in
 one transaction; a crash between the disk change and the commit leaves rows that v1's
 crawler reconciles.
+
+Archive WebP rewriting streams every member into a new archive on local staging,
+converts JPEG/PNG/BMP/TIFF to WebP (PNG losslessly, others at `WEBP_QUALITY`), optionally
+keeps the original when the result would be larger, verifies with `testzip()`, swaps it
+in atomically, purges the member cache, remaps favorites and re-indexes the archive.
+The archive itself is locked while rewriting, so a concurrent compress/unpack cannot
+interleave.
 
 ZIP batches run one archive at a time on a daemon thread; pause takes effect between
 items (an archive is never half-written), cancel clears the queue, and each item calls
