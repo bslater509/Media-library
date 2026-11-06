@@ -146,31 +146,58 @@ def _clamp_to_directory(target: str) -> str:
     return root
 
 
-def browse(raw_path: str | None, offset: int = 0, limit: int | None = None) -> dict:
-    """Return subfolders, media files and breadcrumbs for one folder."""
+def browse(
+    raw_path: str | None,
+    offset: int = 0,
+    limit: int | None = None,
+    type_filter: str | None = None,
+    favorites_only: bool = False,
+    sort: str = "name_asc",
+) -> dict:
+    """Return subfolders, media files and breadcrumbs for one folder.
+
+    ``type_filter`` (``video``/``image``), ``favorites_only`` and ``sort``
+    narrow the media list only; the folder rows stay the full child listing.
+    """
     settings = get_settings()
     root = library_root()
     target = _clamp_to_directory(resolve_library_path(raw_path))
     capped_limit = max(1, min(limit or settings.browse_limit, 500))
     capped_offset = max(0, offset)
 
+    where = ["f.folder_path = ?"]
+    params: list[Any] = [target]
+    if type_filter in ("video", "image"):
+        where.append("f.type = ?")
+        params.append(type_filter)
+    if favorites_only:
+        where.append("fav.path IS NOT NULL")
+    where_sql = " AND ".join(where)
+    order_sql = _SORTS.get(sort, _SORTS["name_asc"])
+
     with reader() as conn:
         folder_row = _folder_row(conn, target)
         folder_rows = conn.execute(_FOLDER_SQL, (target,)).fetchall()
         file_rows = conn.execute(
-            """
+            f"""
             SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END
                    AS is_favorite
             FROM files f
             LEFT JOIN favorites fav ON f.path = fav.path
-            WHERE f.folder_path = ?
-            ORDER BY LOWER(f.name) ASC
+            WHERE {where_sql}
+            ORDER BY {order_sql}
             LIMIT ? OFFSET ?
             """,
-            (target, capped_limit + 1, capped_offset),
+            params + [capped_limit + 1, capped_offset],
         ).fetchall()
         total = conn.execute(
-            "SELECT COUNT(*) AS n FROM files WHERE folder_path = ?", (target,)
+            f"""
+            SELECT COUNT(*) AS n
+            FROM files f
+            LEFT JOIN favorites fav ON f.path = fav.path
+            WHERE {where_sql}
+            """,
+            params,
         ).fetchone()["n"]
 
     has_more = len(file_rows) > capped_limit

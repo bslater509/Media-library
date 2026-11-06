@@ -167,8 +167,22 @@ async function request<T>(
 export const api = {
   info: () => request<InfoResponse>('/system/info'),
 
-  browse: (path: string | null, offset = 0, limit = 120) =>
-    request<BrowseResponse>('/library/browse', { path, offset, limit }),
+  browse: (options: {
+    path: string | null
+    offset?: number
+    limit?: number
+    type?: string
+    favorite?: boolean
+    sort?: string
+  }) =>
+    request<BrowseResponse>('/library/browse', {
+      path: options.path,
+      offset: options.offset ?? 0,
+      limit: options.limit ?? 120,
+      type: options.type,
+      favorite: options.favorite || undefined,
+      sort: options.sort === 'name_asc' ? undefined : options.sort,
+    }),
 
   folders: (path: string | null) =>
     request<FoldersResponse>('/library/folders', { path }),

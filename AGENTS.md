@@ -1113,7 +1113,7 @@ build on any reverse import.
 | `GET /health` | v2 liveness + database reachability |
 | `GET /system/info` | version, library root, totals, per-feature capability flags |
 | `GET /system/status` | index totals plus worker ownership (`shared-v1`) |
-| `GET /library/browse?path=&offset=&limit=` | subfolders, files, breadcrumbs, exact total, `next_offset`, `indexed` |
+| `GET /library/browse?path=&offset=&limit=&type=&favorite=&sort=` | subfolders, files, breadcrumbs, exact total, `next_offset`, `indexed`; `type` (`video`/`image`), `favorite` and `sort` narrow the media list |
 | `GET /library/folders?path=` | immediate child folders only (sidebar tree) |
 | `GET /library/folders/search?q=&limit=` | folders by name anywhere (command palette jumps) |
 | `GET /library/search?q=&type=&sort=&limit=&offset=` | multi-word filename **or** relative-folder match, exact total + `truncated` |

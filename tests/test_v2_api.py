@@ -232,6 +232,39 @@ def test_browse_paginates_with_next_offset(v2_env):
     assert second["files"][0]["path"] != page["files"][0]["path"]
 
 
+def test_browse_filters_by_type_favorites_and_sort(v2_env):
+    client = v2_env["client"]
+    target = str(v2_env["library"] / "Iceland 2023")
+
+    images = client.get(
+        "/api/v2/library/browse", params={"path": target, "type": "image"}
+    ).json()
+    assert [f["name"] for f in images["files"]] == ["harbour.jpg"]
+    assert images["total"] == 1
+
+    favorites = client.get(
+        "/api/v2/library/browse", params={"path": target, "favorite": "true"}
+    ).json()
+    assert [f["name"] for f in favorites["files"]] == ["harbour.jpg"]
+
+    none = client.get(
+        "/api/v2/library/browse",
+        params={"path": target, "favorite": "true", "type": "video"},
+    ).json()
+    assert none["files"] == []
+    assert none["total"] == 0
+
+    largest = client.get(
+        "/api/v2/library/browse", params={"path": target, "sort": "size_desc"}
+    ).json()
+    assert [f["name"] for f in largest["files"]] == ["aurora.mp4", "harbour.jpg"]
+
+    by_name_desc = client.get(
+        "/api/v2/library/browse", params={"path": target, "sort": "name_desc"}
+    ).json()
+    assert [f["name"] for f in by_name_desc["files"]] == ["harbour.jpg", "aurora.mp4"]
+
+
 def test_system_info_reports_totals(v2_env):
     client = v2_env["client"]
     info = client.get("/api/v2/system/info").json()

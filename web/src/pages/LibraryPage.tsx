@@ -9,13 +9,14 @@ import {
   ImageOff,
   Loader2,
   RefreshCw,
+  Star,
   ZoomIn,
 } from 'lucide-react'
 import type { FolderEntry } from '../lib/api'
 import { cn } from '../lib/cn'
 import { TILE_ROW_HEIGHT, useDensityStore, type TileScale } from '../lib/stores'
 import { useInfiniteBrowse, useInfo } from '../lib/queries'
-import { Badge, Button, EmptyState, IconButton, Segmented, Skeleton } from '../components/ui'
+import { Badge, Button, EmptyState, IconButton, Segmented, Select, Skeleton } from '../components/ui'
 import { JustifiedGrid } from '../components/media/JustifiedGrid'
 import { MediaLightbox } from '../components/media/MediaLightbox'
 
@@ -23,12 +24,19 @@ export function LibraryPage() {
   const [params, setParams] = useSearchParams()
   const requestedPath = params.get('path')
   const openPath = params.get('open')
+  const typeFilter = params.get('type') ?? 'all'
+  const favoritesOnly = params.get('fav') === '1'
+  const sort = params.get('sort') ?? 'name_asc'
   const info = useInfo()
   const scale = useDensityStore((state) => state.scale)
   const setScale = useDensityStore((state) => state.setScale)
   const rowHeight = TILE_ROW_HEIGHT[scale]
 
-  const query = useInfiniteBrowse(requestedPath)
+  const query = useInfiniteBrowse(requestedPath, {
+    type: typeFilter,
+    favorite: favoritesOnly,
+    sort,
+  })
   const first = query.data?.pages[0]
 
   const files = useMemo(
@@ -70,11 +78,26 @@ export function LibraryPage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const navigateTo = (path: string | null) => {
-    const next = new URLSearchParams()
+    const next = new URLSearchParams(params)
     if (path) next.set('path', path)
+    else next.delete('path')
+    next.delete('open')
     setParams(next)
     window.scrollTo({ top: 0 })
   }
+
+  const patchParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(params)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) next.delete(key)
+      else next.set(key, value)
+    }
+    next.delete('open')
+    setParams(next)
+  }
+
+  const filtered = typeFilter !== 'all' || favoritesOnly || sort !== 'name_asc'
+  const clearFilters = () => patchParams({ type: null, fav: null, sort: null })
 
   const currentPath = first?.path ?? requestedPath ?? info.data?.library_root ?? ''
   const root = first?.root ?? info.data?.library_root ?? ''
@@ -152,6 +175,64 @@ export function LibraryPage() {
             </IconButton>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5 sm:px-5">
+          <Segmented
+            aria-label="Filter media"
+            size="sm"
+            value={typeFilter}
+            onChange={(value) =>
+              patchParams({ type: value === 'all' ? null : value })
+            }
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'video', label: 'Videos' },
+              { value: 'image', label: 'Images' },
+            ]}
+          />
+          <button
+            type="button"
+            aria-pressed={favoritesOnly}
+            onClick={() => patchParams({ fav: favoritesOnly ? null : '1' })}
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-medium transition-colors',
+              favoritesOnly
+                ? 'border-transparent bg-amber-500/15 text-amber-600 dark:text-amber-300'
+                : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg',
+            )}
+          >
+            <Star
+              aria-hidden="true"
+              className={cn('size-3.5', favoritesOnly && 'fill-current')}
+            />
+            Favorites
+          </button>
+
+          <div className="ml-auto flex items-center gap-2">
+            {filtered ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs text-fg-subtle hover:text-fg"
+              >
+                Clear
+              </button>
+            ) : null}
+            <Select
+              aria-label="Sort media"
+              value={sort}
+              onChange={(event) => patchParams({ sort: event.target.value })}
+              className="h-8 w-36 text-xs"
+            >
+              <option value="name_asc">Name A–Z</option>
+              <option value="name_desc">Name Z–A</option>
+              <option value="date_desc">Newest first</option>
+              <option value="date_asc">Oldest first</option>
+              <option value="size_desc">Largest first</option>
+              <option value="size_asc">Smallest first</option>
+            </Select>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col gap-6 px-3 py-4 sm:px-5">
@@ -215,11 +296,30 @@ export function LibraryPage() {
                 </>
               ) : null}
 
-              {!query.isLoading && files.length === 0 && (first?.folders.length ?? 0) === 0 ? (
+              {!query.isLoading && files.length === 0 ? (
                 <EmptyState
-                  icon={<ImageOff />}
-                  title="Nothing here yet"
-                  description="This folder has no media and no subfolders in the index."
+                  icon={filtered ? <Star /> : <ImageOff />}
+                  title={
+                    filtered
+                      ? 'No media matches these filters'
+                      : (first?.folders.length ?? 0) > 0
+                        ? 'No media in this folder'
+                        : 'Nothing here yet'
+                  }
+                  description={
+                    filtered
+                      ? 'Clear the filters to see everything in this folder.'
+                      : (first?.folders.length ?? 0) > 0
+                        ? 'Open one of the folders above.'
+                        : 'This folder has no media and no subfolders in the index.'
+                  }
+                  action={
+                    filtered ? (
+                      <Button variant="secondary" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    ) : undefined
+                  }
                 />
               ) : null}
 

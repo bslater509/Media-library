@@ -42,10 +42,30 @@ export function useFolderChildren(path: string | null) {
 }
 
 /** Infinite, offset-paged browse for one folder. */
-export function useInfiniteBrowse(path: string | null, pageSize = 120) {
+export function useInfiniteBrowse(
+  path: string | null,
+  options: {
+    type?: string
+    favorite?: boolean
+    sort?: string
+    pageSize?: number
+  } = {},
+) {
+  const type = options.type ?? 'all'
+  const favorite = options.favorite ?? false
+  const sort = options.sort ?? 'name_asc'
+  const pageSize = options.pageSize ?? 120
   return useInfiniteQuery({
-    queryKey: queryKeys.browse(path),
-    queryFn: ({ pageParam }) => api.browse(path, pageParam, pageSize),
+    queryKey: [...queryKeys.browse(path), type, favorite, sort] as const,
+    queryFn: ({ pageParam }) =>
+      api.browse({
+        path,
+        offset: pageParam,
+        limit: pageSize,
+        type: type === 'all' ? undefined : type,
+        favorite,
+        sort,
+      }),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.next_offset ?? undefined,
     placeholderData: keepPreviousData,

@@ -27,10 +27,20 @@ async def browse(
     path: str | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int | None = Query(None, ge=1, le=500),
+    type: str | None = Query(None),
+    favorite: bool = Query(False),
+    sort: str = Query("name_asc"),
 ) -> dict:
     """List subfolders and media in one folder, index-only."""
     try:
-        return library.browse(path, offset=offset, limit=limit)
+        return library.browse(
+            path,
+            offset=offset,
+            limit=limit,
+            type_filter=type,
+            favorites_only=favorite,
+            sort=sort,
+        )
     except sqlite3.Error as exc:
         raise _guard(exc) from exc
 
