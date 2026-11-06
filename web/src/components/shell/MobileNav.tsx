@@ -75,13 +75,15 @@ export function MobileNav() {
                   { value: 'system', label: 'System' },
                 ]}
               />
-              <a
-                href="/"
-                className="mt-4 flex items-center justify-between rounded-sm border border-border px-3 py-2.5 text-sm text-fg-muted"
-              >
-                Open the current app
-                <ExternalLink aria-hidden="true" className="size-4" />
-              </a>
+              {IS_MOUNTED_PREVIEW ? (
+                <a
+                  href="/"
+                  className="mt-4 flex items-center justify-between rounded-sm border border-border px-3 py-2.5 text-sm text-fg-muted"
+                >
+                  Open the current app
+                  <ExternalLink aria-hidden="true" className="size-4" />
+                </a>
+              ) : null}
               <p className="py-3 text-center text-[11px] text-fg-subtle">
                 {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Library'}
               </p>

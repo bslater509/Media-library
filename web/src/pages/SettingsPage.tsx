@@ -29,7 +29,8 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'The `/` cutover and v2-owned workers by default', phase: 'later' },
+  { label: 'Editing files inside ZIP archives', phase: 'later' },
+  { label: 'Background pre-transcoding of non-web containers', phase: 'later' },
 ]
 
 export function SettingsPage() {
@@ -207,7 +208,7 @@ export function SettingsPage() {
                 </Button>
               ) : (
                 <p className="text-[11px] leading-5 text-fg-subtle">
-                  The current app owns the crawler. After cutover, set{' '}
+                  v2 is not running the crawler. Set{' '}
                   <span className="font-mono">V2_OWN_WORKERS=true</span> to run v2's
                   crawler, metadata probes, poster sweep and automatic snapshots.
                 </p>

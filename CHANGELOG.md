@@ -51,6 +51,11 @@ snapshot metadata.
   be reported under an empty upload id, so a second failure overwrote the first
   row and a cancelled file left its original row spinning forever; errors now
   update the file's own row.
+- **v2's standalone UI dropped its leftover preview links and copy.** The "current
+  app" / "v1" shortcuts only appear when v2 is actually mounted beside v1, the
+  Settings roadmap lists the real remaining gaps (ZIP-member editing and
+  pre-transcoding) instead of the finished cutover, and the backup/index guidance
+  matches the owned runtime.
 
 ## [3.0.0] - 2026-11-06
 

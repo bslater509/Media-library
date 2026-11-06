@@ -120,13 +120,15 @@ export function Sidebar() {
           <span className="tabular-nums">
             {info.data ? `${info.data.counts.files.toLocaleString()} items` : '—'}
           </span>
-          <a
-            href="/"
-            className="inline-flex items-center gap-1 hover:text-fg"
-            title="Open the current app"
-          >
-            v1 <ExternalLink aria-hidden="true" className="size-3" />
-          </a>
+          {IS_MOUNTED_PREVIEW ? (
+            <a
+              href="/"
+              className="inline-flex items-center gap-1 hover:text-fg"
+              title="Open the current app"
+            >
+              v1 <ExternalLink aria-hidden="true" className="size-3" />
+            </a>
+          ) : null}
         </div>
       </div>
     </aside>

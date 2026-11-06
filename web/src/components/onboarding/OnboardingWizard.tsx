@@ -240,8 +240,9 @@ function CapabilitiesStep({ info }: { info: OnboardingInfo | undefined }) {
       <div>
         <h2 className="text-base font-semibold">What lives where</h2>
         <p className="mt-1 text-sm leading-6 text-fg-muted">
-          Both apps share one library, so you can use either while the rewrite
-          finishes.
+          {IS_MOUNTED_PREVIEW
+            ? 'Both apps share one library, so you can use either while the rewrite finishes.'
+            : 'Everything below reads and writes the same library and index.'}
         </p>
       </div>
       <div>
