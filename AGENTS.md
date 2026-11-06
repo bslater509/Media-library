@@ -1166,6 +1166,10 @@ build on any reverse import.
 | `POST /dedupe/verify` | full byte comparison of two files |
 | `POST /dedupe/resolve` | keep one file, delete the rest; content mode verifies every deletion first |
 | `POST /dedupe/ignore` / `GET /dedupe/ignored` / `POST /dedupe/unignore` | false-positive pair management |
+| `GET /webp/status` | pending loose images, saved bytes, converted/skipped, quality |
+| `POST /webp/optimize` | convert one batch (`limit`, optional `folder`), off-loop |
+| `GET /folders/empty` | leaf folders with no files and no child folders |
+| `POST /folders/empty/delete` | remove selected empty folders (OS junk tolerated) |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1205,12 +1209,15 @@ queueing, live progress, cancel, retry, paginated history, clear) and the
 mix, extensions, reclaimable space, largest files, quality histogram and health pills —
 every figure from the index, memoised for 30 s), **dedupe** (content groups from the
 shared `quick_hash`, visual clusters from `thumb_hash`, batched hashing, full-verify
-before content deletion, ignore/unignore) and the **Tools hub**. Every write updates the
-shared index and the cached artwork.
+before content deletion, ignore/unignore), **WebP optimisation** (loose images,
+atomic replace, index and poster update, batch/folder scope), **empty-folder
+cleanup**, **ZIP virtual folders** (browse and member streaming; archives are indexed by
+the shared crawler, and a missing member is extracted into a bounded local cache) and
+the **Tools hub**. Every write updates the shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): ZIP, WebP, backups, onboarding and the `/` redirect.
-Until those land, `/v2` reports `features: false` for them and the UI shows them as
-roadmap items rather than broken screens.
+Pending (see the v2 rewrite plan): ZIP compression/unpacking, backups, onboarding and
+the `/` redirect. Until those land, `/v2` reports `features: false` for them and the UI
+shows them as roadmap items rather than broken screens.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1223,5 +1230,12 @@ Dedupe reuses v1's hash formats exactly (`quick_hash = sha256(first 128 KB + siz
 Content deletion is always preceded by a full byte comparison; visual clusters use
 complete linkage (every member within pHash distance 2 of every other) and are capped at
 12 files, so a chain of vaguely similar scenes cannot become a mass-delete suggestion.
-The Tools hub links the not-yet-ported tools (ZIP, WebP, empty folders, backups) to the
-current app.
+The Tools hub links the not-yet-ported tools (ZIP compression/unpacking, backups) to
+the current app.
+
+ZIP members stream by extracting **one** member into `ZIP_CACHE_DIR/v2_<hash>/` (bounded
+by `ZIP_CACHE_MAX_SIZE_GB`, LRU-trimmed); the cache filename is a hash, so Zip Slip is
+structurally impossible. Missing image posters are generated on demand for loose images
+and ZIP members (`thumbnails.py`), which keeps archive grids cheap. WebP conversion
+reuses `WEBP_QUALITY` / `WEBP_SKIP_LARGER`, moves the cached poster to the new key and
+clears the content hashes; native `.webp` rows are marked optimised without conversion.

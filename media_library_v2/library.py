@@ -135,6 +135,16 @@ def _folder_row(conn: sqlite3.Connection, path: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def _is_browsable(target: str) -> bool:
+    """A directory, or an indexed ZIP archive acting as a virtual folder."""
+    if os.path.isdir(target):
+        return True
+    if target.lower().endswith(".zip"):
+        with reader() as conn:
+            return _folder_row(conn, target) is not None
+    return False
+
+
 def _clamp_to_directory(target: str) -> str:
     """If ``target`` is not a directory, browse its parent instead."""
     if os.path.isdir(target):
@@ -161,7 +171,9 @@ def browse(
     """
     settings = get_settings()
     root = library_root()
-    target = _clamp_to_directory(resolve_library_path(raw_path))
+    target = resolve_library_path(raw_path)
+    if not _is_browsable(target):
+        target = _clamp_to_directory(target)
     capped_limit = max(1, min(limit or settings.browse_limit, 500))
     capped_offset = max(0, offset)
 
@@ -221,7 +233,9 @@ def browse(
 def list_folders(raw_path: str | None) -> dict:
     """Return only a folder's immediate children (sidebar tree, FUSE-safe)."""
     root = library_root()
-    target = _clamp_to_directory(resolve_library_path(raw_path))
+    target = resolve_library_path(raw_path)
+    if not _is_browsable(target):
+        target = _clamp_to_directory(target)
     with reader() as conn:
         rows = conn.execute(_FOLDER_SQL, (target,)).fetchall()
     return {

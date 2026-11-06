@@ -5,6 +5,8 @@ import { AppShell } from '../components/shell/AppShell'
 import { EmptyState } from '../components/ui'
 import { DedupePage } from '../pages/DedupePage'
 import { DownloadsPage } from '../pages/DownloadsPage'
+import { EmptyFoldersPage } from '../pages/EmptyFoldersPage'
+import { ImagesPage } from '../pages/ImagesPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { LibraryPage } from '../pages/LibraryPage'
 import { NotFoundPage, PageLoading } from '../pages/RoadmapPage'
@@ -69,6 +71,8 @@ export const router = createBrowserRouter(
         },
         { path: 'tools', element: <ToolsPage /> },
         { path: 'tools/dedupe', element: <DedupePage /> },
+        { path: 'tools/images', element: <ImagesPage /> },
+        { path: 'tools/empty', element: <EmptyFoldersPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],

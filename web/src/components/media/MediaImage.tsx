@@ -36,8 +36,11 @@ export function MediaImage({ file, className, animateOnHover = true }: MediaImag
 
   const baseSrc = useMemo(() => {
     if (failed && file.type === 'image') return file.media_url
+    // Images always go through the thumbnail endpoint: when the cache entry is
+    // missing it generates one (ZIP members included), so a grid never loads
+    // full-resolution originals.
+    if (file.type === 'image') return file.thumb_url
     if (file.has_thumb) return file.thumb_url
-    if (file.type === 'image') return file.media_url
     return null
   }, [failed, file])
 

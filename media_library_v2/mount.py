@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI
 from media_library_v2 import __version__
 from media_library_v2.config import get_settings
 from media_library_v2.routers import analytics as analytics_router
+from media_library_v2.routers import cleanup as cleanup_router
 from media_library_v2.routers import dedupe as dedupe_router
 from media_library_v2.routers import downloads as downloads_router
 from media_library_v2.routers import favorites as favorites_router
@@ -23,6 +24,7 @@ from media_library_v2.routers import media as media_router
 from media_library_v2.routers import sorter as sorter_router
 from media_library_v2.routers import system as system_router
 from media_library_v2.routers import uploads as uploads_router
+from media_library_v2.routers import webp as webp_router
 from media_library_v2.views import router as views_router
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,8 @@ def api_router() -> APIRouter:
     router.include_router(downloads_router.router, tags=["downloads"])
     router.include_router(analytics_router.router, tags=["analytics"])
     router.include_router(dedupe_router.router, tags=["dedupe"])
+    router.include_router(webp_router.router, tags=["webp"])
+    router.include_router(cleanup_router.router, tags=["cleanup"])
     return router
 
 

@@ -322,6 +322,47 @@ export interface IgnoredPairsPage {
   offset: number
 }
 
+export interface WebpStatus {
+  pending: number
+  saved_bytes: number
+  saved_formatted: string
+  converted: number
+  skipped: number
+  quality: number
+  skip_larger: boolean
+  scope: string
+  updated_at: number
+}
+
+export interface WebpOptimizeResult {
+  converted: number
+  skipped: number
+  failed: number
+  saved_bytes: number
+  saved_formatted: string
+  remaining: number
+  errors: Array<{ path: string; error: string }>
+  quality: number
+  skip_larger: boolean
+}
+
+export interface EmptyFolder {
+  path: string
+  name: string
+  parent_path: string | null
+}
+
+export interface EmptyFolders {
+  count: number
+  folders: EmptyFolder[]
+}
+
+export interface EmptyDeleteResult {
+  deleted: string[]
+  failed: Array<{ path: string; error: string }>
+  remaining: number
+}
+
 export interface AnalyticsTreeNode {
   name: string
   path: string
@@ -589,6 +630,16 @@ export const api = {
 
   dedupeUnignore: (path1: string, path2: string) =>
     post<{ unignored: boolean }>('/dedupe/unignore', { path1, path2 }),
+
+  webpStatus: () => request<WebpStatus>('/webp/status'),
+
+  webpOptimize: (limit = 20) =>
+    post<WebpOptimizeResult>('/webp/optimize', { limit }),
+
+  emptyFolders: () => request<EmptyFolders>('/folders/empty'),
+
+  deleteEmptyFolders: (paths: string[]) =>
+    post<EmptyDeleteResult>('/folders/empty/delete', { paths }),
 
   analyticsOverview: (refresh = false, folderLimit = 15, fileLimit = 25) =>
     request<AnalyticsOverview>('/analytics/overview', {

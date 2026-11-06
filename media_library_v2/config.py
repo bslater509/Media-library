@@ -70,6 +70,10 @@ class Settings:
     download_staging_dir: Path
     download_concurrency: int
     download_cookies_file: str
+    zip_cache_dir: Path
+    zip_cache_max_size_gb: float
+    webp_quality: int
+    webp_skip_larger: bool
     static_dir: Path
     enabled: bool
     db_read_only: bool
@@ -129,6 +133,10 @@ def load_settings() -> Settings:
         ),
         download_concurrency=_env_int("DOWNLOAD_WORKER_CONCURRENCY", 2),
         download_cookies_file=_env_str("DOWNLOAD_COOKIES_FILE"),
+        zip_cache_dir=_env_path("ZIP_CACHE_DIR", data_dir / "cache" / "zips"),
+        zip_cache_max_size_gb=float(_env_str("ZIP_CACHE_MAX_SIZE_GB") or 5.0),
+        webp_quality=min(100, max(1, _env_int("WEBP_QUALITY", 85))),
+        webp_skip_larger=_env_bool("WEBP_SKIP_LARGER", False),
         static_dir=(BASE_DIR / "static").resolve(),
         enabled=_env_bool("V2_ENABLED", True),
         db_read_only=_env_bool("V2_DB_READ_ONLY", False),

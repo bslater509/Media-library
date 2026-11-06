@@ -486,6 +486,56 @@ class IgnoredPairsPage(BaseModel):
     offset: int
 
 
+class WebpStatus(BaseModel):
+    pending: int
+    saved_bytes: int
+    saved_formatted: str
+    converted: int
+    skipped: int
+    quality: int
+    skip_larger: bool
+    scope: str
+    updated_at: float
+
+
+class WebpOptimizeRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=100)
+    folder: str | None = None
+
+
+class WebpOptimizeResponse(BaseModel):
+    converted: int
+    skipped: int
+    failed: int
+    saved_bytes: int
+    saved_formatted: str
+    remaining: int
+    errors: list[dict[str, str]]
+    quality: int
+    skip_larger: bool
+
+
+class EmptyFolder(BaseModel):
+    path: str
+    name: str
+    parent_path: str | None = None
+
+
+class EmptyFoldersResponse(BaseModel):
+    count: int
+    folders: list[EmptyFolder]
+
+
+class EmptyDeleteRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=1000)
+
+
+class EmptyDeleteResponse(BaseModel):
+    deleted: list[str]
+    failed: list[Failure]
+    remaining: int
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

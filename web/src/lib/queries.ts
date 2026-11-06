@@ -21,6 +21,8 @@ export const queryKeys = {
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
+  webpStatus: ['webp', 'status'] as const,
+  emptyFolders: ['empty', 'folders'] as const,
   dedupeStatus: ['dedupe', 'status'] as const,
   dedupeGroups: (mode: string, limit: number) =>
     ['dedupe', 'groups', mode, limit] as const,
@@ -396,6 +398,44 @@ export function useDedupeUnignore() {
       api.dedupeUnignore(path1, path2),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useWebpStatus() {
+  return useQuery({
+    queryKey: queryKeys.webpStatus,
+    queryFn: api.webpStatus,
+    staleTime: 10_000,
+  })
+}
+
+export function useWebpOptimize() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (limit: number) => api.webpOptimize(limit),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['webp'] })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useEmptyFolders() {
+  return useQuery({
+    queryKey: queryKeys.emptyFolders,
+    queryFn: api.emptyFolders,
+    staleTime: 10_000,
+  })
+}
+
+export function useDeleteEmptyFolders() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (paths: string[]) => api.deleteEmptyFolders(paths),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['empty'] })
+      void invalidateLibrary(client)
     },
   })
 }

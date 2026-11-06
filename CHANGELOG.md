@@ -65,6 +65,14 @@ snapshot metadata.
   of loosely similar scenes can never become a 50-file deletion suggestion.
   `/v2/tools` gathers duplicates (native) and the not-yet-ported maintenance
   tools (ZIP, WebP, empty folders, backups) with links to the current app.
+- **ZIP virtual folders, on-demand posters, WebP optimisation and empty-folder
+  cleanup in v2.** Archives indexed by the shared crawler now browse in the
+  Library; a member's media is streamed after extracting just that member into a
+  bounded local cache (`ZIP_CACHE_DIR`, LRU-trimmed, hash-named so Zip Slip is
+  impossible). Missing image posters are generated on demand for loose images
+  and ZIP members. `/v2/tools/images` converts loose images to WebP in batches
+  (atomic replace, index + poster update, `WEBP_QUALITY`/`WEBP_SKIP_LARGER`), and
+  `/v2/tools/empty` removes selected empty leaf folders while tolerating OS junk.
 
 ## [2.0.2] - 2026-11-03
 

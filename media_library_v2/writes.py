@@ -104,6 +104,11 @@ def _file_stats(path: str) -> tuple[float, int]:
     return stat.st_mtime, stat.st_size
 
 
+def recompute_folder(conn, folder: str) -> None:
+    """Public wrapper for callers that update files outside this module."""
+    _recompute_folder(conn, folder)
+
+
 def _recompute_folder(conn, folder: str) -> None:
     row = conn.execute(
         "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM files "

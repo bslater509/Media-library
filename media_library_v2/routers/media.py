@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import re
@@ -11,10 +12,17 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from media_library_v2 import zipfs
 from media_library_v2.cache import cache_key
 from media_library_v2.config import get_settings
 from media_library_v2.db import reader
-from media_library_v2.paths import is_zip_member, resolve_existing_file
+from media_library_v2.paths import (
+    is_zip_member,
+    resolve_existing_file,
+    resolve_library_path,
+)
+from media_library_v2.routers.common import as_http_error
+from media_library_v2.thumbnails import generate_image_thumbnail
 
 router = APIRouter()
 
@@ -105,10 +113,14 @@ def _iter_file(path: str, start: int, end: int) -> Iterator[bytes]:
 async def stream_media(request: Request, path: str, download: bool = False):
     """Stream a library file with HTTP 206 partial-content support."""
     if is_zip_member(path):
-        raise HTTPException(
-            status_code=501,
-            detail="ZIP member streaming is not available in this build",
-        )
+        split = zipfs.split_zip_path(path)
+        assert split is not None
+        archive = resolve_library_path(split[0])
+        try:
+            target = await asyncio.to_thread(zipfs.extract_member, archive, split[1])
+        except Exception as exc:
+            raise as_http_error(exc) from exc
+        return await stream_path(request, target, download=download)
     return await stream_path(request, resolve_existing_file(path), download=download)
 
 
@@ -193,7 +205,18 @@ async def get_thumbnail(path: str, kind: str = "static"):
         candidate = settings.thumbnail_dir / f"thumb_{key}.jpg"
         media_type = "image/jpeg"
     if not candidate.is_file():
-        raise HTTPException(status_code=404, detail="Thumbnail not generated")
+        if kind == "static" and _file_type == "image":
+            try:
+                candidate = await asyncio.to_thread(
+                    generate_image_thumbnail, path, mtime, size
+                )
+            except Exception:
+                # An unreadable/corrupt image is a missing preview, not a 5xx.
+                raise HTTPException(
+                    status_code=404, detail="Thumbnail not generated"
+                ) from None
+        else:
+            raise HTTPException(status_code=404, detail="Thumbnail not generated")
     return FileResponse(
         candidate,
         media_type=media_type,
