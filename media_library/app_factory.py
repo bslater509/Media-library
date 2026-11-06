@@ -109,6 +109,15 @@ def create_app(
             await url_download_worker_instance.start()
             await h265_worker_instance.start()
 
+            # v2's own crawler/probes/posters/snapshots only run when it owns
+            # them (post-cutover); while v1 is live this is a no-op.
+            try:
+                from media_library_v2.runtime import start_runtime
+
+                start_runtime()
+            except Exception:
+                logger.exception("[v2] Failed to start the owned worker runtime")
+
             # Auto-enqueue pre-transcoding for configured source directory
             if state.get("source_dir") and os.path.isdir(state["source_dir"]):
                 asyncio.create_task(
@@ -138,6 +147,12 @@ def create_app(
             await animated_thumb_worker_instance.stop()
             await url_download_worker_instance.stop()
             await h265_worker_instance.stop()
+            try:
+                from media_library_v2.runtime import stop_runtime
+
+                stop_runtime()
+            except Exception:
+                logger.exception("[v2] Failed to stop the owned worker runtime")
 
         # Perform clean snapshot backup to library folder on clean shutdown
         try:

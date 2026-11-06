@@ -52,6 +52,21 @@ export function buildCapabilities(
     { key: 'analytics', label: 'Analytics dashboard', available: !!flags.analytics },
     { key: 'backups', label: 'Library snapshots', available: !!flags.backups },
     { key: 'x265', label: 'In-place x265 / HEVC conversion', available: !!flags.x265 },
+    {
+      key: 'workers',
+      label: 'Background indexing, probes and snapshots',
+      available: !!flags.workers,
+    },
   ].filter((row) => row.available)
-  return { available, pending: PENDING }
+  const pending = flags.workers
+    ? []
+    : PENDING.filter((row) => row.key !== 'workers')
+  if (!flags.workers) {
+    pending.push({
+      key: 'workers',
+      label: 'Background probes, thumbnail sweeps and auto-transcoding',
+      available: false,
+    })
+  }
+  return { available, pending }
 }

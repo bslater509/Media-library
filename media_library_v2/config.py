@@ -68,6 +68,9 @@ class Settings:
     upload_staging_dir: Path
     sorter_state_path: Path
     transcode_dir: Path
+    own_workers: bool
+    crawl_interval_minutes: int
+    backup_interval_hours: float
     x265_preset: str
     x265_crf: int
     backup_dir: Path
@@ -129,6 +132,9 @@ def load_settings() -> Settings:
         ),
         db_path=_resolve_db_path(data_dir),
         transcode_dir=_env_path("TRANSCODE_DIR", data_dir / "transcodes"),
+        own_workers=_env_bool("V2_OWN_WORKERS", False),
+        crawl_interval_minutes=_env_int("V2_CRAWL_INTERVAL_MINUTES", 30),
+        backup_interval_hours=float(_env_str("V2_BACKUP_INTERVAL_HOURS") or 6.0),
         x265_preset=_env_str("X265_PRESET") or "medium",
         x265_crf=max(0, min(51, _env_int("X265_CRF", 18, minimum=0))),
         backup_dir=_env_path(

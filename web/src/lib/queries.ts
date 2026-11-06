@@ -13,6 +13,7 @@ import { api, type ConflictPolicy } from './api'
 export const queryKeys = {
   info: ['info'] as const,
   onboarding: ['onboarding'] as const,
+  indexStatus: ['index', 'status'] as const,
   browse: (path: string | null) => ['browse', path] as const,
   folders: (path: string | null) => ['folders', path] as const,
   folderSearch: (query: string) => ['folders', 'search', query] as const,
@@ -33,6 +34,26 @@ export const queryKeys = {
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   downloadStatus: ['downloads', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
+}
+
+export function useIndexStatus() {
+  return useQuery({
+    queryKey: queryKeys.indexStatus,
+    queryFn: api.indexStatus,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'crawling' ? 2000 : 15_000,
+    staleTime: 0,
+  })
+}
+
+export function useIndexSync() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.indexSync(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.indexStatus })
+    },
+  })
 }
 
 export function useOnboardingInfo() {

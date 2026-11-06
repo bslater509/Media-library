@@ -126,6 +126,7 @@ class StatusResponse(BaseModel):
     version: str
     database: str
     index: IndexStatus
+    indexer: dict[str, Any]
     workers: dict[str, str]
 
 

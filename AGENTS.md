@@ -1188,6 +1188,8 @@ build on any reverse import.
 | `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
 | `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
 | `GET /system/onboarding` | first-run tour data: library/source paths, counts, index root, backup, downloaders, feature flags |
+| `GET /system/index/status` | crawler state, counts, revision, stale/prune-abort counters, runtime ownership |
+| `POST /system/index/sync` | start a forced v2 crawl (`409` unless `V2_OWN_WORKERS=true`) |
 | `POST /transcode/x265` | queue an in-place HEVC re-encode of one video (`409` if already HEVC or already queued) |
 | `GET /transcode/x265/status?path=` | active/queued job, the job for a path, and recent history |
 | `POST /transcode/x265/cancel` | cancel an active (kills ffmpeg) or queued job |
@@ -1249,8 +1251,18 @@ fallback to frame 0), and MKV/AVI/WMV/FLV files play through a live fragmented-M
 transcode so no clip is unplayable in the viewer. Every write updates the shared index
 and the cached artwork.
 
-Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surface is
-v2's own background workers.
+Pending (see the v2 rewrite plan): the `/` cutover, which also means porting the auth
+gate into v2 and flipping `V2_OWN_WORKERS` on.
+
+The v2 crawler is incremental (`folders.dir_mtime`), indexes ZIP archives as virtual
+folders (re-checking each known archive even when its parent folder is unchanged),
+and prunes one folder at a time with a mount-safety guard: a child is confirmed gone
+with retries, and if more than half of a folder's indexed children (5+) look missing at
+once, pruning is aborted and the counters surface as stale instead of wiping the
+subtree. The metadata prober runs one FFprobe pass per video and Pillow per image,
+marking failures `0 x 0`; the poster sweep uses the same ffmpeg/Pillow generator as the
+on-demand endpoint and marks persistent failures `has_thumb = -1`. All of it starts
+only with `V2_OWN_WORKERS=true`; alongside v1 the runtime is a no-op.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports

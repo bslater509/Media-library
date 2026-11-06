@@ -433,6 +433,29 @@ export interface ZipBatchStatus {
   finished_at: number | null
 }
 
+export interface IndexStatus {
+  owned: boolean
+  runtime: {
+    owned: boolean
+    started: boolean
+    crawler: boolean
+    metadata: boolean
+    thumbnails: boolean
+    backups: boolean
+  }
+  status: string
+  scanned_folders: number
+  skipped_folders: number
+  total_folders: number
+  current_folder: string
+  last_synced: number
+  revision: number
+  prune_aborted: number
+  stale_folders: number
+  stale_files: number
+  error: string
+}
+
 export interface X265Job {
   id: string
   source_path: string
@@ -823,6 +846,10 @@ export const api = {
   zipBatchCancel: () => post<ZipBatchStatus>('/zip/batch/cancel', {}),
 
   onboardingInfo: () => request<OnboardingInfo>('/system/onboarding'),
+
+  indexStatus: () => request<IndexStatus>('/system/index/status'),
+
+  indexSync: () => post<{ started: boolean }>('/system/index/sync', {}),
 
   x265Start: (path: string) =>
     post<X265Job>('/transcode/x265', { path }),

@@ -7,7 +7,7 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException
 
-from media_library_v2 import __version__, library
+from media_library_v2 import __version__, indexer, library, runtime
 from media_library_v2.config import get_settings
 from media_library_v2.db import is_available, reader, writes_available
 from media_library_v2.schemas import (
@@ -49,7 +49,7 @@ async def info() -> dict:
             "webp": writable,
             "zip": True,
             "analytics": True,
-            "workers": False,
+            "workers": get_settings().own_workers,
             "backups": True,
             "x265": True,
         },
@@ -91,7 +91,7 @@ async def onboarding() -> dict:
             "analytics": True,
             "backups": True,
             "x265": True,
-            "workers": False,
+            "workers": get_settings().own_workers,
         },
         "index": {
             "root_indexed": root_row is not None,
@@ -109,7 +109,8 @@ async def onboarding() -> dict:
 
 @router.get("/system/status", response_model=StatusResponse)
 async def status() -> dict:
-    """A small status body; the v2 worker runtime lands in phase 2."""
+    """A small status body plus v2's indexer state."""
+    settings = get_settings()
     try:
         totals = library.counts()
     except sqlite3.Error as exc:
@@ -128,9 +129,36 @@ async def status() -> dict:
         "workers": {
             "mode": "shared-v1",
             "thumbnail": "v1",
-            "indexer": "v1",
+            "indexer": "v2" if settings.own_workers else "v1",
         },
+        "indexer": indexer.status(),
     }
+
+
+@router.get("/system/index/status")
+async def index_status() -> dict:
+    return {
+        "owned": get_settings().own_workers,
+        "runtime": runtime.runtime_status(),
+        **indexer.status(),
+    }
+
+
+@router.post("/system/index/sync")
+async def index_sync() -> dict:
+    if not get_settings().own_workers:
+        raise HTTPException(
+            status_code=409,
+            detail="v1 owns the crawler. Set V2_OWN_WORKERS=true to let v2 sync.",
+        )
+    import threading
+
+    if indexer.status()["status"] == "crawling":
+        raise HTTPException(status_code=409, detail="A crawl is already running")
+    threading.Thread(
+        target=indexer.crawl, kwargs={"force_full": True}, daemon=True
+    ).start()
+    return {"started": True, "status": indexer.status()}
 
 
 @router.get("/health", response_model=HealthResponse)

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { ExternalLink, HardDrive, Info, Sparkles } from 'lucide-react'
-import { useInfo } from '../lib/queries'
+import { ExternalLink, HardDrive, Info, RefreshCw, Sparkles } from 'lucide-react'
+import { useIndexStatus, useIndexSync, useInfo } from '../lib/queries'
+import { toast } from 'sonner'
 import { TILE_ROW_HEIGHT, useDensityStore, useOnboardingStore, useThemeStore } from '../lib/stores'
 import {
   Badge,
@@ -13,11 +14,13 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'Background workers and archive WebP rewrites', phase: 'later' },
+  { label: 'The final cutover and standalone auth', phase: 'later' },
 ]
 
 export function SettingsPage() {
   const info = useInfo()
+  const index = useIndexStatus()
+  const syncIndex = useIndexSync()
   const theme = useThemeStore((state) => state.mode)
   const setTheme = useThemeStore((state) => state.setMode)
   const scale = useDensityStore((state) => state.scale)
@@ -102,6 +105,97 @@ export function SettingsPage() {
             </>
           ) : (
             <p className="text-sm text-danger">The index did not answer.</p>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive aria-hidden="true" className="size-4 text-fg-subtle" />
+              Index
+            </CardTitle>
+            <Badge variant={index.data?.owned ? 'accent' : 'outline'}>
+              {index.data?.owned ? 'v2 crawler' : 'v1 crawler'}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardBody className="flex flex-col gap-2 text-sm text-fg-muted">
+          {index.isLoading || !index.data ? (
+            <p className="text-xs text-fg-subtle">Reading crawler state…</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                <span>
+                  Status:{' '}
+                  <span className="font-medium text-fg">{index.data.status}</span>
+                </span>
+                <span>
+                  Folders:{' '}
+                  <span className="font-mono text-fg">
+                    {index.data.scanned_folders.toLocaleString()}
+                    {index.data.total_folders
+                      ? ` / ${index.data.total_folders.toLocaleString()}`
+                      : ''}
+                  </span>
+                </span>
+                <span>
+                  Skipped:{' '}
+                  <span className="font-mono text-fg">
+                    {index.data.skipped_folders.toLocaleString()}
+                  </span>
+                </span>
+                <span>
+                  Last sync:{' '}
+                  <span className="font-mono text-fg">
+                    {index.data.last_synced
+                      ? new Date(index.data.last_synced * 1000).toLocaleString()
+                      : '—'}
+                  </span>
+                </span>
+              </div>
+              {index.data.current_folder ? (
+                <p className="truncate font-mono text-[10px] text-fg-subtle">
+                  {index.data.current_folder}
+                </p>
+              ) : null}
+              {index.data.stale_folders ? (
+                <p className="text-[11px] text-warning">
+                  {index.data.stale_folders.toLocaleString()} indexed folders look
+                  missing; the crawler aborted pruning to protect against a flaky
+                  mount.
+                </p>
+              ) : null}
+              {index.data.owned ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-fit"
+                  disabled={syncIndex.isPending || index.data.status === 'crawling'}
+                  onClick={() =>
+                    syncIndex.mutate(undefined, {
+                      onSuccess: () => toast.success('Full crawl started'),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error ? error.message : 'Could not start',
+                        ),
+                    })
+                  }
+                >
+                  <RefreshCw
+                    className={index.data.status === 'crawling' ? 'animate-spin' : ''}
+                  />
+                  Sync now
+                </Button>
+              ) : (
+                <p className="text-[11px] leading-5 text-fg-subtle">
+                  The current app owns the crawler. After cutover, set{' '}
+                  <span className="font-mono">V2_OWN_WORKERS=true</span> to run v2's
+                  crawler, metadata probes, poster sweep and automatic snapshots.
+                </p>
+              )}
+            </>
           )}
         </CardBody>
       </Card>

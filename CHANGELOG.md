@@ -113,6 +113,14 @@ snapshot metadata.
   first time a tile or the viewer requests it (ffmpeg at 1 s, 360 px, falling
   back to frame 0), so new uploads never sit behind a "No preview" placeholder.
   Images and ZIP members share the same path.
+- **v2-owned background workers.** A new runtime (`V2_OWN_WORKERS=true`, off
+  while v1 runs) starts v2's incremental crawler, metadata prober, poster sweep
+  and automatic snapshots. The crawler indexes folders, files and ZIP archives,
+  re-checks archives even when their parent is unchanged, skips folders by
+  `dir_mtime`, and prunes with retries plus a mount-safety guard that aborts when
+  more than half of a folder's children look missing. `/api/v2/system/index/status`
+  exposes progress, revision and stale counters; Settings shows the state and a
+  "Sync now" action when v2 owns the crawler.
 - **Deleting a ZIP archive now removes its virtual members** from the index
   (and their cached posters and favorites), instead of leaving orphan member
   rows for the crawler to prune.
