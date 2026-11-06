@@ -204,3 +204,18 @@ def test_sync_endpoint_requires_worker_ownership(crawl_env):
     status = client.get("/api/v2/system/index/status").json()
     assert status["owned"] is False
     assert client.post("/api/v2/system/index/sync").status_code == 409
+
+
+def test_owned_crawl_sweeps_orphaned_artwork(crawl_env, tmp_path, monkeypatch):
+    thumbs = tmp_path / "thumbs"
+    (thumbs / "animated").mkdir(parents=True)
+    orphan = thumbs / f"thumb_{'d' * 24}.jpg"
+    orphan.write_bytes(b"poster")
+    monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
+    monkeypatch.setenv("V2_OWN_WORKERS", "true")
+    v2_config.reload_settings()
+
+    result = indexer.crawl()
+
+    assert result["artwork_swept"]["thumbnails"] == 1
+    assert not orphan.exists()

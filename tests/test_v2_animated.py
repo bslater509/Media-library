@@ -270,3 +270,63 @@ def test_worker_thread_is_cleared_when_the_queue_drains(monkeypatch):
 
     assert calls == ["drain-check.mp4"]
     assert animated._thread is None
+
+
+def test_poster_chooser_works_for_a_zip_member(media_env, tmp_path, monkeypatch):
+    """A video inside an archive is extracted before ffmpeg runs on it."""
+    import zipfile
+
+    from media_library_v2 import config as v2_config
+    from media_library_v2.cache import thumbnail_path
+
+    monkeypatch.setenv("ZIP_CACHE_DIR", str(tmp_path / "zip_cache"))
+    v2_config.reload_settings()
+
+    library = media_env["library"]
+    archive = library / "clips.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.write(media_env["video"], "inside.mp4")
+    member = f"{archive}/inside.mp4"
+    with sqlite3.connect(media_env["db_path"]) as conn:
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, file_count, "
+            "subfolder_count, last_scanned, is_zip, total_size) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (str(archive), "clips.zip", str(library), 1, 0, time.time(), 1, 0),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, "
+            "size_formatted, mtime, needs_transcode, has_thumb, duration) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                member,
+                "inside.mp4",
+                str(archive),
+                "video",
+                ".mp4",
+                1234,
+                "1 KB",
+                1.0,
+                0,
+                0,
+                4.0,
+            ),
+        )
+
+    client = media_env["client"]
+    candidates = client.get("/api/v2/thumbnails/candidates", params={"path": member})
+    assert candidates.status_code == 200, candidates.text
+    assert len(candidates.json()["frames"]) >= 8
+
+    poster = client.post(
+        "/api/v2/thumbnails/poster", json={"path": member, "timestamp": 1.0}
+    )
+    assert poster.status_code == 200, poster.text
+    target = thumbnail_path(member, 1.0, 1234)
+    assert target.is_file() and target.stat().st_size > 0
+
+    frame = client.get(
+        "/api/v2/thumbnails/frame", params={"path": member, "timestamp": 2.0}
+    )
+    assert frame.status_code == 200
+    assert frame.content[:2] == b"\xff\xd8"

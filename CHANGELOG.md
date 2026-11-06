@@ -35,6 +35,18 @@ snapshot metadata.
   one FUSE round trip can no longer block the server.
 - **v2 rejects control characters in file/folder names** at rename, create and
   upload-finalize, which also keeps an uploaded name safe in download headers.
+- **v2 x265 progress no longer jumps to 99%.** ffmpeg's `out_time_ms` is a legacy
+  name for microseconds (like `out_time_us`); both are divided by 1e6 now, as the
+  current app does.
+- **v2 sorter undo keeps its stack entry when the moved file is unreachable**
+  instead of consuming it and losing the ability to retry or undo an earlier move.
+- **v2 poster chooser and "Set poster" work for videos inside ZIP archives** by
+  extracting the member into the bounded local cache before ffmpeg reads it,
+  instead of reading the virtual member path and failing.
+- **v2's owned crawler sweeps orphaned artwork.** Posters, animated previews and
+  chooser frames whose index rows are gone (a delete, rename or archive rewrite
+  made outside the app) are removed after a crawl, mirroring the current app's
+  prune; an empty index never triggers a sweep.
 
 ## [3.0.0] - 2026-11-06
 

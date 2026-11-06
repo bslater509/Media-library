@@ -212,3 +212,51 @@ def test_owned_runtime_starts_every_sweep(workers_env, monkeypatch):
     finally:
         runtime.stop_runtime()
         v2_config.reload_settings()
+
+
+def test_orphaned_artwork_is_swept(workers_env):
+    from media_library_v2.cache import (
+        animated_path,
+        cache_key,
+        sweep_orphaned_artwork,
+        thumbnail_path,
+    )
+
+    video = workers_env["video"]
+    stat = video.stat()
+    live_thumb = thumbnail_path(str(video), stat.st_mtime, stat.st_size)
+    live_thumb.write_bytes(b"poster")
+    live_anim = animated_path(str(video), stat.st_mtime, stat.st_size)
+    live_anim.write_bytes(b"anim")
+
+    orphans = ["a" * 24, "b" * 24]
+    thumbs = workers_env["thumbs"]
+    (thumbs / f"thumb_{orphans[0]}.jpg").write_bytes(b"orphan")
+    (thumbs / "animated" / f"anim_{orphans[1]}.webp").write_bytes(b"orphan")
+    (thumbs / "frames" / orphans[0]).mkdir(parents=True)
+    (thumbs / "frames" / orphans[0] / "frame_000000001000.jpg").write_bytes(b"x")
+    live_key = cache_key(str(video), stat.st_mtime, stat.st_size)
+    (thumbs / "frames" / live_key).mkdir(parents=True)
+    (thumbs / "frames" / live_key / "frame_000000001000.jpg").write_bytes(b"x")
+
+    result = sweep_orphaned_artwork()
+
+    assert result == {"thumbnails": 1, "animated": 1, "frames": 1, "skipped": 0}
+    assert live_thumb.is_file()
+    assert live_anim.is_file()
+    assert (thumbs / "frames" / live_key).is_dir()
+    assert not (thumbs / "frames" / orphans[0]).exists()
+
+
+def test_orphan_sweep_skips_an_empty_index(workers_env):
+    from media_library_v2.cache import sweep_orphaned_artwork
+
+    orphan = workers_env["thumbs"] / f"thumb_{'c' * 24}.jpg"
+    orphan.write_bytes(b"orphan")
+    with sqlite3.connect(workers_env["db_path"]) as conn:
+        conn.execute("DELETE FROM files")
+
+    result = sweep_orphaned_artwork()
+
+    assert result["skipped"] == 1
+    assert orphan.is_file()

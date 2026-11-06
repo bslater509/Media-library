@@ -315,3 +315,11 @@ def test_index_rewrite_runs_off_the_event_loop(x265_env, monkeypatch):
     asyncio.run(scenario())
     assert seen, "the index commit did not run"
     assert seen[0] != loop_thread
+
+
+def test_progress_treats_out_time_ms_as_microseconds():
+    """ffmpeg's out_time_ms is microseconds; /1000 would jump to 99%."""
+    manager = X265Manager()
+    job = {"duration": 10.0, "percent": 0.0, "fps": "", "speed": "", "eta": ""}
+    manager._apply_progress(job, "out_time_ms=5000000")
+    assert job["percent"] == 50.0

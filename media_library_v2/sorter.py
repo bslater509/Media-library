@@ -321,17 +321,22 @@ def undo_last() -> dict[str, Any]:
     with _undo_lock:
         if not _undo_stack:
             raise writes.WriteError("Nothing to undo", 409)
-        entry = _undo_stack.pop()
+        entry = _undo_stack[-1]
     target = entry["target"]
     if not os.path.isfile(target):
+        # Do not consume the entry: the file may be temporarily unreachable,
+        # and the user must still be able to retry or undo an older move.
         raise writes.WriteError("The moved file is no longer there", 409)
     restore = _unique_restore_path(entry["source"])
     try:
         shutil.move(target, restore)
     except OSError as exc:
-        with _undo_lock:
-            _undo_stack.append(entry)
         raise writes.WriteError(f"Could not move the file back: {exc}", 500) from exc
+    with _undo_lock:
+        if _undo_stack and _undo_stack[-1] is entry:
+            _undo_stack.pop()
+        else:  # pragma: no cover - another undo changed the stack
+            _undo_stack.remove(entry)
     writes.remove_index_entry(target)
     invalidate_queue()
     payload = _queue_payload()

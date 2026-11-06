@@ -24,7 +24,7 @@ import time
 import zipfile
 from typing import Any
 
-from media_library_v2 import writes, zip_ops
+from media_library_v2 import cache, writes, zip_ops
 from media_library_v2.config import get_settings
 from media_library_v2.db import reader, writer
 from media_library_v2.paths import format_size
@@ -43,6 +43,7 @@ state: dict[str, Any] = {
     "stale_folders": 0,
     "stale_files": 0,
     "error": "",
+    "artwork_swept": {},
 }
 _state_lock = threading.Lock()
 _crawl_lock = threading.Lock()
@@ -394,12 +395,22 @@ def crawl(force_full: bool = False) -> dict[str, Any]:
                 children = _scan_folder(conn, folder, stat)
             queue.extend(children)
 
+        artwork: dict[str, int] = {}
+        if get_settings().own_workers:
+            # Removing a file outside the app leaves its artwork in the local
+            # cache; v1's prune swept those keys and the owned runtime must too.
+            try:
+                artwork = cache.sweep_orphaned_artwork()
+            except Exception:
+                artwork = {}
+
         _update(
             status="idle",
             last_synced=time.time(),
             revision=state["revision"] + 1,
             current_folder="",
             total_folders=len(seen),
+            artwork_swept=artwork,
         )
         return status()
     except Exception as exc:

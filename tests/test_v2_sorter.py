@@ -278,3 +278,19 @@ def test_sorter_rejects_paths_outside_the_incoming_folder(sorter_env):
         ).status_code
         == 403
     )
+
+
+def test_undo_keeps_the_entry_when_the_moved_file_vanished(sorter_env):
+    """A failed undo must not consume the entry (or an older undo is lost)."""
+    client = sorter_env["client"]
+    source = sorter_env["incoming"] / "a-first.mp4"
+    destination = sorter_env["library"] / "Inbox"
+    client.post(
+        "/api/v2/sorter/move",
+        json={"path": str(source), "destination": str(destination)},
+    )
+    (destination / "a-first.mp4").unlink()
+
+    response = client.post("/api/v2/sorter/undo")
+    assert response.status_code == 409
+    assert sorter_service.undo_count() == 1

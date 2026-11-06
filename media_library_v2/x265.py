@@ -221,20 +221,18 @@ class X265Manager:
         values = parse_progress_line(line)
         if not values:
             return
-        if "out_time_us" in values:
+        # ffmpeg's out_time_ms is a legacy name for microseconds (as is
+        # out_time_us), so both divide by 1e6 — the current app does the same.
+        raw_time = values.get("out_time_us") or values.get("out_time_ms")
+        if raw_time:
             try:
-                seconds = int(values["out_time_us"]) / 1_000_000
+                seconds = int(raw_time) / 1_000_000
             except ValueError:
                 seconds = 0.0
             if job["duration"] > 0:
-                job["percent"] = round(min(99.0, seconds / job["duration"] * 100), 1)
-        if "out_time_ms" in values and job["percent"] == 0:
-            try:
-                seconds = int(values["out_time_ms"]) / 1000
-            except ValueError:
-                seconds = 0.0
-            if job["duration"] > 0:
-                job["percent"] = round(min(99.0, seconds / job["duration"] * 100), 1)
+                job["percent"] = round(
+                    min(99.0, max(0.0, seconds / job["duration"] * 100)), 1
+                )
         if values.get("fps"):
             job["fps"] = values["fps"]
         if values.get("speed"):

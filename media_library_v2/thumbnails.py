@@ -196,11 +196,23 @@ def _extract_frame(source: str, timestamp: float, target: Path, width: int) -> N
             pass
 
 
+def _video_source(path: str) -> str:
+    """A real file ffmpeg can read: ZIP members are extracted to the cache first."""
+    if not is_zip_member(path):
+        return path
+    split = split_zip_path(path)
+    assert split is not None
+    archive, inner = split
+    if not os.path.isfile(archive):
+        raise writes.WriteError("ZIP archive not found", 404)
+    return extract_member(archive, inner)
+
+
 def candidates(path: str, interval: float = 30.0, count: int | None = None) -> dict:
     """Evenly spaced candidate timestamps across the clip."""
     _mtime, _size, duration = _video_row(path)
     if duration is None:
-        duration = _probe_duration(path)
+        duration = _probe_duration(_video_source(path))
     if not duration or duration <= 0:
         return {"path": path, "duration": 0.0, "interval": interval, "frames": []}
     interval = max(1.0, min(600.0, float(interval)))
@@ -239,7 +251,7 @@ def frame(path: str, timestamp: float) -> Path:
     target = get_settings().thumbnail_dir / "frames" / key / f"frame_{safe}.jpg"
     if target.is_file():
         return target
-    _extract_frame(path, timestamp, target, _FRAME_WIDTH)
+    _extract_frame(_video_source(path), timestamp, target, _FRAME_WIDTH)
     return target
 
 
@@ -247,7 +259,7 @@ def set_poster(path: str, timestamp: float) -> dict:
     """Replace the poster with a frame at ``timestamp``."""
     mtime, size, _duration = _video_row(path)
     target = thumbnail_path(path, mtime, size)
-    _extract_frame(path, timestamp, target, 360)
+    _extract_frame(_video_source(path), timestamp, target, 360)
     stamp = time.time()
     with writer() as conn, conn:
         conn.execute(

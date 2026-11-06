@@ -1220,7 +1220,7 @@ build on any reverse import.
 | `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
 | `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
 | `GET /system/onboarding` | first-run tour data: library/source paths, counts, index root, backup, downloaders, feature flags |
-| `GET /system/index/status` | crawler state, counts, revision, stale/prune-abort counters, runtime ownership |
+| `GET /system/index/status` | crawler state, counts, revision, stale/prune-abort counters, `artwork_swept` counters, runtime ownership |
 | `POST /system/index/sync` | start a forced v2 crawl (`409` unless `V2_OWN_WORKERS=true`) |
 | `POST /transcode/x265` | queue an in-place HEVC re-encode of one video (`409` if already HEVC or already queued) |
 | `GET /transcode/x265/status?path=` | active/queued job, the job for a path, and recent history |
@@ -1283,7 +1283,8 @@ Shift-range selection, select all, then move, delete, star, batch rename with a 
 preview, and WebP conversion of the selected images), **the poster chooser and
 animated previews** (sampled frames with "use current position", a per-video
 generate action, and a folder-wide batch queue that samples ~24 frames into a
-looping WebP), **in-place x265 conversion** (serial libx265 queue, live
+looping WebP; the chooser also works for a video inside a ZIP archive, extracting
+the member to the bounded local cache first), **in-place x265 conversion** (serial libx265 queue, live
 percent/fps/speed/ETA, cancel, atomic commit, index/poster rewrite), **library snapshots**
 (v2 writes a compacted DB copy plus a
 poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a
@@ -1331,8 +1332,12 @@ with retries, and if more than half of a folder's indexed children (5+) look mis
 once, pruning is aborted and the counters surface as stale instead of wiping the
 subtree. The metadata prober runs one FFprobe pass per video and Pillow per image,
 marking failures `0 x 0`; the poster sweep uses the same ffmpeg/Pillow generator as the
-on-demand endpoint and marks persistent failures `has_thumb = -1`. All of it starts
-only with `V2_OWN_WORKERS=true`; alongside v1 the runtime is a no-op.
+on-demand endpoint and marks persistent failures `has_thumb = -1`. After a successful
+crawl the owned runtime also sweeps cached posters, animated previews and chooser
+frames whose index rows are gone (`cache.sweep_orphaned_artwork`), so artwork for files
+deleted or renamed outside the app does not accumulate; an empty index never triggers a
+sweep. All of it starts only with `V2_OWN_WORKERS=true`; alongside v1 the runtime is a
+no-op.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
