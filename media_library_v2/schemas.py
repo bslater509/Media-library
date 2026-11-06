@@ -389,6 +389,103 @@ class DownloadClearResponse(BaseModel):
 # --- analytics -------------------------------------------------------------
 
 
+class DedupeGroup(BaseModel):
+    id: str
+    match_type: str
+    size: int
+    size_formatted: str
+    reclaimable: int
+    files: list[FileEntry]
+
+
+class DedupeGroups(BaseModel):
+    mode: str
+    total_groups: int
+    total_files: int
+    unhashed: int
+    groups: list[DedupeGroup]
+
+
+class DedupeStatus(BaseModel):
+    content: dict[str, int]
+    visual: dict[str, int]
+    ignored: int
+
+
+class DedupeHashRequest(BaseModel):
+    mode: str = "content"
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class DedupeHashResponse(BaseModel):
+    hashed: int
+    failed: int = 0
+    remaining: int
+
+
+class DedupeVerifyRequest(BaseModel):
+    keep: str
+    path: str
+
+
+class DedupeVerifyResponse(BaseModel):
+    keep: str
+    path: str
+    identical: bool
+
+
+class DedupeResolveRequest(BaseModel):
+    keep: str
+    delete: list[str] = Field(min_length=1, max_length=500)
+    mode: str = "content"
+
+
+class DedupeResolveResponse(BaseModel):
+    kept: str
+    deleted: list[str]
+    failed: list[Failure]
+    mismatched: list[str]
+
+
+class DedupeIgnoreRequest(BaseModel):
+    path1: str
+    path2: str
+    match_type: str = "content"
+
+
+class DedupeIgnoreResponse(BaseModel):
+    ignored: bool
+    path1: str
+    path2: str
+    match_type: str
+
+
+class DedupeUnignoreRequest(BaseModel):
+    path1: str
+    path2: str
+
+
+class DedupeUnignoreResponse(BaseModel):
+    unignored: bool
+    path1: str
+    path2: str
+
+
+class IgnoredPair(BaseModel):
+    id: int
+    path1: str
+    path2: str
+    match_type: str
+    created_at: float
+
+
+class IgnoredPairsPage(BaseModel):
+    items: list[IgnoredPair]
+    total: int
+    limit: int
+    offset: int
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

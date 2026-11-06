@@ -271,6 +271,57 @@ export interface DownloadEnqueueResponse {
   rejected: Array<{ url: string; error: string }>
 }
 
+export interface DedupeGroup {
+  id: string
+  match_type: 'content' | 'visual'
+  size: number
+  size_formatted: string
+  reclaimable: number
+  files: FileEntry[]
+}
+
+export interface DedupeGroups {
+  mode: string
+  total_groups: number
+  total_files: number
+  unhashed: number
+  groups: DedupeGroup[]
+}
+
+export interface DedupeStatus {
+  content: { candidate_files: number; unhashed: number }
+  visual: { hashed: number; unhashed: number }
+  ignored: number
+}
+
+export interface DedupeHashResult {
+  hashed: number
+  failed: number
+  remaining: number
+}
+
+export interface DedupeResolveResult {
+  kept: string
+  deleted: string[]
+  failed: Array<{ path: string; error: string }>
+  mismatched: string[]
+}
+
+export interface IgnoredPair {
+  id: number
+  path1: string
+  path2: string
+  match_type: string
+  created_at: number
+}
+
+export interface IgnoredPairsPage {
+  items: IgnoredPair[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface AnalyticsTreeNode {
   name: string
   path: string
@@ -510,6 +561,34 @@ export const api = {
 
   downloadHistory: (limit = 50, offset = 0) =>
     request<DownloadHistory>('/downloads/history', { limit, offset }),
+
+  dedupeStatus: () => request<DedupeStatus>('/dedupe/status'),
+
+  dedupeGroups: (mode: string, limit = 25, offset = 0) =>
+    request<DedupeGroups>('/dedupe/groups', { mode, limit, offset }),
+
+  dedupeHash: (mode: string, limit = 50) =>
+    post<DedupeHashResult>('/dedupe/hash', { mode, limit }),
+
+  dedupeResolve: (keep: string, deletes: string[], mode: string) =>
+    post<DedupeResolveResult>('/dedupe/resolve', {
+      keep,
+      delete: deletes,
+      mode,
+    }),
+
+  dedupeIgnore: (path1: string, path2: string, matchType: string) =>
+    post<{ ignored: boolean }>('/dedupe/ignore', {
+      path1,
+      path2,
+      match_type: matchType,
+    }),
+
+  dedupeIgnored: (limit = 50, offset = 0) =>
+    request<IgnoredPairsPage>('/dedupe/ignored', { limit, offset }),
+
+  dedupeUnignore: (path1: string, path2: string) =>
+    post<{ unignored: boolean }>('/dedupe/unignore', { path1, path2 }),
 
   analyticsOverview: (refresh = false, folderLimit = 15, fileLimit = 25) =>
     request<AnalyticsOverview>('/analytics/overview', {

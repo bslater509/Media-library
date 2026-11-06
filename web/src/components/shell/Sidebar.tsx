@@ -9,6 +9,7 @@ import {
   Search,
   Settings,
   Star,
+  Wrench,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useInfo, useRootFolders } from '../../lib/queries'
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/sorter', label: 'Sorter', icon: Clapperboard },
   { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/analytics', label: 'Analytics', icon: Gauge },
+  { to: '/tools', label: 'Tools', icon: Wrench },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/favorites', label: 'Favorites', icon: Star },
 ]

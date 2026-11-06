@@ -57,6 +57,14 @@ snapshot metadata.
   during the request — and the payload is memoised for 30 seconds (`refresh=1`
   bypasses). ECharts is lazy-loaded with the page, so it never weighs on the
   rest of the app.
+- **Dedupe and the Tools hub.** `/v2/tools/dedupe` groups byte-identical files
+  by the shared `quick_hash` and near-identical frames by `thumb_hash`,
+  computes missing hashes in batches off the request thread, verifies content
+  byte-for-byte before deleting, and manages ignored false-positive pairs.
+  Visual clusters use complete linkage and are capped at 12 files, so a chain
+  of loosely similar scenes can never become a 50-file deletion suggestion.
+  `/v2/tools` gathers duplicates (native) and the not-yet-ported maintenance
+  tools (ZIP, WebP, empty folders, backups) with links to the current app.
 
 ## [2.0.2] - 2026-11-03
 

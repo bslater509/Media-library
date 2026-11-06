@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from media_library_v2.cache import animated_path, thumbnail_path
 from media_library_v2.config import get_settings
 from media_library_v2.db import writer
 from media_library_v2.paths import format_size, resolve_library_path, stable_id
@@ -71,20 +72,8 @@ def _resolve_dir(raw: str) -> str:
     return target
 
 
-def _cache_key(path: str, mtime: float, size: int) -> str:
-    import hashlib
-
-    payload = f"{path}_{mtime}_{size}"
-    return hashlib.sha256(payload.encode("utf-8", "surrogatepass")).hexdigest()[:24]
-
-
 def _thumb_paths(path: str, mtime: float, size: int) -> tuple[Path, Path]:
-    settings = get_settings()
-    key = _cache_key(path, mtime, size)
-    return (
-        settings.thumbnail_dir / f"thumb_{key}.jpg",
-        settings.thumbnail_dir / "animated" / f"anim_{key}.webp",
-    )
+    return thumbnail_path(path, mtime, size), animated_path(path, mtime, size)
 
 
 def _move_thumbs(old: str, new: str, mtime: float, size: int) -> None:

@@ -21,6 +21,10 @@ export const queryKeys = {
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
+  dedupeStatus: ['dedupe', 'status'] as const,
+  dedupeGroups: (mode: string, limit: number) =>
+    ['dedupe', 'groups', mode, limit] as const,
+  dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   downloadStatus: ['downloads', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
 }
@@ -309,6 +313,89 @@ export function useDownloadClear() {
     mutationFn: () => api.downloadClearHistory(),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['downloads'] })
+    },
+  })
+}
+
+export function useDedupeStatus() {
+  return useQuery({
+    queryKey: queryKeys.dedupeStatus,
+    queryFn: api.dedupeStatus,
+    staleTime: 10_000,
+  })
+}
+
+export function useDedupeGroups(mode: string, limit = 25) {
+  return useQuery({
+    queryKey: queryKeys.dedupeGroups(mode, limit),
+    queryFn: () => api.dedupeGroups(mode, limit, 0),
+    staleTime: 15_000,
+  })
+}
+
+export function useDedupeIgnored(limit = 50) {
+  return useQuery({
+    queryKey: queryKeys.dedupeIgnored(limit),
+    queryFn: () => api.dedupeIgnored(limit, 0),
+    staleTime: 15_000,
+  })
+}
+
+export function useDedupeHash() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ mode, limit = 50 }: { mode: string; limit?: number }) =>
+      api.dedupeHash(mode, limit),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useDedupeResolve() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      keep,
+      deletes,
+      mode,
+    }: {
+      keep: string
+      deletes: string[]
+      mode: string
+    }) => api.dedupeResolve(keep, deletes, mode),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useDedupeIgnore() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      path1,
+      path2,
+      mode,
+    }: {
+      path1: string
+      path2: string
+      mode: string
+    }) => api.dedupeIgnore(path1, path2, mode),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useDedupeUnignore() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path1, path2 }: { path1: string; path2: string }) =>
+      api.dedupeUnignore(path1, path2),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
     },
   })
 }

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import mimetypes
 import os
 import re
@@ -12,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from media_library_v2.cache import cache_key
 from media_library_v2.config import get_settings
 from media_library_v2.db import reader
 from media_library_v2.paths import is_zip_member, resolve_existing_file
@@ -51,8 +51,7 @@ def _media_type(path: str) -> str:
 
 def _thumb_key(path: str, mtime: float, size: int) -> str:
     """Same deterministic key v1 uses, so its cache is reused unchanged."""
-    payload = f"{path}_{mtime}_{size}"
-    return hashlib.sha256(payload.encode("utf-8", "surrogatepass")).hexdigest()[:24]
+    return cache_key(path, mtime, size)
 
 
 def _row_stat(path: str) -> tuple[float, int, str, bool]:

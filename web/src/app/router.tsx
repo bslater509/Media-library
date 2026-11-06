@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { AppShell } from '../components/shell/AppShell'
 import { EmptyState } from '../components/ui'
+import { DedupePage } from '../pages/DedupePage'
 import { DownloadsPage } from '../pages/DownloadsPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { LibraryPage } from '../pages/LibraryPage'
@@ -10,6 +11,7 @@ import { NotFoundPage, PageLoading } from '../pages/RoadmapPage'
 import { SearchPage } from '../pages/SearchPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { SorterPage } from '../pages/SorterPage'
+import { ToolsPage } from '../pages/ToolsPage'
 
 const AnalyticsPage = lazy(() =>
   import('../pages/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })),
@@ -65,6 +67,8 @@ export const router = createBrowserRouter(
             </Suspense>
           ),
         },
+        { path: 'tools', element: <ToolsPage /> },
+        { path: 'tools/dedupe', element: <DedupePage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: '*', element: <NotFoundPage /> },
       ],

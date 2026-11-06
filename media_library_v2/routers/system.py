@@ -39,7 +39,7 @@ async def info() -> dict:
             "manage": writable,
             "sorter": writable,
             "downloads": True,
-            "dedupe": False,
+            "dedupe": writable and True,
             "zip": False,
             "analytics": True,
             "workers": False,

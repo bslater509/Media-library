@@ -1160,6 +1160,12 @@ build on any reverse import.
 | `POST /downloads/retry` | clone a failed/cancelled job (completed jobs are never re-run) |
 | `POST /downloads/clear-history` | drop finished jobs, keeping active/queued |
 | `GET /analytics/overview?folder_limit=&file_limit=&refresh=` | index-only dashboard: totals, folder rollup/treemap/ranking, largest files, quality buckets, reclaimable space, health; memoised 30 s |
+| `GET /dedupe/status` | same-size candidates, unhashed counts, visual hashes, ignored pairs |
+| `GET /dedupe/groups?mode=content\|visual&limit=&offset=` | duplicate groups (content = byte-identical candidates, visual = complete-linkage pHash clusters capped at 12) |
+| `POST /dedupe/hash` | hash one batch of candidates (`mode`, `limit`), off-loop |
+| `POST /dedupe/verify` | full byte comparison of two files |
+| `POST /dedupe/resolve` | keep one file, delete the rest; content mode verifies every deletion first |
+| `POST /dedupe/ignore` / `GET /dedupe/ignored` / `POST /dedupe/unignore` | false-positive pair management |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
@@ -1197,15 +1203,25 @@ containers) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, b
 queueing, live progress, cancel, retry, paginated history, clear) and the
 **Analytics dashboard** (KPI strip, zoomable storage treemap, largest folders, media
 mix, extensions, reclaimable space, largest files, quality histogram and health pills —
-every figure from the index, memoised for 30 s). Every write updates the shared index
-and the cached artwork.
+every figure from the index, memoised for 30 s), **dedupe** (content groups from the
+shared `quick_hash`, visual clusters from `thumb_hash`, batched hashing, full-verify
+before content deletion, ignore/unignore) and the **Tools hub**. Every write updates the
+shared index and the cached artwork.
 
-Pending (see the v2 rewrite plan): dedupe, ZIP, WebP, backups, onboarding and the `/`
-redirect. Until those land, `/v2` reports `features: false` for them and the UI shows
-them as roadmap items rather than broken screens.
+Pending (see the v2 rewrite plan): ZIP, WebP, backups, onboarding and the `/` redirect.
+Until those land, `/v2` reports `features: false` for them and the UI shows them as
+roadmap items rather than broken screens.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
 through the same atomic move + index path as uploads. The download queue and its 500-row
 history are also in memory (as in v1): a restart drops history and stops running jobs,
 and staging directories older than 24 h are swept when the next job is queued.
+
+Dedupe reuses v1's hash formats exactly (`quick_hash = sha256(first 128 KB + size)`,
+`thumb_hash` = 16-hex pHash), so work one app has already done is never repeated.
+Content deletion is always preceded by a full byte comparison; visual clusters use
+complete linkage (every member within pHash distance 2 of every other) and are capped at
+12 files, so a chain of vaguely similar scenes cannot become a mass-delete suggestion.
+The Tools hub links the not-yet-ported tools (ZIP, WebP, empty folders, backups) to the
+current app.
