@@ -1174,6 +1174,9 @@ build on any reverse import.
 | `POST /zip/compress` | archive a folder on local staging, verify, commit atomically, replace the index subtree with archive members |
 | `POST /zip/unpack` | safe extraction to a sibling folder, delete the ZIP, re-index the extracted tree |
 | `GET /zip/overview` | compress candidates, indexed archives and extraction-cache usage |
+| `POST /zip/batch/start` | run a sequential compress/unpack batch (all candidates or explicit `paths`) |
+| `GET /zip/batch/status` | batch mode, running/paused/completed, progress, current item, errors |
+| `POST /zip/batch/pause` / `/resume` / `/cancel` | pause between items, resume, or stop the queue |
 | `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag |
 | `POST /backups/snapshot` | live SQLite backup (VACUUM-compacted) + poster tar + meta into `.media_library_backup/v2/` |
 | `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
@@ -1238,7 +1241,7 @@ dismissal persisted under `v2_onboarding_done`). Every write updates the shared 
 and the cached artwork.
 
 Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surfaces are
-batch ZIP and archive WebP rewrites, and v2's own background workers.
+archive WebP rewrites and v2's own background workers.
 
 The sorter's undo stack is in memory and is lost on restart; recent destinations persist
 in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
@@ -1266,6 +1269,10 @@ removing the source folder. Unpacking extracts into a temporary sibling (skippin
 members) and renames it into place. Both replace the affected `folders`/`files` rows in
 one transaction; a crash between the disk change and the commit leaves rows that v1's
 crawler reconciles.
+
+ZIP batches run one archive at a time on a daemon thread; pause takes effect between
+items (an archive is never half-written), cancel clears the queue, and each item calls
+the same validated single-item compress/unpack. State is in memory.
 
 x265 jobs run one at a time (`libx265 -preset medium -crf 18`, overridable through
 `X265_PRESET`/`X265_CRF`), audio stream-copied when MP4-compatible else AAC 192k, and

@@ -691,6 +691,25 @@ class X265CancelRequest(BaseModel):
     job_id: str
 
 
+class ZipBatchStartRequest(BaseModel):
+    mode: str
+    paths: list[str] | None = None
+
+
+class ZipBatchStatus(BaseModel):
+    mode: str | None = None
+    status: str
+    total: int
+    processed: int
+    succeeded: int
+    failed: int
+    percent: float
+    current_path: str | None = None
+    errors: list[dict[str, str]]
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: float
     library_root: str

@@ -407,6 +407,20 @@ export interface ZipUnpackResult {
   removed: string
 }
 
+export interface ZipBatchStatus {
+  mode: 'compress' | 'unpack' | null
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  percent: number
+  current_path: string | null
+  errors: Array<{ path: string; error: string }>
+  started_at: number | null
+  finished_at: number | null
+}
+
 export interface X265Job {
   id: string
   source_path: string
@@ -781,6 +795,17 @@ export const api = {
     post<ZipCompressResult>('/zip/compress', { path }),
 
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
+
+  zipBatchStatus: () => request<ZipBatchStatus>('/zip/batch/status'),
+
+  zipBatchStart: (mode: 'compress' | 'unpack', paths?: string[]) =>
+    post<ZipBatchStatus>('/zip/batch/start', { mode, paths }),
+
+  zipBatchPause: () => post<ZipBatchStatus>('/zip/batch/pause', {}),
+
+  zipBatchResume: () => post<ZipBatchStatus>('/zip/batch/resume', {}),
+
+  zipBatchCancel: () => post<ZipBatchStatus>('/zip/batch/cancel', {}),
 
   onboardingInfo: () => request<OnboardingInfo>('/system/onboarding'),
 

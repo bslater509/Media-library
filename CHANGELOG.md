@@ -96,6 +96,11 @@ snapshot metadata.
   floating panel, and supports cancel. The commit is atomic (cross-device safe),
   non-MP4 sources become an `.mp4` sibling, and the index/poster/animations are
   rewritten. `X265_PRESET` and `X265_CRF` tune it.
+- **Batch ZIP compression and unpacking in v2.** `/v2/tools/zip` can compress
+  every eligible leaf image folder or unpack every indexed archive, one at a
+  time, with live progress, current item, error list, pause/resume between
+  items and cancel. Each item reuses the validated single-archive path, so a
+  batch never leaves a half-written archive.
 
 ## [2.0.2] - 2026-11-03
 

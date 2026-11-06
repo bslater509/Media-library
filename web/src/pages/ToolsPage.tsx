@@ -64,7 +64,7 @@ export function ToolsPage() {
     {
       title: 'ZIP archives',
       description:
-        'Compress leaf image folders into archives or unpack an archive back into a folder. Archives also open as virtual folders in the Library.',
+        'Compress leaf image folders (one or all), unpack archives (one or all), and browse them as virtual folders in the Library.',
       icon: <Archive />,
       to: '/tools/zip',
       cta: 'Compress or unpack',

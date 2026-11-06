@@ -24,6 +24,7 @@ export const queryKeys = {
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
   webpStatus: ['webp', 'status'] as const,
   zipOverview: ['zip', 'overview'] as const,
+  zipBatch: ['zip', 'batch'] as const,
   backupStatus: ['backups', 'status'] as const,
   emptyFolders: ['empty', 'folders'] as const,
   dedupeStatus: ['dedupe', 'status'] as const,
@@ -452,6 +453,47 @@ export function useZipOverview() {
     queryFn: api.zipOverview,
     staleTime: 10_000,
   })
+}
+
+export function useZipBatch() {
+  return useQuery({
+    queryKey: queryKeys.zipBatch,
+    queryFn: api.zipBatchStatus,
+    refetchInterval: (query) =>
+      ['running', 'paused'].includes(query.state.data?.status ?? '') ? 1000 : 5000,
+    staleTime: 0,
+  })
+}
+
+function useZipBatchInvalidate() {
+  const client = useQueryClient()
+  return () => {
+    void client.invalidateQueries({ queryKey: queryKeys.zipBatch })
+    void client.invalidateQueries({ queryKey: ['zip'] })
+  }
+}
+
+export function useZipBatchStart() {
+  const invalidate = useZipBatchInvalidate()
+  return useMutation({
+    mutationFn: (mode: 'compress' | 'unpack') => api.zipBatchStart(mode),
+    onSuccess: invalidate,
+  })
+}
+
+export function useZipBatchPause() {
+  const invalidate = useZipBatchInvalidate()
+  return useMutation({ mutationFn: () => api.zipBatchPause(), onSuccess: invalidate })
+}
+
+export function useZipBatchResume() {
+  const invalidate = useZipBatchInvalidate()
+  return useMutation({ mutationFn: () => api.zipBatchResume(), onSuccess: invalidate })
+}
+
+export function useZipBatchCancel() {
+  const invalidate = useZipBatchInvalidate()
+  return useMutation({ mutationFn: () => api.zipBatchCancel(), onSuccess: invalidate })
 }
 
 export function useZipCompress() {

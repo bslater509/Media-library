@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import {
   Archive,
@@ -6,10 +6,22 @@ import {
   ArrowRight,
   Loader2,
   FolderArchive,
+  Pause,
+  Play,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ZipArrayItem, ZipCandidate } from '../lib/api'
-import { useZipCompress, useZipOverview, useZipUnpack } from '../lib/queries'
+import {
+  useZipBatch,
+  useZipBatchCancel,
+  useZipBatchPause,
+  useZipBatchResume,
+  useZipBatchStart,
+  useZipCompress,
+  useZipOverview,
+  useZipUnpack,
+} from '../lib/queries'
 import {
   Badge,
   Button,
@@ -24,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
+  Progress,
   Spinner,
 } from '../components/ui'
 
@@ -36,8 +49,43 @@ export function ZipPage() {
   const compress = useZipCompress()
   const unpack = useZipUnpack()
   const [pending, setPending] = useState<Pending | null>(null)
+  const [confirmBatch, setConfirmBatch] = useState<'compress' | 'unpack' | null>(null)
+  const batch = useZipBatch()
+  const startBatch = useZipBatchStart()
+  const pauseBatch = useZipBatchPause()
+  const resumeBatch = useZipBatchResume()
+  const cancelBatch = useZipBatchCancel()
+  const batchStatus = batch.data
+  const batchActive = ['running', 'paused'].includes(batchStatus?.status ?? '')
+  const lastBatchStatus = useRef('')
 
   const busy = compress.isPending || unpack.isPending
+  const batchBusy =
+    startBatch.isPending || pauseBatch.isPending || resumeBatch.isPending || cancelBatch.isPending
+
+  useEffect(() => {
+    const status = batchStatus?.status ?? ''
+    if (lastBatchStatus.current !== status && status === 'completed') {
+      void overview.refetch()
+    }
+    lastBatchStatus.current = status
+  }, [batchStatus?.status, overview])
+
+  const beginBatch = () => {
+    if (!confirmBatch) return
+    startBatch.mutate(confirmBatch, {
+      onSuccess: () => {
+        toast.success(
+          confirmBatch === 'compress'
+            ? 'Batch compression started'
+            : 'Batch unpack started',
+        )
+        setConfirmBatch(null)
+      },
+      onError: (error) =>
+        toast.error(error instanceof Error ? error.message : 'Could not start the batch'),
+    })
+  }
   const folders = overview.data?.folders ?? []
   const archives = overview.data?.archives ?? []
 
@@ -94,6 +142,93 @@ export function ZipPage() {
         </div>
       </div>
 
+      {batchStatus && batchStatus.status !== 'idle' ? (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                {batchStatus.status === 'running' ? (
+                  <Loader2 aria-hidden="true" className="size-4 animate-spin text-accent" />
+                ) : (
+                  <Archive aria-hidden="true" className="size-4 text-fg-subtle" />
+                )}
+                Batch {batchStatus.mode === 'compress' ? 'compression' : 'unpacking'}
+                <Badge
+                  variant={
+                    batchStatus.status === 'completed'
+                      ? 'success'
+                      : batchStatus.status === 'cancelled'
+                        ? 'warning'
+                        : 'accent'
+                  }
+                >
+                  {batchStatus.status}
+                </Badge>
+              </CardTitle>
+              <span className="font-mono text-[11px] text-fg-subtle tabular-nums">
+                {batchStatus.processed} / {batchStatus.total} ·{' '}
+                {batchStatus.succeeded} ok
+                {batchStatus.failed ? ` · ${batchStatus.failed} failed` : ''}
+              </span>
+            </div>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-2">
+            <Progress value={batchStatus.percent} />
+            {batchStatus.current_path ? (
+              <p className="truncate font-mono text-[10px] text-fg-subtle">
+                {batchStatus.current_path}
+              </p>
+            ) : null}
+            {batchStatus.errors.length ? (
+              <ul className="max-h-24 overflow-y-auto text-[10px] text-danger">
+                {batchStatus.errors.slice(0, 4).map((error) => (
+                  <li key={error.path} className="truncate">
+                    {error.path}: {error.error}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {batchActive ? (
+              <div className="flex items-center gap-2">
+                {batchStatus.status === 'paused' ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={batchBusy}
+                    onClick={() => resumeBatch.mutate(undefined, { onError: (e) => toast.error(e instanceof Error ? e.message : 'Resume failed') })}
+                  >
+                    <Play /> Resume
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={batchBusy}
+                    onClick={() => pauseBatch.mutate(undefined, { onError: (e) => toast.error(e instanceof Error ? e.message : 'Pause failed') })}
+                  >
+                    <Pause /> Pause
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={batchBusy}
+                  onClick={() =>
+                    cancelBatch.mutate(undefined, {
+                      onSuccess: () => toast.info('Batch cancelled'),
+                      onError: (e) =>
+                        toast.error(e instanceof Error ? e.message : 'Cancel failed'),
+                    })
+                  }
+                >
+                  <X /> Cancel
+                </Button>
+              </div>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
+
       {overview.isLoading ? (
         <div className="flex items-center gap-2 py-8 text-sm text-fg-subtle">
           <Spinner /> Reading the index…
@@ -103,11 +238,21 @@ export function ZipPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2">
-                  <FolderArchive aria-hidden="true" className="size-4 text-fg-subtle" />
-                  Folders ready to archive
-                </CardTitle>
-                <Badge variant="outline">{folders.length}</Badge>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <FolderArchive aria-hidden="true" className="size-4 text-fg-subtle" />
+                    Folders ready to archive
+                  </CardTitle>
+                  <Badge variant="outline">{folders.length}</Badge>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!folders.length || batchActive}
+                  onClick={() => setConfirmBatch('compress')}
+                >
+                  <Archive /> Compress all
+                </Button>
               </div>
             </CardHeader>
             <CardBody className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
@@ -148,11 +293,21 @@ export function ZipPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2">
-                  <ArchiveRestore aria-hidden="true" className="size-4 text-fg-subtle" />
-                  Archives
-                </CardTitle>
-                <Badge variant="outline">{archives.length}</Badge>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <ArchiveRestore aria-hidden="true" className="size-4 text-fg-subtle" />
+                    Archives
+                  </CardTitle>
+                  <Badge variant="outline">{archives.length}</Badge>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!archives.length || batchActive}
+                  onClick={() => setConfirmBatch('unpack')}
+                >
+                  <ArchiveRestore /> Unpack all
+                </Button>
               </div>
             </CardHeader>
             <CardBody className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
@@ -232,6 +387,49 @@ export function ZipPage() {
                 <ArchiveRestore />
               )}
               {pending?.kind === 'compress' ? 'Compress folder' : 'Unpack archive'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={confirmBatch !== null}
+        onOpenChange={(open) => (open ? undefined : setConfirmBatch(null))}
+      >
+        <DialogContent aria-describedby={undefined} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmBatch === 'compress'
+                ? `Compress all ${folders.length} folders?`
+                : `Unpack all ${archives.length} archives?`}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <p className="text-sm leading-6 text-fg-muted">
+              {confirmBatch === 'compress'
+                ? 'Every eligible leaf image folder is replaced by a ZIP archive, one at a time. Folders containing videos or nested archives are skipped by the server.'
+                : 'Every indexed archive is extracted into a sibling folder and then deleted, one at a time. Existing names are never overwritten.'}
+            </p>
+            <p className="mt-2 text-[11px] leading-5 text-warning">
+              This runs in the background and can be paused or cancelled between
+              items. It cannot undo folders already processed.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmBatch(null)}
+              disabled={startBatch.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={beginBatch} disabled={startBatch.isPending}>
+              {startBatch.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Archive />
+              )}
+              Start batch
             </Button>
           </DialogFooter>
         </DialogContent>

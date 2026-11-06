@@ -13,7 +13,7 @@ import {
 } from '../components/ui'
 
 const ROADMAP = [
-  { label: 'Batch ZIP and archive WebP tools', phase: 'later' },
+  { label: 'Archive WebP rewrites', phase: 'later' },
   { label: 'Background workers and archive WebP rewrites', phase: 'later' },
 ]
 

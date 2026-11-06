@@ -8,7 +8,7 @@ A high-performance, web-based media manager and video sorter built with **FastAP
 > same library and index) is being built beside the current app. Browse, search,
 > favorites, media streaming, the new gallery, uploads, rename/move/delete, the keyboard
 > sorter, URL/playlist downloads, the analytics dashboard, dedupe,
-> ZIP browsing/compression/unpacking, WebP optimisation, empty-folder
+> ZIP browsing/compression/unpacking (with batches), WebP optimisation, empty-folder
 > cleanup, library snapshots, in-place x265 and a guided welcome tour are live there; everything else is listed as roadmap until its phase
 > lands. The current app at `/` is unchanged. Build the client with
 > `npm --prefix web install && npm --prefix web run build`.
