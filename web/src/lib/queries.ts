@@ -292,6 +292,15 @@ export function useSorterQueue() {
   })
 }
 
+export function useSorterDuplicate(path: string | null) {
+  return useQuery({
+    queryKey: ['sorter', 'duplicate', path],
+    queryFn: () => api.sorterDuplicate(path as string),
+    enabled: Boolean(path),
+    staleTime: 30_000,
+  })
+}
+
 export function useSorterDestinations(query: string) {
   const trimmed = query.trim()
   return useQuery({

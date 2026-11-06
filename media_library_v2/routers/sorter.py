@@ -32,6 +32,15 @@ async def config() -> dict:
     return await asyncio.to_thread(sorter.sorter_config)
 
 
+@router.get("/sorter/duplicate")
+async def duplicate(path: str) -> dict:
+    """Whether this incoming clip already exists in the library."""
+    try:
+        return await asyncio.to_thread(sorter.check_duplicate, path)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
 @router.get("/sorter/queue", response_model=SorterQueueResponse)
 async def queue() -> dict:
     return await asyncio.to_thread(sorter._queue_payload)

@@ -221,6 +221,12 @@ export interface SorterDestination {
   subfolder_count?: number | null
 }
 
+export interface SorterDuplicate {
+  path: string
+  matched: boolean
+  duplicates: { path: string; name: string; size_formatted: string }[]
+}
+
 export interface SorterQueue {
   source_dir: string
   available: boolean
@@ -806,6 +812,9 @@ export const api = {
   sorterConfig: () => request<SorterConfig>('/sorter/config'),
 
   sorterQueue: () => request<SorterQueue>('/sorter/queue'),
+
+  sorterDuplicate: (path: string) =>
+    request<SorterDuplicate>('/sorter/duplicate', { path }),
 
   sorterRefresh: () => post<SorterQueue>('/sorter/refresh', {}),
 

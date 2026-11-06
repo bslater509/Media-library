@@ -1169,6 +1169,7 @@ build on any reverse import.
 | `POST /uploads/finalize` | verify the staged size, atomically commit, index the file |
 | `POST /uploads/cancel` | discard a staged upload |
 | `GET /sorter/config` | incoming path + availability, recent destinations, queue/undo counts |
+| `GET /sorter/duplicate?path=` | quick-hash comparison of the current incoming clip against indexed files; returns the library copies so the sorter can warn before a move |
 | `GET /sorter/queue` | videos in the incoming folder (one level, 1.5 s cache) |
 | `POST /sorter/refresh` | rescan the incoming folder |
 | `GET /sorter/destinations?q=&limit=` | index-only destination folder search |
@@ -1257,7 +1258,7 @@ favorites, theme light/dark/system, mobile bottom navigation, **uploads (chunked
 resumable), rename, move, delete (files and folders), create folder, favorite
 toggling**, the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
 one-key move, create-and-move, undo, rename, delete, live transcoding for non-web
-containers) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, batch
+containers and an "already in the library" warning from the shared quick hash) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, batch
 queueing, live progress, cancel, retry, paginated history, clear) and the
 **Analytics dashboard** (KPI strip, zoomable storage treemap, largest folders, media
 mix, extensions, reclaimable space, largest files, quality histogram and health pills —

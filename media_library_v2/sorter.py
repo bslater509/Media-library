@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from media_library_v2 import writes
+from media_library_v2 import dedupe, writes
 from media_library_v2.config import get_settings
 from media_library_v2.db import reader
 from media_library_v2.paths import (
@@ -65,6 +65,36 @@ def resolve_source_file(raw: str) -> str:
     if target == root:
         raise writes.WriteError("Invalid path", 400)
     return target
+
+
+def check_duplicate(path: str) -> dict[str, Any]:
+    """Compare an incoming clip against indexed files by quick hash."""
+    target = resolve_source_file(path)
+    digest = dedupe.quick_hash(target)
+    try:
+        size = os.path.getsize(target)
+    except OSError:
+        size = 0
+    if not digest:
+        return {"path": target, "matched": False, "duplicates": []}
+    with reader() as conn:
+        rows = conn.execute(
+            "SELECT path, name, size_formatted FROM files "
+            "WHERE size = ? AND quick_hash = ? LIMIT 20",
+            (size, digest),
+        ).fetchall()
+    return {
+        "path": target,
+        "matched": bool(rows),
+        "duplicates": [
+            {
+                "path": row["path"],
+                "name": row["name"],
+                "size_formatted": row["size_formatted"],
+            }
+            for row in rows
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

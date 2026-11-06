@@ -13,6 +13,11 @@ snapshot metadata.
 
 ### Added
 
+- **v2 sorter duplicate warning.** The sorter compares the current incoming clip's
+  quick hash (128 KB head + size, the same format the dedupe tools use) with the
+  shared index and shows an amber "Already in the library" banner with the first
+  matching path and a link to its folder, so a duplicate is visible before the
+  move key is pressed (`GET /sorter/duplicate`).
 - **v2 poster chooser and animated previews.** Video slides gained a thumbnail
   chooser: eight-or-more evenly spaced frames sampled from the clip, a "use
   current position" shortcut, and a poster that cache-busts immediately after it

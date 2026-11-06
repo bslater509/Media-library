@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   Check,
   Clapperboard,
   FolderInput,
@@ -22,6 +23,7 @@ import {
   useSorterCreateFolder,
   useSorterDelete,
   useSorterDestinations,
+  useSorterDuplicate,
   useSorterMove,
   useSorterQueue,
   useSorterRename,
@@ -75,6 +77,7 @@ export function SorterPage() {
     () => items.find((item) => !skipped.has(item.path)) ?? items[0],
     [items, skipped],
   )
+  const duplicate = useSorterDuplicate(current?.path ?? null)
   const recents = config.data?.recent_destinations ?? []
   const root = config.data?.library_root ?? queue.data?.source_dir ?? ''
 
@@ -287,6 +290,26 @@ export function SorterPage() {
             className="max-h-full max-w-full"
           />
         </div>
+
+        {duplicate.data?.matched ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-amber-400/20 bg-amber-500/15 px-3 py-2 text-[11px] text-amber-100">
+            <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="font-medium">
+              Already in the library ({duplicate.data.duplicates.length})
+            </span>
+            <span className="min-w-0 flex-1 truncate font-mono text-amber-100/70">
+              {duplicate.data.duplicates[0]?.path}
+            </span>
+            <a
+              href={`/library?path=${encodeURIComponent(
+                duplicate.data.duplicates[0]?.path.split('/').slice(0, -1).join('/') ?? '',
+              )}`}
+              className="shrink-0 rounded-sm border border-amber-300/30 px-1.5 py-0.5 font-medium text-amber-100 hover:bg-amber-400/15"
+            >
+              Show
+            </a>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-[11px] text-white/60">
           <span className="font-mono uppercase">{current.ext.replace('.', '')}</span>
