@@ -1098,7 +1098,11 @@ build on any reverse import.
   reconciles. Cached posters/animated previews are **moved** to the new cache key on
   rename/move and deleted with the file, so artwork survives a move in both apps.
 - Browse/search/folders/counts are index-only. No v2 request walks the filesystem except
-  byte-range media streaming, an already-cached thumbnail, and an explicit mutation.
+  byte-range media streaming, an already-cached thumbnail, an on-demand poster (ffmpeg
+  for videos, Pillow for images, ZIP members extracted first), and an explicit mutation.
+- Non-web containers play through `GET /media/transcode` (shared
+  `transcode_stream.build_command`, also used by the sorter); the file entry carries a
+  `transcode_url` and the viewer picks it when `playable` is false.
 - v2 reuses v1's thumbnail cache byte-for-byte: key
   `sha256(f"{path}_{mtime}_{size}")[:24]`, poster `thumb_<key>.jpg`, animated
   `animated/anim_<key>.webp`. Never change the key function — it would orphan the cache.
@@ -1188,6 +1192,7 @@ build on any reverse import.
 | `GET /transcode/x265/status?path=` | active/queued job, the job for a path, and recent history |
 | `POST /transcode/x265/cancel` | cancel an active (kills ffmpeg) or queued job |
 | `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
+| `GET /media/transcode?path=&ss=` | live fragmented-MP4 stream for containers the browser cannot play (ZIP members extracted first) |
 | `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
 | `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
 
@@ -1238,7 +1243,10 @@ poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, an
 service-stopped restore CLI; live restore stays disabled until the cutover) and a
 **first-run onboarding tour** (4 steps: welcome, library/index health, what is live vs
 still in the current app, appearance; replayable from Settings or the command palette,
-dismissal persisted under `v2_onboarding_done`). Every write updates the shared index
+dismissal persisted under `v2_onboarding_done`) plus **on-demand media processing**:
+video posters are generated the first time a tile or the viewer asks (ffmpeg, 360px,
+fallback to frame 0), and MKV/AVI/WMV/FLV files play through a live fragmented-MP4
+transcode so no clip is unplayable in the viewer. Every write updates the shared index
 and the cached artwork.
 
 Pending (see the v2 rewrite plan): the `/` cutover. The remaining v1-only surface is

@@ -49,6 +49,10 @@ def _file_entry(row: sqlite3.Row) -> dict[str, Any]:
     ext = (row["ext"] or "").lower()
     playable = (not is_video) or ext in settings.native_video_exts
     thumb_mtime = row["thumb_mtime"] if "thumb_mtime" in row.keys() else None
+    quoted = quote_path(path)
+    transcode_url = (
+        f"/api/v2/media/transcode?path={quoted}" if is_video and not playable else None
+    )
     return {
         "id": stable_id(path),
         "name": row["name"],
@@ -81,7 +85,8 @@ def _file_entry(row: sqlite3.Row) -> dict[str, Any]:
             if is_video
             else None
         ),
-        "media_url": f"/api/v2/media?path={quote_path(path)}",
+        "media_url": f"/api/v2/media?path={quoted}",
+        "transcode_url": transcode_url,
     }
 
 

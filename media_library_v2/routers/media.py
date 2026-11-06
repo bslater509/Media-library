@@ -22,7 +22,8 @@ from media_library_v2.paths import (
     resolve_library_path,
 )
 from media_library_v2.routers.common import as_http_error
-from media_library_v2.thumbnails import generate_image_thumbnail
+from media_library_v2.thumbnails import generate_thumbnail
+from media_library_v2.transcode_stream import build_command, relay
 
 router = APIRouter()
 
@@ -107,6 +108,28 @@ def _iter_file(path: str, start: int, end: int) -> Iterator[bytes]:
                 break
             remaining -= len(chunk)
             yield chunk
+
+
+@router.get("/media/transcode")
+async def transcode_media(request: Request, path: str, ss: float = 0):
+    """Live fragmented-MP4 stream for containers the browser cannot play."""
+    target = path
+    if is_zip_member(path):
+        split = zipfs.split_zip_path(path)
+        assert split is not None
+        archive = resolve_library_path(split[0])
+        try:
+            target = await asyncio.to_thread(zipfs.extract_member, archive, split[1])
+        except Exception as exc:
+            raise as_http_error(exc) from exc
+    else:
+        target = resolve_existing_file(path)
+    process = await asyncio.create_subprocess_exec(
+        *build_command(target, float(ss or 0)),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    return StreamingResponse(relay(process), media_type="video/mp4")
 
 
 @router.api_route("/media", methods=["GET", "HEAD"])
@@ -205,10 +228,10 @@ async def get_thumbnail(path: str, kind: str = "static"):
         candidate = settings.thumbnail_dir / f"thumb_{key}.jpg"
         media_type = "image/jpeg"
     if not candidate.is_file():
-        if kind == "static" and _file_type == "image":
+        if kind == "static" and _file_type in ("image", "video"):
             try:
                 candidate = await asyncio.to_thread(
-                    generate_image_thumbnail, path, mtime, size
+                    generate_thumbnail, path, _file_type, mtime, size
                 )
             except Exception:
                 # An unreadable/corrupt image is a missing preview, not a 5xx.

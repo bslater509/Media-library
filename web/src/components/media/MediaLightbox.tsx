@@ -187,6 +187,9 @@ export function MediaLightbox({
   const codec = codecLabel(file.video_codec)
   const captured = formatClock(file.capture_time)
   const isVideo = file.type === 'video'
+  const videoSrc = file.playable
+    ? file.media_url
+    : (file.transcode_url ?? file.media_url)
 
   return createPortal(
     <div
@@ -238,11 +241,11 @@ export function MediaLightbox({
           </IconButton>
         ) : null}
 
-        {isVideo && file.playable ? (
+        {isVideo ? (
           <video
             key={file.id}
             ref={videoRef}
-            src={file.media_url}
+            src={videoSrc}
             poster={file.has_thumb ? file.thumb_url : undefined}
             controls
             autoPlay
@@ -260,15 +263,6 @@ export function MediaLightbox({
             onClick={(event) => event.stopPropagation()}
           />
         )}
-
-        {isVideo && !file.playable ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center">
-            <p className="rounded-md bg-black/80 px-3 py-2 text-xs text-amber-200">
-              This clip needs transcoding before the browser can play it. Use the
-              current app for the converted stream.
-            </p>
-          </div>
-        ) : null}
 
         {index < files.length - 1 ? (
           <IconButton

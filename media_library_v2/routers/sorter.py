@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -23,6 +22,7 @@ from media_library_v2.schemas import (
     SorterQueueResponse,
     SorterRenameRequest,
 )
+from media_library_v2.transcode_stream import build_command, relay
 
 router = APIRouter()
 
@@ -107,54 +107,6 @@ async def stream(request: Request, path: str):
     return await stream_path(request, target)
 
 
-def _build_transcode_command(path: str, ss: float = 0.0) -> list[str]:
-    """Fragmented MP4 to stdout: the browser can start before the encode ends."""
-    command = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
-    if ss and ss > 0:
-        command.extend(["-ss", str(ss)])
-    command.extend(
-        [
-            "-i",
-            path,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-tune",
-            "zerolatency",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-ac",
-            "2",
-            "-movflags",
-            "frag_keyframe+empty_moov+default_base_moof",
-            "-f",
-            "mp4",
-            "pipe:1",
-        ]
-    )
-    return command
-
-
-async def _relay(process: asyncio.subprocess.Process) -> AsyncIterator[bytes]:
-    try:
-        while True:
-            chunk = await process.stdout.read(64 * 1024)
-            if not chunk:
-                break
-            yield chunk
-    finally:
-        try:
-            process.terminate()
-            await process.wait()
-        except (ProcessLookupError, OSError):
-            pass
-
-
 @router.get("/sorter/transcode")
 async def transcode(path: str, ss: float = Query(0.0)):
     try:
@@ -162,11 +114,11 @@ async def transcode(path: str, ss: float = Query(0.0)):
     except Exception as exc:
         raise as_http_error(exc) from exc
     process = await asyncio.create_subprocess_exec(
-        *_build_transcode_command(target, ss or 0.0),
+        *build_command(target, ss or 0.0),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    return StreamingResponse(_relay(process), media_type="video/mp4")
+    return StreamingResponse(relay(process), media_type="video/mp4")
 
 
 @router.get("/sorter/thumbnail")

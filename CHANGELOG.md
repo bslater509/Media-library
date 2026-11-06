@@ -107,6 +107,12 @@ snapshot metadata.
   member cache is purged and the index is re-synced. The archive is rebuilt on
   local staging, verified with `testzip()` and swapped in atomically;
   `WEBP_SKIP_LARGER` keeps an original when the WebP would be bigger.
+  The viewer picks it up through the new `transcode_url` field and plays the clip
+  live instead of showing the old "needs transcoding" notice.
+- **On-demand video posters in v2.** A video with no cached poster gets one the
+  first time a tile or the viewer requests it (ffmpeg at 1 s, 360 px, falling
+  back to frame 0), so new uploads never sit behind a "No preview" placeholder.
+  Images and ZIP members share the same path.
 - **Deleting a ZIP archive now removes its virtual members** from the index
   (and their cached posters and favorites), instead of leaving orphan member
   rows for the crawler to prune.

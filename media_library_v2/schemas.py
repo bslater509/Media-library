@@ -57,6 +57,7 @@ class FileEntry(BaseModel):
     thumb_url: str
     animated_url: str | None = None
     media_url: str
+    transcode_url: str | None = None
 
 
 class SearchFileEntry(FileEntry):

@@ -54,6 +54,7 @@ export interface FileEntry {
   thumb_url: string
   animated_url: string | null
   media_url: string
+  transcode_url: string | null
 }
 
 export interface SearchFileEntry extends FileEntry {
