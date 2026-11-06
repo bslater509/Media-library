@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Clapperboard,
   Folder,
+  FolderInput,
   FolderOpen,
   FolderPen,
   FolderPlus,
@@ -94,6 +95,7 @@ export function LibraryPage() {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false)
   const [renameFolderOpen, setRenameFolderOpen] = useState(false)
+  const [folderMoveOpen, setFolderMoveOpen] = useState(false)
   const selectionAnchor = useRef<number | null>(null)
   const toggleFavorite = useToggleFavorite()
   const moveFiles = useMoveFiles()
@@ -465,6 +467,14 @@ export function LibraryPage() {
               <ListChecks />
             </IconButton>
             <IconButton
+              aria-label="Move this folder"
+              title="Move folder"
+              onClick={() => setFolderMoveOpen(true)}
+              disabled={!currentPath || !root || currentPath === root}
+            >
+              <FolderInput />
+            </IconButton>
+            <IconButton
               aria-label="Rename this folder"
               title="Rename folder"
               onClick={() => setRenameFolderOpen(true)}
@@ -773,9 +783,38 @@ export function LibraryPage() {
           setDeleteTargets([])
           clearSelection()
         }} />
+      <FolderPicker
+        open={folderMoveOpen}
+        onOpenChange={setFolderMoveOpen}
+        title="Move this folder"
+        initialPath={parent ?? root}
+        confirmLabel="Move here"
+        busy={moveFiles.isPending}
+        onPick={(destination) => {
+          void (async () => {
+            try {
+              const result = await moveFiles.mutateAsync({
+                paths: [currentPath],
+                destination,
+                conflict: 'auto_rename',
+              })
+              const target = result.moved[0]?.target
+              if (target) {
+                toast.success('Folder moved')
+                navigateTo(target)
+              } else {
+                toast.error(result.failed[0]?.error ?? 'Could not move the folder')
+              }
+              setFolderMoveOpen(false)
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Move failed')
+            }
+          })()
+        }}
+      />
       <RenameFolderDialog
         folder={
-          currentPath && root && currentPath !== root
+          renameFolderOpen && currentPath && root && currentPath !== root
             ? {
                 path: currentPath,
                 name: breadcrumbs[breadcrumbs.length - 1]?.name ?? currentPath,

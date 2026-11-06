@@ -11,6 +11,8 @@ snapshot metadata.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-06
+
 ### Added
 
 - **v2 owns the housekeeping sweeps.** With `V2_OWN_WORKERS=true` the runtime now

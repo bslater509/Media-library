@@ -380,14 +380,142 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
     return {"deleted": [target for target, *_rest in deleted], "failed": failed}
 
 
+def _entry_rows(path: str):
+    """Rows and ZIP flag for a folder/archive about to be relocated."""
+    prefix = path + os.sep
+    cut = len(prefix)
+    with reader() as conn:
+        rows = conn.execute(
+            "SELECT path, mtime, size FROM files "
+            "WHERE path = ? OR substr(path, 1, ?) = ?",
+            (path, cut, prefix),
+        ).fetchall()
+        row = conn.execute(
+            "SELECT is_zip FROM folders WHERE path = ?", (path,)
+        ).fetchone()
+    return rows, bool(row is not None and row["is_zip"])
+
+
+def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
+    """Rewrite the index subtree after ``source`` moved to ``target``.
+
+    The caller has already moved the entry on disk and is responsible for
+    undoing that move if this raises.
+    """
+    from media_library_v2 import zipfs
+
+    rows, zip_indexed = _entry_rows(source)
+    zip_entry = is_zip or zip_indexed
+    prefix = source + os.sep
+    cut = len(prefix)
+    name = os.path.basename(target)
+    parent = os.path.dirname(target)
+    with writer() as conn, conn:
+        conn.execute(
+            "UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE path = ?",
+            (target, name, parent, source),
+        )
+        if zip_entry:
+            conn.execute(
+                "UPDATE files SET folder_path = ? WHERE folder_path = ?",
+                (target, source),
+            )
+            conn.execute(
+                "UPDATE files SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                (target, cut, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE favorites SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                (target, cut, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE ignored_duplicates SET "
+                "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
+                "ELSE path1 END, "
+                "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
+                "ELSE path2 END "
+                "WHERE path1 LIKE ? OR path2 LIKE ?",
+                (
+                    prefix + "%",
+                    target,
+                    cut,
+                    prefix + "%",
+                    target,
+                    cut,
+                    prefix + "%",
+                    prefix + "%",
+                ),
+            )
+        else:
+            conn.execute(
+                "UPDATE folders SET path = ? || substr(path, ?) WHERE path LIKE ?",
+                (target, cut, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE folders SET parent_path = ? || substr(parent_path, ?) "
+                "WHERE parent_path = ? OR parent_path LIKE ?",
+                (target, cut, source, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE files SET path = ? || substr(path, ?) "
+                "WHERE path = ? OR path LIKE ?",
+                (target, cut, source, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE files SET folder_path = ? || substr(folder_path, ?) "
+                "WHERE folder_path = ? OR folder_path LIKE ?",
+                (target, cut, source, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE favorites SET path = ? || substr(path, ?) "
+                "WHERE path = ? OR path LIKE ?",
+                (target, cut, source, prefix + "%"),
+            )
+            conn.execute(
+                "UPDATE ignored_duplicates SET "
+                "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
+                "ELSE path1 END, "
+                "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
+                "ELSE path2 END "
+                "WHERE path1 = ? OR path2 = ? OR path1 LIKE ? OR path2 LIKE ?",
+                (
+                    prefix + "%",
+                    target,
+                    cut,
+                    prefix + "%",
+                    target,
+                    cut,
+                    source,
+                    source,
+                    prefix + "%",
+                    prefix + "%",
+                ),
+            )
+        _recompute_folder(conn, os.path.dirname(source))
+        _recompute_folder(conn, parent)
+
+    for row in rows:
+        suffix = row["path"][len(source) :]
+        _move_thumbs(
+            row["path"],
+            target + suffix,
+            float(row["mtime"] or 0),
+            int(row["size"] or 0),
+        )
+
+    if zip_entry:
+        try:
+            zipfs.purge_cache(source)
+        except OSError:
+            pass
+
+
 def rename_folder(raw_path: str, name: str) -> dict[str, Any]:
     """Rename a real folder or a ZIP archive, rewriting the index subtree.
 
     Cached posters and animated previews are moved to the new cache keys, so a
     renamed folder keeps its artwork instead of regenerating every poster.
     """
-    from media_library_v2 import zipfs
-
     target = resolve_library_path(raw_path)
     is_zip = os.path.isfile(target) and target.lower().endswith(".zip")
     if not is_zip and not os.path.isdir(target):
@@ -399,123 +527,12 @@ def rename_folder(raw_path: str, name: str) -> dict[str, Any]:
     if os.path.exists(new_path):
         raise WriteError("An item with that name already exists", 409)
 
-    prefix = target + os.sep
-    cut = len(prefix)
-    with reader() as conn:
-        rows = conn.execute(
-            "SELECT path, mtime, size FROM files "
-            "WHERE path = ? OR substr(path, 1, ?) = ?",
-            (target, cut, prefix),
-        ).fetchall()
-        is_zip_indexed = conn.execute(
-            "SELECT is_zip FROM folders WHERE path = ?", (target,)
-        ).fetchone()
-
     os.rename(target, new_path)
     try:
-        with writer() as conn, conn:
-            conn.execute(
-                "UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE path = ?",
-                (new_path, clean, os.path.dirname(new_path), target),
-            )
-            if is_zip or (is_zip_indexed is not None and is_zip_indexed["is_zip"]):
-                conn.execute(
-                    "UPDATE files SET folder_path = ? WHERE folder_path = ?",
-                    (new_path, target),
-                )
-                conn.execute(
-                    "UPDATE files SET path = ? || substr(path, ?) WHERE path LIKE ?",
-                    (new_path, cut, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE favorites SET path = ? || substr(path, ?) "
-                    "WHERE path LIKE ?",
-                    (new_path, cut, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE ignored_duplicates SET "
-                    "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
-                    "ELSE path1 END, "
-                    "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
-                    "ELSE path2 END "
-                    "WHERE path1 LIKE ? OR path2 LIKE ?",
-                    (
-                        prefix + "%",
-                        new_path,
-                        cut,
-                        prefix + "%",
-                        new_path,
-                        cut,
-                        prefix + "%",
-                        prefix + "%",
-                    ),
-                )
-            else:
-                conn.execute(
-                    "UPDATE folders SET path = ? || substr(path, ?) WHERE path LIKE ?",
-                    (new_path, cut, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE folders SET parent_path = ? || substr(parent_path, ?) "
-                    "WHERE parent_path = ? OR parent_path LIKE ?",
-                    (new_path, cut, target, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE files SET path = ? || substr(path, ?) "
-                    "WHERE path = ? OR path LIKE ?",
-                    (new_path, cut, target, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE files SET folder_path = ? || substr(folder_path, ?) "
-                    "WHERE folder_path = ? OR folder_path LIKE ?",
-                    (new_path, cut, target, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE favorites SET path = ? || substr(path, ?) "
-                    "WHERE path = ? OR path LIKE ?",
-                    (new_path, cut, target, prefix + "%"),
-                )
-                conn.execute(
-                    "UPDATE ignored_duplicates SET "
-                    "path1 = CASE WHEN path1 LIKE ? THEN ? || substr(path1, ?) "
-                    "ELSE path1 END, "
-                    "path2 = CASE WHEN path2 LIKE ? THEN ? || substr(path2, ?) "
-                    "ELSE path2 END "
-                    "WHERE path1 = ? OR path2 = ? OR path1 LIKE ? OR path2 LIKE ?",
-                    (
-                        prefix + "%",
-                        new_path,
-                        cut,
-                        prefix + "%",
-                        new_path,
-                        cut,
-                        target,
-                        target,
-                        prefix + "%",
-                        prefix + "%",
-                    ),
-                )
-            _recompute_folder(conn, os.path.dirname(target))
-            _recompute_folder(conn, os.path.dirname(new_path))
+        _relocate_entry(target, new_path, is_zip)
     except Exception:
         os.rename(new_path, target)
         raise
-
-    for row in rows:
-        suffix = row["path"][len(target) :]
-        _move_thumbs(
-            row["path"],
-            new_path + suffix,
-            float(row["mtime"] or 0),
-            int(row["size"] or 0),
-        )
-
-    if is_zip or (is_zip_indexed is not None and is_zip_indexed["is_zip"]):
-        try:
-            zipfs.purge_cache(target)
-        except OSError:
-            pass
-
     return {"path": new_path, "name": clean}
 
 
@@ -578,9 +595,18 @@ def move_files(
 
     for raw in paths[:500]:
         try:
-            source = _resolve_file(raw)
+            source = resolve_library_path(raw)
+            if not os.path.exists(source):
+                raise WriteError("File or folder not found", 404)
         except WriteError as exc:
             failed.append({"path": raw, "error": exc.message})
+            continue
+
+        is_entry = os.path.isdir(source) or (
+            os.path.isfile(source) and source.lower().endswith(".zip")
+        )
+        if is_entry and (dest == source or dest.startswith(source + os.sep)):
+            failed.append({"path": source, "error": "Cannot move a folder into itself"})
             continue
         if os.path.dirname(source) == dest:
             skipped.append({"path": source, "reason": "Already in this folder"})
@@ -599,12 +625,27 @@ def move_files(
             else candidate
         )
 
-        mtime, size = _file_stats(source)
         try:
             shutil.move(source, target)
         except OSError as exc:
             failed.append({"path": source, "error": str(exc)})
             continue
+
+        if is_entry:
+            try:
+                _relocate_entry(source, target, source.lower().endswith(".zip"))
+            except Exception:
+                try:
+                    shutil.move(target, source)
+                except OSError:
+                    pass
+                failed.append({"path": source, "error": "Index update failed"})
+                continue
+            occupied.add(target)
+            moved.append({"source": source, "target": target})
+            continue
+
+        mtime, size = _file_stats(target)
         try:
             with writer() as conn, conn:
                 _apply_file_move(conn, source, target)

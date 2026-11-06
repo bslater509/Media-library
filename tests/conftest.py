@@ -122,6 +122,12 @@ def disable_auth_by_default(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def isolate_v2_worker_defaults(monkeypatch):
+    """The suite never starts v2's owned workers from the developer's .env."""
+    monkeypatch.setenv("V2_OWN_WORKERS", "false")
+
+
 @pytest.fixture
 def sandbox_env(tmp_path, monkeypatch):
     """Sets up a sandboxed environment with mock directories and SQLite database."""

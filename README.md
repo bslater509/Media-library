@@ -2,17 +2,20 @@
 
 A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
 
-**Current release: v2.0.2** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v3.0.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
-> **v2 preview at `/v2`.** A from-scratch rewrite (new React client, new API layer,
-> same library and index) is being built beside the current app. Browse, search,
-> favorites, media streaming, the new gallery, uploads, rename/move/delete, the keyboard
-> sorter, URL/playlist downloads, the analytics dashboard, dedupe,
-> ZIP browsing/compression/unpacking (with batches and archive WebP), WebP optimisation, empty-folder
-> cleanup, library snapshots, in-place x265, live MKV/AVI playback, a guided welcome
-> tour, an optional v2-owned worker runtime and a standalone entrypoint (`v2_app.py`) with the same shared-password gate are live there; everything else is listed as roadmap until its phase
-> lands. The current app at `/` is unchanged. Build the client with
-> `npm --prefix web install && npm --prefix web run build`.
+> **v3 is the app at `/`.** The rewrite (React 19 + TypeScript client, new API layer,
+> the same library and SQLite index) now serves the root URL. It covers browse, search,
+> favorites, media streaming, uploads, rename/move/delete, multi-select bulk actions,
+> the poster chooser and animated previews, the keyboard sorter (with a duplicate
+> warning), URL/playlist downloads, the analytics dashboard, dedupe, ZIP
+> browsing/compression/unpacking (with batches and archive WebP), WebP optimisation,
+> empty-folder cleanup, library snapshots, in-place x265 and live MKV/AVI playback,
+> with a guided welcome tour and the same shared-password gate. `V2_OWN_WORKERS=true`
+> runs the v2 crawler, metadata prober, poster/WebP/hash sweeps and snapshots.
+> Old `/v2/...` links redirect to the same path at `/`. The previous app remains in
+> the repository (`app.py`) as a fallback but is not started by the service unit.
+> Build the client with `npm --prefix web install && npm --prefix web run build`.
 
 ---
 

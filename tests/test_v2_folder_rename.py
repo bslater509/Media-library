@@ -221,3 +221,51 @@ def test_rename_folder_refuses_collisions_and_bad_names(rename_env):
         json={"path": str(library / "A" / "one.jpg"), "name": "x.jpg"},
     )
     assert not_a_folder.status_code == 400
+
+
+def test_move_folder_to_another_parent(rename_env):
+    library = rename_env["library"]
+    response = rename_env["client"].post(
+        "/api/v2/manage/move",
+        json={
+            "paths": [str(library / "A")],
+            "destination": str(library / "B"),
+            "conflict": "auto_rename",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["failed"] == []
+    target = library / "B" / "A"
+    assert target.is_dir()
+    assert (target / "sub" / "deep.jpg").is_file()
+
+    with sqlite3.connect(rename_env["db_path"]) as conn:
+        favorite = conn.execute("SELECT path FROM favorites").fetchone()[0]
+        folder = conn.execute(
+            "SELECT parent_path FROM folders WHERE path = ?", (str(target / "sub"),)
+        ).fetchone()
+    assert favorite == str(target / "sub" / "deep.jpg")
+    assert folder is not None and folder[0] == str(target)
+
+    poster = cache.thumbnail_path(
+        str(target / "sub" / "deep.jpg"),
+        (target / "sub" / "deep.jpg").stat().st_mtime,
+        (target / "sub" / "deep.jpg").stat().st_size,
+    )
+    assert poster.is_file()
+
+
+def test_cannot_move_a_folder_into_itself(rename_env):
+    library = rename_env["library"]
+    response = rename_env["client"].post(
+        "/api/v2/manage/move",
+        json={
+            "paths": [str(library / "A")],
+            "destination": str(library / "A" / "sub"),
+            "conflict": "auto_rename",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["failed"][0]["error"] == "Cannot move a folder into itself"
+    assert (library / "A" / "sub").is_dir()

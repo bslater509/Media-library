@@ -1081,11 +1081,14 @@ Before concluding your turn or submitting your work, complete this verification 
 
 ---
 
-## 16. v2 Rewrite — Served Beside v1 at `/v2`
+## 16. v2 Rewrite — Now Served at `/`
 
-The application is being rewritten in full (`media_library_v2/` + `web/`) while the
-current v1 app keeps running untouched at `/`. `/v2` is the product line; the cutover
-release is **3.0.0** and `media_library.__version__` only moves at that point.
+The application was rewritten in full (`media_library_v2/` + `web/`) beside the old
+`media_library/` app and cut over at release **3.0.0**: the standalone v2 app
+(`v2_app.py`) now serves the root URL and owns the workers
+(`V2_OWN_WORKERS=true`). Old `/v2/...` links redirect to the same path at `/`. The
+previous app remains importable (`app.py`) as a fallback and as the implementation of
+the still-shared index/thumbnail formats, but the systemd unit starts `v2_app.py`.
 
 **Hard rule: `media_library_v2` never imports `media_library`.** The direction is
 one-way — v1's `create_app()` imports `media_library_v2.mount` and mounts it, never the
@@ -1303,9 +1306,13 @@ middleware, and the client redirects to v1's `/login`. `load_environment()` (cal
 only by `main`, never at import) loads `.env` before the app is built, so importing
 the module has no side effects and the suite stays off the developer's settings.
 
-Pending: the `/` cutover itself — point the systemd unit at `v2_app.py`, set
-`V2_OWN_WORKERS=true`, and retire v1's crawler. Nothing else is missing from the auth
-or standalone layer.
+**Cut over.** The live systemd unit runs `v2_app.py` with `V2_OWN_WORKERS=true`; the
+first owned crawl skipped 311 of 312 folders and changed no rows. v1 is no longer
+started, but `app.py` and the `media_library/` package stay in the tree as a fallback
+and as the shared index/thumbnail contract. Remaining known differences from the old
+app: moving a whole folder is supported, but editing a file *inside* a ZIP archive is
+read-only in v2, and non-web containers are transcoded live on playback rather than
+pre-transcoded in the background.
 
 The owned runtime also drains the loose-image WebP queue and the content/visual
 duplicate hash queues in small batches, releasing heap between batches, so the
