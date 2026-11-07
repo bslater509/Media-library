@@ -101,6 +101,9 @@ def _probe_image(path: str) -> dict[str, Any] | None:
     try:
         from PIL import Image, ImageOps
 
+        from media_library.pillow_init import register_heif
+
+        register_heif()
         with Image.open(path) as image:
             image = ImageOps.exif_transpose(image)
             width, height = image.size

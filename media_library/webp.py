@@ -95,6 +95,9 @@ def _convert_one(path: str, quality: int, skip_larger: bool) -> dict[str, Any]:
     """Convert one image; returns outcome used to update the index."""
     from PIL import Image, ImageOps
 
+    from media_library.pillow_init import register_heif
+
+    register_heif()
     source = Path(path)
     if is_zip_member(path) or not source.is_file():
         return {"status": "missing", "path": path}

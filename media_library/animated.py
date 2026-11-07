@@ -169,6 +169,7 @@ def status() -> dict[str, Any]:
 def enqueue(paths: list[str]) -> int:
     """Queue videos that do not have a preview yet; returns the new count."""
     added = 0
+    queued_len = 0
     with _lock:
         for path in paths:
             if path in _seen:
@@ -176,9 +177,10 @@ def enqueue(paths: list[str]) -> int:
             _seen.add(path)
             _queue.append(path)
             added += 1
+        queued_len = len(_queue)
         state = dict(_state)
     if added:
-        _update(status="working" if state["active"] else "queued", queued=len(_queue))
+        _update(status="working" if state["active"] else "queued", queued=queued_len)
         _ensure_thread()
     return added
 

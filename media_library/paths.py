@@ -59,11 +59,34 @@ def resolve_existing_file(raw: str) -> str:
 def is_zip_member(path: str) -> bool:
     """True when ``path`` addresses a member of a ZIP virtual folder.
 
-    Same contract as :func:`media_library.zipfs.is_zip_member` (the first
-    ``.zip`` path-component marker followed by an inner path), kept in sync so
-    a real directory named ``foo.zip`` is never mistaken for an archive.
+    The first ``.zip`` path component that the index marks ``is_zip = 1``
+    demarcates a virtual archive folder. A *real* directory named
+    ``foo.zip`` is indexed with ``is_zip = 0`` and holds ordinary files, so
+    string shape alone cannot tell the two apart: when the archive
+    component has an ``is_zip = 0`` row this answers False. When the
+    component has no row (or the index is unreadable) the legacy string
+    contract decides, matching :func:`media_library.zipfs.is_zip_member`.
     """
-    return f".zip{os.sep}" in path.lower()
+    lowered = path.lower()
+    marker = f".zip{os.sep}"
+    start = lowered.find(marker)
+    if start == -1:
+        return False
+    archive = path[: start + len(".zip")]
+    try:
+        from media_library.db import reader
+
+        with reader() as conn:
+            row = conn.execute(
+                "SELECT is_zip FROM folders WHERE path = ?", (archive,)
+            ).fetchone()
+        if row is not None and not row["is_zip"]:
+            return False
+    except Exception:
+        # The index is the truth source only when readable; fall back to
+        # the string contract the way every older call site did.
+        pass
+    return True
 
 
 def relative_to_root(path: str) -> str:

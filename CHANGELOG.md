@@ -13,6 +13,31 @@ snapshot metadata.
 
 ### Fixed
 
+- A real directory literally named ``foo.zip`` is no longer mistaken for a
+  ZIP virtual folder: ``is_zip_member`` consults the index's ``is_zip``
+  flag for the archive component (string shape alone cannot tell them
+  apart), so children of such a folder stream, transcode and thumbnail like
+  any regular file while true archive members keep working.
+- HEIC/HEIF images are decodable: `pillow-heif` was declared in
+  `requirements.txt` (and the HEIC upload feature is advertised) but never
+  registered with Pillow, so iOS photos got no poster, no probed dimensions
+  and could not convert to WebP. The opener is now registered in the four
+  image-entry points, and `.heic`/`.heif` archive members convert too.
+- The combined dedupe list no longer rebuilds content and visual groups on
+  every page turn: the merged universe is cached for ten seconds, keyed on
+  the index shape (file/ignored counts) and invalidated by ignore/
+  unignore/reset/resolve/hash operations, so huge backlogs stop paying the
+  full group walk per request.
+- A lightbox whose underlying grid shrank (move, delete, filter) now closes
+  itself instead of leaving an invisible fullscreen overlay with the body
+  scroll locked and keyboard captured.
+- Justified-grid rows never overflow the container: the 40 px row floor
+  no longer produces a wider row on narrow containers full of
+  extreme-aspect items, and per-tile rounding surplus (≈½ px per tile) is
+  absorbed by the widest tile.
+- The animated-preview queue and crawler counters keep their read-modify-
+  writes under the state lock, so queued folder gauges count correctly.
+
 - The sorter's path validation now checks containment on resolved (real)
   paths, so a symlink inside the incoming folder can no longer stream or
   import a file from outside it (`403`).

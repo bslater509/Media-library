@@ -23,7 +23,7 @@ from media_library.db import writer
 from media_library.paths import format_size, resolve_library_path
 from media_library.zipfs import purge_cache
 
-_CONVERTIBLE = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+_CONVERTIBLE = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".heic", ".heif"}
 _SKIP = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini"}
 
 
@@ -31,6 +31,9 @@ def _webp_bytes_stream(member, quality: int) -> bytes:
     """Convert an already-open, lazily-read member (never fully buffered)."""
     from PIL import Image, ImageOps
 
+    from media_library.pillow_init import register_heif
+
+    register_heif()
     with Image.open(member) as image:
         source_format = (image.format or "").upper()
         image = ImageOps.exif_transpose(image)

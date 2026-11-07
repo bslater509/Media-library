@@ -36,7 +36,7 @@ at `/`.
 | Runtime | Python 3.10+ (PEP 604 unions evaluated at runtime; tested on 3.13) |
 | Web | FastAPI + Uvicorn |
 | Index | SQLite 3, WAL, `synchronous=NORMAL`, 64 MB page cache, mmap |
-| Media | FFmpeg / FFprobe CLI, Pillow, `imagehash` (+ SciPy for the DCT), NumPy |
+| Media | FFmpeg / FFprobe CLI, Pillow (+ pillow-heif for HEIC/HEIF), `imagehash` (+ SciPy for the DCT), NumPy |
 | Downloads | yt-dlp / gallery-dl as isolated subprocesses (`python -m …`) |
 | Client | React 19 + TypeScript 7, Vite 8, Tailwind 4, TanStack Query, Zustand, Radix, ECharts 6, `yet-another-react-lightbox`, Sonner, cmdk |
 | Tests | Pytest 8 (+ cov), Vitest 5 |
@@ -347,6 +347,10 @@ in-memory: a restart stops running jobs and clears their history.
 ### Posters and animated previews
 - Poster: FFmpeg `-ss 1 -frames:v 1`, 360 px, atomic replace; Pillow fallback
   for images. Generated on demand for a tile/viewer, and by the sweep in bulk.
+  The Pillow fallback registers the `pillow-heif` opener once per process, so
+  iOS-captured HEIC/HEIF files get posters, probed dimensions and WebP
+  conversion like any other image (`.heic`/`.heif` archive members convert
+  too).
 - Animated preview: ~24 candidate frames sampled across the duration at 480 px,
   compiled to a looping WebP (2 fps). Only played where the client asks
   (hover on desktop, visible tiles on touch).
@@ -394,7 +398,9 @@ exposes progress (group, file and sampled frame) at
 `GET /api/dedupe/verify-visual/status`, so leaving the page does not stop it.
 Groups whose frames disagree are hidden by default (`include_rejected=true`
 shows them). `POST /api/dedupe/reset` clears every ignored pair and cached
-frame check.
+frame check. The combined "all" listing caches its merged group universe for
+a few seconds, keyed on the index shape and invalidated by ignore / unignore /
+reset / resolve / hash operations.
 
 ### Downloads
 Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged

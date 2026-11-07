@@ -39,10 +39,16 @@ export function layoutRows<T>(
   const flush = (fill: boolean) => {
     if (current.length === 0) return
     const gaps = gap * (current.length - 1)
-    const height = fill
-      ? (containerWidth - gaps) / aspectSum
-      : targetRowHeight
-    rows.push({ items: current, height: Math.max(40, height) })
+    let height = fill ? (containerWidth - gaps) / aspectSum : targetRowHeight
+    if (fill && Math.max(40, height) * aspectSum + gaps > containerWidth) {
+      // A 40 px floor on a filled row can exceed the container when many
+      // extreme-aspect items land in one row; undersize instead of
+      // overflowing the container horizontally.
+      height = Math.max(1, (containerWidth - gaps) / aspectSum)
+    } else {
+      height = Math.max(40, height)
+    }
+    rows.push({ items: current, height })
     current = []
     aspectSum = 0
   }

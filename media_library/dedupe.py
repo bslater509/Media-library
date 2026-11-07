@@ -585,6 +585,7 @@ def reset_duplicates() -> dict[str, int]:
                 started_at=None,
                 finished_at=None,
             )
+    invalidate_merged_cache()
     return {"ignored_cleared": ignored or 0, "signatures_cleared": signatures or 0}
 
 
@@ -797,7 +798,107 @@ def all_groups(
     group plus that extra, which is the only pair worth reviewing. Visual
     groups whose five-frame check disagreed are counted in ``rejected_groups``
     and hidden unless ``include_rejected`` is set.
+
+    The expensive part — walking every content and visual group and merging
+    them — is cached for a few seconds (the same shape as the analytics
+    rollup): the merged, sorted universe changes only when the index or the
+    ignore list changes, not per page turn. Verification stamps are applied
+    per request so they always reflect the latest frame checks.
     """
+    merged, _unhashed = _cached_merged_state()
+    visual_paths = [
+        file["path"]
+        for group in merged
+        if group["match_type"] == "visual"
+        for file in group["files"]
+    ]
+    cached = _cached_signatures(visual_paths)
+    rejected_groups = 0
+    visible: list[dict[str, Any]] = []
+    for group in merged:
+        if group["match_type"] != "visual":
+            visible.append(group)
+            continue
+        paths = [file["path"] for file in group["files"]]
+        verification = _verification_for(paths, cached)
+        group["verification"] = verification
+        if (
+            verification is not None
+            and verification["available"]
+            and verification["confirmed"] is False
+        ):
+            rejected_groups += 1
+            if not include_rejected:
+                continue
+        visible.append(group)
+
+    return {
+        "mode": "all",
+        "total_groups": len(visible),
+        "total_files": sum(len(group["files"]) for group in visible),
+        "unhashed": _cached_unhashed(),
+        "rejected_groups": rejected_groups,
+        "groups": visible[offset : offset + limit],
+    }
+
+
+_MERGE_CACHE_TTL = 10.0
+_merge_cache_lock = threading.Lock()
+_merge_cache: dict[str, Any] = {
+    "at": 0.0,
+    "merged": None,
+    "unhashed": 0,
+    "fingerprint": None,
+}
+
+
+def invalidate_merged_cache() -> None:
+    """Drop the cached group universe (called after changes that edit it)."""
+    with _merge_cache_lock:
+        _merge_cache.update(
+            {"at": 0.0, "merged": None, "unhashed": 0, "fingerprint": None}
+        )
+
+
+def _cached_unhashed() -> int:
+    return int(_cached_merged_state()[1])
+
+
+def _merge_fingerprint() -> tuple[int, int]:
+    """Cheap index shape (file count, ignored pairs) the cache is keyed on.
+
+    A full group rebuild is expensive, so drift in the underlying index —
+    rows added or removed by any writer, not just this module's endpoints —
+    must invalidate it. Row count is one index scan; exact ignore-state
+    changes go through ``invalidate_merged_cache`` in addition.
+    """
+    try:
+        with reader() as conn:
+            files = int(
+                conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"] or 0
+            )
+            ignored = int(
+                conn.execute("SELECT COUNT(*) AS n FROM ignored_duplicates").fetchone()[
+                    "n"
+                ]
+                or 0
+            )
+    except Exception:
+        return (-1, -1)
+    return files, ignored
+
+
+def _cached_merged_state() -> tuple[list[dict[str, Any]], int]:
+    """The merged+sorted group list and combined unhashed count."""
+    now = time.monotonic()
+    fingerprint = _merge_fingerprint()
+    with _merge_cache_lock:
+        if (
+            _merge_cache["merged"] is not None
+            and _merge_cache["fingerprint"] == fingerprint
+            and now - _merge_cache["at"] < _MERGE_CACHE_TTL
+        ):
+            return _merge_cache["merged"], _merge_cache["unhashed"]
     content = content_groups(limit=100_000, offset=0)
     visual = visual_groups(limit=100_000, offset=0)
     owner: dict[str, str] = {}
@@ -833,40 +934,17 @@ def all_groups(
         )
 
     merged.sort(key=lambda group: group["reclaimable"], reverse=True)
-    visual_paths = [
-        file["path"]
-        for group in merged
-        if group["match_type"] == "visual"
-        for file in group["files"]
-    ]
-    cached = _cached_signatures(visual_paths)
-    rejected_groups = 0
-    visible: list[dict[str, Any]] = []
-    for group in merged:
-        if group["match_type"] != "visual":
-            visible.append(group)
-            continue
-        paths = [file["path"] for file in group["files"]]
-        verification = _verification_for(paths, cached)
-        group["verification"] = verification
-        if (
-            verification is not None
-            and verification["available"]
-            and verification["confirmed"] is False
-        ):
-            rejected_groups += 1
-            if not include_rejected:
-                continue
-        visible.append(group)
-
-    return {
-        "mode": "all",
-        "total_groups": len(visible),
-        "total_files": sum(len(group["files"]) for group in visible),
-        "unhashed": int(content["unhashed"]) + int(visual["unhashed"]),
-        "rejected_groups": rejected_groups,
-        "groups": visible[offset : offset + limit],
-    }
+    unhashed = int(content["unhashed"]) + int(visual["unhashed"])
+    with _merge_cache_lock:
+        _merge_cache.update(
+            {
+                "at": now,
+                "merged": merged,
+                "unhashed": unhashed,
+                "fingerprint": fingerprint,
+            }
+        )
+    return merged, unhashed
 
 
 def auto_verify_groups(groups: list[dict[str, Any]]) -> int:
@@ -964,6 +1042,8 @@ def hash_content(limit: int = 50) -> dict[str, Any]:
             "AND size IN (SELECT size FROM files WHERE size > 0 "
             "GROUP BY size HAVING COUNT(*) > 1)"
         ).fetchone()["n"]
+    if updates:
+        invalidate_merged_cache()
     return {"hashed": hashed, "failed": failed, "remaining": remaining or 0}
 
 
@@ -992,6 +1072,8 @@ def hash_visual(limit: int = 50) -> dict[str, Any]:
         remaining = conn.execute(
             "SELECT COUNT(*) AS n FROM files WHERE has_thumb = 1 AND thumb_hash IS NULL"
         ).fetchone()["n"]
+    if updates:
+        invalidate_merged_cache()
     return {"hashed": hashed, "remaining": remaining or 0}
 
 
@@ -1037,6 +1119,8 @@ def resolve(keep: str, deletes: list[str], mode: str = "content") -> dict[str, A
         deleted = result["deleted"]
         failed = result["failed"]
 
+    if deleted:
+        invalidate_merged_cache()
     return {
         "kept": keep_path,
         "deleted": deleted,
@@ -1059,6 +1143,7 @@ def ignore_pair(path1: str, path2: str, match_type: str = "content") -> dict[str
             "(path1, path2, match_type, created_at) VALUES (?, ?, ?, ?)",
             (low, high, match_type, time.time()),
         )
+    invalidate_merged_cache()
     return {"ignored": True, "path1": low, "path2": high, "match_type": match_type}
 
 
@@ -1072,6 +1157,7 @@ def unignore_pair(path1: str, path2: str) -> dict[str, Any]:
             (low, high),
         )
         removed = cursor.rowcount
+    invalidate_merged_cache()
     return {"unignored": bool(removed), "path1": low, "path2": high}
 
 

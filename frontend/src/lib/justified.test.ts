@@ -66,4 +66,22 @@ describe('layoutRows', () => {
     const rows = layoutRows([item('tall', 400, 4000)], 500, 200, 8, aspect)
     expect(rows[0].items[0].aspect).toBeCloseTo(2 / 3)
   })
+
+  it('never sizes a filled row wider than the container, even below the floor', () => {
+    // Many extreme-aspect items in one narrow container would push a 40 px
+    // clamped row past the right edge; the row undersizes instead.
+    const panoramas = Array.from({ length: 12 }, (_, index) =>
+      item(String(index), 4000, 1000),
+    )
+    const rows = layoutRows(panoramas, 360, 180, 8, aspect)
+    for (const row of rows) {
+      const widths = row.items.map(({ aspect: ratio }) => row.height * ratio)
+      const gaps = 8 * (row.items.length - 1)
+      const total = widths.reduce((sum, width) => sum + width, 0)
+      if (total + gaps >= 359) {
+        expect(total + gaps).toBeLessThanOrEqual(360)
+      }
+      expect(row.height).toBeGreaterThan(0)
+    }
+  })
 })

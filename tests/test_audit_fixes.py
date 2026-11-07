@@ -210,3 +210,86 @@ def test_zip_webp_streaming_members_are_copied_and_converted(tmp_path, monkeypat
     assert seen == ["photo.png"]
     with zipfile.ZipFile(archive) as bundle:
         assert bundle.namelist() == ["photo.png", "notes.txt"]
+
+
+# --- real directory named *.zip ------------------------------------------
+
+
+def test_is_zip_member_consults_the_index(tmp_path, monkeypatch):
+    """A real directory named foo.zip is a folder, not a virtual archive."""
+    library_dir = tmp_path / "library"
+    real_dir = library_dir / "album.zip"
+    real_dir.mkdir(parents=True)
+    (real_dir / "photo.jpg").write_bytes(b"\xff\xd8\xe0" + b"0" * 32)
+    archive = library_dir / "true.zip"
+    archive.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+    monkeypatch.setenv("LIBRARY_DIR", str(library_dir))
+    v2_config.reload_settings()
+
+    db_path = os.environ["DB_PATH"]
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, last_scanned, is_zip) "
+            "VALUES (?, ?, ?, 0, 0)",
+            (str(real_dir), "album.zip", str(library_dir)),
+        )
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, last_scanned, is_zip) "
+            "VALUES (?, ?, ?, 0, 1)",
+            (str(archive), "true.zip", str(library_dir)),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, mtime) "
+            "VALUES (?, ?, ?, 'image', '.jpg', 35, 0)",
+            (str(real_dir / "photo.jpg"), "photo.jpg", str(real_dir)),
+        )
+
+    from media_library.paths import is_zip_member
+
+    assert is_zip_member(str(real_dir / "photo.jpg")) is False
+    assert is_zip_member(str(archive) + "/inner.jpg") is True
+    # No row for the component: the legacy string contract still decides.
+    assert is_zip_member(str(library_dir / "unknown.zip" / "x.jpg")) is True
+
+
+def test_media_router_serves_members_of_real_zip_named_dirs(tmp_path, monkeypatch):
+    """A file inside a real directory named *.zip streams like any file."""
+    library_dir = tmp_path / "library"
+    real_dir = library_dir / "album.zip"
+    real_dir.mkdir(parents=True)
+    photo = real_dir / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xe0" + b"0" * 64)
+    monkeypatch.setenv("LIBRARY_DIR", str(library_dir))
+    v2_config.reload_settings()
+    db_path = os.environ["DB_PATH"]
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO folders (path, name, parent_path, last_scanned, is_zip) "
+            "VALUES (?, ?, ?, 0, 0)",
+            (str(real_dir), "album.zip", str(library_dir)),
+        )
+        conn.execute(
+            "INSERT INTO files (path, name, folder_path, type, ext, size, mtime) "
+            "VALUES (?, ?, ?, 'image', '.jpg', 67, 0)",
+            (str(photo), "photo.jpg", str(real_dir)),
+        )
+    client = TestClient(create_app())
+    response = client.get("/api/media", params={"path": str(photo)})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+
+
+# --- HEIC/HEIF opener ----------------------------------------------------
+
+
+def test_register_heif_supports_declaration():
+    """pillow-heif is a listed dependency; its opener must be wired."""
+    pytest.importorskip("pillow_heif")
+    from PIL import Image
+
+    from media_library.pillow_init import register_heif
+
+    register_heif()
+    register_heif()  # idempotent, no double registration side effects
+    Image.init()
+    assert "HEIF" in Image.SAVE or "HEIF" in Image.OPEN

@@ -54,6 +54,13 @@ def _update(**changes: Any) -> None:
         state.update(changes)
 
 
+def _bump(**addends: Any) -> None:
+    """Atomic read-modify-write on the counters, under the state lock."""
+    with _state_lock:
+        for key, value in addends.items():
+            state[key] = state[key] + value
+
+
 def status() -> dict[str, Any]:
     with _state_lock:
         return dict(state)
@@ -369,16 +376,9 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
             ),
         )
     if prune_aborted:
-        _update(
-            prune_aborted=state["prune_aborted"] + 1,
-            stale_folders=state["stale_folders"] + stale_folders,
-            stale_files=state["stale_files"] + stale_files,
-        )
+        _bump(prune_aborted=1, stale_folders=stale_folders, stale_files=stale_files)
     elif stale_folders:
-        _update(
-            stale_folders=state["stale_folders"] + stale_folders,
-            stale_files=state["stale_files"] + stale_files,
-        )
+        _bump(stale_folders=stale_folders, stale_files=stale_files)
     return dirs
 
 
@@ -497,10 +497,10 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
             except Exception:
                 artwork = {}
 
+        _bump(revision=1)
         _update(
             status="idle",
             last_synced=time.time(),
-            revision=state["revision"] + 1,
             current_folder="",
             total_folders=len(seen),
             artwork_swept=artwork,

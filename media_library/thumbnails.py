@@ -61,6 +61,9 @@ def generate_thumbnail(path: str, file_type: str, mtime: float, size: int) -> Pa
 def _image_poster(source: str, temp: Path) -> None:
     from PIL import Image, ImageOps
 
+    from media_library.pillow_init import register_heif
+
+    register_heif()
     try:
         with Image.open(source) as image:
             image = ImageOps.exif_transpose(image)

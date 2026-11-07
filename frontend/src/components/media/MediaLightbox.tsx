@@ -57,6 +57,13 @@ export function MediaLightbox({
   onAction,
 }: MediaLightboxProps) {
   const file = files[index]
+  // A refetch can shrink the list while the viewer is open (a move, delete
+  // or filter change). Without this the render guard returns null but the
+  // component stays mounted: invisible fullscreen overlay, body scroll
+  // locked, keyboard captured. Close visibly instead of vanishing.
+  useEffect(() => {
+    if (index >= 0 && index >= files.length) onCloseRef.current()
+  }, [index, files.length])
   const videoRef = useRef<HTMLVideoElement | null>(null)
   // A fresh inline arrow from a re-rendering parent must not tear the x265
   // poll interval down and rebuild it every render; read it through a ref.

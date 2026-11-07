@@ -75,6 +75,25 @@ export function JustifiedGrid({
     [files, onSelect],
   )
 
+  const rowWidths = useMemo(
+    () =>
+      rows.map((row) => {
+        const widths = row.items.map(({ aspect: ratio }) =>
+          Math.round(row.height * ratio),
+        )
+        const total = widths.reduce((sum, w) => sum + w, 0)
+        const gapsTotal = gap * (row.items.length - 1)
+        if (total + gapsTotal > width) {
+          // Absorb the rounding surplus (≤ half a px per tile) from the
+          // widest tile so the row never overflows the container.
+          const widest = widths.indexOf(Math.max(...widths))
+          widths[widest] = Math.max(1, widths[widest] - (total + gapsTotal - width))
+        }
+        return widths
+      }),
+    [rows, gap, width],
+  )
+
   return (
     <div ref={containerRef} className="flex w-full flex-col" style={{ gap }}>
       {rows.map((row, rowIndex) => (
@@ -83,9 +102,9 @@ export function JustifiedGrid({
           className="flex w-full"
           style={{ gap, height: Math.round(row.height) }}
         >
-          {row.items.map(({ item, aspect }) => {
+          {row.items.map(({ item, aspect }, itemIndex) => {
             const height = Math.round(row.height)
-            const tileWidth = Math.max(1, Math.round(height * aspect))
+            const tileWidth = rowWidths[rowIndex]?.[itemIndex] ?? 1
             const index = indexById.get(item.id) ?? 0
             return (
               <MediaTile
