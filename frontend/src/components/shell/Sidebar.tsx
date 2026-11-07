@@ -2,7 +2,6 @@ import { Link, NavLink, useSearchParams } from 'react-router'
 import {
   Clapperboard,
   Download,
-  ExternalLink,
   Folder,
   Gauge,
   LayoutGrid,
@@ -13,7 +12,6 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useInfo, useRootFolders } from '../../lib/queries'
-import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 
 const NAV = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
@@ -40,7 +38,7 @@ export function Sidebar() {
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold tracking-tight">Media Library</p>
           <p className="truncate text-[11px] text-fg-subtle">
-            {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Library'}
+            Library
           </p>
         </div>
       </div>
@@ -120,15 +118,6 @@ export function Sidebar() {
           <span className="tabular-nums">
             {info.data ? `${info.data.counts.files.toLocaleString()} items` : '—'}
           </span>
-          {IS_MOUNTED_PREVIEW ? (
-            <a
-              href="/"
-              className="inline-flex items-center gap-1 hover:text-fg"
-              title="Open the current app"
-            >
-              v1 <ExternalLink aria-hidden="true" className="size-3" />
-            </a>
-          ) : null}
         </div>
       </div>
     </aside>

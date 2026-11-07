@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router'
-import { Clapperboard, Ellipsis, ExternalLink, LayoutGrid, Search, Star } from 'lucide-react'
+import { Clapperboard, Ellipsis, LayoutGrid, Search, Star } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useThemeStore } from '../../lib/stores'
 import { Segmented, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '../ui'
 import { MobileSidebarContent } from './Sidebar'
-import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 
 const TABS = [
   { to: '/library', label: 'Library', icon: LayoutGrid },
@@ -75,17 +74,8 @@ export function MobileNav() {
                   { value: 'system', label: 'System' },
                 ]}
               />
-              {IS_MOUNTED_PREVIEW ? (
-                <a
-                  href="/"
-                  className="mt-4 flex items-center justify-between rounded-sm border border-border px-3 py-2.5 text-sm text-fg-muted"
-                >
-                  Open the current app
-                  <ExternalLink aria-hidden="true" className="size-4" />
-                </a>
-              ) : null}
               <p className="py-3 text-center text-[11px] text-fg-subtle">
-                {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Library'}
+                Library
               </p>
             </div>
           </SheetBody>

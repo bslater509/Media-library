@@ -3,7 +3,6 @@ import { createBrowserRouter, Navigate, useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { AppShell } from '../components/shell/AppShell'
 import { EmptyState } from '../components/ui'
-import { APP_BASENAME } from '../lib/base'
 import { BackupsPage } from '../pages/BackupsPage'
 import { DedupePage } from '../pages/DedupePage'
 import { DownloadsPage } from '../pages/DownloadsPage'
@@ -41,7 +40,7 @@ function RouteError() {
           <button
             type="button"
             className="text-sm text-accent hover:underline"
-            onClick={() => window.location.assign(`${APP_BASENAME}/library`)}
+            onClick={() => window.location.assign('/library')}
           >
             Back to the library
           </button>
@@ -83,5 +82,4 @@ export const router = createBrowserRouter(
       ],
     },
   ],
-  { basename: APP_BASENAME },
 )

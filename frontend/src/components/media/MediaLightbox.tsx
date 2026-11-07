@@ -10,7 +10,6 @@ import {
   ExternalLink,
   Film,
   FolderInput,
-  FolderOpen,
   Gauge,
   Info,
   Loader2,
@@ -23,7 +22,6 @@ import {
   X,
 } from 'lucide-react'
 import { api, type FileEntry, type X265Job } from '../../lib/api'
-import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 import { cn } from '../../lib/cn'
 import { useGenerateAnimated } from '../../lib/queries'
 import { PosterChooser } from './PosterChooser'
@@ -545,17 +543,6 @@ export function MediaLightbox({
                   <Trash2 />
                 </IconButton>
               </>
-            ) : null}
-            {IS_MOUNTED_PREVIEW ? (
-              <a
-                href={`/?folder=${encodeURIComponent(file.folder_path)}`}
-                aria-label="Manage in the current app"
-                title="Open this folder in the current app (move, rename, delete)"
-                className="inline-flex size-8 items-center justify-center rounded-sm text-white/75 hover:bg-white/10 hover:text-white"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <FolderOpen className="size-4" />
-              </a>
             ) : null}
             <a
               href={`${file.media_url}&download=true`}

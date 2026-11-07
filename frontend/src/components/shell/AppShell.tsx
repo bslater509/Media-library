@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router'
 import {
-  ExternalLink,
   Keyboard,
   Menu as MenuIcon,
   Monitor,
@@ -9,7 +8,6 @@ import {
   Search,
   Sun,
 } from 'lucide-react'
-import { IS_MOUNTED_PREVIEW } from '../../lib/base'
 import { cn } from '../../lib/cn'
 import { useOnboardingStore, usePaletteStore, useThemeStore } from '../../lib/stores'
 import type { ThemeMode } from '../../lib/theme'
@@ -104,16 +102,6 @@ export function AppShell() {
               <Keyboard />
             </IconButton>
             <ThemeMenu />
-            {IS_MOUNTED_PREVIEW ? (
-              <a
-                href="/"
-                title="Open the current app"
-                className="hidden items-center gap-1 rounded-sm px-2 py-1.5 text-xs text-fg-subtle hover:bg-surface-2 hover:text-fg sm:inline-flex"
-              >
-                Current app
-                <ExternalLink aria-hidden="true" className="size-3" />
-              </a>
-            ) : null}
           </div>
         </header>
 

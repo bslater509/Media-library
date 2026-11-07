@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import {
-  ExternalLink,
   HardDrive,
   Info,
   LogOut,
@@ -17,7 +16,6 @@ import {
 } from '../lib/queries'
 import { toast } from 'sonner'
 import { TILE_ROW_HEIGHT, useDensityStore, useOnboardingStore, useThemeStore } from '../lib/stores'
-import { IS_MOUNTED_PREVIEW } from '../lib/base'
 import {
   Badge,
   Button,
@@ -284,21 +282,11 @@ export function SettingsPage() {
         </CardHeader>
         <CardBody className="flex flex-col gap-2 text-sm text-fg-muted">
           <p>
-            {IS_MOUNTED_PREVIEW ? 'v2 preview' : 'Media Library'}
+            Media Library
             {info.data ? ` ${info.data.version}` : ''} — a from-scratch client and
-            API over the same library and index
-            {IS_MOUNTED_PREVIEW ? ' as the current app' : ''}.
+            API over the same library and index.
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            {IS_MOUNTED_PREVIEW ? (
-              <a
-                href="/"
-                className="inline-flex w-fit items-center gap-1.5 font-medium text-accent hover:underline"
-              >
-                Open the current app
-                <ExternalLink aria-hidden="true" className="size-3.5" />
-              </a>
-            ) : null}
             <Button
               variant="secondary"
               size="sm"
