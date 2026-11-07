@@ -943,3 +943,75 @@ class AnalyticsOverview(BaseModel):
     quality: dict[str, Any]
     reclaimable: dict[str, Any]
     health: dict[str, Any]
+
+
+# --- Verification queue ----------------------------------------------------
+
+
+class VerifyIssue(BaseModel):
+    path: str
+    issue: str
+    detected_at: float
+    dismissed_at: float | None = None
+    name: str | None = None
+    type: str | None = None
+    ext: str | None = None
+    size: int | None = None
+    size_formatted: str | None = None
+    mtime: float | None = None
+
+
+class VerifyIssuesResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    issues: list[VerifyIssue]
+
+
+class VerifyIssueCount(BaseModel):
+    issue: str
+    open: int
+    total: int
+
+
+class VerifyStatusResponse(BaseModel):
+    owned: bool
+    running: bool
+    pass_running: bool
+    rescan_pending: bool
+    passes: int
+    scanned: int
+    flagged: int
+    pruned: int
+    last_pass: float | None = None
+    last_pass_seconds: float | None = None
+    counts: list[VerifyIssueCount]
+    open: int
+    dismissed: int
+
+
+class VerifyRescanResponse(BaseModel):
+    started: bool
+    rescan_pending: bool
+
+
+class VerifyRecheckRequest(BaseModel):
+    path: str = Field(min_length=1)
+
+
+class VerifyRecheckResponse(BaseModel):
+    path: str
+    issues: list[str]
+    cleared: list[str]
+    probe_status: str
+
+
+class VerifyDismissRequest(BaseModel):
+    path: str = Field(min_length=1)
+    issue: str | None = None
+
+
+class VerifyDismissResponse(BaseModel):
+    path: str
+    dismissed: int
+    issues: list[str]

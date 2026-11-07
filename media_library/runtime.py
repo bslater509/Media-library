@@ -11,7 +11,7 @@ import gc
 import logging
 import threading
 
-from media_library import backups, dedupe, webp
+from media_library import backups, dedupe, verify, webp
 from media_library.config import get_settings
 from media_library.indexer import CrawlerThread
 from media_library.probe import MetadataWorker
@@ -25,6 +25,7 @@ _thumbnails: ThumbnailSweep | None = None
 _webp: _BatchSweep | None = None
 _content_hashes: _BatchSweep | None = None
 _visual_hashes: _BatchSweep | None = None
+_verify: verify.VerifyWorker | None = None
 _backup_stop = threading.Event()
 _backup_thread: threading.Thread | None = None
 _started = False
@@ -106,7 +107,7 @@ _backups = None
 def start_runtime() -> bool:
     """Start the owned workers, or do nothing when they are disabled."""
     global _crawler, _metadata, _thumbnails, _backups, _started
-    global _webp, _content_hashes, _visual_hashes
+    global _webp, _content_hashes, _visual_hashes, _verify
     settings = get_settings()
     if not settings.own_workers:
         logger.info("[api] Owned workers are disabled (OWN_WORKERS=false)")
@@ -123,6 +124,7 @@ def start_runtime() -> bool:
     _content_hashes = _BatchSweep("content-hashes", lambda: dedupe.hash_content(50))
     _visual_hashes = _BatchSweep("visual-hashes", lambda: dedupe.hash_visual(50))
     _backups = _BackupWatcher(settings.backup_interval_hours)
+    _verify = verify.start_worker()
     _crawler.start()
     _metadata.start()
     _thumbnails.start()
@@ -144,6 +146,7 @@ def stop_runtime() -> None:
         _webp,
         _content_hashes,
         _visual_hashes,
+        _verify,
         _backups,
     ):
         if worker is not None:
@@ -165,5 +168,6 @@ def runtime_status() -> dict[str, object]:
         "webp": bool(_webp),
         "content_hashes": bool(_content_hashes),
         "visual_hashes": bool(_visual_hashes),
+        "verify": bool(_verify),
         "backups": bool(_backups),
     }

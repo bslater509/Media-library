@@ -120,6 +120,15 @@ _TABLES = (
         play_count INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS file_issues (
+        path TEXT NOT NULL,
+        issue TEXT NOT NULL,
+        detected_at REAL NOT NULL,
+        dismissed_at REAL,
+        PRIMARY KEY(path, issue)
+    )
+    """,
 )
 
 # Every index below backs a predicate or ordering in this package; see the
