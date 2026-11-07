@@ -16,6 +16,7 @@ effects, which keeps the test suite off the developer's real configuration.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -31,9 +32,10 @@ from fastapi.staticfiles import StaticFiles
 
 from media_library_v2 import __version__, auth, backups
 from media_library_v2.config import get_settings, reload_settings
-from media_library_v2.db import is_available
+from media_library_v2.db import is_available, writes_available
 from media_library_v2.mount import api_router
 from media_library_v2.runtime import start_runtime, stop_runtime
+from media_library_v2.schema import init_schema
 from media_library_v2.views import build_router
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,26 @@ async def lifespan(app: FastAPI):
             )
     except Exception:
         logger.exception("[v2] Could not check the startup snapshot")
+
+    # Create the index schema before any worker touches it. A write, so it runs
+    # in a thread (AGENTS.md Rule 3) and is skipped in read-only mode.
+    if writes_available():
+        try:
+            report = await asyncio.to_thread(init_schema)
+            if report["created"]:
+                logger.info("[v2] Created the index schema at %s", report["path"])
+            if report["dropped_indexes"]:
+                logger.info(
+                    "[v2] Dropped obsolete indexes: %s",
+                    ", ".join(report["dropped_indexes"]),
+                )
+        except Exception:
+            logger.exception("[v2] Could not initialise the index schema")
+    elif not is_available():
+        logger.error(
+            "[v2] The index is read-only and has no usable schema; "
+            "start once with V2_DB_READ_ONLY=false or restore a snapshot"
+        )
 
     start_runtime()
     try:
