@@ -74,7 +74,7 @@ async def session(request: Request, response: Response) -> dict:
         return {"enabled": False, "authenticated": True}
     issued = parse_auth_token(password, request.cookies.get(AUTH_COOKIE_NAME, ""))
     if issued is not None and time.time() - issued > AUTH_COOKIE_REFRESH_INTERVAL:
-        set_auth_cookie(response, password)
+        set_auth_cookie(response, password, secure=request.url.scheme == "https")
     return {"enabled": True, "authenticated": issued is not None}
 
 
@@ -93,7 +93,7 @@ async def login(
             await asyncio.sleep(delay)
         raise HTTPException(status_code=401, detail="Incorrect password")
     _failures.pop(_client_ip(request), None)
-    set_auth_cookie(response, password)
+    set_auth_cookie(response, password, secure=request.url.scheme == "https")
     return {"enabled": True, "authenticated": True}
 
 

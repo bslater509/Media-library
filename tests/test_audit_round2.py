@@ -354,3 +354,68 @@ def test_plain_names_win_over_the_v2_fallback(monkeypatch, tmp_path):
         assert settings.crawl_interval_minutes == 11
     finally:
         v2_config.reload_settings()
+
+
+# ---------------------------------------------------------------------------
+# Downloads: DOWNLOAD_COOKIES_FILE reaches both downloader command builders
+# ---------------------------------------------------------------------------
+
+
+def test_cookie_file_is_only_passed_when_it_exists(library_env, monkeypatch, tmp_path):
+    from media_library.downloads import DownloadManager
+
+    monkeypatch.delenv("DOWNLOAD_COOKIES_FILE", raising=False)
+    v2_config.reload_settings()
+    try:
+        manager = DownloadManager()
+        staging = tmp_path / "staging"
+        staging.mkdir()
+        missing = tmp_path / "no-such-cookies.txt"
+        monkeypatch.setenv("DOWNLOAD_COOKIES_FILE", str(missing))
+        v2_config.reload_settings()
+        assert "--cookies" not in manager._ytdlp_command("https://x.test/v", staging)
+        assert "--cookies" not in manager._gallery_dl_command(
+            "https://x.test/v", staging
+        )
+
+        present = tmp_path / "cookies.txt"
+        present.write_text("# Netscape HTTP Cookie File\n")
+        monkeypatch.setenv("DOWNLOAD_COOKIES_FILE", str(present))
+        v2_config.reload_settings()
+        ytdlp = manager._ytdlp_command("https://x.test/v", staging)
+        gallery = manager._gallery_dl_command("https://x.test/v", staging)
+        assert ytdlp[ytdlp.index("--cookies") + 1] == str(present)
+        assert gallery[gallery.index("--cookies") + 1] == str(present)
+    finally:
+        monkeypatch.delenv("DOWNLOAD_COOKIES_FILE", raising=False)
+        v2_config.reload_settings()
+
+
+# ---------------------------------------------------------------------------
+# Auth: the session cookie is marked Secure on TLS-facing requests only
+# ---------------------------------------------------------------------------
+
+
+def test_session_cookie_is_secure_only_over_https(secured_client_factory=None):
+    import pytest as _pytest
+    from fastapi.testclient import TestClient
+
+    from media_library.app import create_app
+
+    # Two clients: plain HTTP keeps no Secure flag, HTTPS gets it.
+    monkeypatch = _pytest.MonkeyPatch()
+    monkeypatch.setenv("APP_PASSWORD", "hunt")
+    try:
+        http_client = TestClient(create_app())
+        login = http_client.post("/api/auth/login", json={"password": "hunt"})
+        assert login.status_code == 200
+        raw = login.headers["set-cookie"]
+        assert "Secure" not in raw
+
+        https_client = TestClient(create_app(), base_url="https://testserver")
+        secure_login = https_client.post("/api/auth/login", json={"password": "hunt"})
+        assert "Secure" in [
+            part.strip() for part in secure_login.headers["set-cookie"].split(";") or []
+        ]
+    finally:
+        monkeypatch.undo()

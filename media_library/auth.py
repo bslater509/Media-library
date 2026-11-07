@@ -104,13 +104,20 @@ def check_password(provided: str) -> bool:
     )
 
 
-def set_auth_cookie(response, password: str) -> None:
+def set_auth_cookie(response, password: str, secure: bool = False) -> None:
+    """Set the signed session cookie.
+
+    ``secure`` is only meaningful for a TLS-facing deployment; the usual
+    LAN service runs plain HTTP, where setting it would drop the cookie,
+    so callers pass it from the request scheme.
+    """
     response.set_cookie(
         key=AUTH_COOKIE_NAME,
         value=create_auth_token(password),
         max_age=AUTH_COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
+        secure=secure,
         path="/",
     )
 
@@ -146,5 +153,5 @@ async def auth_middleware(request: Request, call_next):
     response = await call_next(request)
     # Sliding expiry: refresh occasionally rather than on every request.
     if time.time() - issued > AUTH_COOKIE_REFRESH_INTERVAL:
-        set_auth_cookie(response, password)
+        set_auth_cookie(response, password, secure=request.url.scheme == "https")
     return response

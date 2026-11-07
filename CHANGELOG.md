@@ -36,6 +36,9 @@ snapshot metadata.
 - The poster-chooser/frame endpoints clamp paths to the library root the
   same way every other media read does, so index rows from another root
   can never drive an FFmpeg read outside the library.
+- The session cookie carries ``Secure`` when the request is HTTPS (plain
+  HTTP keeps working unchanged), and the test suite fails below 85%
+  coverage.
 - A real directory literally named ``foo.zip`` is no longer mistaken for a
   ZIP virtual folder: ``is_zip_member`` consults the index's ``is_zip``
   flag for the archive component (string shape alone cannot tell them
