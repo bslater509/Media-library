@@ -207,6 +207,7 @@ def test_owned_runtime_starts_every_sweep(workers_env, monkeypatch):
             "content_hashes",
             "visual_hashes",
             "backups",
+            "growth",
         ):
             assert status[key] is True, key
     finally:
