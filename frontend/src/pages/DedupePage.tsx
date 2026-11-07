@@ -121,8 +121,33 @@ export function DedupePage() {
   const checking = checkState?.running ?? false
   const checkedGroups = checkState?.completed_groups ?? 0
   const totalCheckGroups = checkState?.total_groups ?? 0
+  const activeFiles = checkState?.active_files ?? 0
+  const activeIndex = checkState?.active_index ?? 0
+  const activeFrame = checkState?.active_frame ?? 0
+  const activeFrames = checkState?.active_frames ?? 0
+  const activeName = checkState?.active_file
+    ? (checkState.active_file.split(/[\\/]/).pop() ?? '')
+    : ''
+  const activeFileFraction =
+    activeFiles > 0
+      ? Math.min(
+          1,
+          (Math.max(0, activeIndex - 1) +
+            (activeFrames > 0 ? activeFrame / activeFrames : 0)) /
+            activeFiles,
+        )
+      : 0
   const checkPercent =
-    totalCheckGroups > 0 ? Math.round((checkedGroups / totalCheckGroups) * 100) : 0
+    totalCheckGroups > 0
+      ? Math.min(
+          100,
+          Math.round(
+            ((checkedGroups + (checking ? activeFileFraction : 0)) /
+              totalCheckGroups) *
+              100,
+          ),
+        )
+      : 0
 
   useEffect(() => {
     if (checkState?.status === 'done') {
@@ -348,11 +373,21 @@ export function DedupePage() {
               ) : (
                 <ShieldCheck className="size-3.5 text-success" />
               )}
-              {checking
-                ? totalCheckGroups > 0
-                  ? `Checking group ${Math.min(checkedGroups + 1, totalCheckGroups)} of ${totalCheckGroups}`
-                  : 'Starting frame check…'
-                : `Last 5-frame check: ${checkedGroups}/${totalCheckGroups} groups`}
+              {checking ? (
+                <>
+                  {totalCheckGroups > 0
+                    ? `Checking group ${Math.min(checkedGroups + 1, totalCheckGroups)} of ${totalCheckGroups}`
+                    : 'Starting frame check…'}
+                  {activeFiles > 0
+                    ? ` · file ${Math.min(Math.max(1, activeIndex), activeFiles)}/${activeFiles}`
+                    : ''}
+                  {activeFiles > 0 && activeFrames > 0
+                    ? ` · frame ${activeFrame}/${activeFrames}`
+                    : ''}
+                </>
+              ) : (
+                `Last 5-frame check: ${checkedGroups}/${totalCheckGroups} groups`
+              )}
             </span>
             <span className="tabular-nums text-fg-subtle">
               {checkState.confirmed} confirmed · {checkState.rejected} differ ·{' '}
@@ -360,6 +395,14 @@ export function DedupePage() {
               {checkState.errors ? ` · ${checkState.errors} failed` : ''}
             </span>
           </div>
+          {checking && activeName ? (
+            <div className="flex items-center justify-between gap-2 text-[10px] text-fg-subtle">
+              <span className="min-w-0 truncate font-mono">{activeName}</span>
+              <span className="shrink-0">
+                {checkState.stage === 'comparing' ? 'comparing frames' : 'extracting frames'}
+              </span>
+            </div>
+          ) : null}
           {checking ? <Progress value={checkPercent} /> : null}
         </div>
       ) : null}

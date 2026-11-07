@@ -22,6 +22,7 @@ import sqlite3
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from typing import Any
 
 from media_library import writes
@@ -59,6 +60,12 @@ _verify_state: dict[str, Any] = {
     "completed_groups": 0,
     "queued_groups": 0,
     "current": [],
+    "stage": "",
+    "active_files": 0,
+    "active_index": 0,
+    "active_file": "",
+    "active_frame": 0,
+    "active_frames": 0,
     "confirmed": 0,
     "rejected": 0,
     "unknown": 0,
@@ -139,7 +146,9 @@ def _frame_phash(path: str, timestamp: float) -> str | None:
     return value if _PHASH_RE.match(value or "") else None
 
 
-def _signature_for(path: str) -> dict[str, Any] | None:
+def _signature_for(
+    path: str, on_frame: Callable[[int, int], None] | None = None
+) -> dict[str, Any] | None:
     """Return the five-frame signature for a video, computing it if needed."""
     with reader() as conn:
         row = conn.execute(
@@ -180,10 +189,11 @@ def _signature_for(path: str) -> dict[str, Any] | None:
     if duration <= 0:
         return None
 
-    hashes = [
-        _frame_phash(path, round(duration * fraction, 3))
-        for fraction in _FRAME_FRACTIONS
-    ]
+    hashes: list[str | None] = []
+    for index, fraction in enumerate(_FRAME_FRACTIONS, start=1):
+        hashes.append(_frame_phash(path, round(duration * fraction, 3)))
+        if on_frame is not None:
+            on_frame(index, len(_FRAME_FRACTIONS))
     with writer() as conn, conn:
         conn.execute(
             "INSERT INTO visual_frames "
@@ -324,7 +334,10 @@ def _verification_for(
     }
 
 
-def verify_visual_group(paths: list[str]) -> dict[str, Any]:
+def verify_visual_group(
+    paths: list[str],
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Double-check a visual group by sampling five frames from each video."""
     resolved: list[str] = []
     seen: set[str] = set()
@@ -336,12 +349,56 @@ def verify_visual_group(paths: list[str]) -> dict[str, Any]:
     if len(resolved) < 2:
         raise writes.WriteError("A visual group needs at least two files", 400)
 
+    total_files = len(resolved)
     signatures = _cached_signatures(resolved)
-    for path in resolved:
-        if path not in signatures:
-            signature = _signature_for(path)
-            if signature is not None:
-                signatures[path] = signature
+    for index, path in enumerate(resolved, start=1):
+        if progress is not None:
+            progress(
+                {
+                    "stage": "sampling",
+                    "active_files": total_files,
+                    "active_index": index,
+                    "active_file": path,
+                    "active_frame": 0,
+                    "active_frames": len(_FRAME_FRACTIONS),
+                }
+            )
+        if path in signatures:
+            continue
+
+        def on_frame(
+            done: int,
+            frames: int,
+            *,
+            file_index: int = index,
+            file_path: str = path,
+        ) -> None:
+            if progress is not None:
+                progress(
+                    {
+                        "stage": "sampling",
+                        "active_files": total_files,
+                        "active_index": file_index,
+                        "active_file": file_path,
+                        "active_frame": done,
+                        "active_frames": frames,
+                    }
+                )
+
+        signature = _signature_for(path, on_frame=on_frame)
+        if signature is not None:
+            signatures[path] = signature
+
+    if progress is not None:
+        progress(
+            {
+                "stage": "comparing",
+                "active_files": total_files,
+                "active_index": total_files,
+                "active_frame": len(_FRAME_FRACTIONS),
+                "active_frames": len(_FRAME_FRACTIONS),
+            }
+        )
     summary = _verification_for(resolved, signatures, include_pairs=True)
     if summary is None:
         return {
@@ -408,6 +465,12 @@ def start_visual_checks(groups: list[list[str]]) -> dict[str, Any]:
                 total_groups=0,
                 completed_groups=0,
                 current=[],
+                stage="",
+                active_files=0,
+                active_index=0,
+                active_file="",
+                active_frame=0,
+                active_frames=0,
                 confirmed=0,
                 rejected=0,
                 unknown=0,
@@ -436,6 +499,12 @@ def _verify_loop() -> None:
                     status="done",
                     current=[],
                     queued_groups=0,
+                    stage="",
+                    active_files=0,
+                    active_index=0,
+                    active_file="",
+                    active_frame=0,
+                    active_frames=0,
                     finished_at=time.time(),
                 )
                 _verify_thread = None
@@ -445,12 +514,22 @@ def _verify_loop() -> None:
                 status="running",
                 current=list(group),
                 queued_groups=len(_verify_queue),
+                stage="sampling",
+                active_files=len(group),
+                active_index=0,
+                active_file="",
+                active_frame=0,
+                active_frames=len(_FRAME_FRACTIONS),
             )
+
+        def report(update: dict[str, Any]) -> None:
+            with _verify_lock:
+                _verify_state.update(update)
 
         confirmed: bool | None = None
         failed = False
         try:
-            result = verify_visual_group(group)
+            result = verify_visual_group(group, progress=report)
             confirmed = result.get("confirmed")
         except Exception:
             failed = True
@@ -464,9 +543,17 @@ def _verify_loop() -> None:
                 _verify_state["rejected"] += 1
             else:
                 _verify_state["unknown"] += 1
-            _verify_state["completed_groups"] += 1
-            _verify_state["current"] = []
-            _verify_state["queued_groups"] = len(_verify_queue)
+            _verify_state.update(
+                completed_groups=_verify_state["completed_groups"] + 1,
+                current=[],
+                queued_groups=len(_verify_queue),
+                stage="",
+                active_files=0,
+                active_index=0,
+                active_file="",
+                active_frame=0,
+                active_frames=0,
+            )
             if not _verify_queue:
                 _verify_state.update(status="done", finished_at=time.time())
 
@@ -485,6 +572,12 @@ def reset_duplicates() -> dict[str, int]:
                 completed_groups=0,
                 queued_groups=0,
                 current=[],
+                stage="",
+                active_files=0,
+                active_index=0,
+                active_file="",
+                active_frame=0,
+                active_frames=0,
                 confirmed=0,
                 rejected=0,
                 unknown=0,

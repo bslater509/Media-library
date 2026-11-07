@@ -550,6 +550,12 @@ class DedupeVisualCheckStatus(BaseModel):
     completed_groups: int
     queued_groups: int
     current: list[str] = Field(default_factory=list)
+    stage: str = ""
+    active_files: int = 0
+    active_index: int = 0
+    active_file: str = ""
+    active_frame: int = 0
+    active_frames: int = 0
     confirmed: int
     rejected: int
     unknown: int

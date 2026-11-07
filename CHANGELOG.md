@@ -20,7 +20,8 @@ snapshot metadata.
   agree, and the Duplicates page can check one group or every visible visual
   group. Batches run on a daemon thread with `POST
   /api/dedupe/verify-visual/batch` and `GET /api/dedupe/verify-visual/status`,
-  so progress survives leaving and returning to the page.
+  so progress (group, file and sampled frame) survives leaving and returning
+  to the page.
 - **The Duplicates page compares videos side by side.** A compare dialog plays
   every file in the group, keeps the selected copy highlighted and shows the
   per-pair frame agreement.

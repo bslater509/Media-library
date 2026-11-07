@@ -380,13 +380,49 @@ def test_verify_visual_group_needs_five_frame_agreement(dedupe_env, monkeypatch)
     assert rejected["pairs"][0]["matches"] == 0
 
 
+def test_verify_visual_group_reports_file_and_frame_progress(dedupe_env, monkeypatch):
+    with _db(dedupe_env) as conn:
+        conn.execute(
+            "UPDATE files SET duration = 100 WHERE path IN (?, ?)",
+            (str(dedupe_env["a"]), str(dedupe_env["b"])),
+        )
+    monkeypatch.setattr(
+        dedupe, "_frame_phash", lambda _path, _timestamp: "0000000000000001"
+    )
+
+    updates: list[dict] = []
+    dedupe.verify_visual_group(
+        [str(dedupe_env["a"]), str(dedupe_env["b"])], progress=updates.append
+    )
+
+    assert updates[0]["active_files"] == 2
+    assert updates[0]["active_index"] == 1
+    frames = {}
+    for update in updates:
+        frames.setdefault(update["active_index"], set()).add(update["active_frame"])
+    assert frames[1] == {0, 1, 2, 3, 4, 5}
+    assert frames[2] == {0, 1, 2, 3, 4, 5}
+    assert updates[-1]["stage"] == "comparing"
+
+
 def test_visual_check_batch_reports_progress_and_survives_the_request(
     dedupe_env, monkeypatch
 ):
     calls: list[list[str]] = []
 
-    def fake(paths: list[str]) -> dict:
+    def fake(paths: list[str], progress=None) -> dict:
         calls.append(paths)
+        if progress is not None:
+            progress(
+                {
+                    "stage": "sampling",
+                    "active_files": len(paths),
+                    "active_index": 1,
+                    "active_file": paths[0],
+                    "active_frame": 1,
+                    "active_frames": 5,
+                }
+            )
         return {
             "available": True,
             "confirmed": len(calls) == 1,
@@ -549,7 +585,7 @@ def test_router_wires_dedupe_and_validates_input(dedupe_env, monkeypatch):
     monkeypatch.setattr(
         dedupe,
         "verify_visual_group",
-        lambda paths: {
+        lambda paths, progress=None: {
             "available": True,
             "confirmed": True,
             "checked_pairs": 1,

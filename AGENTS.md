@@ -384,9 +384,9 @@ double-checked against five sampled frames per video (10–90% of duration), and
 the result is cached in `visual_frames`. The client shows content and visual
 groups in one list; a visual cluster already covered by a byte-identical group
 is folded into it. A batch of checks runs on one daemon thread and exposes
-progress at `GET /api/dedupe/verify-visual/status`, so leaving the page does not
-stop it. `POST /api/dedupe/reset` clears every ignored pair and cached frame
-check.
+progress (group, file and sampled frame) at
+`GET /api/dedupe/verify-visual/status`, so leaving the page does not stop it.
+`POST /api/dedupe/reset` clears every ignored pair and cached frame check.
 
 ### Downloads
 Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged

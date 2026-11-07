@@ -344,6 +344,12 @@ export interface DedupeVisualCheckStatus {
   completed_groups: number
   queued_groups: number
   current: string[]
+  stage: string
+  active_files: number
+  active_index: number
+  active_file: string
+  active_frame: number
+  active_frames: number
   confirmed: number
   rejected: number
   unknown: number
