@@ -1,215 +1,178 @@
 # 📁 Media Library & Video Sorter
 
-A high-performance, web-based media manager and video sorter built with **FastAPI**, **SQLite**, and modern web standards. Designed for organizing large video collections with sub-millisecond search, proactive poster caching, seamless playback, and a rapid 1-touch keyboard sorter.
+A self-hosted media library and keyboard-driven video sorter for large video and
+image collections — often tens of thousands of files on a slow remote mount
+(pCloud, NFS). One FastAPI process serves a JSON API at `/api` and a React
+client at `/`, backed by a single SQLite index.
 
 **Current release: v3.0.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
-> **v3 is the app at `/`.** The rewrite (React 19 + TypeScript client, new API layer,
-> the same library and SQLite index) now serves the root URL. It covers browse, search,
-> favorites, media streaming, uploads, rename/move/delete, multi-select bulk actions,
-> the poster chooser and animated previews, the keyboard sorter (with a duplicate
-> warning), URL/playlist downloads, the analytics dashboard, dedupe, ZIP
-> browsing/compression/unpacking (with batches and archive WebP), WebP optimisation,
-> empty-folder cleanup, library snapshots, in-place x265 and live MKV/AVI playback,
-> with a guided welcome tour and the same shared-password gate. `V2_OWN_WORKERS=true`
-> runs the v2 crawler, metadata prober, poster/WebP/hash sweeps and snapshots.
-> Old `/v2/...` links redirect to the same path at `/`. The previous app remains in
-> the repository (`app.py`) as a fallback but is not started by the service unit.
-> Build the client with `npm --prefix web install && npm --prefix web run build`.
+---
+
+## ⚡ What it does
+
+- **Library** — indexed browsing of the folder tree, multi-word search over
+  filenames *and* library-relative folder paths, justified natural-ratio tiles,
+  a fullscreen viewer with byte-range streaming, favorites, and multi-select
+  bulk move / delete / rename / star / WebP.
+- **Sorter** — review an incoming folder with autoplay and pre-buffering, then
+  move with `1`–`6`, a folder search (`/`) and `Enter`, with a duplicate
+  warning, undo, rename, delete and live transcoding for MKV/AVI/WMV.
+- **Artwork** — background posters and looping animated WebP previews, plus a
+  poster chooser that samples frames across a clip and can set any of them.
+- **Processing** — metadata probing (dimensions, duration, codecs, fps, capture
+  time), in-place x265 (HEVC) conversion with live progress, WebP optimisation,
+  content and visual dedupe, ZIP browsing/compression/unpacking (with batches
+  and archive-level WebP), empty-folder cleanup.
+- **Downloads** — queue one or many URLs into a folder: yt-dlp with a
+  gallery-dl fallback, live progress, cancel, retry, paginated history.
+- **Analytics** — an index-only dashboard: storage treemap, largest folders and
+  files, media mix, reclaimable space, quality histogram, health pills.
+- **Snapshots** — hot SQLite snapshots plus a poster archive with automatic
+  startup restore, and snapshots are never taken over a running import.
+- **Access control** — optional shared password (`APP_PASSWORD`) with a
+  stateless signed cookie; no accounts, no session store.
 
 ---
 
-## ⚡ Key Features
-
-### 📁 Media Library & Gallery
-- **Instant SQLite Indexing**: Sub-millisecond search and filtering across tens of thousands of media files and nested category folders.
-- **Natural Aspect Ratio Layout**: Row-ordered justified tile layout respecting probed aspect ratios, with 5 scale presets (XS–XL).
-- **Proactive Thumbnail & Poster Caching**: Automatically extracts video poster frames in the background using FFmpeg and caches them locally for lag-free scrolling.
-- **Fullscreen Lightbox Player**: Native browser playback with byte-range streaming, scrubbing, loop toggle, and inline rename/delete.
-- **Batch Management**: Context menus and multi-select toolbar for batch moves, deletes, renames, and WebP optimization.
-- **Multi-Word Search**: Filter by multi-word queries with category and folder badge navigation.
-
-### ⭐ Favorites & Bookmarking System
-- **Dual-Access Navigation**:
-  - **In-Folder Filter Pill**: Filter any folder view instantly to show only starred media with live count badge (`⭐ Favorites`).
-  - **Global Sidebar Collection**: Library-wide chronological grid showing every favorited video and image with folder jump-chips to navigate directly to containing folders.
-- **Card, Lightbox & Context Controls**:
-  - Star button on card overlays (hover-revealed on desktop, always visible filled gold `⭐` when favorited, touch-accessible).
-  - Star toggle in fullscreen Lightbox overlay bar and keyboard hotkey `F`.
-  - Right-click / tap-and-hold context menu actions ("Add to Favorites" / "Remove from Favorites").
-  - 1-click bulk star / unstar toggle in selection toolbar.
-- **Video Sorter Integration**:
-  - Star button in desktop toolbar, header, and mobile bottom bar + keyboard hotkey `B` (keeping `F` dedicated for fullscreen video).
-  - **Move Persistence**: Starred videos in Sorter automatically preserve their favorite status when transferred to destination folders.
-- **Resilient SQLite Architecture**: Dedicated `favorites` table ensures index rescans never erase bookmarks, and automatically updates during file/folder moves, renames, and deletions.
-
-### 🔗 URL & Playlist Downloads
-- **Dedicated Downloads Page** (`/downloads`): a first-class downloader reached from the Library/Sorter nav tabs and the mobile drawer.
-- **Batch Queueing**: Paste several URLs at once; each valid http(s) link is queued into the chosen folder (invalid/duplicate lines are reported and skipped).
-- **yt-dlp + gallery-dl**: Best-quality video/playlist downloads with an automatic gallery-dl fallback for image boards and file hosts.
-- **Recent Folders & Picker**: Quick chips of folders you last downloaded into, plus a library folder-tree picker.
-- **Live Jobs List**: Active/queued progress with speed/ETA, paginated history, per-job cancel, retry of failed/cancelled jobs, and clear-history.
-
-### 🎬 Incoming Video Sorter
-- **Rapid Keyboard Workflow (<50ms per move)**: Review incoming downloads with autoplay and instant pre-buffering.
-- **1-Touch Destination Sorting**:
-  - Keys `1`–`6` for one-touch moves into your most frequent folders.
-  - Press `/` to fuzzy-filter categories and hit `Enter` to move.
-  - Create new subfolders on the fly with `+ Create & Move`.
-- **Non-Blocking Background Transfers**: Moves and conversions are queued sequentially without blocking UI responsiveness.
-- **Instant Undo**: Cancel or revert moves with `U` or `Ctrl+Z`.
-- **Automatic MP4 Transcoding**: Converts incompatible formats (`.mkv`, `.avi`, `.wmv`, `.flv`, `.mov`) into web-native MP4 using stream copying or H.264 fallback.
-
-### 📦 ZIP Virtual Folders & Archive Management
-- **Zero-Extraction Browsing**: Browse ZIP archives as folders directly from their central directory index without disk extraction.
-- **On-Demand Local Caching**: Extracted images and videos are cached locally with automatic LRU eviction (`ZIP_CACHE_MAX_SIZE_GB`).
-- **Folder Compression & Batch Tools**: Compress entire image folders to ZIP, unpack archives back to disk, and batch compress/extract with background workers.
-
-### 🖼️ Automatic WebP Optimization
-- **Background Conversion**: Automatically converts loose images (JPEG, PNG) to optimized WebP.
-- **Safety & Accounting**: Atomic file replacement with integrity checks and cumulative space-savings tracking.
-
-### 🔍 Deduplication Engine
-- **Content Hashing**: Fast 128 KB head-chunk + byte size matching with full verification prior to any deletion.
-- **Visual Duplicate Detection**: 64-bit perceptual hashing (`pHash`) to identify resized, re-encoded, or visually similar images.
-- **Interactive Resolution**: Group review interface with side-by-side comparison and false-positive ignore rules.
-
-### 💾 Zero-Work Live Backups & Recovery
-- **Hot SQLite Backups**: Non-destructive `sqlite3_backup` snapshotting of the index directly to `<LIBRARY_DIR>/.media_library_backup/`.
-- **Automatic Startup Recovery**: Auto-detects and restores missing databases or thumbnail caches on startup.
-
-### 🔒 Access Control
-- **Shared Password Authentication**: Optional single password gate (`APP_PASSWORD`) with HMAC-signed session cookies and login UI.
-
----
-
-## 🚀 Quickstart Guide
+## 🚀 Quickstart
 
 ### 1. Prerequisites
-- **Python 3.10+** (PEP 604 union syntax is evaluated at runtime, so 3.9 cannot import the package)
-- **FFmpeg** and **FFprobe** (for video poster extraction and transcoding):
+
+- **Python 3.10+** (PEP 604 unions are evaluated at runtime, so 3.9 cannot
+  import the package)
+- **FFmpeg** and **FFprobe**
   ```bash
-  # Debian / Ubuntu
-  sudo apt update && sudo apt install -y ffmpeg
-
-  # Fedora / RHEL
-  sudo dnf install -y ffmpeg
-
-  # macOS (Homebrew)
-  brew install ffmpeg
+  sudo apt update && sudo apt install -y ffmpeg     # Debian / Ubuntu
+  sudo dnf install -y ffmpeg                        # Fedora / RHEL
+  brew install ffmpeg                               # macOS
   ```
+- **Node.js 22+** and npm (client build)
 
-### 2. Clone and Configure
+### 2. Configure
+
 ```bash
-# Clone the repository
 git clone https://github.com/your-username/media-library.git
 cd media-library
-
-# Create your local environment configuration
 cp .env.example .env
 ```
 
-Edit `.env` to specify your media folders:
 ```bash
-# Destination directory for your organized media library
+# Your organized library
 LIBRARY_DIR=/path/to/media/library
 
-# Source directory containing new/unsorted videos
+# Where new/unsorted videos arrive
 INCOMING_DIR=/path/to/incoming/downloads
 
-# Port and host interface
-PORT=8888
 HOST=0.0.0.0
+PORT=8888
 ```
 
-### 3. Start the Server
-Run the launch script (it will create the virtual environment and install dependencies automatically on first run):
+### 3. Build the client and run
+
 ```bash
-./start.sh
+npm ci
+npm run build          # typecheck + vite build into static/dist/
+
+./start.sh             # creates the venv, installs deps, starts the server
 ```
 
-Now open your browser:
-- **Media Library**: `http://localhost:8888`
-- **Incoming Sorter**: `http://localhost:8888/sorter`
-- **Downloads**: `http://localhost:8888/downloads`
-- **Analytics**: `http://localhost:8888/analytics`
+Then open:
+
+- **Library** — `http://localhost:8888/`
+- **Sorter** — `http://localhost:8888/sorter`
+- **Downloads** — `http://localhost:8888/downloads`
+- **Analytics** — `http://localhost:8888/analytics`
+- **API docs** — `http://localhost:8888/api/docs`
+
+For development, `npm run dev` serves the client on `:5173` and proxies `/api`
+and `/static` to the running server on `:8888`.
 
 ---
 
-## ⚙️ Configuration Reference
+## ⚙️ Configuration
 
-All settings can be configured via environment variables in `.env` or passed as CLI arguments:
+Environment variables first, `.env` second. The old `V2_` names are still read
+as a fallback, so a pre-upgrade file keeps working.
 
-| Variable | CLI Argument | Default | Description |
-|---|---|---|---|
-| `LIBRARY_DIR` | `--dest` | `./data/media` | Path to organized media library collection |
-| `INCOMING_DIR` | `--source` | `./data/incoming` | Path to incoming/unsorted video files |
-| `DATA_DIR` | N/A | `./data` | Base directory for runtime data and storage |
-| `DB_PATH` | N/A | `${DATA_DIR}/library.db` | Custom SQLite database file location |
-| `THUMBNAIL_DIR` | N/A | `${DATA_DIR}/thumbnails` | Directory for cached video posters |
-| `TRANSCODE_DIR` | N/A | `${DATA_DIR}/transcodes` | Temporary directory for transcoded clips |
-| `QUICK_NAV_DIRS` | N/A | Auto-detected | Comma-separated shortcuts for folder browser (e.g. `/media,/mnt,~`) |
-| `HOST` | `--host` | `0.0.0.0` | Host interface to bind |
-| `PORT` | `--port` | `8888` | Port to listen on |
-| `APP_PASSWORD` | N/A | *(empty)* | Optional shared password protecting UI and API endpoints |
-| `WEBP_AUTO_OPTIMIZE` | N/A | `true` | Automatically convert loose images to WebP in background |
-| `WEBP_WORKER_CONCURRENCY` | N/A | `1` | Number of concurrent workers for image conversion |
-| `WEBP_QUALITY` | N/A | `85` | Quality factor (1–100) for WebP encoding |
-| `WEBP_SKIP_LARGER` | N/A | `false` | Discard WebP conversion if output size exceeds original |
-| `ZIP_CACHE_MAX_SIZE_GB` | N/A | `5.0` | Max disk size in GB for extracted ZIP cache before LRU eviction |
-| `LIBRARY_BACKUP_AUTO_ENABLED` | N/A | `true` | Enable background automatic snapshot backups when system is idle |
-| `LIBRARY_BACKUP_AUTO_INTERVAL_HOURS` | N/A | `6.0` | Minimum interval (in hours) between automatic background snapshots |
+| Variable | Default | Description |
+|---|---|---|
+| `LIBRARY_DIR` | `./data/media` | Your organized media library |
+| `INCOMING_DIR` | `./data/incoming` | Incoming queue the sorter reviews |
+| `SOURCE_DIR` | `INCOMING_DIR` | Explicit sorter folder |
+| `DATA_DIR` | `./data` | Runtime root: index, caches, staging |
+| `DB_PATH` | `${DATA_DIR}/library.db` | SQLite index (a root `backup_index.db` wins) |
+| `DB_READ_ONLY` | `false` | Open the index read-only; mutations answer 503 |
+| `WRITES` | `true` | Master switch for write endpoints |
+| `THUMBNAIL_DIR` | `${DATA_DIR}/thumbnails` | Poster and preview cache |
+| `TRANSCODE_DIR` | `${DATA_DIR}/transcodes` | x265 output while encoding |
+| `LIBRARY_BACKUP_DIR` | `${LIBRARY_DIR}/.media_library_backup` | Snapshot location |
+| `ALLOW_LIVE_RESTORE` | `false` | Allow in-app restore over the live index |
+| `OWN_WORKERS` | `true` | Run the crawler, prober, sweeps and snapshots |
+| `CRAWL_INTERVAL_MINUTES` | `30` | Crawl cadence |
+| `BACKUP_INTERVAL_HOURS` | `6.0` | Automatic snapshot cadence |
+| `WEBP_QUALITY` / `WEBP_SKIP_LARGER` | `85` / `false` | WebP conversion |
+| `X265_PRESET` / `X265_CRF` | `medium` / `18` | HEVC encode settings |
+| `UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging` | Resumable upload chunks |
+| `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel URL downloads |
+| `DOWNLOAD_COOKIES_FILE` | *(empty)* | Cookies for gated sites |
+| `ZIP_CACHE_MAX_SIZE_GB` | `5.0` | LRU ceiling for extracted archives |
+| `BROWSE_LIMIT` / `SEARCH_LIMIT` | `120` / `1000` | Default page sizes |
+| `HOST` / `PORT` | `0.0.0.0` / `8888` | Bind address |
+| `APP_PASSWORD` | *(empty — auth off)* | Shared password for the whole app |
+
+The full annotated list is in [`.env.example`](.env.example).
 
 ---
 
-## ⌨️ Keyboard Shortcuts (Sorter)
+## ⌨️ Keyboard shortcuts
+
+**Sorter**
 
 | Key | Action |
 |---|---|
-| <kbd>Enter</kbd> | Move video to highlighted category & advance |
-| <kbd>1</kbd> .. <kbd>6</kbd> | One-touch move to **Recent Folder #1 .. #6** |
-| <kbd>S</kbd> or <kbd>→</kbd> | Skip to next video |
-| <kbd>P</kbd> or <kbd>←</kbd> | Previous video |
-| <kbd>U</kbd> or <kbd>Ctrl+Z</kbd> | Smart Undo last move |
-| <kbd>R</kbd> | Rename video filename |
-| <kbd>D</kbd> | Delete video (with confirmation) |
-| <kbd>Space</kbd> | Play / Pause video |
-| <kbd>/</kbd> | Focus category search input |
-| <kbd>L</kbd> | Toggle video loop |
-| <kbd>F</kbd> | Toggle fullscreen mode |
-| <kbd>?</kbd> | Show shortcuts help modal |
-| <kbd>Esc</kbd> | Close active modal |
+| <kbd>Enter</kbd> | Move to the highlighted folder and advance |
+| <kbd>1</kbd> … <kbd>6</kbd> | Move to recent folder 1–6 |
+| <kbd>/</kbd> | Focus folder search |
+| <kbd>S</kbd> / <kbd>→</kbd> | Skip to the next clip |
+| <kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo the last move |
+| <kbd>R</kbd> | Rename |
+| <kbd>D</kbd> | Delete (confirms) |
+| <kbd>Esc</kbd> | Close the open dialog / search |
+
+**Viewer**
+
+| Key | Action |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Previous / next item |
+| <kbd>Space</kbd> | Play / pause |
+| <kbd>L</kbd> | Loop |
+| <kbd>I</kbd> | Media info |
+| <kbd>Esc</kbd> | Close |
 
 ---
 
-## 🐧 Running as a Linux System Service (systemd)
+## 🐧 Run it as a service
 
-To run the media library continuously in the background on Linux:
+```bash
+cp media-library.service.example media-library.service
+# edit User / WorkingDirectory / paths
+sudo cp media-library.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now media-library
+systemctl status media-library
+journalctl -u media-library -f
+```
 
-1. Copy the systemd template:
-   ```bash
-   cp media-library.service.example media-library.service
-   ```
-2. Edit `media-library.service` with your user and installation path.
-3. Install and enable the service:
-   ```bash
-   sudo cp media-library.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now media-library
-   ```
-4. Check status and logs:
-   ```bash
-   systemctl status media-library
-   journalctl -u media-library -f
-   ```
+`systemctl restart media-library` applies any backend or asset change. The unit
+runs `app.py` with `Restart=always`.
 
 ### Watchdog for a hung process
 
-`Restart=always` only helps when the process *exits*. A process can stay alive,
-listen on its port and hold every worker while answering nothing (one long
-synchronous stretch on the event loop — a wedged mount read, a lock wait). The
-bundled watchdog asks the app for `/api/health` every couple of minutes and
-restarts the unit after two consecutive failures:
+`Restart=always` only helps when the process exits. A process can hold its port
+while answering nothing (a wedged mount read, a long lock wait). The bundled
+watchdog polls `/api/health` and restarts the unit after two consecutive
+failures:
 
 ```bash
 sudo cp media-library-watchdog.service.example /etc/systemd/system/media-library-watchdog.service
@@ -219,23 +182,40 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now media-library-watchdog.timer
 ```
 
-Override `ML_UNIT`, `ML_HEALTH_URL`, `ML_HEALTH_TIMEOUT` or `ML_WATCHDOG_FAILS`
-in the unit if your port or unit name differs; restarts are logged to the journal
-under the `media-library-watchdog` tag.
+---
+
+## 🧪 Tests
+
+```bash
+./venv/bin/pytest                      # backend
+npm test                               # client
+npm run build                          # typecheck + build
+./venv/bin/ruff check . && ./venv/bin/ruff format --check .
+```
 
 ---
 
-## ⚠️ Known Limitations
+## ⚠️ Known limitations
 
-- **Single shared password, single user.** `APP_PASSWORD` gates the whole app for everyone; there are no accounts, roles or per-user permissions, and no rate limiting or lockout on failed logins. The session cookie is `HttpOnly`/`SameSite=Lax` but not `Secure`.
-- **No built-in TLS.** The server speaks plain HTTP on your LAN. Put it behind a reverse proxy (Caddy, nginx, Traefik) before exposing it beyond a trusted network.
-- **Deletions and moves are immediate and permanent.** There is no trash or recycle bin, and bulk actions cannot be rolled back beyond the move-only undo stack.
-- **Snapshots cover the index and thumbnails, not your media.** `library/.media_library_backup/` restores the database and poster cache after a rebuild; it is not a backup of the media files themselves.
-- **Heavy encodes are serialised.** x265 re-encodes and pre-transcoding run one job at a time (CPU-bound); a large queue drains slowly by design.
-- **The library must be mounted before start.** FUSE/network mounts are actively tolerated (the indexer protects itself against transient `stat` failures), but an unmounted destination at startup looks like an empty library.
-- **No container image yet.** Run it with `./start.sh` or the provided `media-library.service` unit; Docker packaging is future work.
+- **Single shared password.** No accounts, roles or per-user permissions, no
+  login rate limiting, and the cookie is `HttpOnly`/`SameSite=Lax` but not
+  `Secure`.
+- **No built-in TLS.** Plain HTTP on the LAN; put it behind a reverse proxy
+  before exposing it.
+- **Deletes and moves are immediate.** No trash; the sorter's undo is
+  move-only and held in memory, so a restart clears it.
+- **Snapshots cover the index and posters, not your media.**
+- **One heavy job at a time.** x265 encodes are serialised and long.
+- **Moving a folder into a ZIP member is not supported** — archive members are
+  read-only in the app.
+- **The library must be mounted before start.** An unmounted destination looks
+  like an empty library (the crawler guards against transient failures, but a
+  genuine empty mount is indistinguishable).
+- **In-memory queues.** Sorter undo, download history and ZIP batch state do
+  not survive a restart.
 
 ---
 
 ## 📄 License
+
 MIT License. See [LICENSE](LICENSE) for details.

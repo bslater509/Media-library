@@ -1,1397 +1,526 @@
-# 🤖 AGENTS.md — Media Library & Video Sorter Agent Guide
+# 🤖 AGENTS.md — Media Library & Video Sorter: agent guide
 
-> **CRITICAL DIRECTIVE FOR ALL AI AGENTS**:
-> **This document is the authoritative architectural and operational specification for this codebase. It MUST ALWAYS BE KEPT UP TO DATE.**
-> Whenever you add, modify, or remove API endpoints, database schema fields, background workers, environment variables, or core workflows, you **MUST** update this file in the same task to reflect your changes.
+> **Critical directive:** this file is the authoritative specification of the
+> repository. It MUST be updated in the same change that adds, modifies or
+> removes an endpoint, schema column, worker, configuration variable or core
+> workflow. The app became the only app in 3.0.0: there is no second
+> implementation to fall back to and no `/v2` surface to keep in sync.
 
----
+## 1. What the system is
 
-## 1. System Overview & Technology Stack
+A self-hosted media library and keyboard-driven video sorter for tens of
+thousands of videos and images, often on a slow remote FUSE mount (pCloud,
+NFS). One FastAPI process serves both a JSON API at `/api` and a React client
+at `/`.
 
-**Media Library & Video Sorter** is a high-performance, web-based media asset management system and rapid keyboard-driven video sorter designed to handle tens of thousands of video and image files efficiently across local disks and remote FUSE mounts (e.g. pCloud, network shares).
+- **Library**: index-only browsing of a folder tree, multi-word search over
+  filenames *and* library-relative folder paths, justified natural-ratio tiles,
+  fullscreen viewer with byte-range streaming, favorites, multi-select with
+  bulk move/delete/rename/star/WebP.
+- **Sorter**: reviews an incoming folder at a few keystrokes (1–6 destinations,
+  `/` to search a folder, `Enter` to move), with duplicate warnings, undo,
+  rename, delete and live transcoding for containers browsers cannot play.
+- **Processing**: background poster and looping animated-WebP previews,
+  metadata probing (dimensions, duration, codecs, fps, capture time), live
+  transcoding for non-web containers, in-place x265 (HEVC) conversion, WebP
+  optimisation, dedupe (content hash and perceptual pHash), ZIP compression /
+  unpacking / virtual browsing, URL+playlist downloads (yt-dlp, gallery-dl
+  fallback), library analytics, and SQLite snapshots with auto-restore.
+- **Auth**: optional single shared password (`APP_PASSWORD`), stateless signed
+  cookie, no server-side session store.
 
-### Core Capabilities
-1. **Media Library & Gallery View**:
-   - Sub-millisecond SQLite-indexed browsing, folder hierarchy navigation, and multi-word full library search with configurable `SEARCH_LIMIT` (default 1,000 items), truncation detection (`1,000+` badge indicator), and query refinement alerts. Each query word may match the file name **or the file's folder path inside the library** (the root and its ancestors are excluded), so "iceland 2023" finds the clips in `…/Iceland 2023/`; every result card already carries its `rel_folder` badge, so a folder match says where it came from.
-   - Row-ordered natural-aspect-ratio layout for media files and folder covers: tiles are packed into **justified rows** — every tile in a row shares one row height chosen so the row fills the container width exactly — so reading order runs strictly left to right, then down. Tile widths follow probed `width`/`height` clamped to 2:3–3:2, unknown dimensions fall back to a 1:1 box filled with `object-cover`, and a trailing partial row keeps the target height until more items arrive. Tiles feature video duration pills (`MM:SS` / `HH:MM:SS`), resolution badges (`4K`, `1080p`, etc.), video-codec badges (`H.264` / `H.265`, the latter emerald-tinted, from the probed `video_codec`; hidden until probed), high-framerate tags (`60fps`), dimensions in card footers, and a hover `ℹ️` Info button. A thumbnail-size control in the library toolbar steps through five presets (XS–XL, XL scaled up to ~640px-tall rows) that adjust the row height; the choice is persisted in `localStorage` (`lib_tile_scale`). The library stage spans the full viewport width (no centered 1920px cap).
-   - Proactive background thumbnail/poster frame generation using FFmpeg, alongside on-demand looping animated WebP video previews (~500ms per frame, 2 fps, loop=0) generated from up to 24 candidate frames sampled across video duration at 480px resolution; the auto-play preference is toggled via the mobile control sheet (`🎞️ Animated Previews`) — the desktop toolbar `🎞️ Animated` toggle is hidden on hover-capable devices, where hover previews always play — with active animated video tiles displaying a subtle `ANIM` badge indicator. Animations are viewport-aware via a dedicated `IntersectionObserver` and only play when on-screen on touch devices (gated by the toggle), while hover-capable desktops play a tile's loop only while the pointer is over it; both automatically pause/swap back to static posters when no longer previewing (scrolled off-screen, mouse-out), when hidden in a background tab, or when viewing a media item in the lightbox to minimize CPU/GPU usage. A dedicated Service Worker (`/sw.js`) intercepts animated thumbnail requests and caches them in client-side browser `CacheStorage` (`media-library-anim-v1`) for instant 0ms recall, paired with `navigator.storage.persist()` for durable browser storage. Server-side, `THUMBNAIL_CACHE_DIR/animated/` is kept in shape by `services/anim_cache.py`: the index prune/deep clean sweeps previews no indexed file can reference (a delete, rename, move or x265 re-encode orphans the old key), an LRU ceiling (`ANIMATED_CACHE_MAX_SIZE_GB`, default 5 GB) trims the least recently written previews after each generation — throttled to once a minute — and clears their `has_animated` flag so the next view regenerates them, and the Background Tasks modal's Animated Preview Generator card shows that cache's size against its cap.
-   - Fullscreen lightbox viewer (Fancybox 5) with HTTP 206 byte-range media streaming, playback speed control (`0.5x`–`2.0x`), loop toggle (`L`), custom video poster frame capture (`P` / "Set Poster"), dedicated Video Thumbnail Chooser modal (`🎞️` / "Thumbnail") featuring candidate frames sampled every 30s across the video duration at 480px resolution, interactive timeline scrubber with live preview, and "Use Current Position" shortcut button, persistent volume/mute (`M`), direct file download, in-viewer "Move to...", inline rename (`R`), deletion (`D`), frame stepping (`,` and `.`), and quick metadata inspection (`I`). **Video slides are sized to the clip's own aspect ratio**, not Fancybox's default fixed 16:9 box (which capped the frame at 960×540 and letterboxed portrait/ultrawide clips): `openFancybox` passes the probed `width`/`height` of each video as Fancybox's per-item `videoRatio` (unprobed files keep the 16:9 fallback), and `templates/library.html` overrides `.fancybox__slide.has-html5video .fancybox__content` to measure against the whole slide instead of 960×540, so Fancybox's own sizing fills the available stage at that ratio and stays centred (width- and height-constrained cases both fit), and the same rule block reserves the caption bar's own band as a slide `padding-bottom` (`6.5rem`, `9rem` under 768px) so the bar never covers the picture it now fills. The caption is a **bottom overlay control bar** (`.lb-meta`): it is taken out of the slide/footer flow (`.fancybox__caption` positioned absolutely) so the media stays full-bleed, floats above the browser's native video control strip (`margin-bottom: 3.5rem` on video slides, whose slide reserves that band so the bar sits clear of the picture rather than over it; images rest on the bottom edge) and always clears the Fancybox thumbnails strip. Left side shows filename, folder path (full path on desktop, just the containing folder name on phones), size, resolution badge (accent-tinted), video codec pill (H.264/H.265/MPEG-4/…, with H.265 tinted emerald so the codec the x265 action targets reads at a glance; omitted until the file is probed) and duration; right side is a single non-wrapping row of icon-only actions (video: speed selector, loop, set poster, thumbnail chooser; all: info, download, move, rename, delete) with `title`/`aria-label` tooltips, sized 32–38px on phones so all nine fit a 360px viewport without sideways scrolling (320px widths wrap to a second row). It follows the theme accent + OLED tokens (`--accent`, `--accent-soft`, `--glass-*`), reveals on pointer/touch/keyboard activity and fades out after ~3.5s idle via the `lb-bar-idle` class on the lightbox container, staying up while the pointer rests on the bar and respecting `prefers-reduced-motion`. Icons are inline SVGs from `lucide-static` (see `frontend/src/shared/icons.js`) rather than emoji.
-   - **In-place x265 (HEVC) conversion**: video slides carry a `shrink` "Convert to x265 / HEVC" action (`S` shortcut) that queues a background HEVC re-encode of the file on screen via `POST /api/backup/transcode/x265`. A floating progress panel (`.lb-x265-panel`) is overlaid on the viewer with a live percentage bar, fps/speed/ETA and a Cancel button, polled every second from `GET /api/backup/transcode/x265/status?path=…` until the job reaches a terminal state. On completion the original is atomically replaced (a `.mp4` sibling when the source used another container) and the lightbox re-opens on the converted clip with a fresh cache-busted URL; the grid tile is updated in place. Once a file is already HEVC the action reports it and does nothing. See **In-place H.265 (x265) Conversion** under §7.
-   - Media Details & EXIF Inspector Modal: Technical specs breakdown (resolution, aspect ratio, duration, estimated bitrate, video/audio codecs, framerate, container), EXIF capture time vs modification timestamp, and full path with one-click clipboard copying.
-   - **Keyboard shortcut reference** (`?`, the `keyboard` Shortcuts button beside Theme in the desktop header, or the *Keyboard Shortcuts* card in the mobile Controls sheet's System Status tab): a full-height sheet (`.ml-sheet`, swipe-to-dismiss like the other mobile sheets) listing every grid and viewer binding, rendered from the one `SHORTCUT_GROUPS` table in `frontend/src/library/shortcuts.js` — markup in `templates/partials/library_shortcuts_modal.html` — so the help cannot drift from the keydown handler in `frontend/src/library/index.js`. `?` is ignored while a text field has focus and is not offered over the lightbox (whose own `Esc` handling would fight the sheet).
-   - File management: right-click (desktop) or tap-and-hold (mobile) context menu with Media Info / Set Poster Frame / Generate Animated Preview / Download / Move / Rename / Delete; multi-select (checkbox, Ctrl/Cmd-click, Shift-range, a Select All / Deselect All toolbar button, or Ctrl/Cmd+A) bulk Move / Delete / Rename / WebP / Animated Previews; plus folder creation, rename, recursive delete, empty folder cleanup via the "Clean Empty Folders" card, and batch animated video preview compilation via the "Generate Animated Previews" tool card ("All Videos" and "Current Folder" triggers), background worker trigger buttons, and mobile sheet in the Background Tasks modal.
-   - Chunked File & Mobile Upload: In-browser chunked upload engine supporting single/multi-file uploads, drag-and-drop, and mobile Safari/iOS native photo and video picking with full `.heic`/`.heif`/`.dng` photo support and `.mov`/`.mp4` video support; atomic staging with FUSE-safe renaming, collision handling (`auto-rename`, `skip`, `overwrite`), and instant post-upload folder re-indexing. Uploads are **resumable**: the browser derives a stable id per `(relative path, size, mtime)` (`makeUploadId`, with a plain-hash fallback because `crypto.subtle` only exists in a secure context), probes `GET /api/backup/upload/status` before the first chunk, and sends every chunk with its explicit byte `offset`. The server appends only at that offset — a retried chunk whose bytes it already holds is acknowledged as a duplicate instead of being written twice, a chunk that starts past the staged end is rejected with `409` rather than leaving a hole, and a partial tail from a crash mid-write is truncated and rewritten. Finalize compares the staged size against `total_size` and refuses an incomplete upload (`400`) instead of committing a silently truncated file, keeping the staged bytes so the client can finish and retry. Abandoned `<upload_id>.part` files older than `UPLOAD_STAGING_TTL_HOURS` (default 24 h) are garbage-collected at startup by `gc_stale_uploads` (which leaves the URL download worker's `dl_*` directories alone).
-   - Background Tasks & System Status Modal: Centered solid dark dialog (replacing legacy glassmorphic popover; full-height bottom sheet with rounded top corners on phones) structured into 3 categorized tabs ("Active & Queues", "Background Workers", and "Tools & Maintenance") with live badge counts, a tab strip that collapses to icon-only on phones (< `md`) so all three fit without sideways scrolling (full names kept as `aria-label`/`title`), smart default tab selection that never overwrites the saved tab, uncluttered empty states, responsive 2-column card layouts, and maintenance tools for folder thumbnails, WebP conversion, batch animated preview generation, browser animated preview cache management (live CacheStorage count, usage badge, "Pre-cache Folder", and "Clear" cache), ZIP archives, and empty folder pruning, and the Background Workers pane shows a card for **every** background indexer/converter — Thumbnail Generator, Animated Preview Generator (whose card also reports the server-side animated preview cache's size against its LRU cap, from `anim_cache_payload()`), WebP Image Optimizer, Duplicate Hash Verifier, **Media Metadata Probe** (dimensions/duration/codec indexing, with the ZIP-member sweep shown as a separate pending count) and **Visual Hash Indexer** (perceptual pHash) — so no worker's progress is only visible as a header badge count; the Library Indexer card reports a truthful crawl/index state (idle: reachable / indexed folders against the DB total; amber "Index stale" with missing folder/file counts and a "Remove missing folders from index" button when the crawler's mount-safety guard blocked a prune of remotely deleted folders). URL download jobs are listed here as a compact **URL Downloads** card in the Active & Queues pane — live + queued jobs only, each with its per-job cancel control, plus an "Open page →" link to the full `/downloads` surface (finished history, retry and clear live there). Every icon in the modal — tab strip, section headers, worker/tool cards, buttons, and the JS-rendered rows (upload queue, transcode/transfer history) — is an inline SVG from the shared `frontend/src/shared/icons.js` registry rather than an emoji; the markup lives in `templates/partials/tasks_modal.html` (Media Library) and `templates/partials/sorter_tasks_modal.html` (Video Sorter), both pulled in with `{{include}}`, with a vitest asserting every `data-lb-icon` placeholder resolves and that no emoji remain.
-   - Downloads Page (`/downloads`, `templates/downloads.html`, `frontend/src/downloads/index.js`): the first-class desktop URL/playlist downloader, reached from a **Downloads** nav tab in the Library and Sorter desktop headers and from a **Downloads** link in the mobile sidebar drawer. Left panel queues **multiple URLs at once** (newline/whitespace-split, blanks & duplicates dropped, each http(s) URL validated client-side and queued individually, with the count of skipped/failed lines reported); the target folder is chosen from **recent-target chips** (last folders actually downloaded into, persisted in `localStorage` `lib_dl_recent_targets`, cap 8 — `frontend/src/library/recent_targets.js`) or the shared **folder chooser** (`frontend/src/shared/folder_picker.js`: drills the library via `/api/backup/folders`, ZIP archives filtered out, and is the same sheet the People page scans a folder with). It also shows a **downloader availability line** (yt-dlp / gallery-dl detected, from the `tools` key on the status payload). Right panel is the live jobs list: active + queued pinned on top, then **paginated finished history** (`/api/backup/upload/url/history`, newest first, "Load older downloads" paging through the worker's 500-row history) with per-job **cancel**, **retry** (failed/cancelled only — clones the job) and a **Clear history** button that empties finished jobs (active/queued untouched). Polls `/api/backup/upload/url/status` every second; rows reuse the shared `frontend/src/library/url_downloads.js` renderer (`retryable: true`). Finished jobs are folded in live from the status payload's history tail (and the paginated history endpoint is refreshed whenever the live active+queued count drops), so a job that completes while the page is open never disappears before the next explicit page fetch. The page includes the shared theme customizer (`theme_modal.html` + `window.THEME_MANAGER`) so accent/contrast settings stay consistent, opened from either header trigger — both the mobile and desktop buttons carry `data-theme-modal-btn` (and the mobile one owns the `themeModalBtnMobile` id), so the duplicate-id collision that left the desktop button dead is gone and the `T` shortcut clicks whichever trigger is visible. Mobile layout: the fixed mobile top bar (`md:hidden fixed top-0`, `3rem` tall plus `env(safe-area-inset-top)`) has a matching `md:hidden` spacer div before the scroll stage, so the page intro and first panel start below the bar instead of being permanently covered by it. The old desktop Library behaviors — the Upload dropdown's "🔗 URL" dialog (removed) and the Background Tasks modal's full URL Downloads section (reduced to a compact live-only card) — now funnel to this page: the dropdown item navigates to `/downloads?folder=<current>` preserving the browsed folder as the target.
-2. **Incoming Video Sorter Workflow**:
-   - High-speed review (<50ms per item) with instant pre-buffering and autoplay.
-   - 1-touch keyboard moves (`1`–`6` for recent folders, `/` for category search, `Enter` to commit) plus the "+ Create & Move" button for instant folder creation.
-   - Asynchronous non-blocking file transfers with full smart Undo stack (`U` / `Ctrl+Z`).
-3. **Automatic Transcoding**:
-   - On-the-fly and background pre-transcoding of non-web formats (`.mkv`, `.avi`, `.wmv`, `.flv`, `.mov`) into web-native MP4 using stream copying or H.264 fallback.
-4. **Automatic WebP Image Optimization**:
-   - Background worker converting PNG, JPG, and other image formats to optimized WebP.
-   - Atomic replacement with integrity checks and space-savings accounting.
-5. **ZIP Archive Virtual Folders**:
-   - Browsing ZIP archives as virtual folders without extraction via central directory inspection (<50ms).
-   - On-demand extraction to a fast local cache with automatic LRU cache management.
-   - Folder-to-ZIP compression for image folders, ZIP unpack back to disk, debounced sync-back for modified archives, batch ZIP compression across the library, and batch extraction ("Extract All ZIPs") of indexed archives back into folders with start/pause/resume/cancel and per-archive progress.
-6. **Deduplication Engine**:
-   - Exact file content matching via 128 KB head-hash + size fast hashing (full-content verification performed before any auto-delete).
-   - Visual duplicate matching via perceptual hashing (`pHash`).
-   - Group verification, automated resolution, and ignore/unignore false positive rules.
-7. **Zero-Work Recovery & Snapshot Backups**:
-   - Non-destructive SQLite live snapshotting (`sqlite3_backup`) and uncompressed thumbnail bundling directly into `<LIBRARY_DIR>/.media_library_backup/`.
-   - Automatic restore on startup if local database or thumbnails are missing.
-   - Clean shutdown snapshot creation.
-8. **Theme & Appearance Customizer + Mobile Touch Experience**:
-   - Customizable accent color palettes (Amber, Emerald, Violet, Sky, Rose, Yellow) dynamically remapping UI actions, badges, borders, and ambient glow.
-   - Background contrast modes: Midnight Stone (warm neutral dark), Pure OLED Black (true `#000000` pitch black with zero ambient glow for OLED displays), and Slate Navy (deep space surfaces).
-   - Zero-delay live updates via CSS custom properties, zero flash on reload via `<head>` bootstrapping, and persistence in `localStorage` (`lib_theme_accent`, `lib_theme_base`). The switch itself is only a variable swap: the theme engine writes `--surface-50…950` and `--accent-50…950` as "R G B" triplets on `:root` (plus `--accent`, `--accent-soft`, the ambient glow and the `--glass-*` tokens), and the pre-compiled Tailwind utilities resolve through them (`rgb(var(--surface-900) / <alpha-value>)`). There is no runtime stylesheet generation and no `!important` override sheet any more — that was a second, hand-maintained colour table that had to chase every accent-tinted class, and it re-parsed a large `<style>` element on every switch.
-   - Accessible via the `🎨 Theme` button in top navigation or shortcut `T`.
-   - Mobile touch enhancements: double-tap video sides to seek ±5s with animated ripple bubbles (`⏪ -5s` / `⏩ +5s`), touch swipe carousel navigation, and touch-adapted tap targets.
-   - Sorter mobile bottom action bar (`.mobile-bottom-bar`): fixed bottom thumb-zone bar (Prev/Skip/Undo/Rename/Delete) on phones with iOS safe-area bottom padding (`--sab`); on landscape phones (max-height 550px) it stays reachable as a compact row, while tablets (≥ `md`) keep it hidden in favour of the desktop toolbar.
-   - Mobile single-line responsive header (`#mobileHeader` on screens `< md` / `< 768px`): Compact bar featuring the drawer menu `[ ☰ ]`, subfolder back arrow `[ ‹ ]`, folder title `[ 📁 Title ▾ ]` with one-tap ancestor breadcrumb popover sheet, a one-tap **Library Analytics** link (`#mobileAnalyticsBtn`, a hydrated `gauge` icon navigating to `/analytics` — the phone's direct path to the dashboard), a one-tap Background Tasks button (`#mobileTasksBtn`, an icon that swaps to a spinner while work is in flight with a live active+queued item-count badge that caps at `99+`) opening the shared tasks modal directly, and unified `[ 🎛️ Controls ]` trigger with an ambient pulse badge for active filters only (background activity moved to the tasks button). Desktop multi-row headers are hidden on mobile to eliminate clutter.
-   - Native scroll-aware auto-hide: scrolling down translates `#mobileHeader` offscreen (`-translate-y-full`) to devote 100% of the viewport to media; scrolling up (> 8px) or reaching stage top (`scrollTop <= 20`) smoothly slides the header down into view (`translate-y-0`).
-   - 5-tab slide-up bottom sheet control modal (`#mobileControlsSheet`): a fixed 5-equal-column **icon-only** tab strip (search, palette, folder, link, settings — rendered from the shared inline SVG set, full names kept as `aria-label`/`title`) that always fits the phone width and never scrolls sideways; the sheet header and the 'Folder Actions' tiles (upload files/folder, URL, new folder, refresh, cache thumbs, animated previews, convert non-MP4s, optimise images, compress/unpack ZIP), 'Downloads' actions and the breadcrumb sheet header use the same icons. Every icon lives in the template as an emoji fallback inside a `[data-lb-icon]` placeholder that `hydrateIcons()` swaps for SVG at init, so the sheet still renders if the bundle fails to load. In addition it integrates 'Search & Filter' (filename search, scope toggle, media filter pills, sort select), 'Display & Theme' (XS-XL tile scale, accent colors, OLED black mode, double-tap seek toggle), 'Folder Actions' (upload files/folders, new folder, refresh, cache thumbs, WebP, ZIP tools), 'Downloads' (an inline URL download form — URL input, read-only current-folder target, yt-dlp/gallery-dl explanation and ZIP warning — above the live job list of active, queued, and recent finished downloads with progress/speed/ETA/downloader and per-job cancel; the tab carries an active+queued count badge), and 'System Status' (duplicates count, index status, a **Library Analytics** card linking to `/analytics`, a **Keyboard Shortcuts** card opening the `?` reference sheet, video sorter link — the former Background Tasks "Open" card was removed because the header's one-tap `#mobileTasksBtn` now reaches the same modal directly). The Actions tab's "URL" tile is a shortcut that switches the sheet to the Downloads tab; the sheet stays open after starting a download so the new job appears immediately. This tab is the phone's quick path and is unchanged by the `/downloads` page work: the desktop now uses the dedicated `templates/downloads.html` page, and the Background Tasks modal keeps only a compact live-only URL Downloads card (`#urlDownloadsSection` in `templates/partials/tasks_modal.html`) with a link to the full page (the old `#urlDownloadsSection` media-query rule in `static/styles.css` was removed with the old section).
-   - Selection toolbar (`#selectionToolbar`): responsive placement that sits pinned below the desktop sticky toolbar on desktop and floats as an ergonomic bottom bar (`fixed left-3 right-3`) on mobile, with browser chrome clearance and iOS safe-area clearance (`bottom: max(4.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 3.75rem))` to float cleanly above mobile bottom address bars and home indicators).
-   - Full-Height Mobile Sheets (`.ml-sheet` / `.ml-sheet-card` / `.ml-sheet-grabber`): On phones (`< 768px`), the library's tall panels — Background Tasks (`#transferDropdown`/`#tasksModalCard`), Mobile Controls sheet (`#mobileControlsSheet`), Theme customizer, Duplicates + Ignored Duplicates, Batch ZIP / Batch Unpack / Empty Folders, Media Info, and the Video Thumbnail Chooser — become bottom-anchored full-viewport-height sheets instead of centered dialogs. A shared `@media (max-width: 767px)` block in `static/styles.css` overrides the wrapper to `align-items/justify-content: flex-end` with zero padding and sets the card to `height: 100dvh` with square bottom corners and a `mlSheetUp` slide-in animation (fill-mode `backwards` so inline drag transforms win). Inside a sheet, capped lists flow in the single sheet scroll region: nested queue lists get `.ml-flatten` (cap + overflow removed) and the tasks lists (queued transfers, library ops, transcodes, animated previews, transcode history) render "Show all N ↓ / Show fewer ↑" expander buttons (`renderListExpander` + `expandedSheetLists` set in `frontend/src/library/index.js`) instead of passive "+N more" footers; batch candidate lists get `.ml-unbound` (cap removed so `flex-1` fills the sheet). Swipe-to-dismiss (`initSheetDrag`): pointer-driven, drags the card via inline `translateY`, starting only from the grabber handle (`[data-sheet-grabber]`) or the header background (never on buttons/inputs/sliders — protecting the thumbnail-chooser scrubber), dismisses past 120px with a 240ms slide-down, otherwise snaps back; disabled under `prefers-reduced-motion`. Short confirm dialogs (rename, new folder, delete, move, conflict, upload review) and the sorter UI keep their centered shapes untouched, and desktop (≥ 768px) renders exactly as before.
-9. **UI Stacking Context, Solid Header & Viewport Scroll Lockdown**:
-   - Navigation header (`<header class="bg-slate-950 border-b border-slate-800/80 sticky top-0 z-50 ... shrink-0">`) is pinned at `z-50` with an explicit CSS declaration (`header.sticky { position: sticky !important; top: 0 !important; z-index: 50 !important; }`), rendered with a solid opaque dark surface (`s[950]` / `#000000` in OLED) so content never bleeds through.
-   - Dual-pane Media Library layout locks document scrolling to prevent body overflow: `body` uses `h-screen h-[100dvh] overflow-hidden flex flex-col`, header takes `flex-none`, sidebar is `md:h-full`, and main stage (`<main id="mainStage">`) is `h-full min-h-0 flex-1 overflow-y-auto relative`.
-   - Pinned Library Top Bar (`#libraryStickyHeader`): Sticky header pinned at `z-30` directly below the navigation bar containing breadcrumbs, folder/upload actions, search scope, filename search, sort, thumbnail size presets, filter pills, ZIP banner, and selection toolbar with solid theme-reactive surface (`s[950]` / `#000000` in OLED) ensuring media tiles scroll cleanly underneath without margin gaps.
-   - Isolated Scrollable Gallery Area (`#galleryContentArea`): Holds subfolder cover cards, empty state, justified media grid, and infinite scroll sentinel with consistent responsive stage padding (`p-2.5 sm:p-4 md:p-6 pb-28 sm:pb-32 md:pb-6`). On mobile (`< md`), applies `padding-bottom: max(8.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 7.5rem))` (and `max(4.5rem, calc(var(--sab, 0px) + 3.5rem))` in landscape) so when scrolling to the end of the gallery, the bottom-most media tiles, duration pills, metadata footers, and checkboxes are never covered by mobile browser bottom address bars, bottom navigation toolbars, or floating action bars. Folder navigation resets `mainStage.scrollTop = 0` automatically.
-   - Floating Back to Top Button (`#scrollToTopBtn`): Spring-animated, theme-accented floating button (`fixed bottom-6 right-6 z-30` on desktop, lifted to `bottom: max(5.5rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 4.5rem))` on mobile `< md`) that appears when `mainStage.scrollTop > 350` and smoothly scrolls the gallery back to top (`scrollTop = 0`). Respects safe-area insets (`--sab`, `--sar`), sits cleanly above mobile browser address bars, and sits beneath mobile overlay backdrops.
-   - **No `backdrop-filter` in scrolling or animated layers**: `backdrop-filter` forces the browser (Firefox especially) to sample and blur its backdrop again whenever anything underneath changes, so it is deliberately **not** used on anything that lives in `#mainStage` or floats over playing video. Card badges (`card-ext-`/`card-res-`/`card-codec-`/`card-fps-`/`card-duration-`/`card-anim-badge`) are plain high-alpha fills (`bg-black/80`–`bg-slate-900/90`), the pinned top bar and both inner rows, the mobile top bars, `#scrollToTopBtn`, the sorter's mobile bottom bar and its sticky video column, and the lightbox's `.lb-meta` / `.lb-x265-panel` all render without blur (which was invisible at their 82–95% surface alpha anyway). A long folder keeps every card it has ever scrolled into — infinite scroll appends 50 at a time and never removes — so a per-tile blur used to mean thousands of live blur layers. Frosted glass stays only where it cannot scroll: modal panels, the drag-and-drop overlay and the mobile sidebar backdrop, which are transient. If a frosted look is ever needed on a scrolling element, it must not be `backdrop-filter`.
-   - Mobile Sidebar Drawer & Backdrop Isolation: On mobile (`< md`), `#sidebarBackdrop` sits at `z-40` (`fixed inset-0 bg-slate-950/80 backdrop-blur-sm`) and `#sidebarDrawer` sits at `z-[45]` (`fixed top-0 bottom-0 left-0 w-72 sm:w-80`) with solid theme-reactive surface (`bg-slate-900` / `#050506` in OLED mode) and mobile close button (`#closeSidebarBtn`), sliding over the blurred background so the drawer itself is never blurred or obscured. On phones the drawer is **full-bleed**: the `@media (max-width: 767px)` block in `static/styles.css` pins it to `top: 0` / `bottom: 0` with `height: 100dvh` (covering the mobile top bar, which is behind the backdrop and unusable while open) instead of starting 48px/52px down at the top bar's own height — that hardcoded offset left a header-height band (plus the safe-area inset) uncovered above the drawer, and its old `4.5rem` bottom padding left the footer stranded high above the bottom edge. Padding is now safe-area aware (`padding-top: calc(0.875rem + var(--sat))` so the "Categories"/close row clears a cutout the page renders under with `viewport-fit=cover`, `padding-bottom: max(1rem, var(--sab) + 0.75rem)`), so the panel reaches both screen edges and its footer sits at the bottom.
-   - Modal scroll isolation: modals apply `.modal-scroll-lock` (`overflow: hidden !important`) to `document.body` and set `overscroll-behavior: contain !important` on scrollable bodies, preventing theme/task modal interactions from causing background overscroll.
-   - Transfer dropdowns sit at `z-[70]` with backdrops at `z-[60]`. Full-page modals sit at `z-[80]` and high-priority action dialogs at `z-[1200]`.
-10. **Library Analytics Dashboard (`/analytics`, `templates/analytics.html`, `frontend/src/analytics/index.js`)**:
-   - A read-only, index-only overview of the whole collection, reached on desktop from an **Analytics** nav tab in the Library, Sorter and Downloads headers, and on phones from a one-tap **📊 button in the Library's mobile top bar** (`#mobileAnalyticsBtn`), an **Analytics** shortcut in the mobile sidebar drawer footer (next to Downloads), and a **Library Analytics** card in the mobile Controls sheet's *System Status* tab. Every figure is computed from SQLite alone — no `os.walk`, no `os.scandir`, no remote `os.stat`, no media decode — so the page stays instant over FUSE; `tests/test_analytics_api.py` asserts the no-filesystem-touch contract by poisoning `os.walk`/`os.scandir` during the request.
-   - **One endpoint, revision-keyed memo**: `GET /api/analytics/overview` (filters `folder_limit` 1–100 default 15, `file_limit` 1–100 default 25, `refresh` bool) returns `{generated_at, library_root, limits, totals, by_type, by_extension, folders{root_bytes, root_files, top, largest}, largest_files, quality, reclaimable, health}`. The payload is memoized for `INDEX_COUNT_CACHE_TTL_S` (30s) keyed on `indexer_state["revision"]` — the same invalidation key the unified status API's count cache uses — so a crawl or forced prune can never serve a stale snapshot; `?refresh=1` drops the memo for the page's **Refresh** button (library ops such as moves/deletes do not bump `revision`).
-   - **Recursive folder rollup** (`services/analytics_service.py`): every indexed folder is linked to its nearest included ancestor (so an unindexed intermediate directory cannot orphan a subtree), file totals per `folder_path` are attached to their node (orphan member folders such as ZIP-internal paths roll up into the archive node), and subtree sizes/counts accumulate deepest-first. The library root is the configured `destination_dir` when it is indexed, else the shallowest indexed folder; folders outside it are dropped from the ranking. `.media_library_backup` is excluded from every ranking. `folders.largest` is a **partition** — a folder appears only when none of its ancestors is already listed — so the share percentages cannot double-count; `folders.top` is the treemap's top-level data with one level of children (capped at 12 per node), and everything past the top 40 is folded into a `is_group` "Smaller folders (N)" node so the treemap stays complete in area but bounded in payload.
-   - **Cards**: KPI strip (total bytes, files, videos, images, folders, total runtime); *Storage by Folder* ECharts **treemap** (click a block to open that folder in the Library via `/?folder=<path>`, aggregate node not clickable; the treemap is **roamable** — every top-level folder is in the chart (nothing folded away) and `roam: true` with `scaleLimit` 0.35–12 lets a phone pinch or a desktop scroll to zoom and drag to pan, while `visibleMin` 40 / `childrenVisibleMin` 12000 hide what cannot be read at the zoomed-out size (each zoom re-lays out, so detail and its labels come back as a block grows); a top-right button stack (zoom in / out / reset, wired to `treemapRender` with `rootRect` maths that keeps the point under the box centre fixed) is the mouse-free path and reset fits the whole library back into the card, a stage of `h-[520px] sm:h-[440px] lg:h-[360px]` gives the roaming room, and a tap that moved more than 8px (a pan) does not navigate to the folder under the pointer) plus a ranked **Largest Folders** table with share bars and `Open →` links; *Media Mix* bytes **donut** + count/bytes legend + top-extensions **bar** chart; *Reclaimable Space* (duplicate size-match candidate groups/files/upper-bound bytes, WebP saved + loose images still to convert, ZIP-eligible leaf image folders, indexed empty leaf folders) each linking into the Library panel that does the work; *Largest Files* table (top N, resolution/duration/codec) where a row opens an in-page **preview modal** with byte-range-streamed media, size/resolution/codec metadata and an "Open folder in Library →" link; *Quality & Runtime* resolution **histogram** (videos bucketed by longest edge — 4K/1440p/1080p/720p/SD/n-a, so a portrait 2160x3840 clip reads as 4K) with probed/high-fps/runtime notes; and *Health & Housekeeping* pills (index fresh/stale/crawling from `indexer_state`, missing thumbnails, probed, visual hashes, missing animated previews, needing transcoding, empty folders, ignored duplicate pairs) that turn amber when work is outstanding.
-   - **Charts** are a tree-shaken **ECharts 6** build (a build-time devDependency bundled into `analytics.js` like `lucide-static`, so runtime dependencies stay at zero: `echarts/core` + Bar/Pie/Treemap charts + Grid/Tooltip components + `LegacyGridContainLabel` (required for `grid.containLabel` on ECharts 6) + CanvasRenderer). Chrome colours and the block palette derive from the live theme tokens (`THEME_MANAGER.ACCENTS`/`BASES`) and are rebuilt on the `themechange` event, so accent and OLED/surface switches apply immediately; the stage is revealed *before* charts mount (ECharts measures its container on init) and a `visibilitychange`/debounced `resize` listener re-measures (the treemap's roam state survives, since the option no longer depends on the viewport). The dashboard keeps its own theme-customizer wiring (mirroring `/downloads`) rather than importing the Library's `theme.js`, which would pull in the whole Library bundle.
-   - Read-only by design: no mutation endpoints, so duplicate resolution, WebP, ZIP and empty-folder cleanup stay in the Library's existing panels. The page is a single entrypoint (`static/dist/analytics.js?v=4`) with its own version string in `templates/analytics.html`, plus `frontend/tests/analytics_smoke.test.js` (ECharts mocked) asserting the KPI/table/pill rendering, HTML escaping of filenames, the treemap's clickable-vs-aggregate data, that every top-level folder stays in the chart with roam/scale limits set, the zoom-in / zoom-out / reset button maths (centre fixed, limits held), the pan-does-not-navigate guard, the `refresh=1` reload, the preview modal, and the error state.
+### Stack
 
-### Tech Stack
-- **Language & Runtime**: Python 3.10+ (PEP 604 union syntax in annotations is evaluated at runtime, so 3.9 cannot import the package; tested on Python 3.13)
-- **Web Framework**: FastAPI (v0.110+) with Uvicorn ASGI server and Starlette
-- **Concurrency & Threads**: AnyIO (expanded threadpool tokens to 100), asyncio, Python `threading`
-- **Database**: SQLite 3 with Write-Ahead Logging (`WAL`), `synchronous=NORMAL`, memory temp store, mmap, and optimized index structures
-- **Media Processing**: FFmpeg & FFprobe (CLI subprocesses), Pillow (PIL) with `pillow-heif` (HEIC/HEIF/DNG native decoding), ImageHash, NumPy, SciPy
-- **URL Playlist Downloading**: yt-dlp (run as an isolated subprocess: `python -m yt_dlp`, never imported in-process) with an automatic **gallery-dl** fallback (`python -m gallery_dl`) for sites yt-dlp does not support — image boards / file hosts such as bunkr album links, blocklisted hosts yt-dlp refuses with a `[Piracy]` error, and the `_GALLERY_DL_HOSTS` entries (`gofile.io`) which skip yt-dlp entirely
-- **Frontend**: Vanilla JavaScript (ES6+), raw HTML templates (served via `HTMLResponse`, no Jinja2 dependency), CSS3, native HTML5 Video. Icons are inline SVGs inlined at build time from `lucide-static` (ISC, a devDependency) via Vite `?raw` imports into the shared registry `frontend/src/shared/icons.js` (`icon(name, class)` for JS-rendered markup, `hydrateIcons()` for static `[data-lb-icon]` placeholders) — no icon font, no runtime icon library, and no CDN request; only the icons actually imported are bundled, and both entrypoints (`library.js`, `app.js`) share the one registry. **Tailwind CSS is compiled at build time**, not in the browser: `tailwind.config.js` scans `templates/**/*.html` + `frontend/src/**/*.js`, and `npm run build` runs `vite build` and then the Tailwind CLI (`frontend/src/styles/tailwind.css` → `static/dist/tailwind.css`). The pages link `/static/dist/tailwind.css?v=N`; the Play CDN (a runtime JIT that re-scanned the DOM on every mutation, so the status poll alone recompiled it) is gone and `tests/test_tailwind_build.py` keeps it gone. The colour utilities resolve through CSS variables (`rgb(var(--surface-900) / <alpha-value>)`, `--accent-*`, set as "R G B" triplets by the inline theme engine), which is what makes an accent/base switch a variable swap instead of a generated `!important` override sheet. The other build-time dependency is **ECharts 6** (a devDependency, tree-shaken into the `analytics.js` bundle only: Bar/Pie/Treemap charts, Grid/Tooltip components, `LegacyGridContainLabel`, canvas renderer) — the `/analytics` dashboard's charts, with no runtime library dependency and no CDN request on any page (Inter/JetBrains Mono and Fancybox are still fetched from their CDNs).
-- **Testing**: Backend: Pytest (v8.0+) with `pytest-cov` and `conftest.py` sandboxing fixtures; Frontend: Vitest (v1.6+) with `happy-dom` DOM simulation under `frontend/tests/`.
+| Layer | Choice |
+|---|---|
+| Runtime | Python 3.10+ (PEP 604 unions evaluated at runtime; tested on 3.13) |
+| Web | FastAPI + Uvicorn |
+| Index | SQLite 3, WAL, `synchronous=NORMAL`, 64 MB page cache, mmap |
+| Media | FFmpeg / FFprobe CLI, Pillow, `imagehash` (+ SciPy for the DCT), NumPy |
+| Downloads | yt-dlp / gallery-dl as isolated subprocesses (`python -m …`) |
+| Client | React 19 + TypeScript 7, Vite 8, Tailwind 4, TanStack Query, Zustand, Radix, ECharts 6, `yet-another-react-lightbox`, Sonner, cmdk |
+| Tests | Pytest 8 (+ cov), Vitest 5 with Testing Library |
+| Build | one npm project at the repo root; Vite root `frontend/`, output `static/dist/` |
+
+There are no runtime CDN dependencies: fonts, icons and the lightbox are
+bundled (`tests/test_no_cdn.py` enforces it).
 
 ---
 
-## 2. Agent Rules of Engagement & Maintenance Contract
+## 2. Rules of engagement
 
-All AI assistants and autonomous coding agents working on this repository must strictly adhere to the following operational rules:
+### Rule 1 — Documentation and version sync
+1. New or changed route → update the **API map** (§8).
+2. Schema change → update **The index** (§5) and keep migrations idempotent.
+3. New worker/queue → update **Background runtime** (§6).
+4. New/renamed environment variable → update **Configuration** (§4) and
+   `.env.example`.
+5. Release bump → `media_library/__init__.py`'s `__version__` is the **only**
+   place the version is written. FastAPI metadata, `/api/health`,
+   `/api/system/*` and snapshot metadata read it; `package.json`, `README.md`
+   and `CHANGELOG.md` must agree. `tests/test_version.py` fails otherwise.
+6. Record user-visible changes in `CHANGELOG.md` (Keep a Changelog).
 
-### Rule 1: The Documentation Sync Requirement
-Whenever you touch code in this repository:
-1. **New or Modified Routes**: Update the **API Routing & Endpoint Map** section below.
-2. **Schema or DB Changes**: Update the **Database Architecture & Schema** section.
-3. **Worker or Background Tasks**: Update the **Background Workers** section.
-4. **Configuration / Environment Variables**: Update the **Configuration Reference** section and `.env.example`.
-5. **Operational Workflows**: Update relevant architecture sections.
-6. **Version or Release Changes**: `media_library/__init__.py`'s `__version__` is the **only** place the version is written down. Bump it there and nowhere else (the FastAPI app metadata, the `/api/system/status` payload, the served-page `{{VERSION}}` token and the backup snapshot metadata all read it), then update `CHANGELOG.md` and the `**Current release: vX.Y.Z**` line in `README.md`. `tests/test_version.py` fails if any of those drift, and `tests/test_repo_hygiene.py` fails if personal data, credentials or local state can reach a commit.
+### Rule 2 — FUSE and remote-filesystem discipline
+- **Never** run an unbounded `os.walk`/recursive scan in a request handler.
+  Query SQLite; schedule indexing on a worker thread.
+- **Never** `os.stat` the same remote file repeatedly. Cache or read the index.
+- A failed `stat`/`exists` is **not** a deletion. Pruning confirms absence with
+  retries and aborts when an implausible share of a folder looks missing.
+- File writes are atomic: write `.tmp`/`.mllibtmp-*` in the destination
+  directory, verify, then `os.replace()`.
+- Validate every client-supplied path with `paths.resolve_library_path` /
+  `validate_*` helpers (403 outside the library root).
 
-### Rule 2: FUSE & Remote Filesystem Discipline
-The target media collection may reside on a remote FUSE filesystem (such as pCloud or NFS). Remote FUSE mounts have high round-trip latency:
-- **Never perform unbounded synchronous `os.walk` or recursive scans in API request handlers.** Always query the SQLite index or use background async tasks (e.g. `/api/backup/browse` schedules missing-folder indexing on a background thread and returns immediately with `indexing: true`).
-- **Never repeatedly `os.stat` remote files.** Use `media_library.core.state._file_stat_cache` or SQLite metadata whenever possible.
-- **Never treat a transient `stat`/`os.path.exists` failure as a deletion.** Remote mounts fail intermittently; index pruning must confirm absence with retries (`media_library.db.indexer._path_confirmed_gone`) and abort when an implausibly large share of the library looks missing.
-- **Always perform file writes atomically.** Write to a temporary file (`.tmp_*`) in the same filesystem directory first, verify completion, and call `os.replace()` to avoid partial writes or corrupted files over FUSE.
-- **Guard against path traversal.** Always validate input paths using `media_library.services.media_service.validate_backup_path()` or `Path.resolve().relative_to()`.
+### Rule 3 — Database discipline
+- One SQLite database in WAL mode. Reads use `db.reader()` (read-only, always
+  closed). Writes use `db.writer()` (refuses when read-only) inside
+  `with conn:`.
+- **Never mutate the database on the event loop.** A write waits for SQLite's
+  single writer lock for its whole timeout and, awaited from a coroutine,
+  stalls every request while the process still looks alive. Routers call
+  `await asyncio.to_thread(writes.fn, …)`; `tests/test_no_blocking_db_writes.py`
+  is an AST guard against a direct `writes.*`/`writer()` call inside an
+  `async def`.
+- **Never hold a write transaction across remote I/O.** Resolve every
+  `exists()`/`stat()` before opening the transaction.
+- Filesystem first, index second. A failure between the two leaves a row the
+  crawler reconciles; a rename/move rolls the filesystem change back if the
+  index write fails.
+- Migrations are idempotent (`CREATE … IF NOT EXISTS`, `ALTER TABLE … ADD
+  COLUMN` in `try/except sqlite3.OperationalError`).
 
-### Rule 3: Database Concurrency & Connection Discipline
-- SQLite is operated in WAL mode. Always obtain connections using `get_db(custom_path=None)` or, for scoped work, the `db_conn()` context manager (which always closes the connection in `finally`).
-- Always wrap database writes in a transaction block: `with conn: conn.execute(...)`.
-- Always close database connections in a `finally` block: `conn.close()`.
-- Never hold a database connection open across `await` points or long-running network/disk operations.
-- **Never run a mutating `db_conn()` block on the event loop.** SQLite admits one writer at a time and a connection waits for that write lock for its whole `timeout` (30s) before raising `database is locked`, so awaiting such a write inside a coroutine stalls the *entire* server for the duration — the unit stays `active` and bound to its port while answering nothing, and nothing appears in the log because the loop never returns to the socket. Worker loops and request handlers must hand the transaction to a thread: `await run_db_write(fn, *args)` (`media_library/db/connection.py`) or an equivalent `await asyncio.to_thread(fn, …)` with the transaction in a module-level sync function. Reads are fine on the loop — WAL lets them run alongside a writer. `tests/test_no_blocking_db_writes.py` fails the build when a mutating `with db_conn() as conn, conn:` reappears directly in a coroutine.
-- **Never hold a write transaction across remote I/O.** A `Path.exists()`/`os.stat()` on the library mount inside a `with db_conn() as conn, conn:` block spends its FUSE round trip holding SQLite's single write lock, which starves every other writer for that long (see Rule 2). Resolve such probes *before* opening the transaction.
-- Schema migrations must be idempotent: modify `init_backup_db()` in `media_library/db/schema.py` using `ALTER TABLE ... ADD COLUMN ...` wrapped in `try...except sqlite3.OperationalError: pass`.
-- **Never import a `media_library.services.*` module at import time from `media_library/db/*`.** `services/__init__.py` eagerly imports the dedup facades, which import back from `media_library.db.indexer`; a module-level service import inside the DB layer therefore creates an import cycle that makes `import media_library.db.indexer` an `ImportError` as soon as the facade's import order changes (this broke once when a naive import sort moved `indexer_crawl` above `indexer_files`). Service helpers needed by the DB layer (`db.indexer_prune`'s animated-cache cleanup, the dedup cache invalidation) are imported **lazily inside the functions** that use them.
-
-### Rule 4: Test Suite Verification
-Before completing any task, execute the backend and frontend test suites:
+### Rule 4 — Tests and gates
 ```bash
-./venv/bin/pytest
-npm test
+./venv/bin/pytest                 # backend
+npm test                          # client (Vitest)
+npm run build                     # typecheck + production build
+./venv/bin/ruff check . && ./venv/bin/ruff format --check .
 ```
-All existing tests must pass, and new features must include unit or integration tests under `tests/` or `frontend/tests/`.
+All of it runs in CI (`.github/workflows/ci.yml`: `lint`, `backend`,
+`frontend`). New behaviour needs a test in `tests/` or `frontend/src/**/*.test.ts`.
+The suite is isolated: an autouse fixture points `DB_PATH`/`DATA_DIR` at a
+temporary directory and creates the schema with `schema.init_schema`, so no test
+can reach a real library or database.
 
-The tree is kept lint-clean **and** format-clean, and the same three gates run on every push and pull request in `.github/workflows/ci.yml` (job `lint`: `ruff check` + `ruff format --check`; job `backend`: `pytest`; job `frontend`: `npm ci` + `npm test` + `npm run build`). Run them locally before pushing so CI stays green:
-```bash
-./venv/bin/ruff check . && ./venv/bin/ruff format --check .   # lint + formatting gate
-```
-Note: adding or changing a file under `.github/workflows/` requires the pushing credential to carry the `workflow` scope (`gh auth refresh -s workflow`); without it GitHub rejects the push with "refusing to allow an OAuth App to create or update workflow".
-
-### Rule 5: Keep Live Server Running Latest Code
-Because HTML templates are cached in memory for the process lifetime (`media_library.core.templating.load_template`) and Python modules require process reloading, **always restart the systemd service** whenever making code, template, or asset changes so the live server serves the latest code:
+### Rule 5 — Keep the live server on the current code
+Python modules and the app are assembled at process start, so any backend
+or asset change needs a restart:
 ```bash
 systemctl restart media-library && systemctl is-active media-library
 ```
-Confirm the service is active and responding after the restart.
+The unit runs `app.py`. Never start a second instance by hand — it races for
+the port and makes systemd crash-loop. `Restart=always` only covers a process
+that exits; a wedged process is caught by the health watchdog
+(`scripts/media-library-watchdog.sh`, timer examples tracked).
 
-### Rule 6: Frontend Cache Busting
-When modifying frontend JavaScript assets (`frontend/src/**/*.js`), remember that the application uses hardcoded cache buster strings in the HTML templates to prevent browsers from using stale client code. After running `npm run build`, you **must** manually increment the version string for the modified entrypoint:
-- If you modify Sorter JS (`frontend/src/app/*`), increment `src="/static/dist/app.js?v=XX"` in `templates/index.html`. The sorter UI is split into feature modules under `frontend/src/app/` (entrypoint `index.js` plus `elements`, `state`, `config`, `folders`, `video`, `duplicates`, `moves`, `polling`, `empty_folders`, `browser`, `modals`, `events`); editing any of them still needs only the single `app.js` bump.
-- If you modify Library JS (`frontend/src/library/*`), increment `src="/static/dist/library.js?v=XX"` in `templates/library.html`. The Library UI is split into feature modules under `frontend/src/library/` (entrypoint `index.js` plus `layout`, `folders`, `search`, `gallery`, `lightbox`, `thumbnail_chooser`, `management`, `duplicates`, `tasks`, `workers`, `zip`, `animations`, `theme`, `sheet`, `uploads`); editing any of them still needs only the single `library.js` bump.
-- If you modify Downloads JS (`frontend/src/downloads/*`), increment `src="/static/dist/downloads.js?v=XX"` in `templates/downloads.html`. (Modules under `frontend/src/library/` are shared: `url_downloads.js` and `recent_targets.js` feed both `library.js` and `downloads.js`, and `frontend/src/shared/tasks_badge.js` plus `frontend/src/shared/icons.js` feed both `library.js` and `app.js` — touching either shared module means bumping **both** entrypoint versions. `frontend/src/shared/folder_picker.js` is imported by `downloads.js`, so touching it means bumping that entrypoint. `templates/partials/tasks_modal.html` / `sorter_tasks_modal.html` edits land in `library.js` / `app.js` respectively.)
-- If you modify Analytics JS (`frontend/src/analytics/*`), increment `src="/static/dist/analytics.js?v=XX"` in `templates/analytics.html`. It imports the shared `frontend/src/library/utils.js` (`showToast`/`escapeHtml`/formatting), so a change to that helper affects `library.js`, `downloads.js` and `analytics.js` alike — bump every entrypoint whose bundle you rebuilt.
-- **Tailwind**: `npm run build` already recompiles `static/dist/tailwind.css` (its `build:css` step) after Vite. Any edit that introduces a new utility class in a template or in JS (including a class string inside a `render…` function) only lands if the bundle is rebuilt, and browsers need `href="/static/dist/tailwind.css?v=XX"` bumped in **all four** page templates (`library.html`, `index.html`, `downloads.html`, `analytics.html`) — the four links share one version number. Class names are discovered by scanning source text, so never build a utility name by concatenation (`'bg-' + color`): spell the full class out, or Tailwind will not emit it.
+### Rule 6 — Client rebuilds
+The client is hashed and built, not served from source. After any change under
+`frontend/`:
+```bash
+npm run build        # tsc --noEmit ×2 + vite build into static/dist/
+```
+`static/dist/index.html` is served `Cache-Control: no-cache`, and the bundles it
+references are content-hashed, so a reload picks up a new build. Nothing outside
+`static/dist/` may reference `/static/dist/v2/` — that path is gone.
 
-### Rule 7: Always Commit & Push Changes (Zero Personal Data & Secrets)
-Every task involving code, template, configuration, or documentation changes must be committed and pushed to the remote repository (`origin`) upon completion:
-1. **Zero Personal Data & Secret Hygiene**:
-   - Never store, stage, or commit personal identifiers, real names, user profile paths (e.g. `/home/<user>`, `/Users/<user>`), IP addresses, personal email addresses, API tokens, passwords, private keys, or credentials.
-   - Author metadata must remain generic (`Media Library <dev@medialibrary.local>`).
-   - Clean up any ephemeral scratch scripts, test dumps, or temporary files before committing so no personal or temporary artifacts linger on the machine or in git.
-   - Ensure local environment files (`.env`), user configurations (`config.json`), local service files (`media-library.service`), and databases (`*.db`, `data/`) remain ignored in `.gitignore`.
-2. **Commit & Push Flow**:
-   - Ensure all tests pass (`./venv/bin/pytest`) and live server is running updated code (`systemctl restart media-library`).
-   - Stage changes (`git add .`) and create a concise conventional commit (`git commit -m "..."`).
-   - Push immediately to the remote repository (`git push origin <branch>`).
-   - Confirm with `git status` that the working tree is clean and synced with remote.
+### Rule 7 — Commit and push, with no personal data
+- Never let a home path, real email, IP, token, password, key or database into
+  a commit. Author identity stays `Media Library <dev@medialibrary.local>`.
+  `.env`, `config.json`, `*.db`, `data/`, `plans/`,
+  `REJECTED_IMPROVEMENTS.md` stay ignored; `tests/test_repo_hygiene.py` checks
+  the tracked tree and the ignore rules.
+- Remove scratch files before committing, and push after a green suite.
 
 ---
 
-## 3. Repository Architecture & Directory Structure
+## 3. Repository layout
 
 ```
 media-library/
-├── app.py                           # CLI entrypoint, argument parser, Uvicorn server launcher
-├── start.sh                         # Shell launcher: auto-creates venv, detects LAN IP, starts app
-├── requirements.txt                 # Pinned dependencies
-├── pytest.ini                       # Pytest configuration (pythonpath = ., basetemp = data/pytest_tmp)
-├── ruff.toml                        # Ruff lint configuration (with the rules intentionally excluded, and why)
-├── .github/workflows/ci.yml         # CI gates: ruff lint + format check, pytest, vitest + Vite build
-├── config.json                      # Persistent runtime user preferences (recent destinations, source dir)
-├── config.example.json              # Example configuration file
-├── .env.example                     # Reference environment variables
-├── .env                             # Local environment configuration (git-ignored)
-├── media-library.service.example    # Systemd service unit template
-├── media-library-watchdog.service.example  # Systemd oneshot unit for the health watchdog
-├── media-library-watchdog.timer.example    # Timer driving the watchdog every 2 minutes
-├── scripts/
-│   └── media-library-watchdog.sh    # Restarts the unit when /api/health stops answering
-├── LICENSE                          # MIT License
-├── README.md                        # User-facing project documentation
-├── CHANGELOG.md                     # Release history (Keep a Changelog / SemVer)
-├── AGENTS.md                        # THIS FILE: Comprehensive agent reference & architecture
+├── app.py                     # entrypoint: python app.py --host --port
+├── start.sh                   # venv bootstrap + LAN IP + python app.py
+├── package.json               # the client's npm project (single one)
+├── package-lock.json
+├── vite.config.ts             # root: frontend/, outDir: ../static/dist, base /static/dist/
+├── tsconfig.json / tsconfig.node.json
+├── pytest.ini                 # pythonpath=., basetemp=data/pytest_tmp, --cov=media_library
+├── ruff.toml                  # lint config, target py310, documented exclusions
+├── requirements.txt
+├── .env.example               # every supported variable, documented
+├── media-library.service.example
+├── media-library-watchdog.service.example / .timer.example
+├── scripts/media-library-watchdog.sh
+├── README.md / CHANGELOG.md / LICENSE
 │
-├── media_library/                   # Core application Python package
-│   ├── __init__.py
-│   ├── app_factory.py               # FastAPI create_app factory & lifespan manager
-│   │
-│   ├── core/                        # Application configuration, constants, global state
-│   │   ├── __init__.py
-│   │   ├── config.py                # Path resolutions, env loading, defaults
-│   │   ├── auth.py                  # Shared-password helpers, signed session cookie
-│   │   ├── build_info.py            # Best-effort git commit SHA for the /api/health probe
-│   │   ├── constants.py             # File extension sets, default folder candidates
-│   │   ├── http_stream.py           # HTTP byte-range and media streaming response helpers
-│   │   ├── state.py                 # In-memory state, AppState container, stat cache
-│   │   └── templating.py            # Cached raw HTML template loader & injection helpers
-│   │
-│   ├── db/                          # Database connection, schema, and filesystem crawler
-│   │   ├── __init__.py
-│   │   ├── connection.py            # SQLite connection factory with WAL PRAGMAs + run_db_write (off-loop write helper)
-│   │   ├── schema.py                # Schema tables, indexes, idempotent migrations
-│   │   ├── indexer_state.py         # Shared indexer_state dict + asyncio lock
-│   │   ├── indexer_scan.py          # Folder/entry scanning, ZIP archives, index_folder
-│   │   ├── indexer_files.py         # Per-file index mutations (add/update/move/remove)
-│   │   ├── indexer_prune.py         # Pruning, health reconciliation, deep clean
-│   │   ├── indexer_crawl.py         # Background crawler loop
-│   │   └── indexer.py               # Indexer facade: re-exports the modules above
-│   │
-│   ├── routers/                     # FastAPI route modules
-│   │   ├── __init__.py              # Export of all_routers list
-│   │   ├── views.py                 # HTML page endpoints (/, /sorter, /downloads, /analytics, /library)
-│   │   ├── auth.py                  # Shared-password login page/routes and auth middleware
-│   │   ├── analytics.py             # Library analytics overview API (index-only, read-only)
-│   │   ├── library_browse.py        # Library browsing, folder tree, search, index controls
-│   │   ├── library_media.py         # Library file/thumbnail byte-range streaming
-│   │   ├── library_admin.py         # Library rename/delete + thumbnail controls
-│   │   ├── library_manage.py        # Library page file/folder management (move, folders, undo)
-│   │   ├── library_upload.py        # Web browser chunked file and folder uploading
-│   │   ├── url_download.py           # URL/playlist video download endpoints (yt-dlp + gallery-dl, retry/history/clear, tools)
-│   │   ├── sorter_queue.py          # Sorter config, scan, queue, browse, destinations
-│   │   ├── sorter_move.py           # Sorter moves, undo, transfers, rename, delete
-│   │   ├── sorter_media.py          # Sorter video stream + duplicate check
-│   │   ├── transcode.py             # Live and queued video transcoding
-│   │   ├── duplicates.py            # Content/visual duplicate detection and resolution
-│   │   ├── webp.py                  # WebP image optimization controls
-│   │   ├── zip_router.py            # ZIP compression, unpacking, batch compression
-│   │   ├── backup.py                # Library snapshot backup save and restore
-│   │   └── system.py                # /api/system/status unified status aggregation
-│   │
-│   ├── services/                    # Business logic and external service integrations
-│   │   ├── __init__.py
-│   │   ├── media_service.py         # Path validation, LAN IP detection, video queue scanner
-│   │   ├── library_manage_service.py# Move/delete/rename/create helpers + index rewrite
-│   │   ├── upload_service.py        # Chunked upload staging and FUSE-safe atomic moves
-│   │   ├── library_query.py         # Index-only row→dict shaping for library browsing (+ largest-files reader)
-│   │   ├── anim_cache.py            # Animated WebP preview cache: orphan sweep, LRU ceiling, size payload
-│   │   ├── analytics_service.py     # Index-only analytics rollups: recursive folder rollup, quality, reclaimable, health
-│   │   ├── status.py                # Shared worker/index/transfer/ZIP status payload builders
-│   │   ├── ffmpeg_service.py        # FFmpeg facade: re-exports the helpers below + WebP conversion
-│   │   ├── ffmpeg_probe.py          # FFprobe metadata (dimensions, codecs, duration, capture time)
-│   │   ├── ffmpeg_transcode.py      # Live transcode command build + stdout relay
-│   │   ├── ffmpeg_posters.py        # Poster frame extraction / thumbnail generation
-│   │   ├── ffmpeg_frames.py         # Candidate frames + animated WebP preview generation
-│   │   ├── deduplication_service.py # Dedup facade: re-exports the modules below
-│   │   ├── dedup_common.py          # Quick-hash, pHash/dHash, pair normalisation, scoring
-│   │   ├── dedup_visual.py          # Visual (pHash) clustering and group filtering
-│   │   ├── dedup_backup.py          # Backup duplicate listing
-│   │   ├── dedup_resolve.py         # Resolve groups / autodelete verified duplicates
-│   │   ├── backup_service.py        # SQLite live backup, thumbnail tar bundling, auto-restore
-│   │   └── zip/                     # ZIP operations package
-│   │       ├── core.py              # ZIP metadata & utilities
-│   │       ├── compress.py          # Folder to ZIP compression
-│   │       ├── extract.py           # ZIP to folder unpacking
-│   │       ├── batch.py             # Batch ZIP processing workers
-│   │       └── optimize.py          # WebP optimization inside ZIPs
-│   │
-│   └── workers/                     # Background asynchronous worker subsystem
-│       ├── __init__.py
-│       ├── base.py                  # Abstract BaseWorker with lifecycle & pause/resume
-│       ├── transfer_worker.py       # Sequential non-blocking file moves with undo
-│       ├── transcode_worker.py      # Background video pre-transcoding
-│       ├── thumbnail_worker.py      # Background video poster frame extraction
-│       ├── animated_thumb_worker.py # Background animated WebP video preview generation
-│       ├── metadata_worker.py       # MediaMetadataWorker: dimensions/duration/codec/capture-time probing
-│       ├── duplicate_hash_worker.py # DuplicateHashWorker (quick) & ThumbHashWorker (visual)
-│       ├── webp_worker.py           # WebPOptimizerWorker for background image conversion
-│       ├── library_ops_worker.py    # LibraryOpsWorker for queued moves/deletes/renames + undo
-│       ├── url_download_worker.py   # URLDownloadWorker: queued yt-dlp/gallery-dl playlist downloads
-│       └── backup_watcher.py        # Periodic & shutdown library backup snapshotting
+├── media_library/             # the application package
+│   ├── app.py                 # create_app(), api_router(), lifespan, main()
+│   ├── config.py              # env + .env settings (new names, V2_ fallbacks)
+│   ├── schema.py              # DDL creation + obsolete-index convergence
+│   ├── db.py                  # reader() / writer() / DatabaseReadOnlyError
+│   ├── auth.py                # signed ml_auth cookie + middleware
+│   ├── build_info.py          # short git SHA for /api/health
+│   ├── paths.py               # library-root validation, breadcrumbs, formatting
+│   ├── library.py             # index-only browse/folders/search/favorites
+│   ├── writes.py              # rename/move/delete/folders/uploads (sync, off-loop)
+│   ├── indexer.py             # incremental crawler + prune
+│   ├── probe.py               # metadata prober
+│   ├── thumbnails.py          # poster + animated preview generation
+│   ├── thumbnail_worker.py    # poster sweep
+│   ├── cache.py               # cache keys + orphaned-artwork sweep
+│   ├── animated.py            # animated preview queue
+│   ├── runtime.py             # owned background threads
+│   ├── transcode_stream.py    # live fragmented-MP4 pipe
+│   ├── x265.py                # in-place HEVC queue
+│   ├── webp.py                # WebP optimisation
+│   ├── dedupe.py              # quick hash, pHash, resolve
+│   ├── downloads.py           # yt-dlp / gallery-dl manager
+│   ├── sorter.py              # incoming queue, destinations, moves, undo
+│   ├── zipfs.py / zip_ops.py / zip_webp.py / zip_batch.py
+│   ├── cleanup.py             # empty-folder cleanup
+│   ├── analytics.py           # index-only rollups
+│   ├── backups.py / restore.py
+│   ├── schemas.py             # Pydantic response models (the OpenAPI contract)
+│   ├── views.py               # SPA shell delivery
+│   └── routers/               # auth, system, library, media, favorites, manage,
+│                              # uploads, sorter, downloads, analytics, dedupe,
+│                              # webp, cleanup, zip, zip_batch, backups, x265
 │
-├── v2_app.py                        # post-cutover entrypoint: runs the standalone v2 app
-├── media_library_v2/                # v2 rewrite (see §16): new app, never imports media_library/
-│   ├── __init__.py                  # __version__ = "3.0.0" (its own line while v1 is 2.x)
-│   ├── config.py                    # env/.env-driven settings, no v1 imports
-│   ├── auth.py                      # shared-password cookie helpers + middleware (v1-compatible)
-│   ├── standalone.py                # standalone FastAPI app serving the SPA at `/`
-│   ├── db.py                        # SQLite access (read-only unless writes are enabled)
-│   ├── paths.py                     # library-root validation, breadcrumbs, formatting
-│   ├── library.py                   # index-only browse/folders/search/favorites/counts
-│   ├── writes.py                    # shared write helper + WriteError
-│   ├── schemas.py                   # Pydantic response models (the OpenAPI contract)
-│   ├── indexer.py / probe.py / thumbnail_worker.py / runtime.py  # owned crawler, prober, posters, scheduler
-│   ├── thumbnails.py / cache.py     # poster + animated preview generation and cache keys
-│   ├── uploads.py / sorter.py / downloads.py / dedupe.py / webp.py
-│   ├── analytics.py / x265.py / backups.py / restore.py / cleanup.py
-│   ├── zipfs.py / zip_ops.py / zip_webp.py / zip_batch.py / transcode_stream.py
-│   ├── routers/                     # auth, system, library, media, favorites, manage, uploads,
-│   │                                #   sorter, downloads, analytics, dedupe, webp, cleanup, zip,
-│   │                                #   zip_batch, backups, x265
-│   ├── views.py                     # SPA delivery (build_router), /v2 beside v1 or / standalone
-│   └── mount.py                     # mount_v2(app) + build_v2_app() for tests
+├── frontend/                  # React client source
+│   ├── index.html             # Vite entry (build only; not served directly)
+│   └── src/
+│       ├── main.tsx / app/router.tsx
+│       ├── pages/             # Library, Search, Favorites, Images, Sorter,
+│       │                      # Downloads, Analytics, Dedupe, WebP/Tools, Zip,
+│       │                      # Empty folders, Backups, Settings, Roadmap
+│       ├── components/        # shell, media, manage, onboarding, ui primitives
+│       ├── lib/               # api client, queries, stores, theme, format,
+│       │                      # justified layout, bulk rename, upload, onboarding
+│       └── styles/
 │
-├── web/                             # v2 React client (own package.json + node_modules)
-│   ├── src/                         # app/, routes/, features/, components/ui, lib/
-│   └── vite.config.ts               # builds into static/dist/v2/ with base /static/dist/v2/
+├── static/
+│   └── dist/                  # built client (index.html + hashed assets)
 │
-├── frontend/                        # Vite frontend source code & Vitest test suite
-│   ├── src/                         # ES modules for app and library
-│   │   ├── app/                     # Video Sorter UI logic, split into feature modules:
-│   │   │                            #   index.js (entrypoint: DOMContentLoaded bootstrap)
-│   │   │                            #   elements.js (cached DOM refs), state.js (app state + helpers),
-│   │   │                            #   config.js, folders.js, video.js, duplicates.js, moves.js,
-│   │   │                            #   polling.js, empty_folders.js, browser.js, modals.js, events.js
-│   │   ├── downloads/               # Downloads page UI logic (index.js)
-│   │   ├── analytics/               # Analytics dashboard UI logic (index.js: ECharts treemap/donut/bars, cards, preview)
-│   │   ├── library/                 # Media Library UI logic, split into feature modules:
-│   │   │                            #   index.js (entrypoint: shortcuts, initEvents, bootstrap, window.libraryApp)
-│   │   │                            #   layout.js, folders.js, search.js, gallery.js, lightbox.js,
-│   │   │                            #   thumbnail_chooser.js, management.js, duplicates.js, tasks.js, workers.js,
-│   │   │                            #   zip.js, animations.js, theme.js, sheet.js, uploads.js, shortcuts.js
-│   │   │                            #   plus shared state.js, utils.js, url_downloads.js, recent_targets.js, service_worker.js
-│   │   └── shared/                  # Cross-page modules (icons.js, tasks_badge.js, folder_picker.js)
-│   │   └── styles/tailwind.css      # Tailwind input (@tailwind base/components/utilities)
-│   └── tests/                       # Vitest browser/DOM unit tests (setup.js, sources, icons, library_utils, library_state, library_lightbox_sizing, recent_targets, service_worker, tasks_badge, url_downloads, tasks_modal, library_shortcuts, library_favorites_badge, uploads_resume, tasks_poll_dedupe, library_smoke, sorter_smoke, analytics_smoke, downloads_smoke)
-│
-├── vitest.config.js                 # Vitest test runner configuration (happy-dom environment)
-├── tailwind.config.js               # Tailwind content scan + theme (colours resolve via CSS vars)
-├── postcss.config.js                # Tailwind + autoprefixer pipeline
-├── static/                          # Static assets and built bundles
-│   ├── styles.css                   # Main application stylesheet (source)
-│   └── dist/                        # Build output (app.js, library.js, downloads.js, analytics.js, tailwind.css, styles.css)
-│
-├── templates/                       # Raw HTML templates (served via HTMLResponse)
-│   ├── index.html                   # Video Sorter user interface
-│   ├── login.html                   # Shared-password sign-in page
-│   ├── downloads.html               # URL/playlist Downloads page user interface
-│   ├── analytics.html               # Library Analytics dashboard user interface (bundle analytics.js)
-│   ├── library.html                 # Media Library & Gallery user interface
-│   └── partials/                    # HTML fragments (modals, sidebar, tasks_modal.html, sorter_tasks_modal.html,
-│                                    #   library_shortcuts_modal.html) used via {{include}}
-│                                    #   library modals are split: library_modals_media / _bulk / _manage /
-│                                    #   _duplicates / _zip / _viewer.html, included in that order by library.html
-│
-├── tests/                           # Automated test suite
-│   ├── conftest.py                  # Sandboxed fixtures (sandbox_env, sample_media)
-│   ├── test_analytics_api.py        # /api/analytics/overview shape, recursive folder rollup/partition, limits, refresh cache bypass, index-only contract
-│   ├── test_animated_cache.py       # Animated preview cache: orphan sweep (keeps live + in-flight temp files), LRU ceiling, has_animated reset, status payload
-│   ├── test_api_routes.py           # HTTP endpoints & status verification
-│   ├── test_auth.py                 # Shared-password authentication & session protection
-│   ├── test_backup_and_admin_operations.py # Backup snapshot/restore, rename/delete, poster capture
-│   ├── test_backup_service.py       # Backup snapshot & restore tests
-│   ├── test_build_info.py           # Build revision resolution (git HEAD/refs/packed-refs, env override, linked worktrees)
-│   ├── test_core_config.py          # Configuration loading & path resolution
-│   ├── test_coverage_duplicate_hash_worker.py # Candidate quick hashing, pHash migration, worker loops, pause/resume, DB error resilience
-│   ├── test_coverage_ffmpeg_and_media_service.py # FFmpeg/probe helpers, rotation, candidate frame caching, WebP rollback, scanner errors
-│   ├── test_coverage_indexer_and_sorter_queue.py # Move/delete index updates (zip/folder/file), prune safety thresholds, tolerant matching, destination creation
-│   ├── test_coverage_library_browse_and_manage.py # Debounced indexing, inflight pruning, folder clamp/cover fallback, bulk rename modes, move hierarchy guards
-│   ├── test_coverage_library_manage_and_backup.py # Library move/delete/rename paths, empty folder inspection, backup snapshot create, restore, auto-restore
-│   ├── test_coverage_sorter_move_and_media.py # Sorter destination collisions, transcode links, transfer abort, rename/delete cancellations, duplicates
-│   ├── test_coverage_transcode_worker.py # Video remux, progress parser, re-encode fallback, abort cancellation, cross-device commits, pretranscode scanner
-│   ├── test_coverage_webp_worker_and_ffmpeg.py # WebP byte conversions, CMYK/palette transparency, file status outcomes, base64 poster extraction, optimizer loop
-│   ├── test_coverage_workers_and_more.py # Memory guard host headroom, duplicate hash worker controls, media thumbnail fallback, candidate frame errors
-│   ├── test_coverage_zip_services.py # ZIP path resolution, central directory indexing, LRU cache eviction, ZipSlip protection, folder unpack
-│   ├── test_db_indexer.py           # SQLite indexer & pruning tests
-│   ├── test_deep_coverage_workers_services.py # Worker loops, upload service, deep clean, WebP/FFmpeg
-│   ├── test_duplicates_comprehensive.py # Quick & visual deduplication, cliques, auto-delete, worker loops
-│   ├── test_library_manage.py       # File management, empty folder cleanup & undo operations
-│   ├── test_library_upload.py       # Chunked upload: offset-verified chunks, resume status, duplicate/gap handling, incomplete finalize, staging GC
-│   ├── test_library_media_and_http_stream.py # Byte-range streaming, ETag 304 caching, thumbnail candidate frames
-│   ├── test_media_dimensions.py     # Dimension/metadata probing, natural-ratio tile data, folder totals
-│   ├── test_media_service_and_ops_worker.py # LAN IP, token search, ops worker queue/undo, debounced sync-back
-│   ├── test_media_services.py       # FFmpeg service, poster extraction, media utils
-│   ├── test_no_blocking_db_writes.py # Event-loop guard: no mutating db_conn() in a coroutine; run_db_write runs off-loop
-│   ├── test_performance_features.py# In-memory stat cache, subfolder caching, status API
-│   ├── test_search_folder_match.py  # Search matches folder names (relative to the library root), not just filenames
-│   ├── test_sorter_browse.py        # Video sorter browsing, queue scanning & destination listing
-│   ├── test_sorter_media_and_queue.py # Sorter streaming, queue refresh, transfer abort, tolerant path resolution
-│   ├── test_sorter_move.py          # Sorter moves, undo stack, file rename, delete & transfers
-│   ├── test_thumbnail_chooser.py    # Video poster selection, candidate generation & timeline scrubbing
-│   ├── test_transcode_comprehensive.py # Transcoding pause/resume, cancel, queue, and worker execution
-│   ├── test_webp_memory_guard.py    # WebP conversion memory safeguards and skip logic
-│   ├── test_workers.py              # Worker lifecycle, pause/resume, queue execution
-│   ├── test_url_download.py         # URL download worker (mocked subprocess), gallery-dl fallback, retry/clear-history/paginated history, tools status, router validations
-│   ├── test_system_status_transcode.py # /api/system/status transcode payload shape (queued/is_paused/target_filename) shared with transfers.transcode
-│   ├── test_version.py              # Single-source version contract (__version__ vs package.json/README/FastAPI/status/pages)
-│   ├── test_repo_hygiene.py         # No personal paths/emails/credentials in tracked files; local state stays gitignored
-│   └── test_zip_service.py          # ZIP inspection, extraction, compression, LRU cache
-│
-└── data/                            # Runtime data directory (git-ignored)
-    ├── library.db                   # Main SQLite database (WAL mode)
-    ├── thumbnails/                  # Cached video/image poster frames (thumb_*.jpg)
-    ├── transcodes/                  # Temporary transcoded video files
-    ├── webp_staging/                # Staging folder for image conversions
-    ├── backup_staging/              # Staging folder for snapshot database and tarballs
-    ├── cache/zips/                  # Local extraction cache for virtual ZIP folders
-    └── pytest_tmp/                  # Isolated temporary test directory
+├── tests/                     # pytest suite (30 modules)
+└── data/                      # runtime, git-ignored: library.db, thumbnails/,
+                               # transcodes/, upload_staging/, download_staging/,
+                               # zip_staging/, cache/zips/, backup_staging/
 ```
 
 ---
 
-## 4. Environment Configuration Reference
+## 4. Configuration
 
-All settings can be provided via `.env` file, environment variables, or CLI parameters:
+Read from the process environment first, then `.env`. The `V2_…` names are
+still accepted as a fallback so a pre-upgrade `.env` keeps working.
 
-| Variable | CLI Argument | Default Value | Description |
-|---|---|---|---|
-| `LIBRARY_DIR` | `--dest` | `./data/media` | Target organized media collection directory (FUSE / local) |
-| `INCOMING_DIR` | `--source` | `./data/incoming` | Incoming unsorted downloads directory |
-| `DATA_DIR` | N/A | `./data` | Root runtime directory for database, thumbnails, transcodes |
-| `DB_PATH` | N/A | `${DATA_DIR}/library.db` (a root-level `backup_index.db` wins if present) | Explicit SQLite database file location |
-| `THUMBNAIL_DIR` | N/A | `${DATA_DIR}/thumbnails` | Path where cached thumbnail images (`thumb_*.jpg`) reside |
-| `TRANSCODE_DIR` | N/A | `${DATA_DIR}/transcodes` | Temporary directory for transcoded video stream files |
-| `HOST` | `--host` | `0.0.0.0` | Network binding interface |
-| `PORT` | `--port` | `8888` | Port to listen on |
-| `LIBRARY_BACKUP_DIR` | N/A | `${LIBRARY_DIR}/.media_library_backup` | Absolute path for backup snapshots |
-| `LIBRARY_BACKUP_SUBDIR` | N/A | `.media_library_backup` | Subdirectory name inside `LIBRARY_DIR` for backups |
-| `LIBRARY_BACKUP_AUTO_ENABLED` | N/A | `true` | Enable background automatic snapshot backups when system settles idle |
-| `LIBRARY_BACKUP_AUTO_INTERVAL_HOURS` | N/A | `6.0` | Minimum interval (in hours) between automatic background snapshots |
-| `BACKUP_STAGING_DIR` | N/A | `${DATA_DIR}/backup_staging` | Staging area for constructing snapshot tarballs |
-| `WEBP_AUTO_OPTIMIZE` | N/A | `true` | Enable background conversion of loose (non-ZIP) images to WebP. Images inside ZIP archives are **never** swept automatically — archives are optimized on demand (when browsed or via the Optimize WebP button) |
-| `WEBP_WORKER_CONCURRENCY`| N/A | `1` | Concurrency for WebP conversions (recommended `1` on FUSE) |
-| `WEBP_QUALITY` | N/A | `85` | WebP conversion quality factor (1–100) |
-| `WEBP_STAGING_DIR` | N/A | `${DATA_DIR}/webp_staging` | Staging area for WebP conversion temporary files |
-| `UPLOAD_STAGING_DIR` | N/A | `${DATA_DIR}/upload_staging` | Staging area for chunked browser uploads before finalizing |
-| `MAX_UPLOAD_FILE_SIZE_GB`| N/A | `20.0` | Maximum allowed file size for browser uploads in GB |
-| `UPLOAD_STAGING_TTL_HOURS` | N/A | `24.0` | How long an interrupted browser upload keeps its staged chunks before startup garbage collection removes them (uploads resume within this window) |
-| `ANIMATED_CACHE_MAX_SIZE_GB` | N/A | `5.0` | Ceiling for the extracted animated WebP preview cache; the least recently written previews past it are evicted and regenerated on the next view |
-| `WEBP_SKIP_LARGER` | N/A | `false` | If `true`, abort conversion if WebP exceeds original file size |
-| `DOWNLOAD_WORKER_CONCURRENCY` | N/A | `2` | Max parallel URL/playlist downloads (yt-dlp / gallery-dl) |
-| `DOWNLOAD_COOKIES_FILE` | N/A | *(empty)* | Optional Netscape cookies file path passed to the downloader (`--cookies`) for auth-walled/private videos and playlists |
-| `ZIP_STAGING_DIR` | N/A | `${DATA_DIR}/zip_staging` | Local fast-disk staging area for assembling ZIP archives before FUSE transfer |
-| `ZIP_CACHE_DIR` | N/A | `${DATA_DIR}/cache/zips`| Local fast-disk cache for extracted ZIP contents |
-| `ZIP_CACHE_MAX_SIZE_GB`| N/A | `5.0` | Maximum disk size in GB for extracted ZIP cache before LRU eviction |
-| `QUICK_NAV_DIRS` | N/A | Auto-detected | Comma-separated quick navigation directory paths |
-| `SEARCH_LIMIT` | N/A | `1000` | Global library search result limit (maximum matches returned in a single search query before truncation) |
-| `CANDIDATE_CACHE_MAX_SIZE_GB` | N/A | `5.0` | LRU ceiling for the candidate-frame cache (the 480px video stills the thumbnail chooser and animated previews use); oldest frames are evicted and regenerate on the next view. |
-| `APP_PASSWORD` | N/A | *(empty — auth disabled)* | Single shared password gating the entire web UI and API; empty/unset disables authentication |
-| `GIT_COMMIT` / `BUILD_COMMIT` | N/A | *(empty — read from `.git`)* | Build revision reported as `commit` by `/api/health`; set it for a container/packaged deploy with no `.git` directory (a plain checkout is detected automatically) |
-
----
-
-## 5. Database Architecture & Schema
-
-The application uses a single SQLite database (`library.db`) configured with high-concurrency PRAGMAs:
-- `PRAGMA journal_mode = WAL;` (Write-Ahead Logging for non-blocking concurrent reads and writes)
-- `PRAGMA synchronous = NORMAL;` (Safe and optimal write performance with WAL)
-- `PRAGMA cache_size = -64000;` (~64MB in-memory page cache)
-- `PRAGMA mmap_size = 268435456;` (256MB memory-mapped I/O)
-- `PRAGMA temp_store = MEMORY;`
-
-### Tables & Columns
-
-#### 1. `folders`
-Represents indexed directories and virtual ZIP archives in the media collection.
-```sql
-CREATE TABLE folders (
-    path TEXT PRIMARY KEY,
-    name TEXT,
-    parent_path TEXT,
-    file_count INTEGER DEFAULT 0,
-    subfolder_count INTEGER DEFAULT 0,
-    last_scanned REAL DEFAULT 0,
-    is_zip INTEGER DEFAULT 0,
-    total_size INTEGER DEFAULT 0,
-    dir_mtime REAL
-);
-```
-- `is_zip = 1` indicates that the path is a `.zip` archive acting as a virtual directory.
-- `total_size` is the summed byte size of the folder's direct-child files (or a ZIP's member sizes).
-- `dir_mtime` is the directory's (or ZIP file's) own mtime as recorded at index time. The startup crawler compares the current mtime to it to skip re-indexing an unchanged folder; NULL (never scanned, or a folder mutated by an in-app move/add/rename) forces a re-scan.
-
-#### 2. `files`
-Represents indexed video and image files.
-```sql
-CREATE TABLE files (
-    path TEXT PRIMARY KEY,
-    name TEXT,
-    folder_path TEXT,
-    type TEXT,                 -- 'video' | 'image' | 'other'
-    ext TEXT,                  -- Lowercase extension (e.g. '.mp4', '.webp')
-    size INTEGER,              -- File size in bytes
-    size_formatted TEXT,       -- Human-readable size (e.g. '12.4 MB')
-    mtime REAL,                -- Last modified epoch timestamp
-    needs_transcode INTEGER DEFAULT 0, -- 1 if video requires transcode for web playback
-    has_thumb INTEGER DEFAULT 0,       -- 1 if cached thumbnail exists on disk
-    quick_hash TEXT,           -- SHA-256 of the first 128 KB head chunk + exact byte size (see compute_quick_hash)
-    thumb_hash TEXT,           -- Bare 16-hex pHash string (64-bit DCT perceptual hash), or 'no_thumb'/'blank_thumb'
-    webp_optimized INTEGER DEFAULT 0, -- 1 if converted to WebP or native WebP
-    width INTEGER,                     -- Display width (rotation applied), probed by the metadata worker
-    height INTEGER,                    -- Display height (rotation applied), probed by the metadata worker
-    duration REAL,                     -- Media duration in seconds (videos)
-    video_codec TEXT,                  -- First video stream codec (e.g. 'h264')
-    audio_codec TEXT,                  -- First audio stream codec (e.g. 'aac')
-    fps REAL,                          -- Average video frame rate
-    capture_time REAL,                 -- Capture/creation epoch (EXIF or container creation_time), or NULL
-    thumb_mtime REAL,                  -- Timestamp of custom poster frame extraction (used for URL cache busting)
-    has_animated INTEGER DEFAULT 0     -- 1 if cached animated WebP video preview exists on disk
-);
-```
-- `width`/`height` drive natural-aspect-ratio Library tiles (clamped client-side to 2:3–3:2).
-- `width IS NULL` marks a file as not-yet-probed; the worker fills all probe columns in a single pass. Files that fail to probe are stored as `0 x 0` so they are not retried until the file changes. ZIP members (which have no cheap source access) instead take `width`/`height` from their cached local thumbnail, swept periodically.
-
-#### 3. `webp_stats`
-Singleton row (`id = 1`) tracking cumulative savings from WebP optimization.
-```sql
-CREATE TABLE webp_stats (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    saved_bytes INTEGER DEFAULT 0,
-    converted_count INTEGER DEFAULT 0,
-    skipped_count INTEGER DEFAULT 0
-);
-```
-
-#### 4. `ignored_duplicates`
-Stores user-confirmed false positive duplicate pairs.
-```sql
-CREATE TABLE ignored_duplicates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path1 TEXT NOT NULL,
-    path2 TEXT NOT NULL,
-    match_type TEXT NOT NULL,  -- 'content' | 'visual'
-    created_at REAL NOT NULL,
-    UNIQUE(path1, path2)
-);
-```
-- Pairs are normalized lexicographically (`min(p1, p2)`, `max(p1, p2)`) before insertion.
-
-#### 5. `db_meta`
-Key-value store for application metadata (e.g. index version, backup timestamps).
-```sql
-CREATE TABLE db_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
-```
-
-#### 6. `favorites`
-Stores persistent bookmarks / favorited media files.
-```sql
-CREATE TABLE favorites (
-    path TEXT PRIMARY KEY,
-    created_at REAL NOT NULL
-);
-```
-- Stored in a dedicated SQLite table so index rescans, crawl prunes, or mount disconnects never wipe user bookmarks.
-- Automatically synchronized during file and folder renames/moves (`move_path_in_index`), and cleaned up upon file deletion (`delete_path_from_index`).
-- Transferred video files sorted via the Video Sorter preserve their favorite state on move.
-
-### Essential Indexes
-- `idx_files_folder ON files(folder_path)`
-- `idx_files_folder_lower_name ON files(folder_path, LOWER(name))`
-- `idx_files_name ON files(name)`
-- `idx_files_type ON files(type)`
-- `idx_files_has_thumb ON files(has_thumb)`
-- `idx_files_has_animated ON files(has_animated)`
-- `idx_files_size ON files(size)`
-- `idx_files_quick_hash ON files(quick_hash)`
-- `idx_files_thumb_hash ON files(thumb_hash)`
-- `idx_files_webp_optimized ON files(webp_optimized)`
-- `idx_files_width ON files(width)`
-- `idx_folders_parent ON folders(parent_path)`
-- `idx_folders_parent_lower_name ON folders(parent_path, LOWER(name))`
-- `idx_ignored_p1_p2 ON ignored_duplicates(path1, path2)`
-- `idx_favorites_created_at ON favorites(created_at DESC)`
-
----
-
-## 6. Background Workers & Lifecycles
-
-All background workers inherit from `BaseWorker` (`media_library.workers.base`) providing:
-- `start()`: Initializes and starts the background `asyncio.Task` loop.
-- `stop()`: Gracefully signals cancellation and awaits completion.
-- `pause()` / `resume()`: Non-destructively suspends and resumes processing.
-- `is_paused()`: Returns Boolean pause state.
-- `get_status()`: Returns a status dictionary for API polling.
-
-Every worker's database mutations run off the event loop (`await run_db_write(...)` / `asyncio.to_thread(...)`) — see Rule 3. A worker that writes synchronously on the loop can stall the whole HTTP server while it waits for SQLite's write lock.
-
-### Worker Roster
-
-| Worker Instance | Class | Module | Responsibility |
-|---|---|---|---|
-| `transfer_worker_instance` | `TransferWorker` | `workers.transfer_worker` | Executes queued file moves sequentially; tracks undo operations. |
-| `transcode_worker_instance` | `TranscodeWorker` | `workers.transcode_worker` | Background pre-transcoding of non-web videos to MP4. |
-| `thumbnail_worker_instance` | `ThumbnailWorker` | `workers.thumbnail_worker` | Background extraction of poster frames for videos/images lacking thumbnails; skips non-WebP images inside ZIPs (deferred until WebP conversion). |
-| `animated_thumb_worker_instance` | `AnimatedThumbWorker` | `workers.animated_thumb_worker` | Background sequential generation of looping animated WebP video previews; dual queues (priority queue for visible gallery tiles, batch queue for folder/library batch jobs) with pause/resume/cancel controls and live status. After each generation it trims the preview cache to `ANIMATED_CACHE_MAX_SIZE_GB` via `services.anim_cache.manage_animated_cache_lru` (throttled to once a minute), deleting the oldest previews and clearing their `has_animated` flag so the next view regenerates them. |
-| `metadata_worker_instance` | `MediaMetadataWorker` | `workers.metadata_worker` | Probes source dimensions, duration, codecs, fps, and capture time once per loose file (FFprobe + EXIF); backfills ZIP-member dimensions from cached local thumbnails; powers natural-aspect-ratio tiles and avoids re-probing in the transcode path. Reports `zip_total`/`zip_pending_count` separately and keeps `status: probing` for the whole duration of a ZIP-member sweep (it never flips back to idle mid-sweep). |
-| `duplicate_hash_worker_instance` | `DuplicateHashWorker` | `workers.duplicate_hash_worker` | Computes 128 KB head SHA-256 (+ size) for files with identical sizes. |
-| `thumb_hash_worker_instance` | `ThumbHashWorker` | `workers.duplicate_hash_worker` | Computes perceptual `pHash` from video posters & images. |
-| `webp_worker_instance` | `WebPOptimizerWorker` | `workers.webp_worker` | Background conversion of loose (non-ZIP) images to WebP. ZIP archives are excluded from the automatic sweep and are optimized on demand only — as a single archive-level unit when browsed or via the Optimize WebP button. Backs off when memory is low (measured against the tighter of host RAM and the service cgroup cap) and returns freed heap between conversions. |
-| `url_download_worker_instance` | `URLDownloadWorker` | `workers.url_download_worker` | Queued URL/playlist downloads into `UPLOAD_STAGING_DIR` then the library folder; runs yt-dlp first and falls back to gallery-dl for unsupported sites (bunkr, image boards) and for yt-dlp's `[Piracy]` blocklist refusals, with `_GALLERY_DL_HOSTS` (`gofile.io`) skipping the yt-dlp attempt altogether; up to 2 parallel slots, skip-and-continue per playlist item, live/premiere filtering, per-job cancel; retains a 500-row terminal history with newest-first pagination (`get_history`), clone-retry for failed/cancelled jobs (`retry`), and clear-finished (`clear_history`). |
-| `library_ops_worker_instance` | `LibraryOpsWorker` | `workers.library_ops_worker` | Sequentially executes queued Library page operations — moves (file/folder/ZIP), recursive deletes, and renames — off the request thread, with per-item cancel and a move-only undo stack. |
-| `h265_worker_instance` | `H265ConvertWorker` | `workers.h265_worker` | Serial in-place H.265 (x265/HEVC) re-encode of a single library video (`libx265 -preset medium -crf 18`, audio stream-copied when MP4-compatible, else AAC 192k, `-tag:v hvc1`). Replaces the original atomically (a `.mp4` sibling for non-MP4 sources, original removed), rewrites the SQLite row (`video_codec='hevc'`, content hashes cleared, `has_thumb=0` for poster regeneration), reports live percent/fps/speed/ETA, and supports per-job cancel. Skips files that are already HEVC. |
-| `backup_watcher_instance` | `BackupWatcherWorker` | `workers.backup_watcher` | Manages scheduled and shutdown snapshot backups to library folder. Triggers a snapshot only after **every** background subsystem is idle — crawler, thumbnails, duplicate/visual hashing, metadata probing, WebP, transfers, transcodes, library ops, animated previews, URL downloads, x265 conversions, single + batch ZIP jobs, and backups themselves. |
-| *Batch ZIP Runner* | *Thread-based* | `services.zip_service` | Sequential batch compression of leaf image folders into ZIPs. |
-| *Batch Unpack Runner* | *Thread-based* | `services.zip_service` | Sequential batch extraction of indexed ZIP archives back into folders (start/pause/resume/cancel), reusing `unpack_zip_to_folder`. |
-| *Background Crawler* | *Async task* | `db.indexer` | Crawls library folder hierarchy, updates SQLite, prunes stale items. **Incremental on startup**: a folder whose recorded `dir_mtime` still matches is skipped without re-stat-ing/rewriting its files, though its known child folders are still traversed (so deep changes and pruning stay correct, and a transient `stat` failure protects rather than prunes the subtree). A manual sync forces a full re-scan. Prune is skipped for incomplete crawls and aborts when an implausibly large share of folders appears missing (transient mount protection) — it then records the shortfall (`indexer_state["stale_folders"]`/`stale_files`, `prune_aborted`, `prune_reason`) so the status panel reports the stale index instead of a false 100%. A genuinely large remote deletion is cleared by the explicit forced prune (`POST /api/backup/index/prune`, or the indexer card's prune button). |
-
-### Application Lifespan (`media_library.app_factory.create_app`)
-1. **Startup Sequence**:
-   - AnyIO thread limiter set to `100` tokens for concurrent FUSE I/O.
-   - `check_and_auto_restore_library_backup()`: Detects if database or thumbnails are missing, restoring snapshot if found.
-   - `init_backup_db()`: Initializes database schema and runs idempotent migrations.
-   - Workers started: `transfer`, `transcode`, `crawler`, `thumbnail`, `animated_thumb`, `metadata`, `duplicate_hash`, `thumb_hash`, `webp`, `library_ops`, `backup_watcher`, `h265`.
-   - If `source_dir` configured, enqueues pre-transcoding in background thread.
-2. **Shutdown Sequence**:
-   - All workers gracefully stopped (`await worker.stop()`).
-   - Active crawler task cancelled and awaited.
-   - `_create_library_backup_sync(is_shutdown=True)`: Creates a clean live snapshot of the SQLite database, config, and thumbnail archive in `.media_library_backup/`.
-
----
-
-## 7. Media Processing & Streaming Pipelines
-
-### Supported File Extensions
-Defined in `media_library.core.constants`:
-- **Video Extensions**: `.mp4`, `.m4v`, `.mkv`, `.webm`, `.avi`, `.mov`, `.wmv`, `.flv`, `.ts`, `.m2ts`, `.mpg`, `.mpeg`, `.vob`, `.3gp`, `.asf`
-- **Native Browser Video**: `.mp4`, `.m4v`, `.webm`, `.mov`
-- **Image Extensions**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`, `.avif`, `.svg`
-
-### HTTP 206 Byte-Range Streaming
-Implemented in `media_library.routers.library_media.stream_backup_media` and `media_library.routers.sorter_media.stream_video`:
-- Handles standard browser `Range: bytes=start-end` request headers.
-- Emits `206 Partial Content` with `Content-Range: bytes start-end/total`, `Accept-Ranges: bytes`, and accurate `Content-Length`.
-- Streams in 1MB chunks (`65536 * 16`) to support seamless instant seeking without buffering the whole file.
-
-### Video Posters & Thumbnail Generation
-1. Deterministic hashing: Thumbnail path is `THUMBNAIL_CACHE_DIR / "thumb_{h}.jpg"` where `h` is the first 24 characters of the SHA-256 of `{file_path}_{mtime}_{size}`.
-2. Fast generation (`media_library.services.ffmpeg_service.generate_thumbnail`):
-   - Runs `ffmpeg -ss 00:00:01 -i {file_path} -vf "scale=360:-2:flags=fast_bilinear" -frames:v 1 -update 1 -q:v 3 {temp_file}` (wrapped in `nice`, 8 s timeout, retried at `-ss 00:00:00`).
-   - Atomically replaces into final path.
-3. **Deferred ZIP images**: `ThumbnailWorker` skips non-WebP image members inside ZIP archives (predicate `COALESCE(fo.is_zip,0)=1 AND f.type='image' AND f.ext != '.webp'`) because the WebP optimizer will convert them — a pre-conversion thumbnail would be orphaned when the member is renamed to `.webp`. Videos and non-ZIP files are always thumbnailed. Thumbnail totals/pending/percent are recomputed from the DB each loop iteration so they stay accurate as conversion shrinks the deferred set.
-
-### Animated WebP Video Previews
-1. Deterministic hashing: Animated preview path is `THUMBNAIL_CACHE_DIR / "anim_{h}.webp"` where `h` is the first 24 characters of the SHA-256 of `{file_path}_{mtime}_{size}`.
-2. Frame sampling & compilation (`media_library.services.ffmpeg_service.generate_animated_video_preview`):
-   - Samples up to 24 candidate frames evenly spaced across video duration at 480px resolution (`scale=480:-2:flags=fast_bilinear`).
-   - Uses candidate frames cache directory when available; extracts candidate frames in batch via fast FFmpeg seeking if not already cached.
-   - Compiles frames into a seamless looping WebP animation (`-loop 0`, 2 fps / ~500ms duration per frame).
-   - Atomically updates `files.has_animated = 1` in SQLite upon completion.
-3. Queueing & Non-blocking Tile Delivery:
-   - `AnimatedThumbWorker` (`workers.animated_thumb_worker`) manages background generation across two prioritized queues: a high-priority queue for currently visible gallery cards and a background batch queue for entire folders or library sweeps.
-   - When the user enables animated previews, `GET /api/backup/thumbnails/animated?path=...&wait=false` returns the static thumbnail image immediately alongside an `X-Thumbnail-Status: generating` HTTP header if the animated preview is not yet generated, while enqueuing the video into the priority worker queue.
-   - Startup reconciliation (`sync_animated_thumb_db_cache`) synchronizes existing `anim_*.webp` cache files with the SQLite database to avoid redundant work.
-4. Playback Triggers (`IntersectionObserver` + hover):
-   - Video tiles in the media library start with their lightweight static poster thumbnail (`file.thumb_url`).
-   - **Desktop (hover-capable + fine pointer, `matchMedia('(hover: hover) and (pointer: fine)')`)**: tiles stay on the static poster and play the looping preview only while the pointer is over the tile (`pointerenter`/`pointerleave`, mouse pointers only), reverting on mouse-out. Hover previews are independent of the `🎞️ Animated` toggle, so a hover always previews; an ungenerated tile is enqueued to the priority worker queue on first hover.
-   - **Touch devices**: a dedicated `IntersectionObserver` (`setupAnimObserver`, rootMargin: `0px`, threshold: `0`) tracks card viewport visibility, and only tiles currently on screen play animated WebP previews (`img.src = animated_url`, `playingAnim = 'true'`) while the toggle is on.
-   - When a tile stops playing — scrolled off-screen on touch, or the pointer leaves on desktop — its `src` is instantly swapped back to its static poster thumbnail (`img.dataset.fallbackThumb`), terminating multi-frame WebP decoding and freeing browser CPU, GPU, and memory.
-   - Animations are also automatically paused when the browser tab is hidden or minimized (`visibilitychange` listener), and when viewing a media item in the fullscreen lightbox viewer, resuming seamlessly when returning to the visible gallery.
-   - The shared decision logic lives in `shouldPlayAnimatedThumb` (`frontend/src/library/utils.js`).
-5. Cache housekeeping (`media_library.services.anim_cache`): previews are keyed on `path_mtime_size`, so deleting, renaming, moving or x265-re-encoding a video orphans its old file (`h265_worker` drops that file explicitly on commit). The index prune and deep clean sweep every `anim_<24 hex>.webp` no indexed row can reference (`clean_orphaned_animated_previews`, run alongside the orphaned-thumbnail sweep and reported as `pruned_orphaned_anims`; the strict name pattern keeps a generator's in-flight `anim_<hash>.<uuid>.tmp.webp` safe). After each generation `manage_animated_cache_lru` trims the directory under `ANIMATED_CACHE_MAX_SIZE_GB` (default 5 GB, freeing to 90% of the cap so one run evicts a batch), oldest written first, then clears `has_animated` for the videos whose previews it removed so the next view regenerates them; it is throttled to one check a minute and memoizes the directory's usage for a minute (`anim_cache_usage`), which `AnimatedThumbWorker.get_status()` reports as `cache_files`/`cache_bytes`/`cache_size_formatted`/`cache_max_bytes`/`cache_max_size_formatted` for the tasks modal's card. The module reads `THUMBNAIL_CACHE_DIR`/`ANIMATED_CACHE_MAX_SIZE_GB` from `core.config` at call time (never bound at import) so sandboxed tests cannot touch a real cache directory.
-6. Candidate-frame cache housekeeping (`media_library.services.candidate_cache`): the 480px stills `extract_candidate_frame` produces — the video thumbnail chooser's frames and the animated preview compiler's frames — are binned per video as `THUMBNAIL_CACHE_DIR/candidates/v<sha256(video_path)[:24]>/cand_<seconds>.jpg`. Binning is what makes the cache sweepable: a frame's own hash (path + timestamp) is not invertible and the scrubber makes the set of timestamps a video *can* have unbounded, so the per-video directory is the only reliable unit. The prune and deep clean drop the bins of videos with no indexed row plus the flat `cand_<24 hex>.jpg` files the earlier layout wrote (`clean_orphaned_candidate_frames`, reported as `pruned_orphaned_frames`; an empty or unreadable index aborts the sweep rather than emptying a good cache), `_remove_stale_folders` drops a pruned folder's bins outright (`unlink_candidate_frames`), and after every generation `manage_candidate_cache_lru` (throttled to one check a minute, usage memoized for a minute) trims the tree under `CANDIDATE_CACHE_MAX_SIZE_GB` (default 5 GB) oldest-frame-first to 90% of the cap and removes the bins it emptied. Frames are regenerable, so an evicted one simply returns the next time that second of that video is needed.
-
-### Media Metadata Probing (natural-ratio tiles)
-`MediaMetadataWorker` (`workers.metadata_worker`) probes each loose indexed file once via `probe_media_metadata` (`services.ffmpeg_service`):
-- Single FFprobe pass captures display `width`/`height` (rotation applied), `duration`, `video_codec`, `audio_codec`, `fps`, and container `creation_time`. Images without a container timestamp fall back to an EXIF `DateTimeOriginal` read via Pillow.
-- `width IS NULL` marks a file as not-yet-probed; the worker fills all probe columns together and writes `0 x 0` on failure so the file is not retried until the indexer sees it change (carry-over in `index_folder`/`update_file_in_index` keeps results across crawls).
-- ZIP members are probed separately: rather than force archive extraction over FUSE, the worker reads their dimensions from the cached local thumbnail (`_backfill_zip_batch`, one batch per loop alongside loose probing, with a 60s sweep cooldown). Members without a thumbnail yet fall back to a 1:1 box filled with `object-cover` (the justified grid no longer re-flows on image load). The ZIP-member sweep keeps `status: probing` until every batch is walked, and its `zip_total`/`zip_pending_count` are reported separately so the Library's Media Metadata Probe card can show it.
-- Progress is exposed under `metadata` in `/api/system/status`.
-
-### In-place H.265 (x265) Conversion
-Drives the Library lightbox's "Convert to x265 / HEVC" action via `H265ConvertWorker` (`workers.h265_worker`):
-- **Queueing**: `POST /api/backup/transcode/x265` validates that the path is a library video (via `validate_backup_path`) and enqueues a single job; a second request for the same file while one is queued/running returns `409`. One job runs at a time (x265 is CPU heavy) and each is individually cancellable (`POST /api/backup/transcode/x265/cancel`).
-- **Encoding**: `libx265 -preset medium -crf 18 -pix_fmt yuv420p -tag:v hvc1` in an MP4 container — CRF 18 targets *no visible loss* while usually still shrinking the H.264 source. Audio is stream-copied when the source codec is MP4-compatible (`aac`/`mp3`/`ac3`/`eac3`/`alac`), otherwise re-encoded to AAC 192k so the result stays web-playable. Already-HEVC inputs are skipped (reported, nothing written).
-- **Progress**: parsed from ffmpeg `-progress pipe:1` (`out_time_us`, `fps`, `speed` → `percent`/`fps`/`speed`/`eta`), surfaced on `GET /api/backup/transcode/x265/status?path=…` (that file's job) and under `h265` in `/api/system/status`.
-- **Commit**: the finished file is written to `TRANSCODE_TEMP_DIR` and committed with `os.replace` (cross-device: verified copy + replace). MP4 sources are replaced in place (same path); other containers produce a `<base>.mp4` sibling (never clobbering an existing same-stem file) and the original is removed. The SQLite row is rewritten (`video_codec='hevc'`, `needs_transcode=0`, content hashes cleared, `has_thumb=0` — the ThumbnailWorker's sweep regenerates the poster for the new file key) and the stale poster file is deleted.
-- **Frontend**: the lightbox button (`S`) shows a floating `.lb-x265-panel` progress bar with fps/speed/ETA and Cancel; on completion the viewer re-opens on the converted clip with a cache-busted URL and the grid tile is updated in place. The Background Tasks modal's Active & Queues pane shows an "x265 Conversions" card (active + queued, with Cancel) and the job counts toward the header task badge.
-
-### URL Playlist Downloading (yt-dlp with gallery-dl fallback)
-1. **Queueing**: `POST /api/backup/upload/url` validates the http(s) URL and the target folder (must exist, not a virtual ZIP), verifies that at least one downloader (`python -m yt_dlp` or `python -m gallery_dl`) is available, and enqueues a job on `URLDownloadWorker`.
-2. **Execution**: each job downloads into a per-job staging directory `UPLOAD_STAGING_DIR / dl_<job_id>` (local disk). The yt-dlp subprocess uses `--ignore-errors` (skip-and-continue per playlist item), `--match-filter "!is_live & !is_upcoming"` (skip live streams & premieres), `-f bv*+ba/b --merge-output-format mp4` (best quality with ffmpeg merge), and an optional `--cookies DOWNLOAD_COOKIES_FILE`. When yt-dlp reports an unsupported URL (or finds nothing importable), the job automatically retries with **gallery-dl** (`gallery_dl --dest <staging> -o directory=[]`, flattened output) — covering sites yt-dlp lacks an extractor for, such as bunkr album links. yt-dlp's **blocklist refusal counts as unsupported** too: it ships a `[Piracy]` pseudo-extractor that answers `This website is no longer supported…` and exits 1 for some hosts, so `_UNSUPPORTED_HINTS` matches both that phrasing and `primarily used for piracy` instead of failing the job (`gofile.io` was the motivating case). Hosts only gallery-dl serves are listed in `_GALLERY_DL_HOSTS` (currently `gofile.io`, subdomains included) and **skip the yt-dlp attempt entirely**, so a job shows one gallery-dl run instead of a doomed yt-dlp pass; on such a host with gallery-dl missing the job fails with an explicit message. If yt-dlp is not installed at all, gallery-dl is used directly. Up to `DOWNLOAD_WORKER_CONCURRENCY` (default 2) jobs run in parallel via a shared slot loop.
-3. **Progress**: yt-dlp progress is parsed from `--newline --progress-template` JSON lines (`percent`, `downloaded_bytes`, `speed`, `eta`, `playlist_index/count`, `title`); gallery-dl progress is inferred from the completed file paths it prints (`current_title`, running file count — no byte percentage). Both are exposed through `/api/system/status#url_downloads` (each entry carries a `downloader` field naming `yt-dlp` or `gallery-dl`), and the payload's `tools` key reports yt-dlp/gallery-dl availability. The payload is rendered by shared helpers in `frontend/src/library/url_downloads.js` on two surfaces: the dedicated `/downloads` page (recent-target chips + folder picker, multi-URL paste, availability line, retry/clear, paginated history via `/api/backup/upload/url/history`) and the mobile Controls & Settings "Downloads" tab (full 20-row history, inline URL form, tab count badge). The former desktop Library modal dialog was removed, and the Background Tasks modal now shows only a compact live + queued card (cancel + link) while the full history/retry/clear surface lives on `/downloads`.
-4. **Finalization**: completed files are moved one by one into the target folder with auto-rename collisions (`file (1).ext`) and atomic `.tmp_*` -> `os.replace` (FUSE-safe). Only video/image/audio extensions are imported; subtitle/sidecar outputs (`.vtt`, `.json`, etc.) are dropped. The target folder is re-indexed afterwards. Jobs are individually cancellable (SIGKILL of the subprocess + staging cleanup). **Retry** (`POST /api/backup/upload/url/retry`) clones a failed/cancelled job as a new queue entry after re-validating its destination (completed jobs are never re-downloaded); **Clear history** (`POST /api/backup/upload/url/clear-history`) drops terminal rows while leaving active/queued jobs alone.
-
-### WebP Image Optimization Pipeline
-1. `convert_image_file_to_webp(input_path, quality=85)`:
-   - Uses Pillow (`PIL.Image.open`).
-   - Automatically handles EXIF orientation and RGBA alpha preservation.
-   - Saves to temporary file (`.tmp_*.webp`).
-   - If `WEBP_SKIP_LARGER` is true and WebP is larger than original, deletes temp file and marks skipped.
-   - Otherwise atomically replaces original file on disk: `os.replace(temp_path, dest_path)`.
-   - If original extension was not `.webp`, removes original file and updates SQLite index.
-2. `convert_image_to_webp_bytes(source, quality=85)`:
-   - Converts an image path or raw bytes to WebP bytes in memory (used for ZIP members).
-   - Inferring PNG input (`img.format == "PNG"`) uses lossless WebP; all other formats use lossy WebP at `WEBP_QUALITY`.
-3. **ZIP archive optimization (`optimize_zip_images_to_webp`)**:
-   - Rewrites a `.zip` archive once, converting every non-WebP image member to `.webp`.
-   - Serialized per archive via the shared per-archive operation lock (`_get_archive_lock`) so a WebP rewrite can never race an extract, unpack, or sync-back of the same remote archive.
-   - **Local-first I/O**: if the archive is already extracted to the local cache (`is_zip_extracted`), image member bytes are read from the cache via `resolve_zip_file_path` (zero remote reads); otherwise the archive is downloaded to `ZIP_STAGING_DIR` with a single sequential `shutil.copyfile` before processing. The optimized archive is uploaded once (`copyfile` + `os.replace`).
-   - Streams non-image members (`zf_in.open` + `copyfileobj`) to bound peak memory; image members are converted from bytes.
-   - If `WEBP_SKIP_LARGER` is true and the WebP bytes are larger than/equal to the original, the original member is kept and marked `webp_optimized = -1` (skipped) so it is not retried.
-   - Verifies the staged archive with `testzip()`, atomically replaces the remote archive, purges the extraction cache, re-indexes in SQLite, and updates `webp_stats`.
-   - `WebPOptimizerWorker` never sweeps ZIP archives in the background. Archives are dispatched **on demand** as a single unit per archive (deduplicated + throttled, one archive rewrite per archive) — automatically when the archive is browsed, or explicitly via the Optimize WebP button. Loose (non-ZIP) images are converted by the background sweep when `WEBP_AUTO_OPTIMIZE` is enabled. **Memory safety**: the worker's back-off measures the tighter of host `MemAvailable` and the service's own cgroup headroom (`memory.high`/`memory.max` via `/proc/self/cgroup`, `MEMORY_GUARD_MB = 1536`), so a long image sweep pauses itself before hitting the cap instead of letting the kernel throttle sockets and freeze the server. It also runs `gc.collect()` + `malloc_trim(0)` (`_release_memory`) after every conversion and archive rewrite to return freed Pillow decode/encode arenas to the OS; the systemd unit additionally sets `MALLOC_ARENA_MAX=2` to bound glibc per-thread arenas.
-
----
-
-## 8. ZIP Virtual Folders & Archive Management
-
-The ZIP system enables transparent browsing, compression, and extraction of archives:
-
-### Key Components (`media_library.services.zip_service`)
-1. **Virtual Folder Splitting**:
-   - `split_zip_path("/media/album.zip/sub/photo.jpg")` -> `("/media/album.zip", "sub/photo.jpg")`.
-   - Allows endpoints like `/api/backup/browse` and `/api/backup/media` to operate on files inside ZIPs as if they were regular folders.
-2. **Fast Metadata Inspection (`get_zip_metadata`)**:
-   - Reads the ZIP central directory header without decompressing file contents (<50ms for thousands of images).
-   - Indexed in SQLite as a virtual folder (`is_zip = 1`).
-3. **On-Demand Extraction Cache**:
-   - Cache location: `ZIP_CACHE_DIR / "{stem}_{sha256(real_path)[:16]}"`.
-   - Marked with `.extracted_done`.
-   - Thread-safe synchronization: A single per-archive operation lock (`_get_archive_lock`) serializes all archive operations (cache extract, unpack, sync-back, WebP rewrite) so they cannot interleave on the same remote file; an extract that finds the archive already consumed by a concurrent unpack exits quietly instead of recording a spurious failure. Unique staging directory names (`_staging_{uuid}`) prevent staging collisions.
-   - Root prefix stripping: Detects common root folder prefixes in third-party archives and strips them to prevent double-nested directory paths during extraction and unpacking.
-   - Multi-tier resolution (`resolve_zip_file_path`): Resolves inner files via direct lookup, immediate subdirectory lookup (for preserved subfolders), and recursive fallback, and touches `.extracted_done` on access for accurate LRU tracking.
-   - Zip Slip protection: resolves member paths to ensure they stay within the target cache directory.
-4. **LRU Cache Management (`manage_lru_cache`)**:
-   - When total cache exceeds `ZIP_CACHE_MAX_SIZE_GB` (default 5.0 GB), evicts oldest accessed archives based on `.extracted_done` marker and member mtimes.
-   - Filter semantics: Only archives with actively `running` or `queued` tasks are protected from eviction (completed and failed tasks are evicted when capacity is reached).
-   - Pre-emptive & Post-operation pruning: Invoked before extraction starts and upon completion to guarantee quota headroom.
-   - Staging garbage collection: Automatically cleans up stale `_staging_*` directories and `.tmp_*` files older than 10 minutes to prevent storage leaks.
-5. **Folder Compression to ZIP (`compress_folder_to_zip`)**:
-   - Validates eligibility: requires at least 1 image and 0 video files (`check_folder_compressibility`).
-   - Stages archive creation on fast local disk (`ZIP_STAGING_DIR`) to avoid remote FUSE round-trip latency.
-   - Converts non-WebP images to WebP on the fly during archive creation.
-   - Verifies archive integrity using `testzip()` on local disk in milliseconds.
-   - Copies completed archive to remote target sequentially, atomically replaces via `os.replace()`, cleans up local staging, safely deletes original folder, and updates SQLite index.
-6. **Debounced Sync-Back (`trigger_debounced_sync_back`)**:
-   - When files inside an extracted archive are deleted or renamed, schedules a 4-second debounced background task to re-compress the updated cache on local staging before streaming back into the storage ZIP archive.
-7. **Batch ZIP Compression**:
-   - Queries candidate folders (`find_batch_zip_candidate_folders`): leaf folders with 0 videos, 0 subfolders, and >=2 images.
-   - Queues folders and processes them sequentially with pause, resume, cancel, and progress tracking.
-8. **Batch ZIP Extraction (Extract All ZIPs)**:
-   - Queries candidate archives (`find_batch_unzip_candidate_zips`): index-only list of every `folders.is_zip = 1` archive with member counts and sizes (FUSE-safe, no disk walk).
-   - Sequential `unpack_zip_to_folder` per archive (conflict auto-rename, ZIP deletion, re-index) with start/pause/resume/cancel, overall percent, per-archive progress, and skip-and-continue on failure. State exposed via `get_batch_unzip_status` and in `/api/system/status` under `batch_unzip`.
-
----
-
-## 9. Deduplication Engine
-
-The deduplication subsystem detects both identical files and visual duplicates:
-
-### 1. Content (Binary) Deduplication
-- Group candidate selection: files sharing exact identical sizes (`files.size`).
-- `compute_quick_hash(file_path)`: Hashes the first 128 KB head chunk and appends the exact byte size using SHA-256. Avoids reading entire multi-gigabyte files over network FUSE mounts.
-- Files matching quick hash are **full-content verified before any auto-delete** (`autodelete_verified_duplicates`), and the user's `ignored_duplicates` list is always honoured.
-
-### 2. Visual Duplicate Detection
-- Computes a 64-bit DCT perceptual hash (`pHash`) on video poster thumbnails and images using `imagehash`.
-- Stored in `files.thumb_hash` as a bare 16-hex pHash string (or `'no_thumb'` / `'blank_thumb'`).
-- Hamming distance threshold: matches if `length(thumb_hash) = 16` and `distance(pHash) <= 2`.
-
-### 3. Resolution & False Positives
-- **Resolution**: User selects a `keep_path` and `delete_paths`. Deleted files are removed from disk, removed from SQLite, and marked as resolved.
-- **Ignore / Unignore**: User can mark matching pairs as false positives. Pairs are stored in `ignored_duplicates` and filtered out of all future scans.
-
----
-
-## 10. Library Backup & Auto-Restore System
-
-### Problem Solved
-On remote FUSE mounts (like pCloud) or ephemeral environments, rescanning tens of thousands of media files and extracting video posters can take hours.
-
-### Solution Architecture (`media_library.services.backup_service`)
-- Backup folder: `<LIBRARY_DIR>/.media_library_backup/` (or configured `LIBRARY_BACKUP_DIR`).
-- Contents:
-  - `library.db`: Clean SQLite database snapshot created using `conn.backup(backup_conn)` while the application is running.
-  - `thumbnails.tar`: Uncompressed tar archive containing all thumbnail files from `THUMBNAIL_CACHE_DIR`.
-  - `config.json`: Copy of active configuration.
-  - `backup_meta.json`: Metadata with timestamp, total files, folders, thumbnails, and sizes.
-
-### Auto-Restore on Startup
-In `app_factory.py`, before launching background crawlers:
-- Checks if local database is missing or empty.
-- If a valid backup snapshot exists in the library directory, automatically restores `library.db` and extracts `thumbnails.tar` into `THUMBNAIL_CACHE_DIR`.
-- Indexing and thumbnail generation work is completely avoided on fresh deployments.
-
-### Clean Shutdown Snapshot
-On clean application shutdown, a live SQLite backup and thumbnail archive are written to the library backup directory.
-
----
-
-## 11. Authentication & Access Control
-
-The entire web UI and API can optionally be gated behind a **single shared password** (`APP_PASSWORD`). When `APP_PASSWORD` is empty or unset, authentication is fully disabled and every route behaves exactly as before (this keeps local development and the test suite auth-free by default).
-
-- **Login flow**: `GET /login` renders `templates/login.html` (a raw `HTMLResponse`, no Jinja2). `POST /login` accepts an `application/x-www-form-urlencoded` `password` (plus an optional same-site `next` target) and, on success, sets a signed session cookie and redirects to `next` (validated to an absolute same-site path to prevent open redirects; falls back to `/`). A wrong password re-renders the page with an inline error and issues no cookie.
-- **Signed cookie (stateless)**: the cookie (`ml_auth`) is `base64url(issued_epoch "." HMAC-SHA256)`, keyed by a SHA-256 derivation of the password (`media_library/core/auth.py`). There is **no server-side session store and no DB writes**, so sessions survive restarts, and changing `APP_PASSWORD` automatically invalidates every previously issued cookie. The password itself is compared with `hmac.compare_digest` (constant time).
-- **Remember-forever (sliding expiry)**: the cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, with a ~400-day `Max-Age` (browsers cap cookie lifetime there). It is re-issued (slid forward) only when the embedded issue time is older than 30 days, so an actively used browser effectively never has to sign in again. There is no logout button — logging out means clearing cookies.
-- **Coverage & enforcement**: `auth_middleware` (registered in `app_factory.create_app`, active only when a password is set) gates **every** route — all pages, all `/api/...` endpoints, and all media/thumbnail/stream endpoints. Only `GET`/`HEAD`/`POST /login`, `/favicon.ico`, `/sw.js`, `/api/health` (the credential-free liveness probe, which exposes reachability, the build revision and worker liveness only) and `/static/*` stay public so the login page can render. Unauthenticated `/api/*` requests receive `401 JSON`, while page requests are `302`-redirected to `/login?next=...`. Because the cookie is sent automatically on same-origin `fetch()` and `<video>`/`<img>` src requests, no frontend JavaScript changes are required.
-- **No CORS**: the app is same-origin only (pages, media streaming, thumbnails and the API are all served by it), so `create_app` installs no `CORSMiddleware`. A wildcard `allow_origins` combined with credentialed requests is rejected by browsers anyway and would only widen the surface for third-party pages. `tests/test_api_routes.py::test_no_cors_middleware_is_installed` guards this.
-- **Not covered**: no rate limiting/lockout on failed logins, and the cookie is not marked `Secure` (the app is typically served over plain LAN HTTP).
-
----
-
-## 12. Consolidated System API (`/api/system/status`)
-
-To eliminate excessive polling across multiple widgets in the frontend, all background subsystem states are aggregated into a single endpoint:
-
-**Endpoint**: `GET /api/system/status`
-**Returns**:
-```json
-{
-  "is_active": true,
-  "version": "1.0.0",
-  "transfers": { "active": null, "queued": [], "completed": [] },
-  "transcode": { "active": null, "queued": [], "queued_count": 0, "history": [], "is_paused": false, "total_pending": 0 },
-  "index": { "status": "idle", "scanned_folders": 243, "skipped_folders": 242, "total_folders": 243, "percent": 100, "stale_folders": 0, "stale_files": 0, "prune_aborted": false, "prune_reason": "", "is_complete": true },
-  "thumbnails": { "status": "idle", "pending_count": 0, "percent": 100 },
-  "animated_thumbnails": { "status": "idle", "pending_count": 0, "priority_count": 0, "batch_count": 0, "completed_count": 10, "percent": 100.0, "active_file": null, "recent_completed": [], "cache_files": 128, "cache_bytes": 183500800, "cache_size_formatted": "175.0 MB", "cache_max_bytes": 5368709120, "cache_max_size_formatted": "5.0 GB" },
-  "metadata": { "status": "idle", "pending_count": 0, "zip_total": 0, "zip_pending_count": 0, "processed_count": 0, "percent": 100 },
-  "duplicate_hash": { "status": "idle", "pending_count": 0, "percent": 100 },
-  "thumb_hash": { "status": "idle", "pending_count": 0, "percent": 100 },
-  "webp": { "status": "idle", "saved_formatted": "42.1 MB", "converted_count": 140 },
-  "library_backup": { "status": "idle", "backup_exists": true, "last_backup_str": "Oct 06, 12:00:00" },
-  "zip": { "is_active": false, "tasks": [] },
-  "batch_zip": { "status": "idle", "succeeded": 12, "overall_percent": 100.0 },
-  "batch_unzip": { "status": "idle", "succeeded": 0, "failed": 0, "errors": [], "overall_percent": 0.0 },
-  "library_ops": { "status": "idle", "active": null, "queued": [], "undo_count": 0 },
-  "url_downloads": { "status": "idle", "concurrency": 2, "active": [], "queued": [], "history": [], "tools": { "ytdlp": true, "gallery_dl": true } },
-  "h265": { "status": "idle", "active": null, "job": null, "queue_length": 0, "active_count": 0, "queued_count": 0, "queued": [], "jobs": [], "history": [] },
-}
-```
-- The top-level `version` key reports `media_library.__version__` — the single source of truth for the release version (see Rule 1.6). The liveness probe's `commit` key reports the checkout's short git SHA, which is the finer-grained check of *which* build a running server is on.
-- The frontend uses `is_active` to adjust polling frequency: **2000 ms** when active background work is in flight, **6000 ms** when idle, **8000 ms** on error.
-- Rendering is deduped against the payload: `pollSystemStatus` compares each subsystem body (and the derived header-badge summary) with what it last rendered via `payloadChanged(...)` and skips the render when it is byte-identical. Idle workers repeat the same body every poll, so without this the poll rewrote the tasks modal's lists, classes and progress widths — and with them the whole page's style tree — several times a minute for no visible change. `frontend/tests/tasks_poll_dedupe.test.js` covers it.
-- `url_downloads.active_count > 0` or `queued_count > 0` also sets `is_active`.
-- The top-level `h265` key is built by `H265ConvertWorker.get_status()`: the serial in-place HEVC re-encode queue driving the lightbox's "Convert to x265" action. It carries the `active` job, the `queued` list, `active_count`/`queued_count`, and a sanitized `jobs`/`history` (the threading `abort_event` is stripped). Either an active or queued x265 job also sets `is_active`.
-- The top-level `transcode` key is the **same shaped payload** as `transfers.transcode` (built by `services.status.transfers_payload`): it carries the `queued` list (with `source_path`), `is_paused`, `total_pending`, and a `history` whose entries include `target_filename`, `source_path`, `target_path` and `target_size_formatted`. The Library's transcode panel and the sorter read this one shape; a queued transcode also sets `is_active`.
-- The `index` body is built by `services.status.index_status_payload()` and never mixes snapshots: while crawling, `scanned_folders`/`total_folders` are the live crawl counters (percent capped at 99%); when idle, `total_folders` is the DB row count and `scanned_folders` is `total - stale_folders`, so the percent only reaches 100 when the index matches the mount. `stale_folders`/`stale_files` (rows pointing at folders the mount no longer has), `prune_aborted` and `prune_reason` come from the last prune pass, and `is_complete` is `!crawling && stale_folders == 0`. Both task modals render an amber "Index stale" state plus a "Remove missing folders from index" button calling the forced prune when `stale_folders > 0`; the 30s count cache is keyed on `indexer_state["revision"]` so post-crawl/post-prune counts are never served from a stale snapshot.
-
----
-
-## 13. Complete API Routing & Endpoint Map
-
-### HTML Views (`media_library.routers.views`)
-- All five page routes are served through `_serve_page()`, which loads the cached template from `core/templating.load_template` and substitutes the `{{VERSION}}` token with `media_library.__version__`; the Library page's sidebar footer and the login page render it (the login page does the same substitution in `routers/auth._render_login`).
-- `GET /` — Serves Media Library UI (`templates/library.html`)
-- `GET /sorter` / `GET /sort` — Serves Incoming Video Sorter UI (`templates/index.html`)
-- `GET /downloads` — Serves the URL/playlist Downloads page (`templates/downloads.html`; bundle `static/dist/downloads.js`)
-- `GET /analytics` — Serves the Library Analytics dashboard (`templates/analytics.html`; bundle `static/dist/analytics.js`)
-- `GET /library` — 302 Redirect to `/`
-- `GET /sw.js` — Serves Service Worker script (`static/sw.js`) with `Service-Worker-Allowed: /` and `Cache-Control: no-cache, no-store, must-revalidate` for client-side animated WebP thumbnail interception and CacheStorage caching
-
-### Authentication (`media_library.routers.auth`)
-- `GET /login` — Serves the shared-password sign-in page (`templates/login.html`); redirects to `/` when auth is disabled or already signed in
-- `POST /login` — Validates the shared password and sets the signed `ml_auth` cookie (303/302 redirect to the validated `next` target)
-
-### Media Library & Browser (`media_library.routers.library_browse` + `library_media` + `library_admin`)
-- `GET /api/backup/browse?path={folder_path}&refresh={bool}` — List subfolders, files, breadcrumbs, ZIP indicators. Never indexes inline: for a folder not yet in the index it schedules indexing on a background thread and returns the cached view with `indexing: true` (the client re-polls). Returns per-file `thumb_url`/`media_url` plus probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time` (dimensions drive natural-aspect-ratio tiles). Each subfolder entry carries `file_count`/`subfolder_count`/`total_size`, a representative cover `thumb_url` (alphabetically-first direct-child image by `LOWER(name)`, falling back to the first direct-child video's poster, index-only), the cover's `width`/`height`, and `has_thumb`; folders with no media get `thumb_url: null`, and the client card falls back to an icon until the on-demand thumbnail is generated. (`library_browse`)
-- `GET /api/backup/folders?path={folder_path}` — List only a folder's immediate child folders (index-only, FUSE-safe) with `file_count`/`subfolder_count`/`is_zip`. Powers the sidebar folder tree's lazy expansion; never reads file entries nor triggers ZIP extraction, and schedules background indexing with `indexing: true` for unindexed folders. (`library_browse`)
-- `GET /api/backup/search?q={query}&type={type}&sort={sort}&limit={limit}` — Search media files by multi-word query across SQLite index; respects `limit` (defaults to `SEARCH_LIMIT`, default 1000) and returns `limit`, `total`, `truncated` (bool indicating if results exceeded limit), and matching `results` with probed `width`/`height`/`duration`/`video_codec`/`audio_codec`/`fps`/`capture_time`. Truncated searches display a visual indicator (`1,000+` badge) and query refinement notice. (`library_browse`)
-- `GET /api/backup/media?path={file_path}` — Stream video/image with byte-range headers and caching (`library_media`)
-- `GET /api/backup/thumbnail?path={file_path}` — Stream thumbnail image (`library_media`)
-- `GET /api/backup/thumbnails/animated?path={file_path}&wait={bool}` — Stream looping animated WebP video preview (480px, 2 fps). If not yet cached and `wait=false`, immediately returns static thumbnail with `X-Thumbnail-Status: generating` header while enqueuing video to `AnimatedThumbWorker` priority queue (`library_media`)
-- `POST /api/backup/thumbnails/generate` — Enqueue folder for poster frame extraction (`library_admin`)
-- `POST /api/backup/thumbnails/generate-animated` — Generate looping animated WebP preview for a specific video (`library_admin`)
-- `POST /api/backup/thumbnails/batch-animated` — Enqueue videos in a folder, selected paths, or across the entire library (`all_videos: true`) into `AnimatedThumbWorker` batch queue, resuming the worker if paused (`library_admin`)
-- `POST /api/backup/thumbnails/animated-pause` — Pause or resume `AnimatedThumbWorker` (`library_admin`)
-- `POST /api/backup/thumbnails/animated-cancel` — Cancel queued background animated preview generation tasks (`library_admin`)
-- `GET /api/backup/thumbnails/status` — Get poster generation status (`library_admin`)
-- `POST /api/backup/thumbnails/pause` — Pause/resume poster generation (`library_admin`)
-- `POST /api/backup/thumbnails/set-poster` — Extract and set specific video frame timestamp (or image payload) as custom thumbnail poster frame (`library_admin`)
-- `GET /api/backup/thumbnails/candidates?path={file_path}&interval={float}&count={int}` — Compute candidate frame timestamps sampled every 30s (or custom `interval` / `count`) across video duration with metadata and 480px frame URLs (`library_media`)
-- `GET /api/backup/thumbnails/frame?path={file_path}&timestamp={float}` — Extract or return cached candidate video frame JPEG image at specific timestamp scaled to 480px width (`library_media`)
-- `POST /api/backup/rename` — Rename media file, update on disk and in database (`library_admin`)
-- `POST /api/backup/delete` — Delete media file from disk and database (`library_admin`)
-- `POST /api/backup/index/sync` — Trigger a manual **full** library crawler re-index (startup crawls are incremental, keyed on per-folder `dir_mtime`) (`library_browse`)
-- `GET /api/backup/index/status` — Crawler progress status (`library_browse`)
-- `POST /api/backup/index/prune` — Explicit forced prune: removes index rows for folders/files that no longer exist on the mount (bypasses the crawler's mount-safety limit, which aborts when >10% of the index looks missing) plus the caches those rows backed (orphaned thumbnails, animated previews, candidate frames); the status panel's "Remove missing folders from index" button calls it (`library_browse`)
-
-### Library File & Folder Management (`media_library.routers.library_manage` + `library_upload`)
-- `POST /api/backup/upload/chunk` — Receive a chunk of a browser upload file (staged locally). The optional `offset` form field is the chunk's byte position; the server appends only there, acks an already-held chunk as a duplicate (`duplicate: true`), rejects a chunk that starts past the staged end with `409`, and truncates a partial tail from a crash before rewriting it
-- `GET /api/backup/upload/status?upload_id={id}` — Bytes already staged for an upload (`received_bytes`, `exists`), so the browser can resume an interrupted transfer instead of restarting it
-- `POST /api/backup/upload/finalize` — Assemble, atomically write to target, and index the uploaded file; refuses to commit when the staged size does not match `total_size` (`400`, staged bytes kept so the client can finish)
-- `POST /api/backup/upload/cancel` — Cancel an ongoing upload and discard staging chunk
-- `POST /api/backup/upload/url` — Queue a URL/playlist video download (yt-dlp, with automatic gallery-dl fallback for unsupported sites) into `destination_dir` (`url` + `destination_dir`); returns `{job_id}`; 503 when neither downloader is available (Downloads page, mobile sheet, and the Library Upload dropdown which links to `/downloads?folder=…`)
-- `GET /api/backup/upload/url/status` — Active, queued, and recent URL download jobs plus downloader availability (`url_download_worker_instance.get_status()`; includes `tools: {ytdlp, gallery_dl}`)
-- `POST /api/backup/upload/url/cancel` — Cancel a queued or running URL download job by `job_id`
-- `POST /api/backup/upload/url/retry` — Clone a failed/cancelled download job as a new queue entry (`job_id`); re-validates the original destination; 404 unknown, 409 non-retryable
-- `POST /api/backup/upload/url/clear-history` — Remove all finished download jobs from the worker's retained history (active/queued untouched); returns `{cleared}`
-- `GET /api/backup/upload/url/history` — Newest-first paginated finished-download history (`limit` 1–500, `offset`); returns `{history, total, limit, offset}`
-- `POST /api/backup/move/check` — Pre-check name conflicts before a move; returns collision list
-- `POST /api/backup/move` — Queue file/folder/ZIP moves (conflict policy: `auto_rename` | `skip` | `error`)
-- `POST /api/backup/undo` — Undo the last queued library move (move-only undo)
-- `GET /api/backup/library-ops/status` — Active/queued/history state for the LibraryOpsWorker (surfaced in the UI's Background Tasks panel and header badge as "Library Operations": active move/delete/rename, queue count, completed/undo counts)
-- `POST /api/backup/library-ops/cancel` — Cancel a queued library operation by `task_id`
-- `POST /api/backup/folders` — Create a real folder inside a given parent
-- `POST /api/backup/folders/rename` — Rename a folder or ZIP archive (rewrites index paths)
-- `POST /api/backup/folders/delete` — Queue recursive deletion of a folder or ZIP archive
-- `POST /api/backup/bulk/rename/preview` — Preview a bulk rename (prefix/numbering/base+counter/find&replace/case) without touching disk
-- `POST /api/backup/bulk/rename` — Queue bulk rename operations (base name only, extension preserved)
-- `POST /api/backup/bulk/delete` — Queue deletion of many files/folders/ZIPs
-- `POST /api/backup/bulk/webp-optimize` — Convert selected images, enqueue selected folders for WebP, skip others
-- `GET /api/backup/folders/empty/candidates` — Find all empty folders across the library (zero files and zero non-empty subfolders) with candidate list, leaf status, and count
-- `POST /api/backup/folders/empty/delete` — Delete empty folders bottom-up (cleans benign OS junk like `.DS_Store`/`Thumbs.db` prior to `rmdir`, updates SQLite index, protects against deleting folders with user files)
-
-### Favorites & Bookmarking (`media_library.routers.favorites`)
-- `POST /api/backup/favorites/toggle` — Toggle favorite status for a single media file (`path`); returns `{status: "success", path, is_favorite: bool, counts}` where `counts` is the fresh `{all, videos, images}` totals so the client badge needs no extra request
-- `POST /api/backup/favorites/batch` — Bulk star, unstar, or toggle favorite status on multiple files (`paths`, `action`: `"add"` | `"remove"` | `"toggle"`); returns `{status: "success", action, updated: int, counts}`
-- `GET /api/backup/favorites/count` — Favorites totals only (`{counts: {all, videos, images}}`) from a single aggregate over the `favorites` join (`services/library_query.read_favorites_counts`), index-only and row-free. This is what the Library sidebar badge polls on page load; the full list endpoint is reserved for the Favorites view, which actually needs the rows
-- `GET /api/backup/favorites?type={video|image}` — List favorited media files library-wide sorted by favorited timestamp descending, with `files` (only the requested type is read) and global `counts` (`all`/`videos`/`images`, independent of the filter)
-- `GET /api/backup/favorites/status?path={path}` — Check favorite status for a single file; returns `{path, is_favorite: bool}`
-
-### Sorter Workflow (`media_library.routers.sorter_queue` + `sorter_move` + `sorter_media`)
-- `GET /api/config` — App config, queue count, undo availability, LAN IP (`sorter_queue`)
-- `POST /api/source/scan` — Scan incoming folder for videos (`sorter_queue`)
-- `GET /api/browse?path={path}` — Browse filesystem directories (source folder picker). Tolerates trailing whitespace in folder names via `_resolve_directory_tolerant()`; returns `404` (not a silent redirect to `/`) when the path does not exist (`sorter_queue`)
-- `GET /api/queue` — Incoming video items (`sorter_queue`)
-- `GET /api/destinations` — Destination category folder hierarchy (`sorter_queue`)
-- `POST /api/destinations/create` — Create category folder (`sorter_queue`)
-- `POST /api/move` — Enqueue video move to destination (`sorter_move`)
-- `POST /api/rename` — Rename video in incoming queue (`sorter_move`)
-- `POST /api/delete` — Delete video in incoming queue (`sorter_move`)
-- `POST /api/undo` — Undo last move operation (`sorter_move`)
-- `GET /api/quick-nav` — Quick navigation shortcuts (`sorter_queue`)
-- `GET /api/transfers` — Active and queued file moves (`sorter_move`)
-- `POST /api/transfers/cancel` — Cancel pending file move (`sorter_move`)
-- `GET /api/stream/{file_id}` — Stream video from incoming directory (`sorter_media`)
-- `GET /api/sorter/check-duplicate?path={path}` — Check incoming video against library (`sorter_media`)
-
-### Video Transcoding (`media_library.routers.transcode`)
-- `GET /api/transcode/{file_id}` — Live transcoding stream
-- `GET /api/transcode/status` — Pre-transcoding queue status
-- `POST /api/transcode/pause` — Pause/resume transcoding worker
-- `POST /api/transcode/cancel` — Cancel specific transcode task
-- `POST /api/transcode/cancel_all` — Cancel all transcode tasks
-- `GET /api/backup/transcode_stream?path={file_path}` — Real-time FFmpeg transcoding stream
-- `GET /api/backup/transcode/summary?folder_path={path}` — Files needing transcoding
-- `POST /api/backup/transcode/enqueue` — Enqueue single file for transcoding
-- `POST /api/backup/transcode/enqueue_all` — Enqueue all non-web videos in folder
-- `POST /api/backup/transcode/x265` — Queue an in-place H.265 (HEVC) re-encode of a library video (`path`); `409` when one is already queued/running for that file, `400` for a non-video, `404` for a missing file
-- `GET /api/backup/transcode/x265/status?path={file_path}` — x265 conversion status: active job, queued jobs, and the job for `path` (`job`) when given
-- `POST /api/backup/transcode/x265/cancel` — Cancel an x265 conversion by `job_id` (or `path` of the active/queued job)
-
-### Deduplication (`media_library.routers.duplicates`)
-- `GET /api/backup/duplicates?mode={content|visual}&limit={n}&offset={n}` — List duplicate groups
-- `GET /api/backup/duplicates/hash-status` — Quick-hash worker progress
-- `POST /api/backup/duplicates/hash-pause` — Pause/resume quick-hash worker
-- `POST /api/backup/duplicates/hash-start` — Start/resume quick-hash worker
-- `GET /api/backup/duplicates/thumb-hash-status` — Visual hash worker progress
-- `POST /api/backup/duplicates/verify-group` — Verify group with on-demand hashing
-- `POST /api/backup/duplicates/resolve` — Delete duplicate copies, keep specified file
-- `POST /api/backup/duplicates/autodelete-verified` — Batch auto-delete verified duplicates
-- `POST /api/backup/duplicates/ignore` — Mark duplicate pair as false positive
-- `GET /api/backup/duplicates/ignored` — Paginated list of ignored pairs
-- `POST /api/backup/duplicates/unignore` — Remove pair from ignored duplicates
-
-### WebP Optimization (`media_library.routers.webp`)
-- `GET /api/backup/webp/status` — Optimizer status, saved bytes, conversion count
-- `POST /api/backup/webp/pause` — Pause optimizer worker
-- `POST /api/backup/webp/resume` — Resume optimizer worker
-- `POST /api/backup/webp/optimize-folder` — Enqueue folder for WebP conversion
-
-### ZIP Archives & Compression (`media_library.routers.zip_router`)
-- `GET /api/backup/zip/check?folder_path={path}` — Check folder compression eligibility
-- `GET /api/backup/zip/status` — Active and recent ZIP tasks
-- `POST /api/backup/zip/compress` — Compress eligible folder to ZIP archive
-- `POST /api/backup/zip/unpack` — Unpack ZIP back into standard folder
-- `GET /api/backup/zip/batch/candidates` — List all leaf image folders eligible for ZIP
-- `POST /api/backup/zip/batch/start` — Start batch ZIP compression
-- `POST /api/backup/zip/batch/pause` — Pause active batch compression
-- `POST /api/backup/zip/batch/resume` — Resume paused batch compression
-- `POST /api/backup/zip/batch/cancel` — Cancel batch compression
-- `GET /api/backup/zip/batch/status` — Batch compression status and progress
-- `GET /api/backup/zip/batch-unpack/candidates` — List all indexed ZIP archives eligible for batch extraction
-- `POST /api/backup/zip/batch-unpack/start` — Start batch extraction of selected ZIP archives
-- `POST /api/backup/zip/batch-unpack/pause` — Pause active batch extraction (toggles resume)
-- `POST /api/backup/zip/batch-unpack/resume` — Resume paused batch extraction
-- `POST /api/backup/zip/batch-unpack/cancel` — Cancel batch extraction
-- `GET /api/backup/zip/batch-unpack/status` — Batch extraction status and progress
-
-### Library Backup Snapshots (`media_library.routers.backup`)
-- `GET /api/backup/library-backup/status` — Backup status, size, file/thumb count, timestamp
-- `POST /api/backup/library-backup/save` — Trigger background snapshot creation
-- `POST /api/backup/library-backup/restore` — Trigger background snapshot restoration
-
-### Library Analytics (`media_library.routers.analytics`)
-- `GET /api/analytics/overview?folder_limit={n}&file_limit={n}&refresh={bool}` — Index-only analytics body for the `/analytics` dashboard (read-only; no mutation endpoints). Returns `generated_at`, `library_root`, `limits`, `totals` (bytes/files/videos/images/folders/ZIP counts with formatted sizes), `by_type`, `by_extension` (top 12 by bytes plus a rolled-up remainder so shares sum to 100%), `folders` (`root_bytes`/`root_files`, `top` = treemap top-level nodes with one level of children and a `is_group` aggregate for anything past the top 40, `largest` = the top-N recursive subtrees pruned to a non-overlapping partition), `largest_files` (browse-shaped entries with `thumb_url`/`media_url`), `quality` (resolution buckets by longest edge, probed/high-fps counts, total runtime), `reclaimable` (duplicate size-match candidates, WebP saved/pending, ZIP-eligible leaf folders, empty leaf folders) and `health` (outstanding thumbnails/probes/visual hashes/animated previews/transcodes plus `indexer_state` staleness). `folder_limit`/`file_limit` are 1–100 (defaults 15/25, out-of-range → `422`). Memoized for 30s keyed on `indexer_state["revision"]`; `refresh=true` drops the memo for the manual Refresh button. Never walks or scans the filesystem. (`analytics`)
-
-### Unified System Status (`media_library.routers.system`)
-- `GET /api/system/status` — Consolidated status for all background subsystems
-- `GET /api/health` — Cheap, **credential-free** liveness probe for systemd, uptime monitors and container healthchecks. Returns `{status, version, uptime_s, database, workers: {running, total}}` plus `commit` (the checkout's short git SHA, or the `GIT_COMMIT`/`BUILD_COMMIT` env value; omitted when unknown) — reachability, the build revision and worker liveness only, never a library path, count or filename — and `503` with `status: "degraded"` when the database cannot be read (`SELECT 1`). It is listed in `_PUBLIC_PATHS` in `media_library/routers/auth.py` so it stays reachable when `APP_PASSWORD` is set. The revision is resolved by `media_library/core/build_info.py` at first call (following a linked worktree's `gitdir:`/`commondir` and `packed-refs`, no git binary and no per-request I/O) and cached for the process lifetime, so it answers "is the live server on today's commit?" without an mtime comparison.
-- `POST /api/system/clean-db` — Trigger background deep database scan and thumbnail cleanup
-
----
-
-## 14. Development, Testing, and Maintenance Workflows
-
-### Setting Up the Environment
-```bash
-# Clone the repository and enter directory
-cd /path/to/media-library
-
-# Ensure Python 3.10+ is available
-python3 --version
-
-# Use existing venv or create a new one
-python3 -m venv venv
-./venv/bin/pip install --upgrade pip
-./venv/bin/pip install -r requirements.txt
-```
-
-### Running the Application
-```bash
-# Using the start script:
-./start.sh
-
-# Or directly with Uvicorn / Python:
-./venv/bin/python app.py --port 8888 --dest /path/to/library --source /path/to/incoming
-```
-
-**Restarting to apply changes**: The server runs *without* `--reload`, and Python modules are loaded once at startup. `static/*` assets are served fresh from disk on each request, but HTML templates are read once and cached in memory (`core/templating.load_template`) — so any backend change (routers, services, workers, schema) **and any `templates/*.html` edit** require a server **restart** to take effect; only `static/` edits need a browser refresh.
-
-In production the app is managed by the `media-library.service` systemd unit (`ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/app.py --host 0.0.0.0 --port 8888`, `Restart=always`). **Never start a second instance by hand** — doing so races for port `8888` and can make systemd crash-loop. Restart the service instead; SIGTERM triggers a clean worker shutdown and shutdown snapshot (can take ~15s):
-
-```bash
-systemctl restart media-library     # graceful restart; the unit auto-restarts on exit
-systemctl status media-library      # confirm a single active MainPID owns port 8888
-```
-
-Only for an ad-hoc foreground/dev run (not the deployed service) use `./start.sh` or `./venv/bin/python app.py ...`.
-
-`Restart=always` only covers a process that *exits*. A process that is alive and holding its port but answering nothing (one long synchronous stretch on the event loop — a wedged mount read, a lock wait) is invisible to systemd, so the repo ships a health watchdog: `scripts/media-library-watchdog.sh` asks `ML_HEALTH_URL` (`http://127.0.0.1:8888/api/health` by default) for a page and runs `systemctl restart ML_UNIT` after `ML_WATCHDOG_FAILS` (default 2) consecutive failures, logging to the `media-library-watchdog` journal tag. It is driven by the tracked `media-library-watchdog.service.example` / `media-library-watchdog.timer.example` pair (every 2 min, `OnBootSec=5min`); install them beside the app's unit so a dead-but-alive loop is recovered without a human:
-```bash
-sudo cp media-library-watchdog.{service,timer}.example /etc/systemd/system/  # then rename without .example
-sudo sed -i "s#/path/to/media-library#$(pwd)#" /etc/systemd/system/media-library-watchdog.service
-sudo systemctl daemon-reload && sudo systemctl enable --now media-library-watchdog.timer
-```
-
-### Running Tests
-The test suite is powered by Pytest with automatic PYTHONPATH configuration in `pytest.ini`:
-```bash
-# Run all tests:
-./venv/bin/pytest
-
-# Run tests with verbose output:
-./venv/bin/pytest -v
-
-# Run a specific test module:
-./venv/bin/pytest tests/test_zip_service.py
-```
-
-### Linting, Formatting & CI
-`ruff.toml` is the lint configuration (default rules minus the three intentionally excluded ones documented in its header, with `target-version = "py310"` matching the package's real floor). The tree is kept lint-clean **and** format-clean, and `.github/workflows/ci.yml` fails the push/PR when either drifts:
-```bash
-./venv/bin/ruff check .            # lint
-./venv/bin/ruff check --fix .      # apply the safe fixes
-./venv/bin/ruff format .           # apply formatting
-./venv/bin/ruff format --check .   # what CI runs
-```
-The workflow's three jobs are `lint` (ruff check + format check), `backend` (`pytest`, after `apt-get install ffmpeg` — the runner image no longer ships FFmpeg — and an `ffmpeg -version` sanity check) and `frontend` (`npm ci` + `npm test` + `npm run build`). The lint job installs **the ruff version pinned in `requirements.txt`** (`ruff==`), never a floating one: an unpinned ruff once failed CI on rules its older local counterpart did not know (`UP041`, which newer ruff applies because its default target version is 3.11+ while this package targets 3.10).
-
-### Writing New Tests
-All test modules must use the sandboxed environment fixtures defined in `tests/conftest.py`:
-- `isolate_index_database` (autouse): pins `DB_PATH` to a per-test throwaway database. `get_current_db_path()` otherwise falls back to the configured (production) index DB, so a test that never requests `sandbox_env` would write real folder/file rows into the live `backup_index.db` — `test_db_indexer.py::test_suite_never_writes_to_the_configured_database` guards this.
-- `sandbox_env`: Creates isolated temporary directories for `media`, `incoming`, `thumbnails`, and a dedicated SQLite database. Never touches production directories.
-- `sample_media`: Pre-populates the sandbox with sample category directories, video clips, and poster images.
-
-Two cross-cutting guards run with the suite and should stay green:
-- `tests/test_version.py` enforces the single-source version contract (`media_library.__version__` vs `package.json`, `README.md`, `CHANGELOG.md`, the FastAPI metadata, the `/api/system/status` payload and the served-page `{{VERSION}}` token).
-- `tests/test_repo_hygiene.py` fails if any tracked file contains this machine's home path, a real email address or a credential-shaped string, if local state (`data/`, `*.db`, `.env`, `config.json`, `plans/`, `REJECTED_IMPROVEMENTS.md`) becomes tracked, or if the `.gitignore` rules covering them are removed.
-
-Example test pattern:
-```python
-def test_new_feature(sandbox_env):
-    db_path = sandbox_env["db_path"]
-    media_dir = sandbox_env["media_dir"]
-    # Test implementation using sandboxed paths
-```
-
----
-
-## 15. Checklist for Agents Making Changes
-
-Before concluding your turn or submitting your work, complete this verification checklist:
-
-1. [ ] **Code Quality & Typing**: Python code follows modular structure, includes type hints, and handles exceptions cleanly.
-2. [ ] **FUSE Safety**: No synchronous directory tree walking in request handlers; writes use atomic temporary files (`.tmp_*` -> `os.replace`).
-3. [ ] **Database Integrity**: SQLite connections are opened with `get_db()`, use WAL mode, execute writes inside `with conn:`, and are always closed in `finally: conn.close()`.
-4. [ ] **Schema Migrations**: Schema alterations in `init_backup_db()` are idempotent (`ALTER TABLE ... ADD COLUMN ...` with try/except).
-5. [ ] **System Status Sync**: Any new background task or worker state is exposed in `/api/system/status`.
-6. [ ] **Automated Tests**: Ran `./venv/bin/pytest` and confirmed all tests pass without errors.
-7. [ ] **AGENTS.md Updated**: Verified that `AGENTS.md` accurately reflects any changes made to endpoints, schema, workers, or configuration.
-8. [ ] **Lint & Format Clean**: `./venv/bin/ruff check .` and `./venv/bin/ruff format --check .` both pass (CI gates on them).
-9. [ ] **Frontend Escaping**: Every user-controlled string rendered into the DOM (filename, folder name, download title, server error text) goes through `textContent` or `escapeHtml()`; the toast helpers (`frontend/src/library/utils.js`, `frontend/src/app/state.js`) are text-only by construction and must stay that way — a filename is not trusted input.
-10. [ ] **Heavy/Opt-in Features Stay Local**: Anything that adds an inference runtime, a downloaded model or real CPU cost stays **off by default** behind its env switch, imports its dependency lazily so a missing install degrades to a clear status instead of a crash, and verifies any downloaded artefact. (The tree currently ships no such feature; keep data that a feature derives on this machine.)
-
----
-
-## 16. v2 Rewrite — Now Served at `/`
-
-The application was rewritten in full (`media_library_v2/` + `web/`) beside the old
-`media_library/` app and cut over at release **3.0.0**: the standalone v2 app
-(`v2_app.py`) now serves the root URL and owns the workers
-(`V2_OWN_WORKERS=true`). Old `/v2/...` links redirect to the same path at `/`. The
-previous app remains importable (`app.py`) as a fallback and as the implementation of
-the still-shared index/thumbnail formats, but the systemd unit starts `v2_app.py`.
-
-**Hard rule: `media_library_v2` never imports `media_library`.** The direction is
-one-way — v1's `create_app()` imports `media_library_v2.mount` and mounts it, never the
-reverse. `tests/test_v2_api.py::test_v2_never_imports_v1` walks the AST and fails the
-build on any reverse import.
-
-### Coexistence and data
-
-- One process, one port: `mount_v2(app)` adds `/api/v2` and the `/v2` SPA to the v1
-  FastAPI app (so `systemctl restart media-library` still applies every change). A mount
-  failure is logged and swallowed so v2 can never take v1 down.
-- **One index.** v2 writes into the index v1 owns (`V2_DB_READ_ONLY=false` by default).
-  That is deliberate: a second database would drift, need its own crawler on the FUSE
-  mount, and force a migration every time v1 learned something new. With one index,
-  v1's metadata and thumbnail workers pick up v2's uploads automatically and every list,
-  search and count in both apps agrees. `V2_DB_READ_ONLY=true` (or `V2_WRITES=false`)
-  restores the earlier read-only behaviour and makes every mutation answer `503`.
-- All mutations run off the event loop (`asyncio.to_thread`) and update SQLite in a
-  short transaction. Filesystem work happens first; a move/rename is rolled back if the
-  index write fails, and a crash between the two leaves a row that v1's crawler
-  reconciles. Cached posters/animated previews are **moved** to the new cache key on
-  rename/move and deleted with the file, so artwork survives a move in both apps.
-- Browse/search/folders/counts are index-only. Browse and the folder tree make one
-  `os.path.isdir` check on the requested folder (so a stale bookmark clamps to
-  its parent) and run it in a worker thread, never on the event loop. No other v2
-  read walks the filesystem except byte-range media streaming, an already-cached
-  thumbnail, an on-demand poster (ffmpeg for videos, Pillow for images, ZIP
-  members extracted first), and an explicit mutation.
-- Non-web containers play through `GET /media/transcode` (shared
-  `transcode_stream.build_command`, also used by the sorter); the file entry carries a
-  `transcode_url` and the viewer picks it when `playable` is false.
-- v2 reuses v1's thumbnail cache byte-for-byte: key
-  `sha256(f"{path}_{mtime}_{size}")[:24]`, poster `thumb_<key>.jpg`, animated
-  `animated/anim_<key>.webp`. Never change the key function — it would orphan the cache.
-- v1's auth middleware is app-wide, so `/api/v2/*` is protected (401) and `/v2/*`
-  redirects to the login page when `APP_PASSWORD` is set.
-
-### New configuration (v2)
-
-| Variable | Default | Description |
+| Variable | Default | Meaning |
 |---|---|---|
-| `V2_ENABLED` | `true` | Mount `/v2` and `/api/v2` at all |
-| `V2_LIBRARY_DIR` | `LIBRARY_DIR` | Library root v2 reads/serves |
-| `V2_DB_READ_ONLY` | `false` | Open the index read-only; mutations then return `503` |
-| `V2_WRITES` | `true` | Master switch for v2's uploads/manage/favorite endpoints |
-| `V2_UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging_v2` | Staging for v2's resumable uploads |
-| `UPLOAD_STAGING_TTL_HOURS` | `24.0` | Shared with v1: how long an interrupted v2 upload keeps its staged chunks before the throttled hourly sweep removes them |
-| `V2_SOURCE_DIR` | `INCOMING_DIR` | Incoming folder the v2 sorter reviews |
-| `V2_SORTER_STATE` | `${DATA_DIR}/v2_sorter_state.json` | Recent sorter destinations (undo is in memory) |
-| `V2_DOWNLOAD_STAGING_DIR` | `${DATA_DIR}/download_staging_v2` | Staging for v2's yt-dlp / gallery-dl jobs |
-| `V2_BROWSE_LIMIT` | `120` | Default page size for `/library/browse` |
-| `V2_SEARCH_LIMIT` | `1000` | Default search page size |
-| `V2_ZIP_STAGING_DIR` | `ZIP_STAGING_DIR` or `${DATA_DIR}/zip_staging_v2` | Local staging for v2's archive compression |
-| `V2_BACKUP_STAGING_DIR` | `${DATA_DIR}/backup_staging_v2` | Staging for v2's snapshot database/tar |
-| `V2_ALLOW_LIVE_RESTORE` | `false` | Let `/backups/restore` replace the live index (cutover only; otherwise the CLI restore) |
-| `V2_OWN_WORKERS` | `false` | Run v2's crawler, metadata prober, poster sweep, loose-image WebP sweep, content/visual duplicate hashing and automatic snapshots |
-| `V2_CRAWL_INTERVAL_MINUTES` | `30` | Delay between v2 crawler passes when it owns the workers |
-| `V2_BACKUP_INTERVAL_HOURS` | `6.0` | Automatic v2 snapshot interval when it owns the workers |
-| `X265_PRESET` / `X265_CRF` | `medium` / `18` | In-place HEVC encode settings for v2's x265 queue |
+| `LIBRARY_DIR` | `./data/media` | The library root everything is served from |
+| `INCOMING_DIR` | `./data/incoming` | Folder the video sorter reviews |
+| `SOURCE_DIR` | `INCOMING_DIR` | Explicit sorter folder |
+| `DATA_DIR` | `./data` | Runtime root (index, caches, staging) |
+| `DB_PATH` | `$DATA_DIR/library.db` (a root `backup_index.db` wins) | SQLite index |
+| `DB_READ_ONLY` | `false` | Open the index read-only; every mutation answers 503 |
+| `WRITES` | `true` | Master switch for write endpoints |
+| `THUMBNAIL_DIR` | `$DATA_DIR/thumbnails` | Poster + animated preview cache |
+| `TRANSCODE_DIR` | `$DATA_DIR/transcodes` | x265 output while encoding |
+| `UPLOAD_STAGING_DIR` | `$DATA_DIR/upload_staging` | Resumable upload chunks |
+| `UPLOAD_STAGING_TTL_HOURS` | `24` | Abandoned upload retention |
+| `DOWNLOAD_STAGING_DIR` | `$DATA_DIR/download_staging` | yt-dlp / gallery-dl working dirs |
+| `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel downloads |
+| `DOWNLOAD_COOKIES_FILE` | *(empty)* | Netscape cookies for gated sites |
+| `SORTER_STATE` | `$DATA_DIR/sorter_state.json` | Recent sorter destinations |
+| `ZIP_STAGING_DIR` | `$DATA_DIR/zip_staging` | Local archive assembly |
+| `ZIP_CACHE_DIR` | `$DATA_DIR/cache/zips` | Extracted archive members |
+| `ZIP_CACHE_MAX_SIZE_GB` | `5.0` | LRU ceiling for that cache |
+| `LIBRARY_BACKUP_DIR` | `$LIBRARY_DIR/.media_library_backup` | Snapshot location |
+| `BACKUP_STAGING_DIR` | `$DATA_DIR/backup_staging` | Snapshot assembly |
+| `ALLOW_LIVE_RESTORE` | `false` | Permit `/api/backups/restore` over the live index |
+| `OWN_WORKERS` | `true` | Run the crawler, prober, sweeps and snapshots |
+| `CRAWL_INTERVAL_MINUTES` | `30` | Owned crawler cadence |
+| `BACKUP_INTERVAL_HOURS` | `6.0` | Automatic snapshot cadence |
+| `WEBP_QUALITY` / `WEBP_SKIP_LARGER` | `85` / `false` | WebP conversion |
+| `X265_PRESET` / `X265_CRF` | `medium` / `18` | HEVC encode |
+| `BROWSE_LIMIT` / `SEARCH_LIMIT` | `120` / `1000` | Default page sizes |
+| `HOST` / `PORT` | `0.0.0.0` / `8888` | Bind address |
+| `APP_PASSWORD` | *(empty — auth off)* | Shared password for the whole app |
+| `GIT_COMMIT` / `BUILD_COMMIT` | *(from `.git`)* | Build revision in `/api/health` |
 
-### API v2 (all under `/api/v2`)
+---
 
+## 5. The index
+
+One SQLite file, WAL mode. `schema.init_schema()` creates it at startup (in a
+thread, writes mode only) and drops three indexes no query can use
+(`idx_files_name`, `idx_files_webp_optimized`, `idx_ignored_match_type`), so an
+index written by the 2.x app and a fresh one have the same shape. It never
+rewrites or deletes a row.
+
+```sql
+folders(path PK, name, parent_path, file_count, subfolder_count,
+        last_scanned, is_zip, total_size, dir_mtime)
+files  (path PK, name, folder_path, type, ext, size, size_formatted, mtime,
+        needs_transcode, has_thumb, width, height, duration, video_codec,
+        audio_codec, fps, capture_time, thumb_mtime, has_animated,
+        quick_hash, thumb_hash, webp_optimized)
+webp_stats(id=1, saved_bytes, converted_count, skipped_count)
+ignored_duplicates(id PK, path1, path2, match_type, created_at, UNIQUE(path1,path2))
+favorites(path PK, created_at)
+```
+
+Hard contracts:
+
+- `folders.is_zip = 1` marks a `.zip` archive browsed as a virtual folder;
+  member rows live in `files` with the archive-prefixed path.
+- `dir_mtime` is what makes the crawler incremental: a folder whose mtime still
+  matches is skipped without re-stat-ing its children (they are still
+  traversed). NULL forces a re-scan.
+- `width IS NULL` means "not probed yet". Failures are stored as `0×0` so the
+  file is not retried until it changes.
+- `has_thumb`: `1` poster cached, `0` pending, `-1` generation failed.
+- `has_animated`: `1` preview cached, `0` pending, `-1` failed.
+- `quick_hash = sha256(first 128 KB + size)`; `thumb_hash` is a bare 16-hex
+  pHash (or `no_thumb`/`blank_thumb`). Both formats are load-bearing: dedupe,
+  the sorter's "already in the library" warning and cached work depend on them.
+- `webp_optimized`: `1` done/native, `0` pending, `-1` skipped (larger).
+
+Indexes: `files(folder_path)`, `files(folder_path, LOWER(name))`, `files(type)`,
+`files(has_thumb)`, `files(has_animated)`, `files(size)`, `files(quick_hash)`,
+`files(thumb_hash)`, `files(width)`, `folders(parent_path)`,
+`folders(parent_path, LOWER(name))`, `ignored_duplicates(path1, path2)`,
+`ignored_duplicates(created_at DESC)`, `favorites(created_at DESC)`.
+
+### Artwork cache keys (never change)
+
+```
+key         = sha256(f"{path}_{mtime}_{size}")[:24]
+poster      = THUMBNAIL_DIR / f"thumb_{key}.jpg"
+animated    = THUMBNAIL_DIR / "animated" / f"anim_{key}.webp"
+candidates  = THUMBNAIL_DIR / "candidates" / f"v{sha256(path)[:24]}" / f"cand_{ss}.jpg"
+```
+
+A rename/move **moves** the cached files to the new key and a delete removes
+them. The owned runtime sweeps files whose index row is gone (strict 24-hex
+match protects an in-flight temp file). Changing the key function would orphan
+every poster on disk.
+
+---
+
+## 6. Background runtime
+
+`runtime.start_runtime()` starts these only when `OWN_WORKERS=true`; each is a
+daemon thread that pauses between items.
+
+| Unit | What it does |
+|---|---|
+| `CrawlerThread` | Incremental crawl of the library: folders, ZIP archives, file rows; prune with mount-safety guards (confirm gone with retries, abort a folder whose children mostly look missing). Inspects the full mount after `POST /api/system/index/sync`. |
+| `MetadataWorker` | One FFprobe pass per video/image: display dimensions (rotation applied), duration, codecs, fps, capture time; ZIP members take dimensions from the cached poster. |
+| `ThumbnailSweep` | Posters for `has_thumb = 0`. ZIP members are skipped (`-1`) because they are generated on demand. |
+| `_BatchSweep("webp-sweep")` | Converts loose images to WebP, releasing heap between batches. |
+| `_BatchSweep("content-hashes")` | Quick hashes files that share a size. |
+| `_BatchSweep("visual-hashes")` | pHashes posters for visual duplicate clustering. |
+| Backup thread | Snapshot every `BACKUP_INTERVAL_HOURS` when idle, and once at shutdown. |
+| `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
+| `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
+| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. |
+| ZIP batch runner | One compress/unpack archive at a time; pause takes effect between items. |
+
+Progress is exposed by `/api/system/status` (index, workers, runtime ownership)
+and the per-feature status routes. x265, downloads and ZIP batches are also
+in-memory: a restart stops running jobs and clears their history.
+
+---
+
+## 7. Media pipelines
+
+### Posters and animated previews
+- Poster: FFmpeg `-ss 1 -frames:v 1`, 360 px, atomic replace; Pillow fallback
+  for images. Generated on demand for a tile/viewer, and by the sweep in bulk.
+- Animated preview: ~24 candidate frames sampled across the duration at 480 px,
+  compiled to a looping WebP (2 fps). Only played where the client asks
+  (hover on desktop, visible tiles on touch).
+- The candidate-frame cache is binned per video so it can be swept.
+
+### Playback and transcoding
+- `/api/media` streams with HTTP 206 ranges (1 MB chunks), ETag/304 and HEAD.
+- Containers the browser cannot play are streamed through
+  `/api/media/transcode` as fragmented MP4 (`libx264 -preset ultrafast
+  -tune zerolatency`, audio AAC) — playback starts at the first fragment and
+  `ss` restarts the pipe for a seek. The sorter has the same pair under
+  `/api/sorter/stream` and `/api/sorter/transcode`.
+- x265 conversion (`POST /api/transcode/x265`) re-encodes in place to HEVC
+  (`libx265 -preset medium -crf 18 -tag:v hvc1`), stream-copies MP4-compatible
+  audio else AAC 192k, commits atomically (`.mp4` sibling for non-MP4 sources),
+  rewrites the row (`video_codec='hevc'`, hashes cleared, `has_thumb=0`) and
+  deletes the stale poster.
+
+### WebP
+Loose images convert one file at a time (atomic `.tmp` → `os.replace`), poster
+and hashes are updated, and a native `.webp` is marked optimised without
+conversion. Archives are rewritten as a unit on demand (browse or
+`POST /api/zip/webp/optimize`), never by the background sweep.
+
+### ZIP
+- `zipfs` inspects the central directory (fast, no extraction) and extracts a
+  member into `ZIP_CACHE_DIR/<hash>` on first access, LRU-trimmed to
+  `ZIP_CACHE_MAX_SIZE_GB`.
+- Compress: build on local staging, verify with `testzip()`, copy as `.tmp`,
+  `os.replace`, then replace the folder's index subtree with archive members.
+- Unpack: extract to a temporary sibling (skipping `..`), rename into place,
+  delete the archive, re-index.
+- A per-archive lock serialises compress, unpack, WebP rewrite and sync-back.
+
+### Dedupe
+Content groups come from identical sizes and `quick_hash`; every deletion is
+preceded by a full byte comparison. Visual clusters use complete linkage on the
+64-bit pHash (distance ≤ 2) capped at 12 files. Ignored pairs are stored
+normalised and filtered from every scan.
+
+### Downloads
+Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged
+to MP4), with gallery-dl as the fallback for sites yt-dlp lacks — including its
+`[Piracy]` blocklist refusals — and for `gofile.io`, which skips yt-dlp
+entirely. Media extensions land in the target folder with `auto_rename`
+collisions; sidecar files are dropped. Retry clones a failed/cancelled job,
+clear-history drops finished rows only.
+
+### Snapshots and recovery
+`POST /api/backups/snapshot` writes a `sqlite3.backup` copy (VACUUM-compacted),
+a poster tar and `meta.json` into `LIBRARY_BACKUP_DIR` (meta swapped in last).
+Startup restores when the index or posters are missing/empty; a non-empty index
+is never touched. `POST /api/backups/restore` requires `ALLOW_LIVE_RESTORE=true`;
+the supported path is `python -m media_library.restore --yes` with the service
+stopped.
+
+---
+
+## 8. API map
+
+Base `/api`. OpenAPI: `/api/docs`, `/api/openapi.json`. All routes have an
+explicit `response_model`; errors are `{"detail": …}` with a meaningful status
+(403 outside the root, 404 missing, 409 conflict, 422 validation, 503 index
+unavailable / read-only).
+
+### Auth and system (`routers/auth.py`, `routers/system.py`)
 | Route | Purpose |
 |---|---|
-| `GET /auth/session` | `{enabled, authenticated}`; public, so the client can decide whether to show its sign-in screen. Also refreshes a cookie older than 30 days |
-| `POST /auth/login` | JSON `{password}`; sets the signed `ml_auth` cookie, `401` on a wrong password (auth disabled returns `{enabled:false}`) |
-| `POST /auth/logout` | Clears the cookie; affects only the calling browser |
-| `GET /health` | v2 liveness + database reachability (standalone also exposes `/api/health`) |
-| `GET /system/info` | version, library root, totals, per-feature capability flags |
-| `GET /system/status` | index totals plus worker ownership (`shared-v1`) |
-| `GET /library/browse?path=&offset=&limit=&type=&favorite=&sort=` | subfolders, files, breadcrumbs, exact total, `next_offset`, `indexed`; `type` (`video`/`image`), `favorite` and `sort` narrow the media list |
-| `GET /library/folders?path=` | immediate child folders only (sidebar tree) |
-| `GET /library/folders/search?q=&limit=` | folders by name anywhere (command palette jumps) |
-| `GET /library/search?q=&type=&sort=&limit=&offset=` | multi-word filename **or** relative-folder match, exact total + `truncated` |
-| `GET /library/favorites?type=` | favorites newest-first plus global counts |
-| `POST /favorites/toggle` | star/unstar one file, returns fresh all/videos/images counts |
-| `POST /favorites/batch` | star, unstar or toggle many files in one transaction (`paths`, `action`); unindexed paths are reported in `failed` |
-| `POST /manage/rename` | rename a file in place (index row, favorite and artwork follow) |
-| `POST /manage/bulk-rename` | apply many `{path, name}` renames, continuing past individual failures (the client previews prefix / suffix / find-and-replace patterns) |
-| `POST /manage/delete` | delete files, folders (recursive) or ZIP archives (their virtual members too) + artwork |
-| `POST /manage/folders` | create a real subfolder and index it |
-| `POST /manage/folders/rename` | rename a folder or ZIP archive in place, rewriting every descendant folder/file/favorite/ignored-pair path and moving cached posters to the new keys |
-| `POST /manage/move` | move files with `auto_rename` / `skip` / `error` conflict policy |
-| `GET /uploads/status?upload_id=` | bytes already staged, for resuming |
-| `POST /uploads/chunk` | append a chunk at its explicit byte offset (duplicates acked, gaps `409`) |
-| `POST /uploads/finalize` | verify the staged size, atomically commit, index the file |
-| `POST /uploads/cancel` | discard a staged upload |
-| `GET /sorter/config` | incoming path + availability, recent destinations, queue/undo counts |
-| `GET /sorter/duplicate?path=` | quick-hash comparison of the current incoming clip against indexed files; returns the library copies so the sorter can warn before a move |
-| `GET /sorter/queue` | videos in the incoming folder (one level, 1.5 s cache) |
-| `POST /sorter/refresh` | rescan the incoming folder |
-| `GET /sorter/destinations?q=&limit=` | index-only destination folder search |
-| `POST /sorter/folders` | create a destination and remember it |
-| `POST /sorter/move` | import one incoming clip into a library folder, indexed |
-| `POST /sorter/undo` | move the last import back and drop its index row |
-| `POST /sorter/rename` | rename a file still in the incoming folder |
-| `POST /sorter/delete` | delete a file from the incoming folder |
-| `GET /sorter/stream` | HTTP 206 streaming from the incoming folder |
-| `GET /sorter/transcode` | live FFmpeg fragmented-MP4 stream for non-web containers |
-| `GET /sorter/thumbnail` | lazily generated 1 s poster for the queue |
-| `POST /downloads/queue` | queue one or more URLs into a library folder (`rejected` lists invalid/duplicate lines) |
-| `GET /downloads/status` | active + queued jobs, recent history, tool availability, concurrency |
-| `GET /downloads/history?limit=&offset=` | finished jobs, newest first, paginated |
-| `POST /downloads/cancel` | cancel a queued/running job and clean its staging |
-| `POST /downloads/retry` | clone a failed/cancelled job (completed jobs are never re-run) |
-| `POST /downloads/clear-history` | drop finished jobs, keeping active/queued |
-| `GET /analytics/overview?folder_limit=&file_limit=&refresh=` | index-only dashboard: totals, folder rollup/treemap/ranking, largest files, quality buckets, reclaimable space, health; memoised 30 s |
-| `GET /dedupe/status` | same-size candidates, unhashed counts, visual hashes, ignored pairs |
-| `GET /dedupe/groups?mode=content\|visual&limit=&offset=` | duplicate groups (content = byte-identical candidates, visual = complete-linkage pHash clusters capped at 12) |
-| `POST /dedupe/hash` | hash one batch of candidates (`mode`, `limit`), off-loop |
-| `POST /dedupe/verify` | full byte comparison of two files |
-| `POST /dedupe/resolve` | keep one file, delete the rest; content mode verifies every deletion first |
-| `POST /dedupe/ignore` / `GET /dedupe/ignored` / `POST /dedupe/unignore` | false-positive pair management |
-| `GET /webp/status` | pending loose images, saved bytes, converted/skipped, quality |
-| `POST /webp/optimize` | convert one batch (`limit`, optional `folder`, or an explicit `paths` selection which is converted whole), off-loop |
-| `GET /folders/empty` | leaf folders with no files and no child folders |
-| `POST /folders/empty/delete` | remove selected empty folders (OS junk tolerated) |
-| `GET /zip/check?path=` | compression eligibility (images, no videos, no nested archives, no name collision) |
-| `POST /zip/compress` | archive a folder on local staging, verify, commit atomically, replace the index subtree with archive members |
-| `POST /zip/unpack` | safe extraction to a sibling folder, delete the ZIP, re-index the extracted tree |
-| `GET /zip/overview` | compress candidates, indexed archives and extraction-cache usage |
-| `POST /zip/batch/start` | run a sequential compress/unpack batch (all candidates or explicit `paths`) |
-| `GET /zip/batch/status` | batch mode, running/paused/completed, progress, current item, errors |
-| `POST /zip/batch/pause` / `/resume` / `/cancel` | pause between items, resume, or stop the queue |
-| `POST /zip/webp/optimize` | rewrite an archive's JPEG/PNG/BMP/TIFF members to WebP in place, preserving other members |
-| `GET /backups/status` | v2 snapshot existence, timestamp, counts, db/tar sizes, restore flag (the standalone app auto-restores a missing/empty index from it at startup, falling back to the current app's snapshot) |
-| `POST /backups/snapshot` | live SQLite backup (VACUUM-compacted) + poster tar + meta into `.media_library_backup/v2/` |
-| `GET /backups/verify` | integrity check of snapshot and live DB, counts, tar member count |
-| `POST /backups/restore` | restore in place only when `V2_ALLOW_LIVE_RESTORE=true`; otherwise `409` with the CLI path |
-| `GET /backups/download?kind=db\|thumbs` | download the snapshot database or poster tar |
-| `GET /system/onboarding` | first-run tour data: library/source paths, counts, index root, backup, downloaders, feature flags |
-| `GET /system/index/status` | crawler state, counts, revision, stale/prune-abort counters, `artwork_swept` counters, runtime ownership |
-| `POST /system/index/sync` | start a forced v2 crawl (`409` unless `V2_OWN_WORKERS=true`) |
-| `POST /transcode/x265` | queue an in-place HEVC re-encode of one video (`409` if already HEVC or already queued) |
-| `GET /transcode/x265/status?path=` | active/queued job, the job for a path, and recent history |
-| `POST /transcode/x265/cancel` | cancel an active (kills ffmpeg) or queued job |
-| `GET /media?path=&download=` | HTTP 206 byte-range streaming, ETag/304, HEAD |
-| `GET /media/transcode?path=&ss=` | live fragmented-MP4 stream for containers the browser cannot play (ZIP members extracted first) |
-| `GET /thumbnails?path=&kind=static\|animated` | cached poster/animated preview, immutable caching |
-| `GET /thumbnails/candidates?path=&interval=&count=` | evenly spaced poster-chooser frames (at least 8, at most 60, from the indexed duration) |
-| `GET /thumbnails/frame?path=&timestamp=` | one 480px candidate frame, cached per video and timestamp |
-| `POST /thumbnails/poster` | replace a video's poster with the frame at `timestamp`; updates `has_thumb`/`thumb_mtime` so the URL cache-busts |
-| `POST /thumbnails/animated` | queue one video for an animated WebP preview |
-| `POST /thumbnails/animated/batch` | queue every preview-less video in a `folder` (or `all_videos`) |
-| `GET /thumbnails/animated/status` | live queue, completed/failed counts and pending/ready totals from the index |
-| `POST /thumbnails/animated/cancel` | drop the waiting queue (the running encode finishes) |
-| `GET /thumbnails/exists?path=` | cheap client probe before choosing poster vs full image |
+| `GET /auth/session` | `{enabled, authenticated}`; public |
+| `POST /auth/login` / `POST /auth/logout` | Set / clear the signed cookie |
+| `GET /health` | Public liveness probe: status, version, database, commit; 503 when the index is unreadable |
+| `GET /system/info` | Version, library root, counts, capability flags |
+| `GET /system/status` | Counts, runtime mode, crawler state |
+| `GET /system/index/status` | Owned runtime + crawler counters |
+| `POST /system/index/sync` | Forced crawl; 409 unless `OWN_WORKERS` |
+| `GET /system/onboarding` | First-run tour payload (paths, counts, tools, backup) |
 
-Conventions: explicit Pydantic `response_model` on every route, `problem+json`-ready
-`detail` errors, path-based addressing validated by `paths.resolve_library_path`
-(403 outside the root), and stable 16-char `id` fields for React keys.
+### Library (`routers/library.py`, `media.py`)
+`GET /library/browse?path=&offset=&limit=&type=&favorite=&sort=` ·
+`GET /library/folders?path=` · `GET /library/folders/search?q=&limit=` ·
+`GET /library/search?q=&type=&sort=&limit=&offset=` ·
+`GET /library/favorites?type=` · `GET /media?path=&download=` (206 ranges) ·
+`GET /media/transcode?path=&ss=`
 
-### Client
+### Favorites and mutations (`routers/favorites.py`, `manage.py`)
+`GET /favorites/counts` · `POST /favorites/toggle` · `POST /favorites/batch` ·
+`POST /manage/rename` · `POST /manage/bulk-rename` · `POST /manage/delete` ·
+`POST /manage/folders` · `POST /manage/folders/rename` · `POST /manage/move`
 
-`web/` is its own npm project (separate `node_modules`) so React 19, Vite 8, Tailwind 4
-and TypeScript 7 cannot disturb v1's Tailwind 3/Vite 5 build. It builds into
-`static/dist/v2/` with `base: '/static/dist/v2/'` and the SPA is served from
-`media_library_v2/views.py`.
+### Uploads (`routers/uploads.py`)
+`GET /uploads/status?upload_id=` · `POST /uploads/chunk` (explicit byte offset;
+duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch) ·
+`POST /uploads/cancel`
+
+### Sorter (`routers/sorter.py`)
+`GET /sorter/config` · `GET /sorter/queue` · `POST /sorter/refresh` ·
+`GET /sorter/destinations?q=&limit=` · `POST /sorter/folders` ·
+`POST /sorter/move` · `POST /sorter/undo` · `POST /sorter/rename` ·
+`POST /sorter/delete` · `GET /sorter/duplicate?path=` ·
+`GET /sorter/stream` · `GET /sorter/transcode` · `GET /sorter/thumbnail`
+
+### Downloads (`routers/downloads.py`)
+`POST /downloads/queue` · `GET /downloads/status` ·
+`GET /downloads/history?limit=&offset=` · `POST /downloads/cancel` ·
+`POST /downloads/retry` · `POST /downloads/clear-history`
+
+### Thumbnails (`routers/media.py`)
+`GET /thumbnails?path=&kind=static|animated` · `GET /thumbnails/exists?path=` ·
+`GET /thumbnails/candidates?path=&interval=&count=` ·
+`GET /thumbnails/frame?path=&timestamp=` · `POST /thumbnails/poster` ·
+`POST /thumbnails/animated` · `POST /thumbnails/animated/batch` ·
+`GET /thumbnails/animated/status` · `POST /thumbnails/animated/cancel`
+
+### Processing (`routers/webp.py`, `zip.py`, `zip_batch.py`, `x265.py`)
+`GET /webp/status` · `POST /webp/optimize` ·
+`GET /zip/check?path=` · `GET /zip/overview` · `POST /zip/compress` ·
+`POST /zip/unpack` · `POST /zip/webp/optimize` ·
+`POST /zip/batch/start|pause|resume|cancel` · `GET /zip/batch/status` ·
+`POST /transcode/x265` · `GET /transcode/x265/status?path=` ·
+`POST /transcode/x265/cancel`
+
+### Dedupe, analytics, cleanup, backups
+`GET /dedupe/status` · `GET /dedupe/groups?mode=content|visual&limit=&offset=` ·
+`POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/resolve` ·
+`POST /dedupe/ignore` · `GET /dedupe/ignored` · `POST /dedupe/unignore` ·
+`GET /analytics/overview?folder_limit=&file_limit=&refresh=` ·
+`GET /folders/empty` · `POST /folders/empty/delete` ·
+`GET /backups/status` · `POST /backups/snapshot` · `GET /backups/verify` ·
+`POST /backups/restore` · `GET /backups/download?kind=db|thumbs`
+
+Any non-API page path returns the SPA shell; unknown `/api/…` and `/static/…`
+paths keep their JSON/static answer.
+
+---
+
+## 9. Client
+
+`frontend/src`, built by the root npm project. Routing is `react-router`;
+server state lives in TanStack Query (`lib/queries.ts`), small UI state in
+Zustand stores (`lib/stores.ts`). `lib/api.ts` is the only place the API base
+(`/api`) is written.
+
+- **Library**: justified rows (`lib/justified.ts`), virtualised gallery, poster
+  hover previews, viewer with poster chooser, x265 action, move/rename/delete,
+  multi-select and bulk actions, uploads with resume (`lib/upload.ts`).
+- **Polish**: theme (light/dark/system, accent), command palette (cmdk),
+  onboarding tour (`lib/onboarding.ts`, dismissal in `localStorage`), Sonner
+  toasts, `@fontsource` variable fonts.
+- **Sorter**: queue with preloading, 1–6 destination keys, search, create-and-
+  move, undo, rename, delete, duplicate warning.
+- **Numbers**: every dashboard figure comes from `/api/analytics/overview`.
+- **Escaping**: user-controlled strings render through JSX text (escaped) or
+  `textContent`; never `dangerouslySetInnerHTML` with a filename, download
+  title or server message.
+
+## 10. Development and deployment
 
 ```bash
-npm --prefix web install       # first time
-npm --prefix web run build     # or: npm run build:v2
-npm --prefix web run dev       # proxies /api and /static to :8888
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+npm ci
+npm run dev            # Vite dev server on :5173, proxying /api and /static
+./venv/bin/python app.py --host 0.0.0.0 --port 8888
+./start.sh             # venv bootstrap + LAN IP, runs python app.py
 ```
 
-The deep-link route is `/v2` + `/v2/{path:path}` → `index.html`; client routes are
-`/v2/library?path=…`, `/v2/search?q=…`, `/v2/favorites`, and so on. Fonts, icons and the
-lightbox are bundled — no CDN request.
+Production: the `media-library.service` unit runs `app.py` with
+`Restart=always` and `MALLOC_ARENA_MAX=2`; `systemctl restart media-library`
+applies any change. The optional watchdog timer restarts a process that holds
+its port but stops answering `/api/health`.
 
-### Status
+Tests, in order: `./venv/bin/pytest`, `npm test`, `npm run build`,
+`./venv/bin/ruff check .`, `./venv/bin/ruff format --check .`.
 
-Live now: system/health, browse, folders, search, favorites, media streaming, thumbnails,
-the React shell, library gallery, lightbox, command palette, keyboard reference, search,
-favorites, theme light/dark/system, mobile bottom navigation, **uploads (chunked and
-resumable), rename, move, delete (files and folders), create folder, favorite
-toggling**, the **Video Sorter** (queue scan, 1–6 destination keys, folder search,
-one-key move, create-and-move, undo, rename, delete, live transcoding for non-web
-containers and an "already in the library" warning from the shared quick hash) and **URL/playlist downloads** (yt-dlp with a gallery-dl fallback, batch
-queueing, live progress, cancel, retry, paginated history, clear) and the
-**Analytics dashboard** (KPI strip, zoomable storage treemap, largest folders, media
-mix, extensions, reclaimable space, largest files, quality histogram and health pills —
-every figure from the index, memoised for 30 s), **dedupe** (content groups from the
-shared `quick_hash`, visual clusters from `thumb_hash`, batched hashing, full-verify
-before content deletion, ignore/unignore), **WebP optimisation** (loose images,
-atomic replace, index and poster update, batch/folder scope), **empty-folder
-cleanup**, **ZIP virtual folders** (browse, member streaming, compression and unpacking;
-archives are indexed by the shared crawler, a missing member is extracted into a bounded
-local cache, and compress/unpack rewrite the affected index subtree in one transaction)
-the **Tools hub** (including a whole-library animated-preview queue),
-**multi-select with bulk actions** (checkbox / Ctrl-click /
-Shift-range selection, select all, then move, delete, star, batch rename with a live
-preview, and WebP conversion of the selected images), **the poster chooser and
-animated previews** (sampled frames with "use current position", a per-video
-generate action, and a folder-wide batch queue that samples ~24 frames into a
-looping WebP; the chooser also works for a video inside a ZIP archive, extracting
-the member to the bounded local cache first), **in-place x265 conversion** (serial libx265 queue, live
-percent/fps/speed/ETA, cancel, atomic commit, index/poster rewrite), **library snapshots**
-(v2 writes a compacted DB copy plus a
-poster tar into `.media_library_backup/v2/`, verifies them, offers downloads, and a
-service-stopped restore CLI; live restore stays disabled until the cutover) and a
-**first-run onboarding tour** (4 steps: welcome, library/index health, what is live vs
-still in the current app, appearance; replayable from Settings or the command palette,
-dismissal persisted under `v2_onboarding_done`) plus **on-demand media processing**:
-video posters are generated the first time a tile or the viewer asks (ffmpeg, 360px,
-fallback to frame 0), and MKV/AVI/WMV/FLV files play through a live fragmented-MP4
-transcode so no clip is unplayable in the viewer. Every write updates the shared index
-and the cached artwork.
+## 11. Agent checklist
 
-**Standalone operation is ready.** `media_library_v2/auth.py` carries the same
-stateless `ml_auth` cookie contract as the current app (same name, payload, key
-derivation, 400-day lifetime), so a signed-in browser stays signed in across the
-cutover; both apps read the same `APP_PASSWORD`. The
-standalone app (`v2_app.py` / `python -m media_library_v2.standalone`) serves the
-client at `/`, keeps `/api/v2` as the API base, and gates every `/api/` route behind
-the cookie (`/api/v2/auth/*`, `/api/v2/health`, `/api/health` and `/static/*` stay
-public). Unauthenticated page requests still receive the SPA shell; every data call
-is an API call, so nothing leaks, and the React `AuthGate` renders the sign-in screen
-in place. Beside v1 the same `/api/v2/auth/session` call is answered `401` by v1's
-middleware, and the client redirects to v1's `/login`. `load_environment()` (called
-only by `main`, never at import) loads `.env` before the app is built, so importing
-the module has no side effects and the suite stays off the developer's settings.
-
-**Cut over.** The live systemd unit runs `v2_app.py` with `V2_OWN_WORKERS=true`; the
-first owned crawl skipped 311 of 312 folders and changed no rows. v1 is no longer
-started, but `app.py` and the `media_library/` package stay in the tree as a fallback
-and as the shared index/thumbnail contract. Remaining known differences from the old
-app: moving a whole folder is supported, but editing a file *inside* a ZIP archive is
-read-only in v2, and non-web containers are transcoded live on playback rather than
-pre-transcoded in the background.
-
-The owned runtime also drains the loose-image WebP queue and the content/visual
-duplicate hash queues in small batches, releasing heap between batches, so the
-post-cutover app keeps the housekeeping the current app did in the background.
-Standalone shuts down with a snapshot (best effort) and redirects old `/v2`
-bookmarks to the same path at the root.
-
-The v2 crawler is incremental (`folders.dir_mtime`), indexes ZIP archives as virtual
-folders (re-checking each known archive even when its parent folder is unchanged),
-and prunes one folder at a time with a mount-safety guard: a child is confirmed gone
-with retries, and if more than half of a folder's indexed children (5+) look missing at
-once, pruning is aborted and the counters surface as stale instead of wiping the
-subtree. The metadata prober runs one FFprobe pass per video and Pillow per image,
-marking failures `0 x 0`; the poster sweep uses the same ffmpeg/Pillow generator as the
-on-demand endpoint and marks persistent failures `has_thumb = -1`. After a successful
-crawl the owned runtime also sweeps cached posters, animated previews and chooser
-frames whose index rows are gone (`cache.sweep_orphaned_artwork`), so artwork for files
-deleted or renamed outside the app does not accumulate; an empty index never triggers a
-sweep. All of it starts only with `V2_OWN_WORKERS=true`; alongside v1 the runtime is a
-no-op.
-
-The sorter's undo stack is in memory and is lost on restart; recent destinations persist
-in `V2_SORTER_STATE`. v2's sorter scans only the incoming folder (one level) and imports
-through the same atomic move + index path as uploads. The download queue and its 500-row
-history are also in memory (as in v1): a restart drops history and stops running jobs,
-and staging directories older than 24 h are swept when the next job is queued.
-
-Dedupe reuses v1's hash formats exactly (`quick_hash = sha256(first 128 KB + size)`,
-`thumb_hash` = 16-hex pHash), so work one app has already done is never repeated.
-Content deletion is always preceded by a full byte comparison; visual clusters use
-complete linkage (every member within pHash distance 2 of every other) and are capped at
-12 files, so a chain of vaguely similar scenes cannot become a mass-delete suggestion.
-The Tools hub links the not-yet-ported tool (backups) to the current app.
-
-ZIP members stream by extracting **one** member into `ZIP_CACHE_DIR/v2_<hash>/` (bounded
-by `ZIP_CACHE_MAX_SIZE_GB`, LRU-trimmed); the cache filename is a hash, so Zip Slip is
-structurally impossible. Missing image posters are generated on demand for loose images
-and ZIP members (`thumbnails.py`), which keeps archive grids cheap. WebP conversion
-reuses `WEBP_QUALITY` / `WEBP_SKIP_LARGER`, moves the cached poster to the new key and
-clears the content hashes; native `.webp` rows are marked optimised without conversion.
-
-Compression builds the archive on local `V2_ZIP_STAGING_DIR` (or `ZIP_STAGING_DIR`),
-verifies it with `testzip()`, copies it to a sibling `.tmp` and `os.replace`s it before
-removing the source folder. Unpacking extracts into a temporary sibling (skipping `..`
-members) and renames it into place. Both replace the affected `folders`/`files` rows in
-one transaction; a crash between the disk change and the commit leaves rows that v1's
-crawler reconciles.
-
-Archive WebP rewriting streams every member into a new archive on local staging,
-converts JPEG/PNG/BMP/TIFF to WebP (PNG losslessly, others at `WEBP_QUALITY`), optionally
-keeps the original when the result would be larger, verifies with `testzip()`, swaps it
-in atomically, purges the member cache, remaps favorites and re-indexes the archive.
-The archive itself is locked while rewriting, so a concurrent compress/unpack cannot
-interleave.
-
-ZIP batches run one archive at a time on a daemon thread; pause takes effect between
-items (an archive is never half-written), cancel clears the queue, and each item calls
-the same validated single-item compress/unpack. State is in memory.
-
-x265 jobs run one at a time (`libx265 -preset medium -crf 18`, overridable through
-`X265_PRESET`/`X265_CRF`), audio stream-copied when MP4-compatible else AAC 192k, and
-commit with a cross-device-safe `os.replace`. The commit (including the full copy
-when the transcode directory and the library are different filesystems) and the
-index rewrite both run in worker threads, so a long conversion never blocks the
-event loop. Non-MP4 sources become an `.mp4` sibling
-and the original is removed; the index row is rewritten (`video_codec='hevc'`,
-`needs_transcode=0`, hashes cleared, `has_thumb=0`) and the stale poster/preview are
-deleted. If the index has no duration yet, one ffprobe call supplies it so progress is
-accurate from the first second. Jobs and history are in memory.
-
-Snapshots live in `.media_library_backup/v2/` so v1's scheduled `library.db` /
-`thumbnails.tar` are never overwritten. The DB copy uses `sqlite3.backup` followed by
-`VACUUM` (the live index carries a large freelist), the tar contains only top-level
-`thumb_*.jpg` files, and meta is swapped in last so a half-written snapshot is never
-reported. Restore replaces the DB and posters only with `V2_ALLOW_LIVE_RESTORE=true`
-(post-cutover); otherwise use `python -m media_library_v2.restore --yes` with the
-service stopped.
+1. [ ] Code follows the module layout above; new logic has type hints and a
+       clear failure mode.
+2. [ ] No directory walk or repeated `stat` in a request handler; no write
+       transaction on the event loop or across remote I/O.
+3. [ ] Connections come from `db.reader()`/`db.writer()` and are always closed.
+4. [ ] New state is visible in `/api/system/status` (or its feature route).
+5. [ ] `./venv/bin/pytest` and `npm test` pass; `npm run build` succeeds.
+6. [ ] `ruff check` and `ruff format --check` pass.
+7. [ ] AGENTS.md, `.env.example`, README and CHANGELOG match the change; the
+       version lives only in `media_library/__init__.py`.
+8. [ ] `/static/dist/` rebuilt if `frontend/` changed; service restarted.
+9. [ ] Nothing personal or secret is staged; the commit is pushed.

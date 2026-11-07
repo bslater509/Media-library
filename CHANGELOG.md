@@ -11,6 +11,40 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Removed
+
+- **The previous application is gone.** Its package, `app.py` entrypoint,
+  HTML templates, Vanilla-JS client, Tailwind/Vite/Vitest configuration and
+  52 test modules were deleted. The rewrite has served `/` since 3.0.0; the
+  fallback it was kept for no longer exists. `media_library_v2/` and `web/`
+  now live at `media_library/` and `frontend/`, `v2_app.py` is `app.py`, the
+  API base is `/api` (docs at `/api/docs`) and the client builds into
+  `static/dist/`. Old `/v2` and `/api/v2` URLs are a clean break — no
+  redirects.
+
+### Changed
+
+- **Configuration names lost the `V2_` prefix** (`OWN_WORKERS`,
+  `DB_READ_ONLY`, `WRITES`, `UPLOAD_STAGING_DIR`, `SORTER_STATE`, …). Every
+  old name is still read as a fallback, so an existing `.env` keeps working.
+- **On-disk defaults follow the rename:** `upload_staging`, `download_staging`,
+  `zip_staging`, `backup_staging`, `sorter_state.json`, and snapshots in
+  `.media_library_backup/` instead of a `v2/` subdirectory. Startup
+  auto-restore reads that single location.
+- **The app owns its index schema.** `media_library/schema.py` creates the five
+  tables at startup (threaded, writes mode only) and drops three indexes no
+  query can use, so an upgraded index and a fresh one share one shape. It never
+  rewrites a row. The People-table cleanup, the one-shot face-artifact purge
+  and the per-startup `webp_optimized` backfill are gone.
+- **`/api/health` answers 503 when the index cannot be read** (it reported
+  `status: degraded` with 200 after the app-level alias was folded into the
+  system router).
+- **The client is one npm project at the repository root** (`npm ci`,
+  `npm run build`, `npm test`); CI runs `lint`, `backend` and one `frontend`
+  job.
+- The `v2`-prefixed entries below predate this change and describe the rewrite
+  while it was still a second app.
+
 ### Fixed
 
 - **v2 folder/ZIP moves rewrote a sibling subtree when a name contained `_` or
