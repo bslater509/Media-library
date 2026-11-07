@@ -134,6 +134,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     database: str
+    commit: str | None = None
 
 
 class AuthSession(BaseModel):

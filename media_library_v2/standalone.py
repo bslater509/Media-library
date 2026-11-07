@@ -30,7 +30,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from media_library_v2 import __version__, auth, backups
+from media_library_v2 import __version__, auth, backups, build_info
 from media_library_v2.config import get_settings, reload_settings
 from media_library_v2.db import is_available, writes_available
 from media_library_v2.mount import api_router
@@ -119,14 +119,15 @@ def build_standalone_app() -> FastAPI:
     async def health_alias():
         """Liveness probe under the path the existing watchdog already polls."""
         healthy = is_available()
-        return JSONResponse(
-            {
-                "status": "ok" if healthy else "degraded",
-                "version": __version__,
-                "database": "ok" if healthy else "unavailable",
-            },
-            status_code=200 if healthy else 503,
-        )
+        commit = build_info.get_commit()
+        body = {
+            "status": "ok" if healthy else "degraded",
+            "version": __version__,
+            "database": "ok" if healthy else "unavailable",
+        }
+        if commit:
+            body["commit"] = commit
+        return JSONResponse(body, status_code=200 if healthy else 503)
 
     # Static assets must be mounted before the SPA catch-all. Vite's build uses
     # the absolute base /static/dist/v2/, which works at both mount points.

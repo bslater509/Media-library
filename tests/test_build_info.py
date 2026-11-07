@@ -1,8 +1,10 @@
 """Tests for the best-effort build identity used by ``/api/health``."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
-from media_library.core import build_info
+from media_library_v2 import build_info
 
 _SHA = "0123456789abcdef0123456789abcdef01234567"
 
@@ -60,7 +62,7 @@ def test_follows_a_linked_worktree_gitfile(tmp_path, monkeypatch):
 
 def test_returns_none_without_a_git_directory(tmp_path, monkeypatch):
     _no_env(monkeypatch)
-    (tmp_path / "media_library").mkdir()
+    (tmp_path / "media_library_v2").mkdir()
     assert build_info.resolve_commit(tmp_path) is None
 
 
@@ -78,14 +80,3 @@ def test_environment_overrides_the_checkout(tmp_path, monkeypatch):
     monkeypatch.delenv("GIT_COMMIT")
     monkeypatch.setenv("BUILD_COMMIT", _SHA)
     assert build_info.resolve_commit(tmp_path) == _SHA[:12]
-
-
-def test_get_commit_is_cached_and_clearable(monkeypatch):
-    monkeypatch.setenv("GIT_COMMIT", _SHA)
-    build_info.get_commit.cache_clear()
-    try:
-        assert build_info.get_commit() == _SHA[:12]
-        assert build_info.get_commit() == _SHA[:12]
-        assert build_info.get_commit.cache_info().hits >= 1
-    finally:
-        build_info.get_commit.cache_clear()

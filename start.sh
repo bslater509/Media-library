@@ -41,4 +41,4 @@ echo "================================================================="
 echo "Press Ctrl+C to stop the server."
 echo ""
 
-exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/app.py" --host "$HOST" --port "$PORT" "$@"
+exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/v2_app.py" --host "$HOST" --port "$PORT" "$@"

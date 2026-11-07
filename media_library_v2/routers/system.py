@@ -7,7 +7,7 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException
 
-from media_library_v2 import __version__, indexer, library, runtime
+from media_library_v2 import __version__, build_info, indexer, library, runtime
 from media_library_v2.config import get_settings
 from media_library_v2.db import is_available, reader, writes_available
 from media_library_v2.schemas import (
@@ -127,9 +127,9 @@ async def status() -> dict:
             "images": totals["images"],
         },
         "workers": {
-            "mode": "shared-v1",
-            "thumbnail": "v1",
-            "indexer": "v2" if settings.own_workers else "v1",
+            "mode": "standalone",
+            "thumbnail": "v2",
+            "indexer": "v2" if settings.own_workers else "off",
         },
         "indexer": indexer.status(),
     }
@@ -149,7 +149,7 @@ async def index_sync() -> dict:
     if not get_settings().own_workers:
         raise HTTPException(
             status_code=409,
-            detail="v1 owns the crawler. Set V2_OWN_WORKERS=true to let v2 sync.",
+            detail="The owned runtime is off. Set OWN_WORKERS=true to let it crawl.",
         )
     import threading
 
@@ -164,8 +164,10 @@ async def index_sync() -> dict:
 @router.get("/health", response_model=HealthResponse)
 async def health() -> dict:
     healthy = is_available()
+    commit = build_info.get_commit()
     return {
         "status": "ok" if healthy else "degraded",
         "version": __version__,
         "database": "ok" if healthy else "unavailable",
+        **({"commit": commit} if commit else {}),
     }

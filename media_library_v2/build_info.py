@@ -1,7 +1,7 @@
 """Best-effort build identity (git commit) for the liveness probe.
 
 The running process could not otherwise say *which* revision it is. The semver
-in :mod:`media_library` only moves at releases, so it cannot tell a freshly
+in :mod:`media_library_v2` only moves at releases, so it cannot tell a freshly
 committed server from a stale one; a short commit SHA can.
 
 Resolution order (first hit wins):
@@ -14,17 +14,19 @@ Resolution order (first hit wins):
    process lifetime.
 
 Nothing here raises: an unpacked tarball, a stripped ``.git`` or an unreadable
-ref yields ``None`` and the probe simply omits the field. Only a 40-hex object
+ref yields ``None`` and the probe simply omits the field. Only a 12-hex object
 id is ever returned, so an odd ``HEAD`` value cannot leak into a public,
 credential-free response.
 """
+
+from __future__ import annotations
 
 import os
 import re
 from functools import lru_cache
 from pathlib import Path
 
-from media_library.core.config import BASE_DIR
+from media_library_v2.config import BASE_DIR
 
 _COMMIT_RE = re.compile(r"[0-9a-fA-F]{40}")
 _HEAD_REF_PREFIX = "ref:"
