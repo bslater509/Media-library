@@ -39,6 +39,7 @@ from media_library.routers import media as media_router
 from media_library.routers import sorter as sorter_router
 from media_library.routers import system as system_router
 from media_library.routers import uploads as uploads_router
+from media_library.routers import verify as verify_router
 from media_library.routers import webp as webp_router
 from media_library.routers import x265 as x265_router
 from media_library.routers import zip as zip_router
@@ -128,6 +129,7 @@ def api_router() -> APIRouter:
     router.include_router(analytics_router.router, tags=["analytics"])
     router.include_router(dedupe_router.router, tags=["dedupe"])
     router.include_router(webp_router.router, tags=["webp"])
+    router.include_router(verify_router.router, tags=["verify"])
     router.include_router(cleanup_router.router, tags=["cleanup"])
     router.include_router(zip_router.router, tags=["zip"])
     router.include_router(zip_batch_router.router, tags=["zip"])
