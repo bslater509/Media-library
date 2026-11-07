@@ -276,6 +276,8 @@ favorites(path PK, created_at)
 watch_history(path PK, first_viewed_at, last_viewed_at,
               seconds_watched, play_count)
 visual_frames(path PK, mtime, size, duration, hashes, captured_at)
+growth_history(day PK, files_count, video_count, image_count,
+               bytes_total, recorded_at)
 ```
 
 Hard contracts:
@@ -342,6 +344,7 @@ daemon thread that pauses between items.
 | `_BatchSweep("content-hashes")` | Quick hashes files that share a size. |
 | `_BatchSweep("visual-hashes")` | pHashes posters for visual duplicate clustering. |
 | Backup thread | Snapshot every `BACKUP_INTERVAL_HOURS` when idle, and once at shutdown. |
+| `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. |
@@ -506,6 +509,8 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `POST /dedupe/resolve` · `POST /dedupe/ignore` · `GET /dedupe/ignored` ·
 `POST /dedupe/unignore` · `POST /dedupe/reset` ·
 `GET /analytics/overview?folder_limit=&file_limit=&refresh=` ·
+`GET /analytics/growth?days=30` (history, oldest first, plus live today counts) ·
+`POST /analytics/growth/refresh` (recompute today's row; 503 read-only) ·
 `GET /folders/empty` · `POST /folders/empty/delete` ·
 `GET /backups/status` · `POST /backups/snapshot` · `GET /backups/verify` ·
 `POST /backups/restore` · `GET /backups/download?kind=db|thumbs`

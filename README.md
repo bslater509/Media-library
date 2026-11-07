@@ -31,7 +31,8 @@ client at `/`, backed by a single SQLite index.
 - **Downloads** — queue one or many URLs into a folder: yt-dlp with a
   gallery-dl fallback, live progress, cancel, retry, paginated history.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and
-  files, media mix, reclaimable space, quality histogram, health pills.
+  files, media mix, reclaimable space, quality histogram, health pills, and a
+  daily growth history recorded automatically (chart library size over time).
 - **Snapshots** — hot SQLite snapshots plus a poster archive with automatic
   startup restore, and snapshots are never taken over a running import.
 - **Access control** — optional shared password (`APP_PASSWORD`) with a

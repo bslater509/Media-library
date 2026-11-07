@@ -11,6 +11,19 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Added
+
+- **Library growth history.** A new owned worker upserts a daily rollup into a
+  `growth_history` index table (`files_count`, `video_count`, `image_count`,
+  `bytes_total`) at process start and whenever the UTC day rolls over, so the
+  analytics dashboard can chart how the library grows. `GET /api/analytics/growth?days=30`
+  returns the recorded days oldest first (capped to `days`, 1–3650) plus today's
+  live counts, so a chart's final point is always fresh, and
+  `POST /api/analytics/growth/refresh` recomputes and upserts today's row on
+  demand (the write runs off the event loop; 503 when the index is read-only).
+  Worker state is visible in `/api/system/index/status` and in the growth
+  response itself.
+
 ### Fixed
 
 - A code audit's findings are fixed and pinned by tests (see
