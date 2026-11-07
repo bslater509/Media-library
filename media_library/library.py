@@ -356,6 +356,46 @@ def search(
     }
 
 
+def watched_unseen(
+    type_filter: str | None = None, limit: int | None = None, offset: int = 0
+) -> dict:
+    """Indexed media never opened yet (the watch-history inverse join)."""
+    settings = get_settings()
+    capped_limit = max(1, min(limit or settings.browse_limit, 2000))
+    capped_offset = max(0, offset)
+    type_sql = ""
+    params: list[Any] = []
+    if type_filter in ("video", "image"):
+        type_sql = " AND f.type = ?"
+        params.append(type_filter)
+    base = (
+        "FROM files f LEFT JOIN watch_history h ON h.path = f.path "
+        "LEFT JOIN favorites fav ON fav.path = f.path "
+        f"WHERE h.path IS NULL{type_sql}"
+    )
+    with reader() as conn:
+        total = int(
+            conn.execute(f"SELECT COUNT(*) AS n {base}", params).fetchone()["n"] or 0
+        )
+        rows = conn.execute(
+            f"""
+            SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END
+                   AS is_favorite, h.seconds_watched, h.play_count,
+                   h.last_viewed_at
+            {base}
+            ORDER BY f.mtime DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [capped_limit, capped_offset],
+        ).fetchall()
+    return {
+        "total": total,
+        "limit": capped_limit,
+        "offset": capped_offset,
+        "files": [_file_entry(r) for r in rows],
+    }
+
+
 def counts() -> dict[str, int]:
     """Global library totals from one aggregate plus two small counts."""
     with reader() as conn:
@@ -369,12 +409,102 @@ def counts() -> dict[str, int]:
         ).fetchone()
         folders = conn.execute("SELECT COUNT(*) AS n FROM folders").fetchone()["n"]
         favorites = conn.execute("SELECT COUNT(*) AS n FROM favorites").fetchone()["n"]
+        watched = conn.execute("SELECT COUNT(*) AS n FROM watch_history").fetchone()[
+            "n"
+        ]
     return {
         "files": row["files"] or 0,
         "folders": folders or 0,
         "videos": row["videos"] or 0,
         "images": row["images"] or 0,
         "favorites": favorites or 0,
+        "watched": watched or 0,
+    }
+
+
+def watched_recent(
+    type_filter: str | None = None, limit: int | None = None, offset: int = 0
+) -> dict:
+    """Recently viewed media, newest view first (index-only watch history)."""
+    settings = get_settings()
+    capped_limit = max(1, min(limit or settings.browse_limit, 2000))
+    capped_offset = max(0, offset)
+    type_sql = ""
+    params: list[Any] = []
+    if type_filter in ("video", "image"):
+        type_sql = " AND f.type = ?"
+        params.append(type_filter)
+    base = (
+        "FROM watch_history h JOIN files f ON f.path = h.path "
+        "LEFT JOIN favorites fav ON fav.path = f.path "
+        f"WHERE 1=1{type_sql}"
+    )
+    with reader() as conn:
+        total = int(
+            conn.execute(f"SELECT COUNT(*) AS n {base}", params).fetchone()["n"] or 0
+        )
+        rows = conn.execute(
+            f"""
+            SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END
+                   AS is_favorite, h.seconds_watched, h.play_count,
+                   h.last_viewed_at
+            {base}
+            ORDER BY h.last_viewed_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [capped_limit, capped_offset],
+        ).fetchall()
+    files = []
+    for row in rows:
+        entry = _file_entry(row)
+        entry["seconds_watched"] = row["seconds_watched"]
+        entry["play_count"] = row["play_count"]
+        entry["last_viewed_at"] = row["last_viewed_at"]
+        files.append(entry)
+    return {
+        "total": total,
+        "limit": capped_limit,
+        "offset": capped_offset,
+        "files": files,
+    }
+
+
+def watched_resume(limit: int | None = None, offset: int = 0) -> dict:
+    """Videos still in progress: started, not yet reached the last half-minute."""
+    settings = get_settings()
+    capped_limit = max(1, min(limit or settings.browse_limit, 2000))
+    capped_offset = max(0, offset)
+    base = (
+        "FROM watch_history h JOIN files f ON f.path = h.path "
+        "LEFT JOIN favorites fav ON fav.path = f.path "
+        "WHERE f.type = 'video' AND h.seconds_watched > 5 "
+        "AND (f.duration IS NULL OR h.seconds_watched < f.duration - 30)"
+    )
+    with reader() as conn:
+        total = int(conn.execute(f"SELECT COUNT(*) AS n {base}").fetchone()["n"] or 0)
+        rows = conn.execute(
+            f"""
+            SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END
+                   AS is_favorite, h.seconds_watched, h.play_count,
+                   h.last_viewed_at
+            {base}
+            ORDER BY h.last_viewed_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (capped_limit, capped_offset),
+        ).fetchall()
+    files = []
+    for row in rows:
+        entry = _file_entry(row)
+        entry["seconds_watched"] = row["seconds_watched"]
+        entry["play_count"] = row["play_count"]
+        entry["last_viewed_at"] = row["last_viewed_at"]
+        files.append(entry)
+    return {
+        "total": total,
+        "limit": capped_limit,
+        "offset": capped_offset,
+        "files": files,
     }
 
 

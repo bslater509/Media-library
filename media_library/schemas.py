@@ -52,6 +52,9 @@ class FileEntry(BaseModel):
     has_thumb: bool = False
     has_animated: bool = False
     is_favorite: bool = False
+    seconds_watched: float | None = None
+    play_count: int | None = None
+    last_viewed_at: float | None = None
     needs_transcode: bool = False
     playable: bool = True
     thumb_url: str
@@ -106,6 +109,7 @@ class Counts(BaseModel):
     videos: int
     images: int
     favorites: int
+    watched: int = 0
 
 
 class InfoResponse(BaseModel):
@@ -222,6 +226,26 @@ class FavoriteBatchResponse(BaseModel):
     updated: int
     counts: FavoriteCounts
     failed: list[Failure] = Field(default_factory=list)
+
+
+class ViewRecordRequest(BaseModel):
+    path: str
+    seconds: float = Field(default=0.0, ge=0, le=604800)
+    bump: bool = True
+
+
+class ViewRecordResponse(BaseModel):
+    path: str
+    seconds_watched: float
+    play_count: int
+    last_viewed_at: float
+
+
+class WatchedListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    files: list[FileEntry]
 
 
 class RenameRequest(BaseModel):

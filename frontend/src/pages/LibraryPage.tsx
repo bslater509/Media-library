@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from '../components/ui'
 import { JustifiedGrid } from '../components/media/JustifiedGrid'
+import { ContinueRail } from '../components/media/ContinueRail'
 import { MediaLightbox } from '../components/media/MediaLightbox'
 import type { FileAction } from '../components/media/MediaTile'
 import {
@@ -83,6 +84,9 @@ export function LibraryPage() {
   )
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  // "Continue watching" opens its own viewer instance so it can carry the
+  // stored playback position without fighting the grid's index.
+  const [resumeFile, setResumeFile] = useState<FileEntry | null>(null)
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null)
   const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([])
   const [moveTargets, setMoveTargets] = useState<FileEntry[]>([])
@@ -625,6 +629,10 @@ export function LibraryPage() {
       </div>
 
       <div className="flex flex-col gap-6 px-3 py-4 sm:px-5">
+        <ContinueRail
+          onOpen={(file) => setResumeFile(file)}
+        />
+
         {query.isError ? (
           <EmptyState
             icon={<AlertTriangle />}
@@ -762,6 +770,16 @@ export function LibraryPage() {
             setBulkRenameOpen(false)
             clearSelection()
           }}
+        />
+      ) : null}
+
+      {resumeFile ? (
+        <MediaLightbox
+          files={[resumeFile]}
+          index={0}
+          onIndexChange={() => {}}
+          startAt={resumeFile.seconds_watched}
+          onClose={() => setResumeFile(null)}
         />
       ) : null}
 

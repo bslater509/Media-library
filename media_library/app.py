@@ -32,6 +32,7 @@ from media_library.routers import cleanup as cleanup_router
 from media_library.routers import dedupe as dedupe_router
 from media_library.routers import downloads as downloads_router
 from media_library.routers import favorites as favorites_router
+from media_library.routers import history as history_router
 from media_library.routers import library as library_router
 from media_library.routers import manage as manage_router
 from media_library.routers import media as media_router
@@ -119,6 +120,7 @@ def api_router() -> APIRouter:
     router.include_router(library_router.router, tags=["library"])
     router.include_router(media_router.router, tags=["media"])
     router.include_router(favorites_router.router, tags=["favorites"])
+    router.include_router(history_router.router, tags=["history"])
     router.include_router(manage_router.router, tags=["manage"])
     router.include_router(uploads_router.router, tags=["uploads"])
     router.include_router(sorter_router.router, tags=["sorter"])

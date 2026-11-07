@@ -24,6 +24,7 @@ import {
 import { api, type FileEntry, type X265Job } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { useGenerateAnimated } from '../../lib/queries'
+import { useViewRecorder } from '../../lib/history'
 import { PosterChooser } from './PosterChooser'
 import {
   codecLabel,
@@ -42,6 +43,12 @@ interface MediaLightboxProps {
   onIndexChange: (index: number) => void
   onClose: () => void
   onAction?: (action: FileAction, file: FileEntry) => void
+  /**
+   * Resume position in seconds for the file that was open when the viewer
+   * opened ("Continue watching"). Seeks once the media element is ready, or
+   * rides along as the transcode `ss` restart for re-encoded sources.
+   */
+  startAt?: number | null
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
@@ -53,6 +60,7 @@ export function MediaLightbox({
   onIndexChange,
   onClose,
   onAction,
+  startAt = null,
 }: MediaLightboxProps) {
   const file = files[index]
   // A refetch can shrink the list while the viewer is open (a move, delete
@@ -76,8 +84,19 @@ export function MediaLightbox({
   const [posterVersion, setPosterVersion] = useState(0)
   const [chooserOpen, setChooserOpen] = useState(false)
   const [chooserTime, setChooserTime] = useState(0)
+  // Resume position, consumed by the first file it was opened on. Kept in
+  // state so navigation (next/previous) neither re-seeks nor loses it.
+  const [pendingStart, setPendingStart] = useState<{ path: string; seconds: number } | null>(
+    () =>
+      startAt && file && file.type === 'video'
+        ? { path: file.path, seconds: startAt }
+        : null,
+  )
   const generateAnimated = useGenerateAnimated()
   const queryClient = useQueryClient()
+  // Watch history: one inline recording when the video plays (~10 s in) and
+  // one with the final position when the viewer closes or moves on.
+  useViewRecorder(file ?? null, videoRef)
   const x265Active = x265?.status === 'queued' || x265?.status === 'running'
 
   useEffect(() => {
@@ -169,6 +188,37 @@ export function MediaLightbox({
     if (videoRef.current) videoRef.current.playbackRate = speed
   }, [speed, index])
 
+  // Resume: seek once the media element has its metadata, then consume the
+  // pending position. Re-encoded sources restart the whole fragmented-MP4
+  // pipe instead, so their `ss` parameter is applied when the URL is built.
+  useEffect(() => {
+    if (!pendingStart || pendingStart.path !== file.path) return
+    if (file.type !== 'video') return
+    const element = videoRef.current
+    if (!element) return
+    if (!file.playable) {
+      setPendingStart(null)
+      return
+    }
+    let cancelled = false
+    const seek = () => {
+      element.removeEventListener('loadedmetadata', seek)
+      if (cancelled) return
+      try {
+        element.currentTime = pendingStart.seconds
+      } catch {
+        /* an unloadable stream has nothing to resume into */
+      }
+      setPendingStart(null)
+    }
+    if (element.readyState >= 1) seek()
+    else element.addEventListener('loadedmetadata', seek)
+    return () => {
+      cancelled = true
+      element.removeEventListener('loadedmetadata', seek)
+    }
+  }, [pendingStart, file.type, file.playable, file.path])
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -227,9 +277,19 @@ export function MediaLightbox({
   const codec = codecLabel(file.video_codec)
   const captured = formatClock(file.capture_time)
   const isVideo = file.type === 'video'
-  const videoSrc = file.playable
-    ? file.media_url
-    : (file.transcode_url ?? file.media_url)
+  // When resuming through the transcode pipe the offset must be in the URL:
+  // the fragmented stream has no ranges to seek into.
+  const resumeAt =
+    pendingStart && pendingStart.path === file.path && file.type === 'video'
+      ? pendingStart.seconds
+      : null
+  const transcodeSource = file.transcode_url ?? file.media_url
+  const videoSrc =
+    resumeAt !== null && !file.playable && file.transcode_url
+      ? `${file.transcode_url}${file.transcode_url.includes('?') ? '&' : '?'}ss=${Math.floor(Math.max(0, resumeAt))}`
+      : file.playable
+        ? file.media_url
+        : transcodeSource
   const posterSrc = file.has_thumb
     ? `${file.thumb_url}${posterVersion ? `&v=${posterVersion}` : ''}`
     : undefined

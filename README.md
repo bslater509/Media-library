@@ -5,7 +5,7 @@ image collections — often tens of thousands of files on a slow remote mount
 (pCloud, NFS). One FastAPI process serves a JSON API at `/api` and a React
 client at `/`, backed by a single SQLite index.
 
-**Current release: v3.0.1** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v3.1.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 
@@ -15,6 +15,9 @@ client at `/`, backed by a single SQLite index.
   filenames *and* library-relative folder paths, justified natural-ratio tiles,
   a fullscreen viewer with byte-range streaming, favorites, and multi-select
   bulk move / delete / rename / star / WebP.
+- **Watch history** — a server-side record of what you actually watched: a
+  Continue-watching rail on the Library page, resume-at-position playback, and
+  a View history page split into Continue / Recently viewed / Never watched.
 - **Sorter** — review an incoming folder with autoplay and pre-buffering, then
   move with `1`–`6`, a folder search (`/`) and `Enter`, with a duplicate
   warning, undo, rename, delete and live transcoding for MKV/AVI/WMV.

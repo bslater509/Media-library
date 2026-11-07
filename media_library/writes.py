@@ -14,6 +14,7 @@ into a 503.
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import threading
@@ -177,6 +178,7 @@ def _apply_file_move(conn, old: str, new: str) -> None:
         ),
     )
     conn.execute("UPDATE favorites SET path = ? WHERE path = ?", (new, old))
+    conn.execute("UPDATE watch_history SET path = ? WHERE path = ?", (new, old))
     conn.execute("DELETE FROM visual_frames WHERE path = ?", (old,))
     _recompute_folder(conn, os.path.dirname(old))
     if os.path.dirname(new) != os.path.dirname(old):
@@ -265,6 +267,56 @@ def set_favorites(paths: list[str], action: str = "toggle") -> dict[str, Any]:
                 updated += 1
         counts = _favorite_counts(conn)
     return {"updated": updated, "counts": counts, "failed": failed}
+
+
+def record_view(path: str, seconds: float = 0.0, bump: bool = True) -> dict[str, Any]:
+    """Record one viewing of an indexed file (server-side watch history).
+
+    One rollup row per file: ``seconds_watched`` keeps its high-water mark, so
+    scrubbing or watching a shorter clip of the same file never erases
+    remembered progress. ``play_count`` increments only when ``bump`` — the
+    client sends one bumping record per viewing session (the progress check-in)
+    and non-bumping follow-ups (the closing record), so a single viewing stays
+    one play. The caller runs this off the event loop (AGENTS.md Rule 3).
+    """
+    seconds = float(seconds)
+    if not math.isfinite(seconds) or seconds < 0:
+        raise WriteError("Invalid seconds value", 400)
+    seconds = min(seconds, 86400.0 * 7)
+    target = resolve_library_path(path)
+    now = time.time()
+    bump_sql = "watch_history.play_count + 1" if bump else "watch_history.play_count"
+    with writer() as conn, conn:
+        exists = conn.execute(
+            "SELECT 1 FROM files WHERE path = ?", (target,)
+        ).fetchone()
+        if exists is None:
+            raise WriteError("Not indexed", 404)
+        conn.execute(
+            f"""
+            INSERT INTO watch_history
+                (path, first_viewed_at, last_viewed_at,
+                 seconds_watched, play_count)
+            VALUES (?, ?, ?, ?, 1)
+            ON CONFLICT(path) DO UPDATE SET
+                last_viewed_at = excluded.last_viewed_at,
+                play_count = {bump_sql},
+                seconds_watched = MAX(watch_history.seconds_watched,
+                                      excluded.seconds_watched)
+            """,
+            (target, now, now, seconds),
+        )
+        state = conn.execute(
+            "SELECT seconds_watched, play_count, last_viewed_at FROM "
+            "watch_history WHERE path = ?",
+            (target,),
+        ).fetchone()
+    return {
+        "path": target,
+        "seconds_watched": state["seconds_watched"],
+        "play_count": state["play_count"],
+        "last_viewed_at": state["last_viewed_at"],
+    }
 
 
 def bulk_rename(items: list[dict[str, str]]) -> dict[str, Any]:
@@ -383,6 +435,11 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                     (target, len(prefix), prefix),
                 )
                 conn.execute(
+                    "DELETE FROM watch_history WHERE path = ? "
+                    "OR substr(path, 1, ?) = ?",
+                    (target, len(prefix), prefix),
+                )
+                conn.execute(
                     "DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ? "
                     "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
                     (target, target, len(prefix), prefix, len(prefix), prefix),
@@ -400,6 +457,7 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                 doomed_thumbs.append((target, mtime, size))
                 conn.execute("DELETE FROM files WHERE path = ?", (target,))
                 conn.execute("DELETE FROM favorites WHERE path = ?", (target,))
+                conn.execute("DELETE FROM watch_history WHERE path = ?", (target,))
                 conn.execute(
                     "DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ?",
                     (target, target),
@@ -478,6 +536,11 @@ def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
                 (target, cut, cut, prefix),
             )
             conn.execute(
+                "UPDATE watch_history SET path = ? || substr(path, ?) "
+                "WHERE substr(path, 1, ?) = ?",
+                (target, cut, cut, prefix),
+            )
+            conn.execute(
                 "UPDATE ignored_duplicates SET "
                 "path1 = CASE WHEN substr(path1, 1, ?) = ? "
                 "THEN ? || substr(path1, ?) ELSE path1 END, "
@@ -522,6 +585,11 @@ def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
             )
             conn.execute(
                 "UPDATE favorites SET path = ? || substr(path, ?) "
+                "WHERE path = ? OR substr(path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
+            )
+            conn.execute(
+                "UPDATE watch_history SET path = ? || substr(path, ?) "
                 "WHERE path = ? OR substr(path, 1, ?) = ?",
                 (target, cut, source, cut, prefix),
             )
@@ -935,6 +1003,7 @@ def remove_index_entry(path: str) -> None:
             size = int(row["size"] or 0)
         conn.execute("DELETE FROM files WHERE path = ?", (path,))
         conn.execute("DELETE FROM favorites WHERE path = ?", (path,))
+        conn.execute("DELETE FROM watch_history WHERE path = ?", (path,))
         conn.execute("DELETE FROM visual_frames WHERE path = ?", (path,))
         _recompute_folder(conn, os.path.dirname(path))
     _remove_thumbs(path, mtime, size)

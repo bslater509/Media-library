@@ -119,6 +119,24 @@ snapshot metadata.
   encoders, and the command palette does not search on the very first
   keystroke.
 
+## [3.1.0] - 2026-11-07
+
+### Added
+
+- **Server-backed watch history.** Opening a file in the fullscreen viewer
+  records one event (`POST /api/history/record`), stored as a per-path rollup
+  in a new `watch_history` index table (`first_viewed_at`, `last_viewed_at`,
+  high-water `seconds_watched`, `play_count`) — scrubbing shorter or
+  rewatching never erases remembered progress. Two listings serve the new
+  View history page: `GET /api/history/recent` (newest view first, with an
+  optional `type` filter), `GET /api/history/resume` (videos still in
+  progress) and `GET /api/history/unwatched` (never opened, newest files
+  first). Rename, move and delete keep the rollups aligned with the index the
+  same way favorites are, `/api/system/info` counts gains a `watched` total,
+  the Library page grows a "Continue watching" rail, and the viewer resumes
+  playback where you left off. Writes require a writable index like every
+  other mutation (503 otherwise); rows land off the event loop (Rule 3).
+
 ## [3.0.1] - 2026-11-07
 
 ### Fixed

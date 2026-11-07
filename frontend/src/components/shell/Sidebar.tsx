@@ -4,6 +4,7 @@ import {
   Download,
   Folder,
   Gauge,
+  History,
   LayoutGrid,
   Search,
   Settings,
@@ -21,6 +22,7 @@ const NAV = [
   { to: '/tools', label: 'Tools', icon: Wrench },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/favorites', label: 'Favorites', icon: Star },
+  { to: '/history', label: 'History', icon: History },
 ]
 
 export function Sidebar() {

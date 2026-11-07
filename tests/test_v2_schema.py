@@ -71,6 +71,7 @@ SLIM_INDEXES = {
     "idx_ignored_p1_p2",
     "idx_ignored_created_at",
     "idx_favorites_created_at",
+    "idx_watch_history_last_viewed",
 }
 
 # The shape the previous app left behind: every index it created (including the
@@ -167,6 +168,7 @@ def test_fresh_schema_has_every_column_and_index(tmp_path):
         "files",
         "folders",
         "ignored_duplicates",
+        "watch_history",
         "visual_frames",
         "webp_stats",
     }

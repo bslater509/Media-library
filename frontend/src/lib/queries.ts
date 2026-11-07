@@ -21,6 +21,9 @@ export const queryKeys = {
   search: (query: string, type: string, sort: string, limit?: number) =>
     ['search', query, type, sort, limit ?? 200] as const,
   favorites: (type: string) => ['favorites', type] as const,
+  watchRecent: (type: string) => ['history', 'recent', type] as const,
+  watchResume: ['history', 'resume'] as const,
+  watchUnseen: (type: string) => ['history', 'unwatched', type] as const,
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
@@ -199,6 +202,59 @@ export function useFavorites(type = 'all') {
     queryKey: queryKeys.favorites(type),
     queryFn: () => api.favorites(type === 'all' ? undefined : type),
     staleTime: 15_000,
+  })
+}
+
+export function useWatchHistoryRecent(type = 'all', limit = 200) {
+  return useQuery({
+    queryKey: queryKeys.watchRecent(type),
+    queryFn: () =>
+      api.watchHistoryRecent({
+        type: type === 'video' || type === 'image' ? type : undefined,
+        limit,
+      }),
+    staleTime: 15_000,
+  })
+}
+
+/** Videos started but not finished — the "Continue watching" backing store. */
+export function useWatchHistoryResume(limit = 100) {
+  return useQuery({
+    queryKey: queryKeys.watchResume,
+    queryFn: () => api.watchHistoryResume({ limit }),
+    staleTime: 15_000,
+  })
+}
+
+export function useWatchHistoryUnseen(type = 'all', limit = 200) {
+  return useQuery({
+    queryKey: queryKeys.watchUnseen(type),
+    queryFn: () =>
+      api.watchHistoryUnseen({
+        type: type === 'video' || type === 'image' ? type : undefined,
+        limit,
+      }),
+    staleTime: 15_000,
+  })
+}
+
+/** Record one viewing; history listings (and the watched count) refresh. */
+export function useRecordView() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      path,
+      seconds,
+      bump = true,
+    }: {
+      path: string
+      seconds: number
+      bump?: boolean
+    }) => api.recordView(path, seconds, bump),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['history'] })
+      void client.invalidateQueries({ queryKey: queryKeys.info })
+    },
   })
 }
 

@@ -66,6 +66,23 @@ export function formatClock(timestamp: number | null | undefined): string | null
   })
 }
 
+/** Seconds-epoch → "3 hours ago" (Intl.RelativeTimeFormat; null when unknown). */
+export function formatRelativeTime(timestamp: number | null | undefined): string | null {
+  if (!timestamp || timestamp <= 0) return null
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const deltaSeconds = (timestamp * 1000 - Date.now()) / 1000
+  const minutes = deltaSeconds / 60
+  if (Math.abs(minutes) < 1) return formatter.format(Math.round(deltaSeconds), 'second')
+  if (Math.abs(minutes) < 60) return formatter.format(Math.round(minutes), 'minute')
+  const hours = minutes / 60
+  if (Math.abs(hours) < 24) return formatter.format(Math.round(hours), 'hour')
+  const days = hours / 24
+  if (Math.abs(days) < 7) return formatter.format(Math.round(days), 'day')
+  if (Math.abs(days) < 31) return formatter.format(Math.round(days / 7), 'week')
+  if (Math.abs(days) < 365) return formatter.format(Math.round(days / 30.44), 'month')
+  return formatter.format(Math.round(days / 365.25), 'year')
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }

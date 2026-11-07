@@ -283,6 +283,7 @@ def test_system_info_reports_totals(v2_env):
         "videos": 1,
         "images": 1,
         "favorites": 1,
+        "watched": 0,
     }
     assert info["features"]["browse"] is True
     assert client.get("/api/health").json()["status"] == "ok"

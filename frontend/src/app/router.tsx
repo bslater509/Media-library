@@ -7,6 +7,7 @@ import { BackupsPage } from '../pages/BackupsPage'
 import { DedupePage } from '../pages/DedupePage'
 import { DownloadsPage } from '../pages/DownloadsPage'
 import { EmptyFoldersPage } from '../pages/EmptyFoldersPage'
+import { HistoryPage } from '../pages/HistoryPage'
 import { ImagesPage } from '../pages/ImagesPage'
 import { FavoritesPage } from '../pages/FavoritesPage'
 import { LibraryPage } from '../pages/LibraryPage'
@@ -61,6 +62,7 @@ export const router = createBrowserRouter(
         { path: 'library', element: <LibraryPage /> },
         { path: 'search', element: <SearchPage /> },
         { path: 'favorites', element: <FavoritesPage /> },
+        { path: 'history', element: <HistoryPage /> },
         { path: 'sorter', element: <SorterPage /> },
         { path: 'downloads', element: <DownloadsPage /> },
         {

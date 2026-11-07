@@ -49,6 +49,9 @@ export interface FileEntry {
   has_thumb: boolean
   has_animated: boolean
   is_favorite: boolean
+  seconds_watched: number | null
+  play_count: number | null
+  last_viewed_at: number | null
   needs_transcode: boolean
   playable: boolean
   thumb_url: string
@@ -103,6 +106,7 @@ export interface Counts {
   videos: number
   images: number
   favorites: number
+  watched: number
 }
 
 export interface InfoResponse {
@@ -114,6 +118,22 @@ export interface InfoResponse {
 
 export interface FavoritesResponse {
   counts: Counts
+  files: FileEntry[]
+}
+
+/** One rollup row after a viewing was recorded. */
+export interface ViewRecordResponse {
+  path: string
+  seconds_watched: number
+  play_count: number
+  last_viewed_at: number
+}
+
+/** One of the watch-history listings: recent, in-progress or never viewed. */
+export interface WatchedListResponse {
+  total: number
+  limit: number
+  offset: number
   files: FileEntry[]
 }
 
@@ -803,6 +823,30 @@ export const api = {
 
   favorites: (type?: string) =>
     request<FavoritesResponse>('/library/favorites', { type }),
+
+  /** `bump` counts a play; closing/progress follow-ups send `bump: false`. */
+  recordView: (path: string, seconds: number, bump = true) =>
+    post<ViewRecordResponse>('/history/record', { path, seconds, bump }),
+
+  watchHistoryRecent: (options: { type?: 'video' | 'image'; limit?: number; offset?: number } = {}) =>
+    request<WatchedListResponse>('/history/recent', {
+      type: options.type,
+      limit: options.limit,
+      offset: options.offset ?? 0,
+    }),
+
+  watchHistoryResume: (options: { limit?: number; offset?: number } = {}) =>
+    request<WatchedListResponse>('/history/resume', {
+      limit: options.limit,
+      offset: options.offset ?? 0,
+    }),
+
+  watchHistoryUnseen: (options: { type?: 'video' | 'image'; limit?: number; offset?: number } = {}) =>
+    request<WatchedListResponse>('/history/unwatched', {
+      type: options.type,
+      limit: options.limit,
+      offset: options.offset ?? 0,
+    }),
 
   toggleFavorite: (path: string) =>
     post<FavoriteResponse>('/favorites/toggle', { path }),

@@ -184,7 +184,8 @@ media-library/
 │   ├── views.py               # SPA shell delivery
 │   └── routers/               # auth, system, library, media, favorites, manage,
 │                              # uploads, sorter, downloads, analytics, dedupe,
-│                              # webp, cleanup, zip, zip_batch, backups, x265
+│                              # webp, cleanup, zip, zip_batch, backups, x265,
+│                              # history
 │
 ├── frontend/                  # React client source
 │   ├── index.html             # Vite entry (build only; not served directly)
@@ -272,6 +273,8 @@ files  (path PK, name, folder_path, type, ext, size, size_formatted, mtime,
 webp_stats(id=1, saved_bytes, converted_count, skipped_count)
 ignored_duplicates(id PK, path1, path2, match_type, created_at, UNIQUE(path1,path2))
 favorites(path PK, created_at)
+watch_history(path PK, first_viewed_at, last_viewed_at,
+              seconds_watched, play_count)
 visual_frames(path PK, mtime, size, duration, hashes, captured_at)
 ```
 
@@ -297,11 +300,17 @@ Hard contracts:
   file's `mtime`/`size` changes, so a visual group can be double-checked
   without re-running FFmpeg every page load.
 
+- `watch_history` is one rollup row per viewed file: `play_count` counts
+  recordings, `seconds_watched` keeps a high-water mark (a shorter rewatch or
+  backward scrub never shrinks progress). Rename/move rewrites the path and
+  delete drops the row, exactly like favorites.
+
 Indexes: `files(folder_path)`, `files(folder_path, LOWER(name))`, `files(type)`,
 `files(has_thumb)`, `files(has_animated)`, `files(size)`, `files(quick_hash)`,
 `files(thumb_hash)`, `files(width)`, `folders(parent_path)`,
 `folders(parent_path, LOWER(name))`, `ignored_duplicates(path1, path2)`,
-`ignored_duplicates(created_at DESC)`, `favorites(created_at DESC)`.
+`ignored_duplicates(created_at DESC)`, `favorites(created_at DESC)`,
+`watch_history(last_viewed_at DESC)`.
 
 ### Artwork cache keys (never change)
 
@@ -452,6 +461,11 @@ unavailable / read-only).
 `GET /favorites/counts` · `POST /favorites/toggle` · `POST /favorites/batch` ·
 `POST /manage/rename` · `POST /manage/bulk-rename` · `POST /manage/delete` ·
 `POST /manage/folders` · `POST /manage/folders/rename` · `POST /manage/move`
+
+### Watch history (`routers/history.py`)
+`POST /history/record` (rollup upsert; 503 when the index is read-only) ·
+`GET /history/recent?type=&limit=&offset=` · `GET /history/resume?limit=&offset=`
+(videos in progress) · `GET /history/unwatched?type=&limit=&offset=`
 
 ### Uploads (`routers/uploads.py`)
 `GET /uploads/status?upload_id=` · `POST /uploads/chunk` (explicit byte offset;

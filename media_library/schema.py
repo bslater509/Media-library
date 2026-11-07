@@ -111,6 +111,15 @@ _TABLES = (
         captured_at REAL NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS watch_history (
+        path TEXT PRIMARY KEY,
+        first_viewed_at REAL NOT NULL,
+        last_viewed_at REAL NOT NULL,
+        seconds_watched REAL NOT NULL,
+        play_count INTEGER NOT NULL
+    )
+    """,
 )
 
 # Every index below backs a predicate or ordering in this package; see the
@@ -130,6 +139,10 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_ignored_p1_p2 ON ignored_duplicates(path1, path2)",
     "CREATE INDEX IF NOT EXISTS idx_ignored_created_at ON ignored_duplicates(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON favorites(created_at DESC)",
+    (
+        "CREATE INDEX IF NOT EXISTS idx_watch_history_last_viewed "
+        "ON watch_history(last_viewed_at DESC)"
+    ),
 )
 
 _SEED = (
@@ -209,7 +222,8 @@ def table_columns(path: str | Path | None = None) -> dict[str, list[str]]:
             for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' "
                 "AND name IN ('folders', 'files', 'webp_stats', "
-                "'ignored_duplicates', 'favorites', 'visual_frames') ORDER BY name"
+                "'ignored_duplicates', 'favorites', 'visual_frames', "
+                "'watch_history') ORDER BY name"
             )
         ]
         return {
