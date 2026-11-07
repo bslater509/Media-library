@@ -943,3 +943,24 @@ class AnalyticsOverview(BaseModel):
     quality: dict[str, Any]
     reclaimable: dict[str, Any]
     health: dict[str, Any]
+
+
+class GrowthPoint(BaseModel):
+    """One day of the library rollup; ``live=True`` marks today's live counts."""
+
+    day: str
+    files_count: int
+    video_count: int
+    image_count: int
+    bytes_total: int
+    recorded_at: float | None = None
+    live: bool = False
+
+
+class AnalyticsGrowth(BaseModel):
+    """Recorded growth history (oldest first) plus today's live counts."""
+
+    days: int
+    history: list[GrowthPoint]
+    today: GrowthPoint
+    worker: dict[str, Any] | None = None

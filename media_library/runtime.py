@@ -11,7 +11,7 @@ import gc
 import logging
 import threading
 
-from media_library import backups, dedupe, webp
+from media_library import backups, dedupe, growth, webp
 from media_library.config import get_settings
 from media_library.indexer import CrawlerThread
 from media_library.probe import MetadataWorker
@@ -27,6 +27,7 @@ _content_hashes: _BatchSweep | None = None
 _visual_hashes: _BatchSweep | None = None
 _backup_stop = threading.Event()
 _backup_thread: threading.Thread | None = None
+_growth = None
 _started = False
 
 
@@ -106,7 +107,7 @@ _backups = None
 def start_runtime() -> bool:
     """Start the owned workers, or do nothing when they are disabled."""
     global _crawler, _metadata, _thumbnails, _backups, _started
-    global _webp, _content_hashes, _visual_hashes
+    global _webp, _content_hashes, _visual_hashes, _growth
     settings = get_settings()
     if not settings.own_workers:
         logger.info("[api] Owned workers are disabled (OWN_WORKERS=false)")
@@ -123,6 +124,7 @@ def start_runtime() -> bool:
     _content_hashes = _BatchSweep("content-hashes", lambda: dedupe.hash_content(50))
     _visual_hashes = _BatchSweep("visual-hashes", lambda: dedupe.hash_visual(50))
     _backups = _BackupWatcher(settings.backup_interval_hours)
+    _growth = growth.GrowthWorker()
     _crawler.start()
     _metadata.start()
     _thumbnails.start()
@@ -130,6 +132,8 @@ def start_runtime() -> bool:
     _content_hashes.start()
     _visual_hashes.start()
     _backups.start()
+    growth.register_worker(_growth)
+    _growth.start()
     _started = True
     logger.info("[api] Owned worker runtime started")
     return True
@@ -145,6 +149,7 @@ def stop_runtime() -> None:
         _content_hashes,
         _visual_hashes,
         _backups,
+        _growth,
     ):
         if worker is not None:
             try:
@@ -152,6 +157,7 @@ def stop_runtime() -> None:
             except Exception:
                 pass
     _started = False
+    growth.register_worker(None)
 
 
 def runtime_status() -> dict[str, object]:
@@ -166,4 +172,5 @@ def runtime_status() -> dict[str, object]:
         "content_hashes": bool(_content_hashes),
         "visual_hashes": bool(_visual_hashes),
         "backups": bool(_backups),
+        "growth": bool(_growth),
     }

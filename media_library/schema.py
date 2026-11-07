@@ -120,6 +120,16 @@ _TABLES = (
         play_count INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS growth_history (
+        day TEXT PRIMARY KEY,
+        files_count INTEGER NOT NULL,
+        video_count INTEGER NOT NULL,
+        image_count INTEGER NOT NULL,
+        bytes_total INTEGER NOT NULL,
+        recorded_at REAL NOT NULL
+    )
+    """,
 )
 
 # Every index below backs a predicate or ordering in this package; see the
