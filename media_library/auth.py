@@ -98,7 +98,10 @@ def check_password(provided: str) -> bool:
     password = get_app_password()
     if not password:
         return True
-    return hmac.compare_digest(provided or "", password)
+    # Compare bytes: str compare_digest rejects non-ASCII input with TypeError.
+    return hmac.compare_digest(
+        (provided or "").encode("utf-8"), password.encode("utf-8")
+    )
 
 
 def set_auth_cookie(response, password: str) -> None:

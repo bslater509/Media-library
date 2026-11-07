@@ -42,15 +42,26 @@ interface UploadOptions {
 }
 
 interface UploadApi {
-  uploadStatus: (uploadId: string) => Promise<{ received_bytes: number; exists: boolean }>
-  uploadChunk: (uploadId: string, offset: number, chunk: Blob) => Promise<unknown>
-  uploadFinalize: (payload: {
-    upload_id: string
-    name: string
-    folder: string
-    total_size: number
-    conflict?: 'auto_rename' | 'skip' | 'error'
-  }) => Promise<{ skipped: boolean; path: string }>
+  uploadStatus: (
+    uploadId: string,
+    init?: RequestInit,
+  ) => Promise<{ received_bytes: number; exists: boolean }>
+  uploadChunk: (
+    uploadId: string,
+    offset: number,
+    chunk: Blob,
+    init?: RequestInit,
+  ) => Promise<unknown>
+  uploadFinalize: (
+    payload: {
+      upload_id: string
+      name: string
+      folder: string
+      total_size: number
+      conflict?: 'auto_rename' | 'skip' | 'error'
+    },
+    init?: RequestInit,
+  ) => Promise<{ skipped: boolean; path: string }>
   uploadCancel: (uploadId: string) => Promise<unknown>
 }
 
@@ -79,31 +90,51 @@ export async function uploadFile(
 
   report('queued')
 
-  const existing = await api.uploadStatus(uploadId)
+  const existing = await api.uploadStatus(uploadId, {
+    signal: options.signal,
+  })
   sent = Math.min(existing.received_bytes, file.size)
   report(sent === file.size ? 'queued' : 'uploading')
 
-  if (sent < file.size) {
-    while (sent < file.size) {
-      if (options.signal?.aborted) {
-        await api.uploadCancel(uploadId)
-        throw new DOMException('Upload cancelled', 'AbortError')
+  try {
+    if (sent < file.size) {
+      while (sent < file.size) {
+        if (options.signal?.aborted) {
+          await api.uploadCancel(uploadId)
+          throw new DOMException('Upload cancelled', 'AbortError')
+        }
+        const end = Math.min(sent + CHUNK_SIZE, file.size)
+        const chunk = file.slice(sent, end)
+        // The chunk transfer itself honours the signal: cancel acts on an
+        // in-flight 4 MB chunk instead of waiting for it to land first.
+        await api.uploadChunk(uploadId, sent, chunk, { signal: options.signal })
+        sent = end
+        report('uploading')
       }
-      const end = Math.min(sent + CHUNK_SIZE, file.size)
-      const chunk = file.slice(sent, end)
-      await api.uploadChunk(uploadId, sent, chunk)
-      sent = end
-      report('uploading')
     }
-  }
 
-  const result = await api.uploadFinalize({
-    upload_id: uploadId,
-    name: file.name,
-    folder: options.folder,
-    total_size: file.size,
-    conflict: options.conflict ?? 'auto_rename',
-  })
-  report(result.skipped ? 'skipped' : 'done')
-  return result
+    const result = await api.uploadFinalize(
+      {
+        upload_id: uploadId,
+        name: file.name,
+        folder: options.folder,
+        total_size: file.size,
+        conflict: options.conflict ?? 'auto_rename',
+      },
+      { signal: options.signal },
+    )
+    report(result.skipped ? 'skipped' : 'done')
+    return result
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      error.name === 'AbortError' &&
+      options.signal?.aborted
+    ) {
+      // A fetch aborted by our signal: make sure staging does not linger.
+      await api.uploadCancel(uploadId).catch(() => undefined)
+      throw new DOMException('Upload cancelled', 'AbortError')
+    }
+    throw error
+  }
 }

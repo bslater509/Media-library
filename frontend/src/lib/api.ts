@@ -1,7 +1,7 @@
 /**
- * Typed client for the v2 API.
+ * Typed client for the app's JSON API.
  *
- * The shapes mirror `media_library_v2/schemas.py`. When the app moves to a
+ * The shapes mirror `media_library/schemas.py`. When the app moves to a
  * generated client (`openapi-typescript`), this file is the only place that
  * changes — features import the hooks from `queries.ts`, never `fetch`.
  */
@@ -747,11 +747,12 @@ async function request<T>(
   return (await response.json()) as T
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, init?: RequestInit): Promise<T> {
   return request<T>(path, undefined, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    ...init,
   })
 }
 
@@ -830,10 +831,15 @@ export const api = {
   moveFiles: (paths: string[], destination: string, conflict: ConflictPolicy) =>
     post<MoveResponse>('/manage/move', { paths, destination, conflict }),
 
-  uploadStatus: (uploadId: string) =>
-    request<UploadStatus>('/uploads/status', { upload_id: uploadId }),
+  uploadStatus: (uploadId: string, init?: RequestInit) =>
+    request<UploadStatus>('/uploads/status', { upload_id: uploadId }, init),
 
-  uploadChunk: async (uploadId: string, offset: number, chunk: Blob) => {
+  uploadChunk: async (
+    uploadId: string,
+    offset: number,
+    chunk: Blob,
+    init?: RequestInit,
+  ) => {
     const form = new FormData()
     form.set('upload_id', uploadId)
     form.set('offset', String(offset))
@@ -842,6 +848,7 @@ export const api = {
       method: 'POST',
       credentials: 'same-origin',
       body: form,
+      ...init,
     })
     if (!response.ok) {
       const body = (await response.json().catch(() => ({}))) as { detail?: string }
@@ -850,13 +857,17 @@ export const api = {
     return (await response.json()) as UploadChunkResponse
   },
 
-  uploadFinalize: (payload: {
-    upload_id: string
-    name: string
-    folder: string
-    total_size: number
-    conflict?: ConflictPolicy
-  }) => post<UploadFinalizeResponse>('/uploads/finalize', payload),
+  uploadFinalize: (
+    payload: {
+      upload_id: string
+      name: string
+      folder: string
+      total_size: number
+      conflict?: ConflictPolicy
+    },
+    init?: RequestInit,
+  ) =>
+    post<UploadFinalizeResponse>('/uploads/finalize', payload, init),
 
   uploadCancel: (uploadId: string) =>
     post<{ cancelled: boolean }>('/uploads/cancel', { upload_id: uploadId }),

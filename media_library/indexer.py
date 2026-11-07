@@ -178,19 +178,47 @@ def _index_zip(conn, path: str, stat: os.stat_result) -> int:
     return count
 
 
-def _scan_folder(conn, folder: str, stat: os.stat_result) -> list[str]:
-    """Scan one folder, upsert entries, prune vanished ones. Returns child dirs."""
-    conn.execute(
-        """
-        INSERT INTO folders
-            (path, name, parent_path, file_count, subfolder_count, last_scanned,
-             is_zip, total_size, dir_mtime)
-        VALUES (?, ?, ?, 0, 0, 0, 0, 0, NULL)
-        ON CONFLICT(path) DO UPDATE SET
-            name = excluded.name, parent_path = excluded.parent_path, is_zip = 0
-        """,
-        (folder, os.path.basename(folder) or folder, os.path.dirname(folder)),
-    )
+def _read_zip_infos(path: str) -> list[zipfile.ZipInfo] | None:
+    """Central directory of an archive; None when it cannot be read."""
+    try:
+        with zipfile.ZipFile(path) as bundle:
+            return bundle.infolist()
+    except (zipfile.BadZipFile, OSError):
+        return None
+
+
+def _index_zip_path(path: str, stat: os.stat_result) -> None:
+    """Re-index a changed archive, keeping remote reads outside the write txn."""
+    infos = _read_zip_infos(path)
+    if infos is None:
+        return
+    with writer() as conn, conn:
+        # The archive may have changed (or been indexed by a folder scan)
+        # while we were reading its central directory; only apply SQL.
+        row = conn.execute(
+            "SELECT is_zip, dir_mtime FROM folders WHERE path = ?", (path,)
+        ).fetchone()
+        if (
+            row is not None
+            and row["is_zip"]
+            and row["dir_mtime"] is not None
+            and abs(float(row["dir_mtime"]) - stat.st_mtime) <= 0.001
+        ):
+            return
+        zip_ops.clear_archive_members(conn, path)
+        zip_ops.index_archive(conn, path, infos)
+        conn.execute(
+            "UPDATE folders SET dir_mtime = ? WHERE path = ?", (stat.st_mtime, path)
+        )
+
+
+def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
+    """Scan one folder, upsert entries, prune vanished ones. Returns child dirs.
+
+    Every remote filesystem read (scandir, child stats, ZIP central
+    directories, confirm-gone retries) happens in a read-only phase; the
+    write transaction at the end only runs SQL.
+    """
     try:
         entries = list(os.scandir(folder))
     except OSError as exc:
@@ -204,102 +232,143 @@ def _scan_folder(conn, folder: str, stat: os.stat_result) -> list[str]:
             continue
         try:
             if entry.is_dir(follow_symlinks=False):
-                path = entry.path
-                dirs.append(path)
-                child = entry.stat(follow_symlinks=False)
-                conn.execute(
-                    """
-                    INSERT INTO folders
-                        (path, name, parent_path, file_count, subfolder_count,
-                         last_scanned, is_zip, total_size, dir_mtime)
-                    VALUES (?, ?, ?, 0, 0, 0, 0, 0, NULL)
-                    ON CONFLICT(path) DO UPDATE SET
-                        name = excluded.name, parent_path = excluded.parent_path,
-                        is_zip = 0
-                    """,
-                    (path, entry.name, folder),
-                )
+                dirs.append(entry.path)
             elif entry.is_file(follow_symlinks=False):
                 child = entry.stat(follow_symlinks=False)
                 if entry.name.lower().endswith(".zip"):
                     archives[entry.path] = child
                 else:
                     files[entry.path] = child
-                    _upsert_file(conn, entry.path, child)
         except OSError:
             continue
 
+    # Archives this scan confirms fresh (only their parent may need an update),
+    # versus ones that changed and need their member rows rebuilt. When a
+    # newly-changed archive cannot be read, nothing is written and the next
+    # crawl retries it, exactly as before.
+    fresh_archives: list[tuple[str, int]] = []
+    zip_payloads: dict[str, tuple[list[zipfile.ZipInfo], int]] = {}
+    with reader() as conn:
+        archive_rows = {
+            row["path"]: (row["is_zip"], row["dir_mtime"])
+            for row in conn.execute(
+                "SELECT path, is_zip, dir_mtime FROM folders WHERE parent_path = ?",
+                (folder,),
+            ).fetchall()
+        }
     for path, child in archives.items():
-        existing = conn.execute(
-            "SELECT is_zip, dir_mtime FROM folders WHERE path = ?", (path,)
-        ).fetchone()
+        row = archive_rows.get(path)
         if (
-            existing is None
-            or not existing["is_zip"]
-            or existing["dir_mtime"] is None
-            or abs(float(existing["dir_mtime"]) - child.st_mtime) > 0.001
+            row is not None
+            and row[0]
+            and row[1] is not None
+            and abs(float(row[1]) - child.st_mtime) <= 0.001
         ):
-            _index_zip(conn, path, child)
-        else:
-            conn.execute(
-                "UPDATE folders SET parent_path = ? WHERE path = ?", (folder, path)
-            )
+            fresh_archives.append((path, child.st_mtime))
+            continue
+        infos = _read_zip_infos(path)
+        if infos is not None:
+            zip_payloads[path] = (infos, child.st_mtime)
 
-    # Prune files that vanished from a folder we could read successfully.
-    indexed_files = conn.execute(
-        "SELECT path FROM files WHERE folder_path = ?", (folder,)
-    ).fetchall()
-    for row in indexed_files:
-        if row["path"] not in files:
-            conn.execute("DELETE FROM files WHERE path = ?", (row["path"],))
-            conn.execute("DELETE FROM favorites WHERE path = ?", (row["path"],))
-            conn.execute("DELETE FROM visual_frames WHERE path = ?", (row["path"],))
-
-    # Prune child folders/archives that vanished, with mount-safety.
-    children = conn.execute(
-        "SELECT path, is_zip FROM folders WHERE parent_path = ?", (folder,)
-    ).fetchall()
+    # Missing-child decisions, including the mount-safety confirm probes.
+    with reader() as conn:
+        indexed_files = conn.execute(
+            "SELECT path FROM files WHERE folder_path = ?", (folder,)
+        ).fetchall()
+        child_rows = conn.execute(
+            "SELECT path FROM folders WHERE parent_path = ?", (folder,)
+        ).fetchall()
     present = set(dirs) | set(archives)
-    missing = [row["path"] for row in children if row["path"] not in present]
-    aborted = 0
+    missing = [row["path"] for row in child_rows if row["path"] not in present]
+    prune_aborted = False
     stale_folders = 0
     stale_files = 0
-    if missing and len(children) >= 5 and len(missing) > len(children) / 2:
-        aborted = 1
+    doomed: list[str] = []
+    if missing and len(child_rows) >= 5 and len(missing) > len(child_rows) / 2:
+        prune_aborted = True
         stale_folders = len(missing)
-        stale_files = 0
     else:
         for path in missing:
             if not _confirm_gone(path):
                 stale_folders += 1
-                stale_files += int(
-                    conn.execute(
-                        "SELECT COUNT(*) AS n FROM files WHERE folder_path = ?",
-                        (path,),
-                    ).fetchone()["n"]
-                    or 0
-                )
+                with reader() as conn:
+                    stale_files += int(
+                        conn.execute(
+                            "SELECT COUNT(*) AS n FROM files WHERE folder_path = ?",
+                            (path,),
+                        ).fetchone()["n"]
+                        or 0
+                    )
                 continue
+            doomed.append(path)
+
+    # Write phase: SQL only, the lock is held for milliseconds.
+    with writer() as conn, conn:
+        conn.execute(
+            """
+            INSERT INTO folders
+                (path, name, parent_path, file_count, subfolder_count, last_scanned,
+                 is_zip, total_size, dir_mtime)
+            VALUES (?, ?, ?, 0, 0, 0, 0, 0, NULL)
+            ON CONFLICT(path) DO UPDATE SET
+                name = excluded.name, parent_path = excluded.parent_path, is_zip = 0
+            """,
+            (folder, os.path.basename(folder) or folder, os.path.dirname(folder)),
+        )
+        for path in dirs:
+            conn.execute(
+                """
+                INSERT INTO folders
+                    (path, name, parent_path, file_count, subfolder_count,
+                     last_scanned, is_zip, total_size, dir_mtime)
+                VALUES (?, ?, ?, 0, 0, 0, 0, 0, NULL)
+                ON CONFLICT(path) DO UPDATE SET
+                    name = excluded.name, parent_path = excluded.parent_path,
+                    is_zip = 0
+                """,
+                (path, os.path.basename(path), folder),
+            )
+        for path, child in files.items():
+            _upsert_file(conn, path, child)
+        for path, mtime in fresh_archives:
+            conn.execute(
+                "UPDATE folders SET parent_path = ? WHERE path = ?", (folder, path)
+            )
+        for path, (infos, mtime) in zip_payloads.items():
+            zip_ops.clear_archive_members(conn, path)
+            zip_ops.index_archive(conn, path, infos)
+            conn.execute(
+                "UPDATE folders SET dir_mtime = ? WHERE path = ?", (mtime, path)
+            )
+
+        # Prune files that vanished from a folder we could read successfully.
+        for row in indexed_files:
+            if row["path"] not in files:
+                conn.execute("DELETE FROM files WHERE path = ?", (row["path"],))
+                conn.execute("DELETE FROM favorites WHERE path = ?", (row["path"],))
+                conn.execute("DELETE FROM visual_frames WHERE path = ?", (row["path"],))
+
+        for path in doomed:
             _delete_subtree_index(conn, path)
 
-    total_size = sum(child.st_size for child in files.values())
-    conn.execute(
-        """
-        UPDATE folders SET file_count = ?, subfolder_count = ?, last_scanned = ?,
-            total_size = ?, dir_mtime = ?, parent_path = ?
-        WHERE path = ?
-        """,
-        (
-            len(files),
-            len(dirs) + len(archives),
-            time.time(),
-            total_size,
-            stat.st_mtime,
-            os.path.dirname(folder),
-            folder,
-        ),
-    )
-    if aborted:
+        total_size = sum(child.st_size for child in files.values())
+        conn.execute(
+            """
+            UPDATE folders SET file_count = ?, subfolder_count = ?, last_scanned = ?,
+                total_size = ?, dir_mtime = ?, parent_path = ?
+            WHERE path = ?
+            """,
+            (
+                len(files),
+                len(dirs) + len(archives),
+                time.time(),
+                total_size,
+                stat.st_mtime,
+                os.path.dirname(folder),
+                folder,
+            ),
+        )
+    if prune_aborted:
         _update(
             prune_aborted=state["prune_aborted"] + 1,
             stale_folders=state["stale_folders"] + stale_folders,
@@ -313,9 +382,30 @@ def _scan_folder(conn, folder: str, stat: os.stat_result) -> list[str]:
     return dirs
 
 
-def crawl(force_full: bool = False) -> dict[str, Any]:
-    """Crawl the library from the root (incremental unless ``force_full``)."""
+def start_crawl(force_full: bool = False) -> bool:
+    """Start one crawl on a daemon thread if none is running.
+
+    The crawl lock is taken here, in the request handler, so a second
+    concurrent request gets a definitive 409 instead of racing the
+    thread's own advisory check. Returns False when one is running.
+    """
     if not _crawl_lock.acquire(blocking=False):
+        return False
+    try:
+        threading.Thread(
+            target=crawl,
+            kwargs={"force_full": force_full, "lock_held": True},
+            daemon=True,
+        ).start()
+        return True
+    except Exception:
+        _crawl_lock.release()
+        raise
+
+
+def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any]:
+    """Crawl the library from the root (incremental unless ``force_full``)."""
+    if not (lock_held or _crawl_lock.acquire(blocking=False)):
         raise writes.WriteError("A crawl is already running", 409)
     settings = get_settings()
     root = str(settings.library_dir)
@@ -386,8 +476,7 @@ def crawl(force_full: bool = False) -> dict[str, Any]:
                         or abs(float(archive["dir_mtime"]) - archive_stat.st_mtime)
                         > 0.001
                     ):
-                        with writer() as conn, conn:
-                            _index_zip(conn, archive["path"], archive_stat)
+                        _index_zip_path(archive["path"], archive_stat)
                 continue
 
             scanned += 1
@@ -396,8 +485,7 @@ def crawl(force_full: bool = False) -> dict[str, Any]:
                 total_folders=len(seen),
                 current_folder=folder,
             )
-            with writer() as conn, conn:
-                children = _scan_folder(conn, folder, stat)
+            children = _scan_folder(folder, stat)
             queue.extend(children)
 
         artwork: dict[str, int] = {}

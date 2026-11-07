@@ -145,13 +145,13 @@ export function BackupsPage() {
             </>
           ) : (
             <p className="py-2 text-xs text-fg-subtle">
-              No v2 snapshot yet. The first one copies the index and every cached
+              No snapshot yet. The first one copies the index and every cached
               poster; it can take a while on a large library.
             </p>
           )}
           <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
             <p className="text-[11px] leading-4 text-fg-subtle">
-              Written to <span className="font-mono">.media_library_backup/v2/</span>,
+              Written to <span className="font-mono">.media_library_backup/</span>,
               next to the current app's snapshot, without touching it.
             </p>
             <Button onClick={snapshot} disabled={create.isPending}>
@@ -191,7 +191,7 @@ export function BackupsPage() {
           ) : (
             <>
               <p className="text-xs leading-5 text-fg-muted">
-                Live restore is disabled by <code>V2_ALLOW_LIVE_RESTORE</code>.
+                Live restore is disabled by <code>ALLOW_LIVE_RESTORE</code>.
                 Replacing the database under running writers can corrupt it, so use
                 the stopped-service command below.
               </p>
@@ -201,7 +201,7 @@ export function BackupsPage() {
                 </p>
                 <code className="whitespace-pre-wrap font-mono text-[11px] leading-5 text-fg-muted">
                   systemctl stop media-library{'\n'}
-                  ./venv/bin/python -m media_library_v2.restore --yes{'\n'}
+                  ./venv/bin/python -m media_library.restore --yes{'\n'}
                   systemctl start media-library
                 </code>
               </div>
@@ -260,7 +260,7 @@ export function BackupsPage() {
       {!data?.exists && !status.isLoading ? (
         <EmptyState
           icon={<CheckCircle2 />}
-          title="Backups run on demand in v2"
+          title="Backups run on demand"
           description="The owned runtime also snapshots automatically on an interval and at shutdown; this page creates, verifies or restores one by hand."
         />
       ) : null}

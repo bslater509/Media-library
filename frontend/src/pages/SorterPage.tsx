@@ -60,6 +60,7 @@ export function SorterPage() {
   const [skipped, setSkipped] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement | null>(null)
+  const movePendingRef = useRef(false)
   const destinations = useSorterDestinations(search)
   const [renameItem, setRenameItem] = useState<SorterItem | null>(null)
   const [deleteItem, setDeleteItem] = useState<SorterItem | null>(null)
@@ -101,11 +102,18 @@ export function SorterPage() {
 
   const doMove = useCallback(
     (destination: string) => {
-      if (!current || move.isPending) return
+      // isPending alone is read from a stale closure when a window keydown
+      // fires for the same Enter that also activates a focused button, so a
+      // ref keeps the in-flight guard current within that same task.
+      if (!current || move.isPending || movePendingRef.current) return
       const name = destination.split('/').filter(Boolean).pop() ?? destination
+      movePendingRef.current = true
       move.mutate(
         { path: current.path, destination },
         {
+          onSettled: () => {
+            movePendingRef.current = false
+          },
           onSuccess: () => {
             setSearch('')
             setSkipped(new Set())
@@ -144,10 +152,12 @@ export function SorterPage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // A modal dialog (rename/delete confirmation, Radix menus) owns the
-      // keyboard: let it handle its keys and ignore the sorter's, or a
-      // keystroke in the confirmation stack could queue a move behind it.
-      if (event.defaultPrevented || renameItem || deleteItem) return
+      // A modal dialog (rename/delete confirmation, create-folder dialog,
+      // Radix menus) owns the keyboard: let it handle its keys and ignore
+      // the sorter's, or a keystroke in the confirmation stack could queue
+      // a move behind it.
+      if (event.defaultPrevented || renameItem || deleteItem || newFolderOpen)
+        return
       const target = event.target as HTMLElement | null
       const typing =
         target?.tagName === 'INPUT' ||
@@ -155,6 +165,17 @@ export function SorterPage() {
         target?.isContentEditable
       if (typing) {
         if (event.key === 'Escape') (target as HTMLElement).blur()
+        return
+      }
+      // A focused button/link gets native activation from Enter/Space after
+      // keydown; acting on the same Enter here would move the current file
+      // twice (the mutation guard reads a stale closure in that window).
+      const activeElement = target ?? document.activeElement
+      if (
+        activeElement?.tagName === 'BUTTON' ||
+        activeElement?.tagName === 'A' ||
+        activeElement?.getAttribute('role') === 'button'
+      ) {
         return
       }
       if (event.metaKey || event.ctrlKey) {
@@ -175,6 +196,11 @@ export function SorterPage() {
       }
       if (event.key === 'u' || event.key === 'U') {
         doUndo()
+        return
+      }
+      // The mute toggle advertises (M).
+      if (event.key === 'm' || event.key === 'M') {
+        setMuted((value) => !value)
         return
       }
       if ((event.key === 's' || event.key === 'ArrowRight') && !event.shiftKey) {
@@ -202,7 +228,17 @@ export function SorterPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [current, deleteItem, destinations.data, doMove, doUndo, recents, renameItem, skip])
+  }, [
+    current,
+    deleteItem,
+    destinations.data,
+    doMove,
+    doUndo,
+    newFolderOpen,
+    recents,
+    renameItem,
+    skip,
+  ])
 
   if (config.isLoading || queue.isLoading) {
     return (
@@ -220,8 +256,8 @@ export function SorterPage() {
           title="Incoming folder is not available"
           description={
             config.data?.source_dir
-              ? `${config.data.source_dir} is missing or unreachable. Set INCOMING_DIR (or V2_SOURCE_DIR) and restart.`
-              : 'Set INCOMING_DIR (or V2_SOURCE_DIR) to the folder the sorter should review.'
+              ? `${config.data.source_dir} is missing or unreachable. Set INCOMING_DIR (or SOURCE_DIR) and restart.`
+              : 'Set INCOMING_DIR (or SOURCE_DIR) to the folder the sorter should review.'
           }
         />
       </div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 
@@ -12,6 +13,8 @@ from media_library.config import get_settings
 from media_library.db import is_available, reader, writes_available
 from media_library.schemas import (
     HealthResponse,
+    IndexStatusResponse,
+    IndexSyncResponse,
     InfoResponse,
     OnboardingInfo,
     StatusResponse,
@@ -20,12 +23,24 @@ from media_library.schemas import (
 router = APIRouter()
 
 
+def _onboarding_index_facts() -> dict:
+    """counts() plus the root folder row, read off the event loop."""
+    settings = get_settings()
+    totals = library.counts()
+    with reader() as conn:
+        root_row = conn.execute(
+            "SELECT last_scanned FROM folders WHERE path = ?",
+            (str(settings.library_dir),),
+        ).fetchone()
+    return {"totals": totals, "root_row": root_row}
+
+
 @router.get("/system/info", response_model=InfoResponse)
 async def info() -> dict:
     """Library root, totals and which capabilities are live."""
     settings = get_settings()
     try:
-        totals = library.counts()
+        totals = await asyncio.to_thread(library.counts)
     except sqlite3.Error as exc:
         raise HTTPException(
             status_code=503, detail=f"Index unavailable: {exc}"
@@ -60,15 +75,11 @@ async def info() -> dict:
 async def onboarding() -> dict:
     """Everything the first-run tour needs, in one request."""
     settings = get_settings()
-    totals = library.counts()
-    with reader() as conn:
-        root_row = conn.execute(
-            "SELECT last_scanned FROM folders WHERE path = ?",
-            (str(settings.library_dir),),
-        ).fetchone()
+    facts = await asyncio.to_thread(_onboarding_index_facts)
+    totals, root_row = facts["totals"], facts["root_row"]
     from media_library import backups, downloads
 
-    snapshot = backups.status()
+    snapshot = await asyncio.to_thread(backups.status)
     return {
         "version": __version__,
         "library_root": str(settings.library_dir),
@@ -135,7 +146,7 @@ async def status() -> dict:
     }
 
 
-@router.get("/system/index/status")
+@router.get("/system/index/status", response_model=IndexStatusResponse)
 async def index_status() -> dict:
     return {
         "owned": get_settings().own_workers,
@@ -144,20 +155,15 @@ async def index_status() -> dict:
     }
 
 
-@router.post("/system/index/sync")
+@router.post("/system/index/sync", response_model=IndexSyncResponse)
 async def index_sync() -> dict:
     if not get_settings().own_workers:
         raise HTTPException(
             status_code=409,
             detail="The owned runtime is off. Set OWN_WORKERS=true to let it crawl.",
         )
-    import threading
-
-    if indexer.status()["status"] == "crawling":
+    if not indexer.start_crawl(force_full=True):
         raise HTTPException(status_code=409, detail="A crawl is already running")
-    threading.Thread(
-        target=indexer.crawl, kwargs={"force_full": True}, daemon=True
-    ).start()
     return {"started": True, "status": indexer.status()}
 
 

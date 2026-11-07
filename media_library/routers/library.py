@@ -65,7 +65,8 @@ async def folder_search(
 ) -> dict:
     """Find folders by name for the command palette."""
     try:
-        return library.search_folders(q, limit=limit)
+        # Off the event loop: LIKE scans block the loop on a large index.
+        return await asyncio.to_thread(library.search_folders, q, limit=limit)
     except sqlite3.Error as exc:
         raise _guard(exc) from exc
 
@@ -80,17 +81,30 @@ async def search(
 ) -> dict:
     """Search filenames and library-relative folder paths."""
     try:
-        return library.search(
-            q, type_filter=type, sort=sort, limit=limit, offset=offset
+        # Off the event loop: a multi-word substring search is a full table
+        # scan on tens of thousands of rows.
+        return await asyncio.to_thread(
+            library.search,
+            q,
+            type_filter=type,
+            sort=sort,
+            limit=limit,
+            offset=offset,
         )
     except sqlite3.Error as exc:
         raise _guard(exc) from exc
 
 
 @router.get("/library/favorites", response_model=FavoritesResponse)
-async def favorites(type: str | None = Query(None)) -> dict:
+async def favorites(
+    type: str | None = Query(None),
+    limit: int | None = Query(None, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+) -> dict:
     """List favorited media, newest star first."""
     try:
-        return library.favorites(type_filter=type)
+        return await asyncio.to_thread(
+            library.favorites, type, limit=limit, offset=offset
+        )
     except sqlite3.Error as exc:
         raise _guard(exc) from exc

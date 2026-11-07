@@ -179,7 +179,7 @@ def test_skip_larger_keeps_the_original_member(zip_webp_env, monkeypatch):
     v2_config.reload_settings()
     # Force the rewritten bytes to be larger than the source image.
     monkeypatch.setattr(
-        zip_webp, "_webp_bytes", lambda data, quality: b"w" * (len(data) + 100)
+        zip_webp, "_webp_bytes_stream", lambda member, quality: b"w" * (1024 * 1024)
     )
     before = archive.read_bytes()
 

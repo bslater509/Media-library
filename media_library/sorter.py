@@ -54,8 +54,12 @@ def _resolve_source_dir() -> str:
 def resolve_source_file(raw: str) -> str:
     root = os.path.abspath(source_dir())
     target = os.path.abspath(os.path.normpath((raw or "").strip()))
+    # Validate containment on real paths so a symlink inside incoming cannot
+    # point outside it (matches paths.resolve_library_path discipline).
+    real_root = os.path.realpath(root)
+    real_target = os.path.realpath(target)
     try:
-        inside = os.path.commonpath([root, target]) == root
+        inside = os.path.commonpath([real_root, real_target]) == real_root
     except ValueError:
         inside = False
     if not inside:

@@ -378,8 +378,14 @@ def counts() -> dict[str, int]:
     }
 
 
-def favorites(type_filter: str | None = None) -> dict:
-    """List favorited media, newest star first, plus global counts."""
+def favorites(
+    type_filter: str | None = None, limit: int | None = None, offset: int = 0
+) -> dict:
+    """List favorited media, newest star first, plus global counts.
+
+    ``limit``/``offset`` page the payload; by default every favorite is
+    returned exactly as before (the favorites grid renders all of them).
+    """
     counts_payload = counts()
     type_sql = ""
     params: list[Any] = []
@@ -387,19 +393,31 @@ def favorites(type_filter: str | None = None) -> dict:
         type_sql = " AND f.type = ?"
         params.append(type_filter)
     with reader() as conn:
-        rows = conn.execute(
-            f"""
+        total = int(
+            conn.execute(
+                f"SELECT COUNT(*) AS n FROM favorites fav "
+                f"JOIN files f ON f.path = fav.path WHERE 1=1{type_sql}",
+                params,
+            ).fetchone()["n"]
+            or 0
+        )
+        sql = f"""
             SELECT f.*, 1 AS is_favorite
             FROM favorites fav
             JOIN files f ON f.path = fav.path
             WHERE 1=1{type_sql}
             ORDER BY fav.created_at DESC
-            """,
-            params,
-        ).fetchall()
+        """
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params.append(limit)
+            params.append(offset)
+        rows = conn.execute(sql, params).fetchall()
     return {
         "counts": counts_payload,
         "files": [_file_entry(r) for r in rows],
+        "offset": offset if limit is not None else 0,
+        "total": total,
     }
 
 

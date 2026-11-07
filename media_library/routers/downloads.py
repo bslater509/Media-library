@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from media_library.downloads import DownloadManager
 from media_library.routers.common import as_http_error
 from media_library.schemas import (
+    CancelResponse,
     DownloadClearResponse,
     DownloadEnqueueRequest,
     DownloadEnqueueResponse,
@@ -41,7 +42,7 @@ async def history(
     return manager.history_page(limit=limit, offset=offset)
 
 
-@router.post("/downloads/cancel")
+@router.post("/downloads/cancel", response_model=CancelResponse)
 async def cancel(payload: DownloadJobRequest) -> dict:
     try:
         return manager.cancel(payload.job_id)

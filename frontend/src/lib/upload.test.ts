@@ -57,6 +57,7 @@ describe('uploadFile', () => {
     )
 
     expect(fake.status).toHaveBeenCalledTimes(1)
+    expect(fake.status).toHaveBeenCalledWith(expect.any(String), expect.anything())
     expect(fake.chunks).toEqual([{ offset: 0, size: file.size }])
     expect(fake.finalize).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -64,6 +65,7 @@ describe('uploadFile', () => {
         folder: '/library',
         total_size: file.size,
       }),
+      expect.anything(),
     )
     expect(result).toEqual({ skipped: false, path: '/library/clip.mp4' })
     expect(states).toContain('uploading')
@@ -104,5 +106,27 @@ describe('uploadFile', () => {
 
     expect(result.skipped).toBe(true)
     expect(states.at(-1)).toBe('skipped')
+  })
+
+  it('bubbles an aborted chunk and cancels the staged upload', async () => {
+    const file = makeFile('hello world')
+    const fake = fakeApi(0)
+    const controller = new AbortController()
+    fake.chunk.mockImplementationOnce(async () => {
+      controller.abort()
+      throw new DOMException('The operation was aborted', 'AbortError')
+    })
+
+    await expect(
+      uploadFile(
+        file,
+        fake.api,
+        { folder: '/library', signal: controller.signal },
+        { onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect(controller.signal.aborted).toBe(true)
+    expect(fake.cancel).toHaveBeenCalledWith(expect.any(String))
   })
 })

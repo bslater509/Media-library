@@ -6,6 +6,7 @@ import asyncio
 import mimetypes
 import os
 import re
+import urllib.parse
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from media_library.schemas import (
     PosterRequest,
     PosterResponse,
     ThumbnailCandidates,
+    ThumbnailExistsResponse,
 )
 from media_library.thumbnails import generate_thumbnail
 from media_library.transcode_stream import build_command, relay
@@ -37,6 +39,21 @@ router = APIRouter()
 
 _CHUNK = 65536 * 16
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _attachment_disposition(name: str) -> str:
+    """RFC 5987 header: quoted ASCII fallback plus a UTF-8 filename*.
+
+    Filenames from the filesystem are not trust-boundary-clean inside header
+    values: a quote breaks the parameter, control characters (including CR/LF)
+    are refused outright by the WSGI/ASGI layer and tear down the connection,
+    and non-ASCII needs the ext-value form.
+    """
+    safe_name = name.replace("\\", "_").replace('"', "_")
+    safe_name = "".join("_" if (c < " " or c == "\x7f") else c for c in safe_name)
+    encoded = urllib.parse.quote(name.encode("utf-8"), safe="")
+    return f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{encoded}"
+
 
 _MEDIA_TYPES = {
     ".mp4": "video/mp4",
@@ -118,26 +135,68 @@ def _iter_file(path: str, start: int, end: int) -> Iterator[bytes]:
             yield chunk
 
 
+_TRANSCODE_SEMAPHORE = asyncio.Semaphore(2)
+
+
+class _ReleasingResponse(StreamingResponse):
+    """StreamingResponse that frees the transcode slot when the stream ends."""
+
+    def __init__(self, content, semaphore: asyncio.Semaphore, **kwargs) -> None:
+        super().__init__(content, **kwargs)
+        self._semaphore = semaphore
+
+    async def stream_response(self, send) -> None:  # type: ignore[override]
+        try:
+            await super().stream_response(send)
+        finally:
+            self._semaphore.release()
+
+
 @router.get("/media/transcode")
 async def transcode_media(request: Request, path: str, ss: float = 0):
     """Live fragmented-MP4 stream for containers the browser cannot play."""
-    target = path
-    if is_zip_member(path):
-        split = zipfs.split_zip_path(path)
-        assert split is not None
-        archive = resolve_library_path(split[0])
-        try:
-            target = await asyncio.to_thread(zipfs.extract_member, archive, split[1])
-        except Exception as exc:
-            raise as_http_error(exc) from exc
-    else:
-        target = await asyncio.to_thread(resolve_existing_file, path)
-    process = await asyncio.create_subprocess_exec(
-        *build_command(target, float(ss or 0)),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+    # Cap concurrent encoders: every active viewer of a non-native container
+    # is a full x264 pipe, and an unbounded queue of them OOMs the host.
+    await _TRANSCODE_SEMAPHORE.acquire()
+    try:
+        target = path
+        if is_zip_member(path):
+            split = zipfs.split_zip_path(path)
+            assert split is not None
+            archive = resolve_library_path(split[0])
+            try:
+                target = await asyncio.to_thread(
+                    zipfs.extract_member, archive, split[1]
+                )
+            except Exception as exc:
+                raise as_http_error(exc) from exc
+        else:
+            target = await asyncio.to_thread(resolve_existing_file, path)
+        process = await asyncio.create_subprocess_exec(
+            *build_command(target, float(ss or 0)),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except BaseException:
+        _TRANSCODE_SEMAPHORE.release()
+        raise
+    return _ReleasingResponse(
+        relay(process), semaphore=_TRANSCODE_SEMAPHORE, media_type="video/mp4"
     )
-    return StreamingResponse(relay(process), media_type="video/mp4")
+
+
+class _ReleasingResponse(StreamingResponse):
+    """StreamingResponse that frees the transcode slot when the stream ends."""
+
+    def __init__(self, content, semaphore: asyncio.Semaphore, **kwargs) -> None:
+        super().__init__(content, **kwargs)
+        self._semaphore = semaphore
+
+    async def stream_response(self, send) -> None:  # type: ignore[override]
+        try:
+            await super().stream_response(send)
+        finally:
+            self._semaphore.release()
 
 
 @router.api_route("/media", methods=["GET", "HEAD"])
@@ -174,7 +233,7 @@ async def stream_path(request: Request, target: str, download: bool = False):
         "Cache-Control": "private, max-age=0, must-revalidate",
         "X-Content-Type-Options": "nosniff",
         "Content-Disposition": (
-            f'attachment; filename="{os.path.basename(target)}"'
+            _attachment_disposition(os.path.basename(target))
             if force_attachment
             else "inline"
         ),
@@ -336,9 +395,14 @@ async def thumbnail_animated_cancel() -> dict:
     return animated.status()
 
 
-@router.get("/thumbnails/exists")
+@router.get("/thumbnails/exists", response_model=ThumbnailExistsResponse)
 async def thumbnail_exists(path: str, kind: str = "static") -> dict:
     """Cheap check the client uses to decide between poster and full image."""
+    if not path:
+        raise HTTPException(status_code=400, detail="A path is required")
+    # Clamp like /thumbnails does: keep the endpoint library-root-only even
+    # though the lookup is index + hash-named cache file today.
+    path = resolve_library_path(path)
     try:
         mtime, size, _t, _h = _row_stat(path)
     except HTTPException:

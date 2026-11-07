@@ -39,7 +39,7 @@ at `/`.
 | Media | FFmpeg / FFprobe CLI, Pillow, `imagehash` (+ SciPy for the DCT), NumPy |
 | Downloads | yt-dlp / gallery-dl as isolated subprocesses (`python -m …`) |
 | Client | React 19 + TypeScript 7, Vite 8, Tailwind 4, TanStack Query, Zustand, Radix, ECharts 6, `yet-another-react-lightbox`, Sonner, cmdk |
-| Tests | Pytest 8 (+ cov), Vitest 5 with Testing Library |
+| Tests | Pytest 8 (+ cov), Vitest 5 |
 | Build | one npm project at the repo root; Vite root `frontend/`, output `static/dist/` |
 
 There are no runtime CDN dependencies: fonts, icons and the lightbox are
@@ -211,8 +211,12 @@ media-library/
 
 ## 4. Configuration
 
-Read from the process environment first, then `.env`. The `V2_…` names are
-still accepted as a fallback so a pre-upgrade `.env` keeps working.
+Read from the process environment first, then `.env`. Some `V2_…` names
+(Paths, staging dirs, `OWN_WORKERS`, `DB_READ_ONLY`, `WRITES`, limits, backups)
+are still accepted as a fallback so a pre-upgrade `.env` keeps working; the
+full set has plain names only. `HOST`, `PORT`, `APP_PASSWORD`,
+`GIT_COMMIT`/`BUILD_COMMIT` and `LOG_LEVEL` are read straight from the
+environment by their own modules, not through `config.py`'s `Settings`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -244,6 +248,7 @@ still accepted as a fallback so a pre-upgrade `.env` keeps working.
 | `X265_PRESET` / `X265_CRF` | `medium` / `18` | HEVC encode |
 | `BROWSE_LIMIT` / `SEARCH_LIMIT` | `120` / `1000` | Default page sizes |
 | `HOST` / `PORT` | `0.0.0.0` / `8888` | Bind address |
+| `LOG_LEVEL` | `info` | Uvicorn log level |
 | `APP_PASSWORD` | *(empty — auth off)* | Shared password for the whole app |
 | `GIT_COMMIT` / `BUILD_COMMIT` | *(from `.git`)* | Build revision in `/api/health` |
 
@@ -432,7 +437,7 @@ unavailable / read-only).
 `GET /library/browse?path=&offset=&limit=&type=&favorite=&sort=` ·
 `GET /library/folders?path=` · `GET /library/folders/search?q=&limit=` ·
 `GET /library/search?q=&type=&sort=&limit=&offset=` ·
-`GET /library/favorites?type=` · `GET /media?path=&download=` (206 ranges) ·
+`GET /library/favorites?type=&limit=&offset=` · `GET /media?path=&download=` (206 ranges) ·
 `GET /media/transcode?path=&ss=`
 
 ### Favorites and mutations (`routers/favorites.py`, `manage.py`)

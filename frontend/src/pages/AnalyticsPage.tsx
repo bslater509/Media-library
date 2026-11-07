@@ -127,13 +127,22 @@ export function AnalyticsPage() {
     }
   }
 
+  // ECharts tooltip formatters are injected as HTML; names come from the
+  // filesystem, so escape them before they enter a tooltip string.
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
   const treemapOption = useMemo(() => {
     const nodes = data?.folders.top ?? []
     return {
       backgroundColor: 'transparent',
       tooltip: {
         formatter: (params: { name: string; value: number }) =>
-          `${params.name}<br/>${formatBytes(params.value)}`,
+          `${escapeHtml(params.name)}<br/>${formatBytes(params.value)}`,
         backgroundColor: colors.surface,
         borderColor: colors.border,
         textStyle: { color: colors.fg, fontSize: 11 },
@@ -188,7 +197,7 @@ export function AnalyticsPage() {
       backgroundColor: 'transparent',
       tooltip: {
         formatter: (params: { name: string; value: number; percent: number }) =>
-          `${params.name}: ${formatBytes(params.value)} (${params.percent}%)`,
+          `${escapeHtml(params.name)}: ${formatBytes(params.value)} (${params.percent}%)`,
         backgroundColor: colors.surface,
         borderColor: colors.border,
         textStyle: { color: colors.fg, fontSize: 11 },
@@ -217,7 +226,7 @@ export function AnalyticsPage() {
       grid: { left: 8, right: 18, top: 8, bottom: 8, containLabel: true },
       tooltip: {
         formatter: (params: { name: string; value: number }) =>
-          `${params.name}: ${formatBytes(params.value)}`,
+          `${escapeHtml(params.name)}: ${formatBytes(params.value)}`,
         backgroundColor: colors.surface,
         borderColor: colors.border,
         textStyle: { color: colors.fg, fontSize: 11 },

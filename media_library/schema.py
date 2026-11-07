@@ -5,7 +5,7 @@ deliberately **not** a byte-for-byte port:
 
 * every table and every column the application reads is created verbatim (a
   column is only dropped from this file when no query touches it, and all
-  30 ``folders``/``files`` columns are touched);
+  31 ``folders``/``files`` columns are touched);
 * the indexes no query can use are not created — ``idx_files_name`` (search
   uses ``LIKE '%…%'``, which cannot seek), ``idx_files_webp_optimized`` (every
   predicate wraps the column in ``COALESCE``) and ``idx_ignored_match_type``

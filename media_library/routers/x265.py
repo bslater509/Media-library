@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 
 from media_library.routers.common import as_http_error
 from media_library.schemas import (
+    CancelResponse,
     X265CancelRequest,
     X265Job,
     X265Request,
@@ -32,7 +33,7 @@ async def status(path: str | None = Query(None)) -> dict:
     return await asyncio.to_thread(manager.status, path)
 
 
-@router.post("/transcode/x265/cancel")
+@router.post("/transcode/x265/cancel", response_model=CancelResponse)
 async def cancel(payload: X265CancelRequest) -> dict:
     try:
         return await asyncio.to_thread(manager.cancel, payload.job_id)

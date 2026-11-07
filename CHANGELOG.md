@@ -9,6 +9,65 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [Unreleased]
+
+### Fixed
+
+- The sorter's path validation now checks containment on resolved (real)
+  paths, so a symlink inside the incoming folder can no longer stream or
+  import a file from outside it (`403`).
+- A non-ASCII password attempt reads as a wrong password (`401`) instead of
+  raising `TypeError` and answering `500`.
+- `/system/index/sync` decides `409` from the crawl lock itself; two
+  concurrent requests can no longer both report "started" while one dies
+  silently.
+- Every JSON route now carries an explicit `response_model`
+  (`/downloads/cancel`, `/system/index/*`, `/sorter/duplicate`,
+  `/thumbnails/exists`, `/transcode/x265/cancel`, `/favorites/counts`), so the
+  OpenAPI document stopped describing six endpoints as shapeless objects.
+- `/thumbnails/exists` clamps its path to the library root like every other
+  media read.
+- A staging copy that turns out truncated no longer leaks its
+  `.mllibtmp-*` temp file in the destination folder.
+- `Content-Disposition` on downloads is RFC 5987-quoted: quotes and control
+  characters in filenames can no longer break the download or tear down the
+  connection; non-ASCII names get an encoded `filename*`.
+- The archive WebP rewrite streams members between archives instead of
+  reading whole members into memory; a 100 MB+ TIFF no longer spikes the
+  process by several times its size.
+- The ZIP member cache sweep survives a concurrent trim removing an entry
+  mid-scan instead of turning a successful member serve into a `500`.
+- Sorter queue thumbnails are written to a temp file and renamed into place,
+  so a racing request can no longer serve a half-written JPEG.
+- Client: the command palette and the Search page no longer share one query
+  cache entry, so navigating to `/search?q=…` right after using the palette
+  cannot render 8 truncated rows as if they were the full result.
+- Client: the sorter's create-and-move dialog now owns the keyboard like the
+  other modals, Enter can no longer double-fire a move through a focused
+  button, and the advertised `M` mute key actually toggles muting.
+- Client: uploads honour their abort signal while a 4 MB chunk is in flight
+  (cancel acts immediately, staging gets cleaned up), an idle dedupe check
+  polls every 30 s instead of 2 s, and the batch animated-preview generation
+  refreshes library rows like the single-file variant.
+- Client: the recovery command shown on the Backups page is
+  `python -m media_library.restore --yes` again, and stale `V2_*` / "v2
+  preview" labels were replaced with the plain names.
+
+### Changed
+
+- The crawler and the archive unpack keep local/remote filesystem reads
+  (scandir, `stat`, ZIP central directories, missing-item retries) out of
+  their SQLite write transactions; writes now run for milliseconds per folder
+  instead of holding the single writer lock across the traverse.
+- `/library/favorites` accepts `limit`/`offset` (documented) and returns
+  `total`; search, folder search, favorites and the system/onboarding index
+  reads run off the event loop like browse and folders already did.
+- yt-dlp / gallery-dl jobs that stop producing output for five minutes are
+  killed instead of wedging a concurrency slot forever.
+- `/media/transcode` and `/sorter/transcode` share a concurrency cap of two
+  encoders, and the command palette does not search on the very first
+  keystroke.
+
 ## [3.0.1] - 2026-11-07
 
 ### Fixed

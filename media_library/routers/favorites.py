@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from media_library import library, writes
 from media_library.routers.common import as_http_error
 from media_library.schemas import (
+    Counts,
     FavoriteBatchRequest,
     FavoriteBatchResponse,
     FavoriteRequest,
@@ -39,6 +40,6 @@ async def batch_favorite(payload: FavoriteBatchRequest) -> dict:
         raise as_http_error(exc) from exc
 
 
-@router.get("/favorites/counts", response_model=dict)
+@router.get("/favorites/counts", response_model=Counts)
 async def favorite_counts() -> dict:
-    return library.counts()
+    return await asyncio.to_thread(library.counts)

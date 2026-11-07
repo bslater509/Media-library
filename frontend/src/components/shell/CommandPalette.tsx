@@ -48,7 +48,9 @@ export function CommandPalette() {
   }, [open])
 
   const folders = useFolderSearch(debounced)
-  const files = useSearch(debounced, { limit: 8 })
+  // The palette only ever renders results for two or more characters; don't
+  // send users' first keystroke to the (multi-word LIKE scan) server either.
+  const files = useSearch(debounced, { limit: 8, enabled: debounced.length > 1 })
 
   const actions = useMemo<PaletteItem[]>(
     () => [

@@ -135,7 +135,7 @@ export function SettingsPage() {
               Index
             </CardTitle>
             <Badge variant={index.data?.owned ? 'accent' : 'outline'}>
-              {index.data?.owned ? 'v2 crawler' : 'v1 crawler'}
+              {index.data?.owned ? 'Owned crawler' : 'External indexer'}
             </Badge>
           </div>
         </CardHeader>
@@ -209,7 +209,7 @@ export function SettingsPage() {
               ) : (
                 <p className="text-[11px] leading-5 text-fg-subtle">
                   v2 is not running the crawler. Set{' '}
-                  <span className="font-mono">V2_OWN_WORKERS=true</span> to run v2's
+                  <span className="font-mono">OWN_WORKERS=true</span> to run the
                   crawler, metadata probes, poster sweep and automatic snapshots.
                 </p>
               )}

@@ -38,6 +38,10 @@ _UNSUPPORTED_HINTS = (
     "This website is no longer supported",
 )
 _GALLERY_DL_HOSTS = ("gofile.io",)
+# Longest stretch without a fresh output line before a downloader is killed.
+# Progress lines arrive every few seconds while anything is moving, so this
+# is an inactivity timeout, not a total download budget.
+_OUTPUT_TIMEOUT = 300.0
 _AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".flac"}
 _SKIPPED_EXTS = {
     ".json",
@@ -281,7 +285,20 @@ class DownloadManager:
         assert process.stdout is not None
         try:
             while True:
-                raw = await process.stdout.readline()
+                try:
+                    raw = await asyncio.wait_for(
+                        process.stdout.readline(), timeout=_OUTPUT_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    # Without this a wedged network fetch holds one of the
+                    # DOWNLOAD_WORKER_CONCURRENCY slots forever and the job
+                    # sits "downloading" with no recovery but a manual cancel.
+                    process.kill()
+                    await process.wait()
+                    raise RuntimeError(
+                        f"{downloader} produced no output for "
+                        f"{_OUTPUT_TIMEOUT:g}s: timed out"
+                    ) from None
                 if not raw:
                     break
                 line = raw.decode("utf-8", "replace").strip()

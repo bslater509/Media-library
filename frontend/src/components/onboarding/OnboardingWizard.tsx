@@ -225,7 +225,7 @@ function LibraryStep({
       {!info.source_available ? (
         <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] leading-5 text-fg-muted">
           Set <span className="font-mono">INCOMING_DIR</span> (or{' '}
-          <span className="font-mono">V2_SOURCE_DIR</span>) to a folder to enable
+          <span className="font-mono">SOURCE_DIR</span>) to a folder to enable
           the sorter. Everything else works without it.
         </p>
       ) : null}

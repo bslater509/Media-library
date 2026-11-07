@@ -27,10 +27,11 @@ _CONVERTIBLE = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 _SKIP = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini"}
 
 
-def _webp_bytes(data: bytes, quality: int) -> bytes:
+def _webp_bytes_stream(member, quality: int) -> bytes:
+    """Convert an already-open, lazily-read member (never fully buffered)."""
     from PIL import Image, ImageOps
 
-    with Image.open(io.BytesIO(data)) as image:
+    with Image.open(member) as image:
         source_format = (image.format or "").upper()
         image = ImageOps.exif_transpose(image)
         if image.mode in ("RGBA", "LA") or (
@@ -45,6 +46,14 @@ def _webp_bytes(data: bytes, quality: int) -> bytes:
         else:
             image.save(output, "WEBP", quality=quality, method=6)
         return output.getvalue()
+
+
+def _copy_member(
+    source_zip: zipfile.ZipFile, target_zip: zipfile.ZipFile, info
+) -> None:
+    """Copy a member between archives in chunks (no full-member read)."""
+    with source_zip.open(info) as src, target_zip.open(info, "w") as dst:
+        shutil.copyfileobj(src, dst, length=1024 * 1024)
 
 
 def _unique_member(name: str, taken: set[str]) -> str:
@@ -93,23 +102,24 @@ def optimize_archive(
                             taken.add(name)
                             continue
                         if os.path.basename(name) in _SKIP:
-                            target_zip.writestr(info, source_zip.read(info))
+                            _copy_member(source_zip, target_zip, info)
                             taken.add(name)
                             continue
                         ext = os.path.splitext(name)[1].lower()
                         if ext not in _CONVERTIBLE:
-                            target_zip.writestr(info, source_zip.read(info))
+                            _copy_member(source_zip, target_zip, info)
                             taken.add(name)
                             continue
-                        data = source_zip.read(info)
+                        data_size = info.file_size
                         try:
-                            webp = _webp_bytes(data, q)
+                            with source_zip.open(info) as member:
+                                webp = _webp_bytes_stream(member, q)
                         except Exception:
-                            target_zip.writestr(info, data)
+                            _copy_member(source_zip, target_zip, info)
                             taken.add(name)
                             continue
-                        if skip and len(webp) >= len(data):
-                            target_zip.writestr(info, data)
+                        if skip and len(webp) >= data_size:
+                            _copy_member(source_zip, target_zip, info)
                             taken.add(name)
                             skipped += 1
                             continue
@@ -122,7 +132,7 @@ def optimize_archive(
                         target_zip.writestr(new_info, webp)
                         taken.add(new_name)
                         converted += 1
-                        saved += max(0, len(data) - len(webp))
+                        saved += max(0, data_size - len(webp))
                         mappings.append((name, new_name))
 
             with zipfile.ZipFile(staged) as check:

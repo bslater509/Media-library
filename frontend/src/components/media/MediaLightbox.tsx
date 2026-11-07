@@ -58,6 +58,12 @@ export function MediaLightbox({
 }: MediaLightboxProps) {
   const file = files[index]
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // A fresh inline arrow from a re-rendering parent must not tear the x265
+  // poll interval down and rebuild it every render; read it through a ref.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
   const [loop, setLoop] = useState(false)
   const [speed, setSpeed] = useState<number>(1)
   const [showInfo, setShowInfo] = useState(false)
@@ -103,7 +109,7 @@ export function MediaLightbox({
           window.clearInterval(timer)
           toast.success('Converted to H.265')
           void queryClient.invalidateQueries({ queryKey: ['browse'] })
-          onClose()
+          onCloseRef.current()
         } else if (['failed', 'cancelled'].includes(result.job.status)) {
           window.clearInterval(timer)
           if (result.job.status === 'failed') {
@@ -118,7 +124,7 @@ export function MediaLightbox({
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [x265?.id, x265?.status, file.path, onClose, queryClient])
+  }, [x265?.id, x265?.status, file.path, queryClient])
 
   const startConversion = async () => {
     try {

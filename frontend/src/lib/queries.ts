@@ -1,4 +1,4 @@
-/** React Query hooks — the only place features read the v2 API. */
+/** React Query hooks — the only place features read the JSON API. */
 
 import {
   keepPreviousData,
@@ -18,8 +18,8 @@ export const queryKeys = {
   browse: (path: string | null) => ['browse', path] as const,
   folders: (path: string | null) => ['folders', path] as const,
   folderSearch: (query: string) => ['folders', 'search', query] as const,
-  search: (query: string, type: string, sort: string) =>
-    ['search', query, type, sort] as const,
+  search: (query: string, type: string, sort: string, limit?: number) =>
+    ['search', query, type, sort, limit ?? 200] as const,
   favorites: (type: string) => ['favorites', type] as const,
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
@@ -166,20 +166,23 @@ export function useFolderSearch(query: string) {
 
 export function useSearch(
   query: string,
-  options: { type?: string; sort?: string; limit?: number } = {},
+  options: { type?: string; sort?: string; limit?: number; enabled?: boolean } = {},
 ) {
   const trimmed = query.trim()
   const type = options.type ?? 'all'
   const sort = options.sort ?? 'name_asc'
+  const limit = options.limit ?? 200
   return useQuery({
-    queryKey: queryKeys.search(trimmed, type, sort),
+    // The limit is part of the key: the palette (8 rows) and the search
+    // page (200 rows) must never share one cache entry.
+    queryKey: queryKeys.search(trimmed, type, sort, limit),
     queryFn: () =>
       api.search(trimmed, {
         type: type === 'all' ? undefined : type,
         sort,
-        limit: options.limit ?? 200,
+        limit,
       }),
-    enabled: trimmed.length > 0,
+    enabled: (options.enabled ?? true) && trimmed.length > 0,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   })
@@ -532,12 +535,12 @@ export function useDedupeVerifyVisualStatus() {
     queryKey: queryKeys.dedupeVerifyStatus,
     queryFn: api.dedupeVerifyVisualStatus,
     // The groups request auto-queues visual checks, so poll from the first
-    // idle response — a finished check drops to a slow tick instead of
-    // hammering the endpoint, and the batch mutation re-primes fast polling.
-    refetchInterval: (query) =>
-      query.state.data?.status === 'done' || query.state.data?.status === 'error'
-        ? 30000
-        : 2000,
+    // idle response — an idle/finished/failed check drops to a slow tick;
+    // only queued or running work is worth the fast cadence.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'queued' || status === 'running' ? 2000 : 30000
+    },
     staleTime: 0,
   })
 }
@@ -698,6 +701,10 @@ export function useGenerateAnimatedBatch() {
       api.generateAnimatedBatch(input),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['thumbnails', 'animated'] })
+      // The queue also flips has_animated on the indexed rows, so browse
+      // must re-fetch for tiles to pick the previews up (same as the
+      // single-file variant above).
+      void invalidateLibrary(client)
     },
   })
 }

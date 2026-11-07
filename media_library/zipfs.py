@@ -118,7 +118,12 @@ def _trim_cache() -> None:
         except OSError:
             continue
         total += size
-        entries.append((child.stat().st_mtime, size, child))
+        try:
+            mtime = child.stat().st_mtime
+        except OSError:
+            # A parallel trim (or manual purge) removed the entry mid-scan.
+            continue
+        entries.append((mtime, size, child))
     if total <= cap:
         return
     target = int(cap * 0.9)

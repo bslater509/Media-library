@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Breadcrumb(BaseModel):
@@ -149,6 +149,8 @@ class AuthLoginRequest(BaseModel):
 class FavoritesResponse(BaseModel):
     counts: Counts
     files: list[FileEntry]
+    offset: int = 0
+    total: int = 0
 
 
 class ThumbnailCandidates(BaseModel):
@@ -466,6 +468,50 @@ class DownloadRetryResponse(BaseModel):
 
 class DownloadClearResponse(BaseModel):
     cleared: int
+
+
+class CancelResponse(BaseModel):
+    cancelled: str
+
+
+# --- thumbnails -------------------------------------------------------------
+
+
+class ThumbnailExistsResponse(BaseModel):
+    static: bool
+    animated: bool
+
+
+# --- sorter ------------------------------------------------------------------
+
+
+class SorterDuplicateEntry(BaseModel):
+    path: str
+    name: str
+    size_formatted: str
+
+
+class SorterDuplicateResponse(BaseModel):
+    path: str
+    matched: bool
+    duplicates: list[SorterDuplicateEntry] = Field(default_factory=list)
+
+
+# --- index runtime -----------------------------------------------------------
+
+
+class IndexStatusResponse(BaseModel):
+    """Runtime ownership plus every crawler counter from ``indexer.status()``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    owned: bool
+    runtime: dict[str, Any]
+
+
+class IndexSyncResponse(BaseModel):
+    started: bool
+    status: dict[str, Any]
 
 
 # --- analytics -------------------------------------------------------------

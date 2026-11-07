@@ -859,11 +859,13 @@ def finalize_upload(
         if os.path.getsize(temp) != actual:
             raise WriteError("Staged copy was truncated", 500)
         os.replace(temp, target)
-    except OSError as exc:
+    except (OSError, WriteError) as exc:
         try:
             os.unlink(temp)
         except OSError:
             pass
+        if isinstance(exc, WriteError):
+            raise
         raise WriteError(f"Could not write the file: {exc}", 500) from exc
 
     try:

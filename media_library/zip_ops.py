@@ -157,13 +157,20 @@ def _update_parent(conn, parent: str) -> None:
     )
 
 
-def _index_tree(conn, root: str) -> int:
-    count = 0
+def _gather_tree(root: str) -> dict[str, dict[str, object]]:
+    """Read-only walk of a folder tree: stats happen before any write txn.
+
+    Returns ``{dirpath: {"files": [(path, name, dirpath, ext, type, size,
+    formatted, mtime, needs_transcode)], "subfolders": n, "total": bytes,
+    "mtime": float, "names": [file names]}}``.
+    """
+    plan: dict[str, dict[str, object]] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in _SKIP_DIRS]
-        files = [name for name in filenames if name not in _JUNK]
+        names = [name for name in filenames if name not in _JUNK]
+        rows = []
         total = 0
-        for name in files:
+        for name in names:
             path = os.path.join(dirpath, name)
             try:
                 stat = os.stat(path)
@@ -172,16 +179,7 @@ def _index_tree(conn, root: str) -> int:
             total += stat.st_size
             ext = os.path.splitext(name)[1].lower()
             file_type = _file_type(ext)
-            conn.execute(
-                """
-                INSERT INTO files
-                    (path, name, folder_path, type, ext, size, size_formatted,
-                     mtime, needs_transcode, has_thumb, width, height)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
-                ON CONFLICT(path) DO UPDATE SET
-                    size = excluded.size, size_formatted = excluded.size_formatted,
-                    mtime = excluded.mtime
-                """,
+            rows.append(
                 (
                     path,
                     name,
@@ -192,13 +190,47 @@ def _index_tree(conn, root: str) -> int:
                     format_size(stat.st_size),
                     stat.st_mtime,
                     _needs_transcode(ext, file_type),
-                ),
+                )
             )
-            count += 1
         try:
-            dir_mtime = os.stat(dirpath).st_mtime
+            dir_mtime: float = os.stat(dirpath).st_mtime
         except OSError:
             dir_mtime = time.time()
+        plan[dirpath] = {
+            "rows": rows,
+            "names": [row[1] for row in rows],
+            "subfolders": len(dirnames),
+            "total": total,
+            "mtime": dir_mtime,
+        }
+    return plan
+
+
+def _index_tree(conn, root: str, plan=None) -> int:
+    """Apply a gathered tree plan to the index (SQL only)."""
+    if plan is None:
+        plan = _gather_tree(root)
+    count = 0
+    for dirpath, info in plan.items():
+        rows = info["rows"]
+        total = info["total"]
+        names = info["names"]
+        dirnames = info["subfolders"]
+        dir_mtime = info["mtime"]
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO files
+                    (path, name, folder_path, type, ext, size, size_formatted,
+                     mtime, needs_transcode, has_thumb, width, height)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+                ON CONFLICT(path) DO UPDATE SET
+                    size = excluded.size, size_formatted = excluded.size_formatted,
+                    mtime = excluded.mtime
+                """,
+                row,
+            )
+            count += 1
         conn.execute(
             """
             INSERT INTO folders
@@ -215,8 +247,8 @@ def _index_tree(conn, root: str) -> int:
                 dirpath,
                 os.path.basename(dirpath) or dirpath,
                 os.path.dirname(dirpath) if dirpath != root else os.path.dirname(root),
-                len(files),
-                len(dirnames),
+                len(names),
+                dirnames,
                 time.time(),
                 total,
                 dir_mtime,
@@ -411,9 +443,10 @@ def _unpack_locked(source: Path) -> dict[str, Any]:
     except OSError:
         pass
 
+    plan = _gather_tree(str(destination))
     with writer() as conn, conn:
         _remove_subtree(conn, str(source))
-        count = _index_tree(conn, str(destination))
+        count = _index_tree(conn, str(destination), plan)
         _update_parent(conn, str(destination.parent))
     purge_cache(str(source))
     return {
