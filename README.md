@@ -27,12 +27,14 @@ client at `/`, backed by a single SQLite index.
   time), in-place x265 (HEVC) conversion with live progress, WebP optimisation,
   content and visual dedupe with side-by-side playback and a five-frame visual
   check, ZIP browsing/compression/unpacking (with batches and archive-level
-  WebP), empty-folder cleanup.
+  WebP), empty-folder cleanup, and a verification queue that flags likely
+  damaged files (zero-byte, failed probe, failed poster) for review.
 - **Downloads** — queue one or many URLs into a folder: yt-dlp with a
   gallery-dl fallback, live progress, cancel, retry, paginated history.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and
   files, media mix, reclaimable space, quality histogram, health pills, and a
   daily growth history recorded automatically (chart library size over time).
+  Likely damaged files are flagged by the verification queue.
 - **Snapshots** — hot SQLite snapshots plus a poster archive with automatic
   startup restore, and snapshots are never taken over a running import.
 - **Access control** — optional shared password (`APP_PASSWORD`) with a

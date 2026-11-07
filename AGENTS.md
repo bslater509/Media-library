@@ -278,6 +278,7 @@ watch_history(path PK, first_viewed_at, last_viewed_at,
 visual_frames(path PK, mtime, size, duration, hashes, captured_at)
 growth_history(day PK, files_count, video_count, image_count,
                bytes_total, recorded_at)
+file_issues(path, issue, detected_at, dismissed_at, PK(path, issue))
 ```
 
 Hard contracts:
@@ -344,6 +345,7 @@ daemon thread that pauses between items.
 | `_BatchSweep("content-hashes")` | Quick hashes files that share a size. |
 | `_BatchSweep("visual-hashes")` | pHashes posters for visual duplicate clustering. |
 | Backup thread | Snapshot every `BACKUP_INTERVAL_HOURS` when idle, and once at shutdown. |
+| `VerifyWorker` | Index-only sweep that flags `zero_size`, `probe_failed` (0×0) and `thumb_failed` (`has_thumb = -1`) rows into `file_issues`, prunes rows whose `files` row is gone; keyset-paginated batches of 200 paths with a pause between batches, the next full pass ~30 min after the last or immediately on `POST /api/verify/rescan`. ZIP members are never flagged. |
 | `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
@@ -511,6 +513,9 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `GET /analytics/overview?folder_limit=&file_limit=&refresh=` ·
 `GET /analytics/growth?days=30` (history, oldest first, plus live today counts) ·
 `POST /analytics/growth/refresh` (recompute today's row; 503 read-only) ·
+`GET /verify/status` · `GET /verify/issues?issue=&include_dismissed=&limit=&offset=` ·
+`POST /verify/rescan` (409 unless `OWN_WORKERS`) · `POST /verify/recheck` (real probe for 0×0 rows) ·
+`POST /verify/dismiss` ·
 `GET /folders/empty` · `POST /folders/empty/delete` ·
 `GET /backups/status` · `POST /backups/snapshot` · `GET /backups/verify` ·
 `POST /backups/restore` · `GET /backups/download?kind=db|thumbs`

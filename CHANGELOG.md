@@ -13,6 +13,19 @@ snapshot metadata.
 
 ### Added
 
+- **Media verification queue.** A new owned worker pages through the index
+  (keyset batches of 200 paths, never a filesystem walk) and flags
+  suspicious files into a `file_issues` table: `zero_size` (0-byte
+  videos/images), `probe_failed` (the definitive 0×0 ffprobe verdict) and
+  `thumb_failed` (`has_thumb = -1`). Rows whose index entry moves away are
+  pruned, dismissed findings keep their marker, and `POST /api/verify/recheck`
+  re-runs the real prober and clears an issue that no longer holds. The API:
+  `GET /api/verify/status` (worker state and per-issue counts),
+  `GET /api/verify/issues` (paginated, joined to the files row for display),
+  `POST /api/verify/rescan` (409 unless `OWN_WORKERS`), `POST /api/verify/recheck`
+  and `POST /api/verify/dismiss` (503 on a read-only index). ZIP members are
+  never flagged. Worker state is visible in `/api/system/index/status`.
+
 - **Library growth history.** A new owned worker upserts a daily rollup into a
   `growth_history` index table (`files_count`, `video_count`, `image_count`,
   `bytes_total`) at process start and whenever the UTC day rolls over, so the
