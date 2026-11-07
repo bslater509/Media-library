@@ -3,11 +3,15 @@ import { useNavigate } from 'react-router'
 import {
   AlertTriangle,
   Check,
+  Columns2,
   Copy,
   Eye,
   EyeOff,
+  Film,
   Hash,
   Loader2,
+  RefreshCw,
+  ShieldCheck,
   Sparkles,
   Trash2,
   X,
@@ -20,9 +24,11 @@ import {
   useDedupeGroups,
   useDedupeIgnored,
   useDedupeIgnore,
+  useDedupeReset,
   useDedupeResolve,
   useDedupeStatus,
   useDedupeUnignore,
+  useDedupeVerifyVisual,
 } from '../lib/queries'
 import {
   Badge,
@@ -43,8 +49,6 @@ import {
 } from '../components/ui'
 import { resolutionLabel } from '../lib/format'
 
-type Mode = 'content' | 'visual'
-
 function formatBytes(value: number): string {
   if (!value) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -57,30 +61,61 @@ function formatBytes(value: number): string {
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
 }
 
+function verificationLabel(verification: DedupeGroup['verification']): string {
+  if (!verification || !verification.available) return 'Not frame-checked'
+  if (verification.confirmed === true) {
+    return `5-frame match · ${verification.confirmed_pairs}/${verification.checked_pairs}`
+  }
+  if (verification.confirmed === false) {
+    return `Frames differ · ${verification.confirmed_pairs}/${verification.checked_pairs}`
+  }
+  return 'Frame check inconclusive'
+}
+
+function verificationVariant(
+  verification: DedupeGroup['verification'],
+): 'success' | 'warning' | 'outline' {
+  if (!verification || !verification.available) return 'outline'
+  if (verification.confirmed === true) return 'success'
+  if (verification.confirmed === false) return 'warning'
+  return 'outline'
+}
+
+function playbackUrl(file: FileEntry): string {
+  if (file.type !== 'video') return file.media_url
+  return file.playable || !file.transcode_url ? file.media_url : file.transcode_url
+}
+
 export function DedupePage() {
   const navigate = useNavigate()
   const client = useQueryClient()
-  const [mode, setMode] = useState<Mode>('content')
   const [limit, setLimit] = useState(25)
   const [hashing, setHashing] = useState(false)
   const [hashingProgress, setHashingProgress] = useState('')
+  const [verifyingAll, setVerifyingAll] = useState(false)
+  const [verifyProgress, setVerifyProgress] = useState('')
   const [keepChoice, setKeepChoice] = useState<Record<string, string>>({})
   const [confirm, setConfirm] = useState<{ group: DedupeGroup; keep: string } | null>(
     null,
   )
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [compareId, setCompareId] = useState<string | null>(null)
   const [ignoredLimit, setIgnoredLimit] = useState(50)
   const [showIgnored, setShowIgnored] = useState(false)
 
   const status = useDedupeStatus()
-  const groups = useDedupeGroups(mode, limit)
+  const groups = useDedupeGroups('all', limit)
   const ignored = useDedupeIgnored(ignoredLimit)
   const resolve = useDedupeResolve()
   const ignore = useDedupeIgnore()
   const unignore = useDedupeUnignore()
+  const verify = useDedupeVerifyVisual()
+  const reset = useDedupeReset()
 
   const data = groups.data
-  const activeStatus = mode === 'content' ? status.data?.content : status.data?.visual
-  const unhashed = activeStatus?.unhashed ?? 0
+  const unhashed =
+    (status.data?.content.unhashed ?? 0) + (status.data?.visual.unhashed ?? 0)
+  const compareGroup = data?.groups.find((group) => group.id === compareId) ?? null
 
   const openFile = (file: FileEntry) => {
     navigate(
@@ -91,14 +126,18 @@ export function DedupePage() {
   const runHashing = async () => {
     setHashing(true)
     try {
-      let guard = 0
       let total = 0
-      while (guard < 400) {
-        guard += 1
-        const result = await api.dedupeHash(mode, 50)
-        total += result.hashed
-        setHashingProgress(`${result.hashed} hashed · ${result.remaining} left`)
-        if (result.remaining === 0 || result.hashed === 0) break
+      for (const mode of ['content', 'visual'] as const) {
+        let guard = 0
+        while (guard < 400) {
+          guard += 1
+          const result = await api.dedupeHash(mode, 50)
+          total += result.hashed
+          setHashingProgress(
+            `${mode}: ${result.hashed} hashed · ${result.remaining} left`,
+          )
+          if (result.remaining === 0 || result.hashed === 0) break
+        }
       }
       await client.invalidateQueries({ queryKey: ['dedupe'] })
       toast.success(`Hashed ${total} file${total === 1 ? '' : 's'}`)
@@ -113,6 +152,60 @@ export function DedupePage() {
   const keepFor = (group: DedupeGroup): string =>
     keepChoice[group.id] ?? group.files[0]?.path ?? ''
 
+  const setKeep = (group: DedupeGroup, path: string) =>
+    setKeepChoice((current) => ({ ...current, [group.id]: path }))
+
+  const verifyGroup = async (group: DedupeGroup) => {
+    if (group.match_type !== 'visual') return
+    try {
+      await verify.mutateAsync(group.files.map((file) => file.path))
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not check frames',
+      )
+    }
+  }
+
+  const openCompare = (group: DedupeGroup) => {
+    setCompareId(group.id)
+    if (
+      group.match_type === 'visual' &&
+      !group.verification?.available &&
+      group.files.some((file) => file.type === 'video')
+    ) {
+      void verifyGroup(group)
+    }
+  }
+
+  const verifyVisible = async () => {
+    const pending = (data?.groups ?? []).filter(
+      (group) =>
+        group.match_type === 'visual' &&
+        !group.verification?.available &&
+        group.files.some((file) => file.type === 'video'),
+    )
+    if (!pending.length) {
+      toast.info('Every visual group on this page is already frame-checked')
+      return
+    }
+    setVerifyingAll(true)
+    try {
+      for (const [index, group] of pending.entries()) {
+        setVerifyProgress(`${index + 1}/${pending.length}`)
+        await verify.mutateAsync(group.files.map((file) => file.path))
+      }
+      await client.invalidateQueries({ queryKey: ['dedupe'] })
+      toast.success(`Frame-checked ${pending.length} visual group(s)`)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not check frames',
+      )
+    } finally {
+      setVerifyingAll(false)
+      setVerifyProgress('')
+    }
+  }
+
   const ignoreGroup = async (group: DedupeGroup) => {
     try {
       for (let index = 0; index < group.files.length; index += 1) {
@@ -120,13 +213,27 @@ export function DedupePage() {
           await ignore.mutateAsync({
             path1: group.files[index].path,
             path2: group.files[other].path,
-            mode,
+            mode: group.match_type,
           })
         }
       }
       toast.success('Marked as not duplicates')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not ignore the group')
+    }
+  }
+
+  const runReset = async () => {
+    try {
+      const result = await reset.mutateAsync()
+      setConfirmReset(false)
+      setKeepChoice({})
+      setCompareId(null)
+      toast.success(
+        `Cleared ${result.ignored_cleared} ignored pair(s) and ${result.signatures_cleared} frame check(s)`,
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not reset duplicates')
     }
   }
 
@@ -144,32 +251,34 @@ export function DedupePage() {
             Duplicates
           </h1>
           <p className="text-xs text-fg-muted">
-            Content groups are byte-identical. Visual groups are near-identical
-            frames; deleting one of those is your call.
+            Byte-identical and visually similar files in one list. Visual matches
+            can be double-checked against five frames per video.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-border p-0.5">
-            {(['content', 'visual'] as Mode[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => {
-                  setMode(option)
-                  setKeepChoice({})
-                  setLimit(25)
-                }}
-                className={cn(
-                  'rounded-sm px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                  mode === option
-                    ? 'bg-accent-soft text-accent'
-                    : 'text-fg-muted hover:text-fg',
-                )}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {data?.groups.some(
+            (group) =>
+              group.match_type === 'visual' && !group.verification?.available,
+          ) ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void verifyVisible()}
+              disabled={verifyingAll || verify.isPending}
+              title="Compare five sampled frames for each visual group on this page"
+            >
+              {verifyingAll ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck />
+              )}
+              {verifyingAll
+                ? verifyProgress
+                  ? `Checking ${verifyProgress}`
+                  : 'Checking…'
+                : 'Check 5 frames'}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="secondary"
@@ -177,21 +286,32 @@ export function DedupePage() {
             disabled={hashing || unhashed === 0}
             title={
               unhashed === 0
-                ? 'Everything in this mode is already hashed'
+                ? 'Everything is already hashed'
                 : `Hash ${unhashed} remaining candidates`
             }
           >
             {hashing ? <Loader2 className="size-4 animate-spin" /> : <Hash />}
             {hashing ? hashingProgress || 'Hashing…' : `Hash ${unhashed || ''}`.trim()}
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setConfirmReset(true)}
+            disabled={reset.isPending}
+            title="Clear every ignored pair and cached frame check"
+          >
+            <RefreshCw /> Reset
+          </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle">
         <Badge variant="outline">
-          {mode === 'content'
-            ? `${status.data?.content.candidate_files.toLocaleString() ?? 0} same-size candidates`
-            : `${status.data?.visual.hashed.toLocaleString() ?? 0} visual hashes`}
+          {status.data?.content.candidate_files.toLocaleString() ?? 0} same-size
+          candidates
+        </Badge>
+        <Badge variant="outline">
+          {status.data?.visual.hashed.toLocaleString() ?? 0} visual hashes
         </Badge>
         <Badge variant={unhashed ? 'warning' : 'success'}>
           {unhashed ? `${unhashed.toLocaleString()} not hashed` : 'all hashed'}
@@ -210,10 +330,9 @@ export function DedupePage() {
       {unhashed > 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-5 text-fg-muted">
           <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-warning" />
-          {mode === 'content'
-            ? 'Same-size files must be hashed before duplicates can be grouped. Hashing reads 128 KB per file.'
-            : 'Posters are hashed into a perceptual fingerprint; only files with a cached poster can be compared.'}{' '}
-          The button above runs it in batches, off the request thread.
+          Same-size files need a content hash and posters need a perceptual hash.
+          Hashing reads 128 KB per file; the button runs it in batches, off the
+          request thread.
         </div>
       ) : null}
 
@@ -236,27 +355,32 @@ export function DedupePage() {
           description={
             unhashed
               ? 'Hash the remaining candidates and check again.'
-              : 'Nothing in this mode looks duplicated. Nice library.'
+              : 'Nothing looks duplicated. Nice library.'
           }
         />
       ) : (
         <div className="flex flex-col gap-3">
           {data?.groups.map((group) => {
             const keep = keepFor(group)
+            const isVisual = group.match_type === 'visual'
             return (
               <Card key={group.id}>
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="flex items-center gap-2">
-                      {group.match_type === 'content' ? (
-                        <Copy aria-hidden="true" className="size-4 text-fg-subtle" />
-                      ) : (
+                      {isVisual ? (
                         <Eye aria-hidden="true" className="size-4 text-fg-subtle" />
+                      ) : (
+                        <Copy aria-hidden="true" className="size-4 text-fg-subtle" />
                       )}
-                      {group.files.length} {group.match_type === 'content'
-                        ? 'identical files'
-                        : 'visually similar files'}
+                      {group.files.length}{' '}
+                      {isVisual ? 'visually similar files' : 'identical files'}
                       <Badge variant="outline">{group.size_formatted} each</Badge>
+                      {isVisual ? (
+                        <Badge variant={verificationVariant(group.verification)}>
+                          {verificationLabel(group.verification)}
+                        </Badge>
+                      ) : null}
                     </CardTitle>
                     <span className="text-[11px] text-fg-subtle">
                       up to {formatBytes(group.reclaimable)} reclaimable
@@ -281,12 +405,7 @@ export function DedupePage() {
                           role="radio"
                           aria-checked={selected}
                           aria-label={`Keep ${file.name}`}
-                          onClick={() =>
-                            setKeepChoice((current) => ({
-                              ...current,
-                              [group.id]: file.path,
-                            }))
-                          }
+                          onClick={() => setKeep(group, file.path)}
                           className={cn(
                             'flex size-4 shrink-0 items-center justify-center rounded-full border',
                             selected
@@ -296,7 +415,12 @@ export function DedupePage() {
                         >
                           <Check className="size-3" />
                         </button>
-                        <span className="size-10 shrink-0 overflow-hidden rounded-sm bg-surface-3">
+                        <button
+                          type="button"
+                          onClick={() => openCompare(group)}
+                          title="Compare these files"
+                          className="size-10 shrink-0 overflow-hidden rounded-sm bg-surface-3"
+                        >
                           {file.has_thumb ? (
                             <img
                               src={file.thumb_url}
@@ -305,7 +429,7 @@ export function DedupePage() {
                               className="h-full w-full object-cover"
                             />
                           ) : null}
-                        </span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => openFile(file)}
@@ -328,14 +452,46 @@ export function DedupePage() {
                     )
                   })}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => void ignoreGroup(group)}
-                      disabled={ignore.isPending}
-                      className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle hover:text-fg"
-                    >
-                      <EyeOff className="size-3.5" /> Not duplicates
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openCompare(group)}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle hover:text-fg"
+                      >
+                        <Columns2 className="size-3.5" /> Compare
+                      </button>
+                      {isVisual ? (
+                        <button
+                          type="button"
+                          onClick={() => void verifyGroup(group)}
+                          disabled={
+                            verify.isPending ||
+                            !group.files.some((file) => file.type === 'video')
+                          }
+                          title={
+                            group.files.some((file) => file.type === 'video')
+                              ? 'Compare five sampled frames per video'
+                              : 'Five-frame checks need at least one video'
+                          }
+                          className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle hover:text-fg disabled:opacity-50"
+                        >
+                          {verify.isPending ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="size-3.5" />
+                          )}
+                          Check 5 frames
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void ignoreGroup(group)}
+                        disabled={ignore.isPending}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle hover:text-fg"
+                      >
+                        <EyeOff className="size-3.5" /> Not duplicates
+                      </button>
+                    </div>
                     <Button
                       size="sm"
                       variant="danger"
@@ -372,13 +528,25 @@ export function DedupePage() {
                 {ignored.data?.total.toLocaleString() ?? 0}
               </Badge>
             </CardTitle>
-            <IconButton
-              aria-label={showIgnored ? 'Hide ignored pairs' : 'Show ignored pairs'}
-              title={showIgnored ? 'Hide' : 'Show'}
-              onClick={() => setShowIgnored((value) => !value)}
-            >
-              {showIgnored ? <EyeOff /> : <Eye />}
-            </IconButton>
+            <div className="flex items-center gap-1">
+              {ignored.data?.total ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmReset(true)}
+                  disabled={reset.isPending}
+                >
+                  <RefreshCw /> Clear all
+                </Button>
+              ) : null}
+              <IconButton
+                aria-label={showIgnored ? 'Hide ignored pairs' : 'Show ignored pairs'}
+                title={showIgnored ? 'Hide' : 'Show'}
+                onClick={() => setShowIgnored((value) => !value)}
+              >
+                {showIgnored ? <EyeOff /> : <Eye />}
+              </IconButton>
+            </div>
           </div>
         </CardHeader>
         {showIgnored ? (
@@ -448,12 +616,162 @@ export function DedupePage() {
       </Card>
 
       <Dialog
+        open={compareGroup !== null}
+        onOpenChange={(open) => (open ? undefined : setCompareId(null))}
+      >
+        {compareGroup ? (
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-w-6xl max-h-[90dvh] overflow-y-auto"
+          >
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                <Columns2 aria-hidden="true" className="size-4 text-fg-subtle" />
+                Compare {compareGroup.files.length} files
+                {compareGroup.match_type === 'visual' ? (
+                  <Badge variant={verificationVariant(compareGroup.verification)}>
+                    {verificationLabel(compareGroup.verification)}
+                  </Badge>
+                ) : null}
+              </DialogTitle>
+            </DialogHeader>
+            <DialogBody className="flex flex-col gap-3">
+              <p className="text-xs text-fg-muted">
+                Play the clips side by side, then choose the copy to keep. The
+                highlighted file is kept; the others are deleted only after
+                confirmation.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {compareGroup.files.map((file) => {
+                  const selected = file.path === keepFor(compareGroup)
+                  return (
+                    <div
+                      key={file.path}
+                      className={cn(
+                        'flex flex-col gap-2 rounded-md border p-2',
+                        selected
+                          ? 'border-accent bg-accent-soft/30'
+                          : 'border-border',
+                      )}
+                    >
+                      <div className="aspect-video w-full overflow-hidden rounded-sm bg-black">
+                        {file.type === 'video' ? (
+                          <video
+                            key={file.path}
+                            controls
+                            preload="metadata"
+                            playsInline
+                            poster={file.has_thumb ? file.thumb_url : undefined}
+                            src={playbackUrl(file)}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <img
+                            src={file.media_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-full w-full object-contain"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          aria-label={`Keep ${file.name}`}
+                          onClick={() => setKeep(compareGroup, file.path)}
+                          className={cn(
+                            'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border',
+                            selected
+                              ? 'border-accent bg-accent text-accent-fg'
+                              : 'border-border-strong text-transparent',
+                          )}
+                        >
+                          <Check className="size-3" />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-fg">
+                            {file.name}
+                          </p>
+                          <p className="truncate text-[10px] text-fg-subtle">
+                            {file.folder_path}
+                          </p>
+                          <p className="text-[10px] text-fg-subtle">
+                            {resolutionLabel(file.width, file.height) ?? 'unprobed'} ·{' '}
+                            {file.size_formatted}
+                            {file.duration ? ` · ${Math.round(file.duration)}s` : ''}
+                          </p>
+                        </div>
+                        {selected ? <Badge variant="accent">keep</Badge> : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {file.type === 'video' ? (
+                          <Badge variant="outline">
+                            <Film /> {file.video_codec ?? 'video'}
+                          </Badge>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openFile(file)}
+                        >
+                          Open in library
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {compareGroup.match_type === 'visual' &&
+              compareGroup.verification?.pairs.length ? (
+                <div className="flex flex-col gap-1 rounded-sm border border-border bg-surface-2 px-3 py-2 text-[11px] text-fg-muted">
+                  <span className="font-medium text-fg">Frame check</span>
+                  {compareGroup.verification.pairs.map((pair) => (
+                    <span key={pair.path} className="truncate">
+                      {pair.matches}/{pair.compared} sampled frames match (
+                      {pair.against.split('/').pop()})
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </DialogBody>
+            <DialogFooter>
+              {compareGroup.match_type === 'visual' ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void verifyGroup(compareGroup)}
+                  disabled={
+                    verify.isPending ||
+                    !compareGroup.files.some((file) => file.type === 'video')
+                  }
+                >
+                  {verify.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck />
+                  )}
+                  Check 5 frames
+                </Button>
+              ) : null}
+              <Button variant="ghost" onClick={() => setCompareId(null)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        ) : null}
+      </Dialog>
+
+      <Dialog
         open={confirm !== null}
         onOpenChange={(open) => (open ? undefined : setConfirm(null))}
       >
         <DialogContent aria-describedby={undefined} className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Delete {deletePreview.length} duplicate{deletePreview.length === 1 ? '' : 's'}?</DialogTitle>
+            <DialogTitle>
+              Delete {deletePreview.length} duplicate
+              {deletePreview.length === 1 ? '' : 's'}?
+            </DialogTitle>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-2">
             <p className="text-sm text-fg-muted">
@@ -470,15 +788,15 @@ export function DedupePage() {
                 </li>
               ))}
             </ul>
-            {mode === 'content' ? (
+            {confirm?.group.match_type === 'content' ? (
               <p className="text-[11px] leading-5 text-fg-subtle">
                 Each file is compared byte-for-byte with the keeper first. Anything
                 that differs is left untouched.
               </p>
             ) : (
               <p className="text-[11px] leading-5 text-warning">
-                Visual duplicates are not byte-identical. Check the previews before
-                deleting.
+                Visual duplicates are not byte-identical. Check the frame
+                comparison and play the clips before deleting.
               </p>
             )}
           </DialogBody>
@@ -493,7 +811,11 @@ export function DedupePage() {
                 if (!confirm) return
                 const deletes = deletePreview.map((file) => file.path)
                 resolve.mutate(
-                  { keep: confirm.keep, deletes, mode },
+                  {
+                    keep: confirm.keep,
+                    deletes,
+                    mode: confirm.group.match_type,
+                  },
                   {
                     onSuccess: (result) => {
                       if (result.mismatched.length) {
@@ -520,6 +842,37 @@ export function DedupePage() {
                 <Trash2 />
               )}
               Delete duplicates
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={confirmReset}
+        onOpenChange={(open) => (open ? undefined : setConfirmReset(false))}
+      >
+        <DialogContent aria-describedby={undefined} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset duplicates?</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <p className="text-sm text-fg-muted">
+              This clears every ignored pair and every cached five-frame check,
+              so all duplicate candidates come back. Files and hashes are not
+              deleted.
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmReset(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => void runReset()}
+              disabled={reset.isPending}
+            >
+              {reset.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw />}
+              Reset duplicates
             </Button>
           </DialogFooter>
         </DialogContent>

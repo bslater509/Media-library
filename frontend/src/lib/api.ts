@@ -290,6 +290,24 @@ export interface DownloadEnqueueResponse {
   rejected: Array<{ url: string; error: string }>
 }
 
+export interface DedupeFramePair {
+  path: string
+  against: string
+  compared: number
+  matches: number
+  distances: number[]
+  confirmed: boolean | null
+}
+
+export interface DedupeVerification {
+  available: boolean
+  confirmed: boolean | null
+  checked_pairs: number
+  confirmed_pairs: number
+  frames: number
+  pairs: DedupeFramePair[]
+}
+
 export interface DedupeGroup {
   id: string
   match_type: 'content' | 'visual'
@@ -297,6 +315,7 @@ export interface DedupeGroup {
   size_formatted: string
   reclaimable: number
   files: FileEntry[]
+  verification: DedupeVerification | null
 }
 
 export interface DedupeGroups {
@@ -311,6 +330,11 @@ export interface DedupeStatus {
   content: { candidate_files: number; unhashed: number }
   visual: { hashed: number; unhashed: number }
   ignored: number
+}
+
+export interface DedupeResetResult {
+  ignored_cleared: number
+  signatures_cleared: number
 }
 
 export interface DedupeHashResult {
@@ -874,6 +898,11 @@ export const api = {
       delete: deletes,
       mode,
     }),
+
+  dedupeVerifyVisual: (paths: string[]) =>
+    post<DedupeVerification>('/dedupe/verify-visual', { paths }),
+
+  dedupeReset: () => post<DedupeResetResult>('/dedupe/reset', {}),
 
   dedupeIgnore: (path1: string, path2: string, matchType: string) =>
     post<{ ignored: boolean }>('/dedupe/ignore', {

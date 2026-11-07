@@ -267,6 +267,7 @@ files  (path PK, name, folder_path, type, ext, size, size_formatted, mtime,
 webp_stats(id=1, saved_bytes, converted_count, skipped_count)
 ignored_duplicates(id PK, path1, path2, match_type, created_at, UNIQUE(path1,path2))
 favorites(path PK, created_at)
+visual_frames(path PK, mtime, size, duration, hashes, captured_at)
 ```
 
 Hard contracts:
@@ -284,6 +285,10 @@ Hard contracts:
   pHash (or `no_thumb`/`blank_thumb`). Both formats are load-bearing: dedupe,
   the sorter's "already in the library" warning and cached work depend on them.
 - `webp_optimized`: `1` done/native, `0` pending, `-1` skipped (larger).
+- `visual_frames.hashes` is a JSON list of five 16-hex pHashes (or nulls) taken
+  at 10–90% of a video's duration. It is keyed by path and invalidated when the
+  file's `mtime`/`size` changes, so a visual group can be double-checked
+  without re-running FFmpeg every page load.
 
 Indexes: `files(folder_path)`, `files(folder_path, LOWER(name))`, `files(type)`,
 `files(has_thumb)`, `files(has_animated)`, `files(size)`, `files(quick_hash)`,
@@ -374,8 +379,12 @@ conversion. Archives are rewritten as a unit on demand (browse or
 ### Dedupe
 Content groups come from identical sizes and `quick_hash`; every deletion is
 preceded by a full byte comparison. Visual clusters use complete linkage on the
-64-bit pHash (distance ≤ 2) capped at 12 files. Ignored pairs are stored
-normalised and filtered from every scan.
+64-bit poster pHash (distance ≤ 2) capped at 12 files. Any visual group can be
+double-checked against five sampled frames per video (10–90% of duration), and
+the result is cached in `visual_frames`. The client shows content and visual
+groups in one list; a visual cluster already covered by a byte-identical group
+is folded into it. `POST /api/dedupe/reset` clears every ignored pair and cached
+frame check.
 
 ### Downloads
 Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged
@@ -459,9 +468,10 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `POST /transcode/x265/cancel`
 
 ### Dedupe, analytics, cleanup, backups
-`GET /dedupe/status` · `GET /dedupe/groups?mode=content|visual&limit=&offset=` ·
-`POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/resolve` ·
-`POST /dedupe/ignore` · `GET /dedupe/ignored` · `POST /dedupe/unignore` ·
+`GET /dedupe/status` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=` ·
+`POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/verify-visual` ·
+`POST /dedupe/resolve` · `POST /dedupe/ignore` · `GET /dedupe/ignored` ·
+`POST /dedupe/unignore` · `POST /dedupe/reset` ·
 `GET /analytics/overview?folder_limit=&file_limit=&refresh=` ·
 `GET /folders/empty` · `POST /folders/empty/delete` ·
 `GET /backups/status` · `POST /backups/snapshot` · `GET /backups/verify` ·

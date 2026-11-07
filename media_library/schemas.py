@@ -471,6 +471,24 @@ class DownloadClearResponse(BaseModel):
 # --- analytics -------------------------------------------------------------
 
 
+class DedupeFramePair(BaseModel):
+    path: str
+    against: str
+    compared: int
+    matches: int
+    distances: list[int] = Field(default_factory=list)
+    confirmed: bool | None = None
+
+
+class DedupeVerification(BaseModel):
+    available: bool
+    confirmed: bool | None = None
+    checked_pairs: int = 0
+    confirmed_pairs: int = 0
+    frames: int = 5
+    pairs: list[DedupeFramePair] = Field(default_factory=list)
+
+
 class DedupeGroup(BaseModel):
     id: str
     match_type: str
@@ -478,6 +496,7 @@ class DedupeGroup(BaseModel):
     size_formatted: str
     reclaimable: int
     files: list[FileEntry]
+    verification: DedupeVerification | None = None
 
 
 class DedupeGroups(BaseModel):
@@ -514,6 +533,15 @@ class DedupeVerifyResponse(BaseModel):
     keep: str
     path: str
     identical: bool
+
+
+class DedupeVisualVerifyRequest(BaseModel):
+    paths: list[str] = Field(min_length=2, max_length=200)
+
+
+class DedupeResetResponse(BaseModel):
+    ignored_cleared: int
+    signatures_cleared: int
 
 
 class DedupeResolveRequest(BaseModel):

@@ -167,6 +167,7 @@ def test_fresh_schema_has_every_column_and_index(tmp_path):
         "files",
         "folders",
         "ignored_duplicates",
+        "visual_frames",
         "webp_stats",
     }
     assert SLIM_INDEXES == _indexes(db)

@@ -69,6 +69,10 @@ def _remove_subtree(conn, target: str) -> None:
         "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
         (target, target, length, prefix, length, prefix),
     )
+    conn.execute(
+        "DELETE FROM visual_frames WHERE path = ? OR substr(path, 1, ?) = ?",
+        (target, length, prefix),
+    )
 
 
 def _index_archive(conn, archive: str, infos: list[zipfile.ZipInfo]) -> int:
@@ -214,6 +218,10 @@ def index_archive(conn, archive: str, infos: list[zipfile.ZipInfo]) -> int:
 
 def clear_archive_members(conn, archive: str) -> None:
     conn.execute("DELETE FROM files WHERE folder_path = ?", (archive,))
+    conn.execute(
+        "DELETE FROM visual_frames WHERE substr(path, 1, ?) = ?",
+        (len(archive) + 1, archive + os.sep),
+    )
 
 
 def check_folder(folder: str) -> dict[str, Any]:

@@ -315,6 +315,87 @@ def test_visual_groups_cluster_within_two_bits(dedupe_env):
     )
 
 
+def test_all_groups_merge_content_and_visual(tmp_path, dedupe_env):
+    # Make the identical pair also visually identical so the visual cluster is
+    # fully covered by the content group and must not be listed twice.
+    with _db(dedupe_env) as conn:
+        conn.execute(
+            "UPDATE files SET thumb_hash = 'aaaaaaaaaaaaaaaa', has_thumb = 1 "
+            "WHERE path IN (?, ?)",
+            (str(dedupe_env["a"]), str(dedupe_env["b"])),
+        )
+
+    result = dedupe.all_groups(limit=100)
+    assert result["mode"] == "all"
+    kinds = {group["match_type"] for group in result["groups"]}
+    assert kinds == {"content", "visual"}
+    paths = [{file["path"] for file in group["files"]} for group in result["groups"]]
+    assert {str(dedupe_env["a"]), str(dedupe_env["b"])} in paths
+    assert {str(dedupe_env["va"]), str(dedupe_env["vb"])} in paths
+    # The visual cluster over a/b is fully represented by the content group.
+    assert not any(
+        {str(dedupe_env["a"]), str(dedupe_env["b"])} <= group
+        and group != {str(dedupe_env["a"]), str(dedupe_env["b"])}
+        for group in paths
+    )
+
+
+def test_verify_visual_group_needs_five_frame_agreement(dedupe_env, monkeypatch):
+    with _db(dedupe_env) as conn:
+        conn.execute(
+            "UPDATE files SET duration = 100 WHERE path IN (?, ?)",
+            (str(dedupe_env["a"]), str(dedupe_env["b"])),
+        )
+
+    calls: list[tuple[str, float]] = []
+
+    def matching(path: str, timestamp: float) -> str:
+        calls.append((path, timestamp))
+        return (
+            "0000000000000003" if path == str(dedupe_env["b"]) else "0000000000000000"
+        )
+
+    monkeypatch.setattr(dedupe, "_frame_phash", matching)
+    result = dedupe.verify_visual_group([str(dedupe_env["a"]), str(dedupe_env["b"])])
+    assert result["available"] is True
+    assert result["confirmed"] is True
+    assert result["checked_pairs"] == 1
+    assert len(result["pairs"][0]["distances"]) == 5
+    assert len(calls) == 10
+
+    # A second call reuses the stored signatures instead of re-sampling.
+    dedupe.verify_visual_group([str(dedupe_env["a"]), str(dedupe_env["b"])])
+    assert len(calls) == 10
+
+    def different(path: str, _timestamp: float) -> str:
+        return (
+            "ffffffffffffffff" if path == str(dedupe_env["b"]) else "0000000000000000"
+        )
+
+    dedupe.reset_duplicates()
+    monkeypatch.setattr(dedupe, "_frame_phash", different)
+    rejected = dedupe.verify_visual_group([str(dedupe_env["a"]), str(dedupe_env["b"])])
+    assert rejected["confirmed"] is False
+    assert rejected["pairs"][0]["matches"] == 0
+
+
+def test_reset_duplicates_clears_ignored_pairs_and_frame_checks(dedupe_env):
+    dedupe.ignore_pair(str(dedupe_env["a"]), str(dedupe_env["b"]), "content")
+    with _db(dedupe_env) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO visual_frames "
+            "(path, mtime, size, duration, hashes, captured_at) "
+            "VALUES (?, 1, 2, 10, '[]', 3)",
+            (str(dedupe_env["a"]),),
+        )
+
+    result = dedupe.reset_duplicates()
+    assert result == {"ignored_cleared": 1, "signatures_cleared": 1}
+    assert dedupe.ignored_page()["total"] == 0
+    with _db(dedupe_env) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM visual_frames").fetchone()[0] == 0
+
+
 def test_visual_groups_do_not_chain(dedupe_env):
     base = dedupe_env["library"] / "B"
     chain = {
@@ -405,3 +486,25 @@ def test_router_wires_dedupe_and_validates_input(dedupe_env):
     assert ignored["ignored"] is True
     page = client.get("/api/dedupe/ignored").json()
     assert page["total"] == 1
+
+    combined = client.get("/api/dedupe/groups").json()
+    assert combined["mode"] == "all"
+    assert combined["total_groups"] >= 2
+
+    assert (
+        client.post(
+            "/api/dedupe/verify-visual",
+            json={"paths": [str(dedupe_env["va"])]},
+        ).status_code
+        == 422
+    )
+    frame_check = client.post(
+        "/api/dedupe/verify-visual",
+        json={"paths": [str(dedupe_env["va"]), str(dedupe_env["vb"])]},
+    )
+    assert frame_check.status_code == 200
+    assert frame_check.json()["available"] is False
+
+    reset = client.post("/api/dedupe/reset").json()
+    assert reset["ignored_cleared"] == 1
+    assert client.get("/api/dedupe/ignored").json()["total"] == 0

@@ -14,13 +14,16 @@ from media_library.schemas import (
     DedupeHashResponse,
     DedupeIgnoreRequest,
     DedupeIgnoreResponse,
+    DedupeResetResponse,
     DedupeResolveRequest,
     DedupeResolveResponse,
     DedupeStatus,
     DedupeUnignoreRequest,
     DedupeUnignoreResponse,
+    DedupeVerification,
     DedupeVerifyRequest,
     DedupeVerifyResponse,
+    DedupeVisualVerifyRequest,
     IgnoredPairsPage,
 )
 
@@ -34,16 +37,36 @@ async def status() -> dict:
 
 @router.get("/dedupe/groups", response_model=DedupeGroups)
 async def groups(
-    mode: str = Query("content"),
+    mode: str = Query("all"),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> dict:
-    if mode not in ("content", "visual"):
+    if mode not in ("all", "content", "visual"):
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail="Unknown match mode")
-    worker = dedupe.content_groups if mode == "content" else dedupe.visual_groups
+    worker = {
+        "all": dedupe.all_groups,
+        "content": dedupe.content_groups,
+        "visual": dedupe.visual_groups,
+    }[mode]
     return await asyncio.to_thread(worker, limit, offset)
+
+
+@router.post("/dedupe/verify-visual", response_model=DedupeVerification)
+async def verify_visual(payload: DedupeVisualVerifyRequest) -> dict:
+    try:
+        return await asyncio.to_thread(dedupe.verify_visual_group, payload.paths)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.post("/dedupe/reset", response_model=DedupeResetResponse)
+async def reset() -> dict:
+    try:
+        return await asyncio.to_thread(dedupe.reset_duplicates)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
 
 
 @router.post("/dedupe/hash", response_model=DedupeHashResponse)

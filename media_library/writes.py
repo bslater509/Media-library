@@ -154,6 +154,7 @@ def _apply_file_move(conn, old: str, new: str) -> None:
         ),
     )
     conn.execute("UPDATE favorites SET path = ? WHERE path = ?", (new, old))
+    conn.execute("DELETE FROM visual_frames WHERE path = ?", (old,))
     _recompute_folder(conn, os.path.dirname(old))
     if os.path.dirname(new) != os.path.dirname(old):
         _recompute_folder(conn, os.path.dirname(new))
@@ -360,6 +361,11 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                     "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
                     (target, target, len(prefix), prefix, len(prefix), prefix),
                 )
+                conn.execute(
+                    "DELETE FROM visual_frames WHERE path = ? "
+                    "OR substr(path, 1, ?) = ?",
+                    (target, len(prefix), prefix),
+                )
                 if kind == "zip":
                     # The archive's own row holds the virtual folder; members
                     # were removed by the prefix clauses above.
@@ -372,6 +378,7 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                     "DELETE FROM ignored_duplicates WHERE path1 = ? OR path2 = ?",
                     (target, target),
                 )
+                conn.execute("DELETE FROM visual_frames WHERE path = ?", (target,))
         for folder in parent_folders:
             _recompute_folder(conn, folder)
             conn.execute(
@@ -440,6 +447,11 @@ def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
                 (target, cut, cut, prefix),
             )
             conn.execute(
+                "UPDATE visual_frames SET path = ? || substr(path, ?) "
+                "WHERE substr(path, 1, ?) = ?",
+                (target, cut, cut, prefix),
+            )
+            conn.execute(
                 "UPDATE ignored_duplicates SET "
                 "path1 = CASE WHEN substr(path1, 1, ?) = ? "
                 "THEN ? || substr(path1, ?) ELSE path1 END, "
@@ -484,6 +496,11 @@ def _relocate_entry(source: str, target: str, is_zip: bool) -> None:
             )
             conn.execute(
                 "UPDATE favorites SET path = ? || substr(path, ?) "
+                "WHERE path = ? OR substr(path, 1, ?) = ?",
+                (target, cut, source, cut, prefix),
+            )
+            conn.execute(
+                "UPDATE visual_frames SET path = ? || substr(path, ?) "
                 "WHERE path = ? OR substr(path, 1, ?) = ?",
                 (target, cut, source, cut, prefix),
             )
@@ -876,6 +893,7 @@ def remove_index_entry(path: str) -> None:
             size = int(row["size"] or 0)
         conn.execute("DELETE FROM files WHERE path = ?", (path,))
         conn.execute("DELETE FROM favorites WHERE path = ?", (path,))
+        conn.execute("DELETE FROM visual_frames WHERE path = ?", (path,))
         _recompute_folder(conn, os.path.dirname(path))
     _remove_thumbs(path, mtime, size)
 

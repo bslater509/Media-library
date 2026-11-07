@@ -11,6 +11,26 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Added
+
+- **Visual duplicates are double-checked against five frames.** `POST
+  /api/dedupe/verify-visual` samples a video at 10–90% of its duration, hashes
+  each frame and compares the pair; results are cached in the new
+  `visual_frames` table. A group is confirmed when at least three samples
+  agree, and the Duplicates page can check one group or every visible visual
+  group.
+- **The Duplicates page compares videos side by side.** A compare dialog plays
+  every file in the group, keeps the selected copy highlighted and shows the
+  per-pair frame agreement.
+- **`POST /api/dedupe/reset`** clears every ignored pair and cached frame
+  check, exposed as the page's Reset action.
+
+### Changed
+
+- **Duplicates are one list.** `GET /api/dedupe/groups` defaults to `mode=all`
+  and folds content and visual matches together (content groups still win where
+  they overlap); the client's content/visual tabs are gone.
+
 ### Removed
 
 - **The previous application is gone.** Its package, `app.py` entrypoint,

@@ -509,6 +509,26 @@ export function useDedupeUnignore() {
   })
 }
 
+export function useDedupeVerifyVisual() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (paths: string[]) => api.dedupeVerifyVisual(paths),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useDedupeReset() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.dedupeReset(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
 export function useBackupStatus() {
   return useQuery({
     queryKey: queryKeys.backupStatus,

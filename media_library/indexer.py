@@ -92,6 +92,10 @@ def _delete_subtree_index(conn, target: str) -> None:
         "OR substr(path1, 1, ?) = ? OR substr(path2, 1, ?) = ?",
         (target, target, length, prefix, length, prefix),
     )
+    conn.execute(
+        "DELETE FROM visual_frames WHERE path = ? OR substr(path, 1, ?) = ?",
+        (target, length, prefix),
+    )
 
 
 def _file_type(ext: str) -> str:
@@ -249,6 +253,7 @@ def _scan_folder(conn, folder: str, stat: os.stat_result) -> list[str]:
         if row["path"] not in files:
             conn.execute("DELETE FROM files WHERE path = ?", (row["path"],))
             conn.execute("DELETE FROM favorites WHERE path = ?", (row["path"],))
+            conn.execute("DELETE FROM visual_frames WHERE path = ?", (row["path"],))
 
     # Prune child folders/archives that vanished, with mount-safety.
     children = conn.execute(

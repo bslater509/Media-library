@@ -101,6 +101,16 @@ _TABLES = (
         created_at REAL NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS visual_frames (
+        path TEXT PRIMARY KEY,
+        mtime REAL,
+        size INTEGER,
+        duration REAL,
+        hashes TEXT NOT NULL,
+        captured_at REAL NOT NULL
+    )
+    """,
 )
 
 # Every index below backs a predicate or ordering in this package; see the
@@ -199,7 +209,7 @@ def table_columns(path: str | Path | None = None) -> dict[str, list[str]]:
             for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' "
                 "AND name IN ('folders', 'files', 'webp_stats', "
-                "'ignored_duplicates', 'favorites') ORDER BY name"
+                "'ignored_duplicates', 'favorites', 'visual_frames') ORDER BY name"
             )
         ]
         return {
