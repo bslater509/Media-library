@@ -1,0 +1,7 @@
+# Coverage settings for the media_library suite. The pytest gate
+# (~--cov-fail-under=100~ in pytest.ini) is kept in step with these:
+# the ``__main__`` guard cannot run under test, so its body is excluded
+# from the 100% requirement rather than being declared reachable.
+[report]
+exclude_also =
+    if __name__ == .__main__.:

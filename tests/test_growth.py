@@ -207,6 +207,17 @@ def test_growth_endpoint_serves_an_empty_index(client):
     assert payload["today"]["bytes_total"] == 0
 
 
+def test_growth_endpoint_attaches_the_worker_status(client, monkeypatch):
+    class _StubWorker:
+        @staticmethod
+        def status() -> dict:
+            return {"state": "idle"}
+
+    monkeypatch.setattr(growth, "_worker", _StubWorker())
+    payload = client.get("/api/analytics/growth").json()
+    assert payload["worker"] == {"state": "idle"}
+
+
 def test_refresh_route_upserts_today(client):
     _seed_files([("clip.mp4", "video", 750), ("still.jpg", "image", 250)])
 

@@ -316,7 +316,7 @@ def _verification_for(
             }
         )
     checked = len(detailed)
-    if checked == 0:
+    if checked == 0:  # pragma: no cover - usable >= 2 always yields one pair
         return None
     confirmed_pairs = sum(1 for pair in detailed if pair["confirmed"] is True)
     unknown_pairs = sum(1 for pair in detailed if pair["confirmed"] is None)
@@ -920,7 +920,7 @@ def _cached_merged_state() -> tuple[list[dict[str, Any]], int]:
             elif content_id not in representatives:
                 representatives[content_id] = file
                 files.append(file)
-        if len(files) < 2:
+        if len(files) < 2:  # pragma: no cover - extras guarantee >= 2 entries
             continue
         sizes = [int(file["size"] or 0) for file in files]
         merged.append(

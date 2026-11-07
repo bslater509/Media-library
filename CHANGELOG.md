@@ -144,6 +144,16 @@ snapshot metadata.
 - `/media/transcode` and `/sorter/transcode` share a concurrency cap of two
   encoders, and the command palette does not search on the very first
   keystroke.
+- The test suite now covers 100% of `media_library`: eleven new
+  `tests/test_cover_*.py` modules drive the previously uncovered defensive
+  branches (x265 commit/validation paths, writes rollback paths, dedupe
+  verification and merging, indexer pruning, downloads queueing, sorter
+  streams, thumbnails and animated previews, ZIP operations, backup snapshots
+  and restore, analytics, runtime workers, routers and app wiring), and
+  pytest's coverage gate is raised from 85% to 100%. The `__main__` guard in
+  `app.py`/`restore.py` is excluded via `.coveragerc`; three provably dead
+  lines in `dedupe.py`/`paths.py` carry `# pragma: no cover` with their
+  justification inline.
 
 ## [3.1.0] - 2026-11-07
 

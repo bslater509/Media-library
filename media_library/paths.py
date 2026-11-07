@@ -143,4 +143,4 @@ def format_size(size: int | None) -> str:
         if value < 1024 or unit == "TB":
             return f"{value:.1f} {unit}".replace(".0 ", " ")
         value /= 1024
-    return f"{size} B"
+    return f"{size} B"  # pragma: no cover - the loop always returns
