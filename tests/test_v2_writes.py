@@ -579,7 +579,10 @@ def test_abandoned_upload_staging_is_swept(write_env, monkeypatch):
     old = time.time() - 48 * 3600
     os.utime(stale, (old, old))
 
-    monkeypatch.setattr(writes, "_gc_checked_at", 0.0)
+    # A young machine (a fresh CI runner) has a small monotonic clock, which
+    # must not be mistaken for a recent check.
+    monkeypatch.setattr(writes, "_gc_checked_at", None)
+    monkeypatch.setattr(writes.time, "monotonic", lambda: 60.0)
     writes.staged_size("anotherid123")
 
     assert not stale.exists()

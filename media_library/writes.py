@@ -30,7 +30,9 @@ from media_library.paths import format_size, resolve_library_path, stable_id
 _UPLOAD_ID_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
 
 _gc_lock = threading.Lock()
-_gc_checked_at = 0.0
+# None means "never checked". A zero timestamp would compare badly against
+# time.monotonic() on a machine whose uptime is shorter than the interval.
+_gc_checked_at: float | None = None
 _GC_INTERVAL_SECONDS = 3600
 
 
@@ -716,12 +718,12 @@ def _gc_stale_staging() -> None:
     """
     global _gc_checked_at
     now = time.monotonic()
-    if now - _gc_checked_at < _GC_INTERVAL_SECONDS:
+    if _gc_checked_at is not None and now - _gc_checked_at < _GC_INTERVAL_SECONDS:
         return
     if not _gc_lock.acquire(blocking=False):
         return
     try:
-        if now - _gc_checked_at < _GC_INTERVAL_SECONDS:
+        if _gc_checked_at is not None and now - _gc_checked_at < _GC_INTERVAL_SECONDS:
             return
         _gc_checked_at = now
         staging = get_settings().upload_staging_dir
