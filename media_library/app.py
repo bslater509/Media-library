@@ -22,7 +22,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from media_library import __version__, auth, backups, build_info
+from media_library import __version__, auth, backups
 from media_library.config import BASE_DIR, get_settings, reload_settings
 from media_library.db import is_available, writes_available
 from media_library.routers import analytics as analytics_router
@@ -145,20 +145,6 @@ def create_app() -> FastAPI:
     app.middleware("http")(auth.auth_middleware)
 
     app.include_router(api_router())
-
-    @app.get("/api/health", include_in_schema=False)
-    async def health():
-        """Cheap, credential-free liveness probe for systemd and watchdogs."""
-        healthy = is_available()
-        commit = build_info.get_commit()
-        body = {
-            "status": "ok" if healthy else "degraded",
-            "version": __version__,
-            "database": "ok" if healthy else "unavailable",
-        }
-        if commit:
-            body["commit"] = commit
-        return JSONResponse(body, status_code=200 if healthy else 503)
 
     # Static assets must be mounted before the SPA catch-all.
     static_root = settings.static_dir

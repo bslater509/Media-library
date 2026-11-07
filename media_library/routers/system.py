@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from media_library import __version__, build_info, indexer, library, runtime
 from media_library.config import get_settings
@@ -162,8 +162,11 @@ async def index_sync() -> dict:
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health() -> dict:
+async def health(response: Response) -> dict:
+    """Cheap, credential-free liveness probe for systemd, watchdogs and containers."""
     healthy = is_available()
+    if not healthy:
+        response.status_code = 503
     commit = build_info.get_commit()
     return {
         "status": "ok" if healthy else "degraded",

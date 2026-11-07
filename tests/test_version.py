@@ -67,7 +67,9 @@ def test_fastapi_metadata_advertises_the_version():
 
 
 def test_health_and_info_payloads_report_the_version():
-    health = asyncio.run(system_router.health())
+    from starlette.responses import Response
+
+    health = asyncio.run(system_router.health(Response()))
     assert health["version"] == __version__
     info = asyncio.run(system_router.info())
     assert info["version"] == __version__
