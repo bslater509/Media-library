@@ -56,6 +56,14 @@ _SKIPPED_EXTS = {
 _HISTORY_MAX = 500
 
 
+def _resolve_destination(destination: str) -> str:
+    """Validate the folder away from the event loop (a remote-mount stat)."""
+    dest = resolve_library_path(destination)
+    if not os.path.isdir(dest):
+        raise writes.WriteError("Destination folder not found", 404)
+    return dest
+
+
 def tools_available() -> dict[str, bool]:
     return {
         "ytdlp": importlib.util.find_spec("yt_dlp") is not None,
@@ -153,9 +161,7 @@ class DownloadManager:
             raise writes.WriteError(
                 "No downloader is installed (yt-dlp or gallery-dl)", 503
             )
-        dest = resolve_library_path(destination)
-        if not os.path.isdir(dest):
-            raise writes.WriteError("Destination folder not found", 404)
+        dest = await asyncio.to_thread(_resolve_destination, destination)
 
         queued: list[dict[str, Any]] = []
         rejected: list[dict[str, str]] = []

@@ -168,6 +168,21 @@ export function MediaLightbox({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The poster chooser is its own modal above the viewer (it handles
+      // Escape itself); navigation keys must not act through it.
+      if (chooserOpen) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        // A nested dialog owns the focus (e.g. rename); do not turn typed
+        // keys into navigation or playback.
+        return
+      }
       if (event.key === 'Escape') {
         event.preventDefault()
         onClose()
@@ -189,7 +204,7 @@ export function MediaLightbox({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [next, onClose, previous])
+  }, [chooserOpen, next, onClose, previous])
 
   if (!file) return null
 

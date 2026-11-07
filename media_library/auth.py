@@ -36,9 +36,7 @@ AUTH_COOKIE_REFRESH_INTERVAL = 30 * 24 * 60 * 60
 # credential-free liveness probe; ``/static`` serves the client bundle so the
 # sign-in screen can render.
 _PUBLIC_PATHS = {
-    "/login",
     "/favicon.ico",
-    "/sw.js",
     "/api/health",
     "/api/auth/session",
     "/api/auth/login",

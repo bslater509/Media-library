@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import {
   Check,
   FolderInput,
@@ -28,21 +28,23 @@ export type FileAction =
   | 'delete'
 
 interface MediaTileProps {
+  /** Position of the file in the grid row order (stable shallow-compare prop). */
+  index: number
   file: FileEntry
   height: number
   width: number
   hint?: string | null
-  onOpen: () => void
+  onOpen: (index: number) => void
   onAction?: (action: FileAction, file: FileEntry) => void
   selected?: boolean
   selectionMode?: boolean
-  onSelect?: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onSelect?: (index: number, event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 const CODE_BADGE = 'bg-black/65 text-white/90'
 
 /** One justified-grid cell: poster, badges and an actions menu. */
-export function MediaTile({
+export const MediaTile = memo(function MediaTile({
   file,
   height,
   width,
@@ -52,6 +54,7 @@ export function MediaTile({
   selected = false,
   selectionMode = false,
   onSelect,
+  index,
 }: MediaTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const duration = formatDuration(file.duration)
@@ -80,15 +83,12 @@ export function MediaTile({
       <button
         type="button"
         onClick={(event) => {
-          if (
-            onSelect &&
-            (selectionMode || event.metaKey || event.ctrlKey || event.shiftKey)
-          ) {
+          if (onSelect && (selectionMode || event.metaKey || event.ctrlKey || event.shiftKey)) {
             event.preventDefault()
-            onSelect(event)
+            onSelect(index, event)
             return
           }
-          onOpen()
+          onOpen(index)
         }}
         title={file.name}
         aria-label={`${file.name}${duration ? `, ${duration}` : ''}`}
@@ -170,7 +170,7 @@ export function MediaTile({
           title={selected ? 'Deselect' : 'Select'}
           onClick={(event) => {
             event.stopPropagation()
-            onSelect(event)
+            onSelect(index, event)
           }}
           className={cn(
             'absolute top-1 left-1 z-10 flex size-5 items-center justify-center rounded-sm border transition-opacity',
@@ -233,4 +233,4 @@ export function MediaTile({
       ) : null}
     </div>
   )
-}
+})

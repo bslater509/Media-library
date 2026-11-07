@@ -381,7 +381,14 @@ export function useDownloadHistory(limit = 50) {
   return useQuery({
     queryKey: queryKeys.downloadHistory(limit),
     queryFn: () => api.downloadHistory(limit, 0),
-    refetchInterval: 5000,
+    // Live rows while something is queued or moving; idle otherwise the
+    // mutation invalidations cover updates.
+    refetchInterval: (query) =>
+      (query.state.data?.items ?? []).some(
+        (job) => job.status === 'queued' || job.status === 'downloading',
+      )
+        ? 2000
+        : false,
     staleTime: 0,
   })
 }
@@ -524,9 +531,13 @@ export function useDedupeVerifyVisualStatus() {
   return useQuery({
     queryKey: queryKeys.dedupeVerifyStatus,
     queryFn: api.dedupeVerifyVisualStatus,
-    // The groups request auto-queues visual checks, so poll even while the
-    // first status response still says idle.
-    refetchInterval: 2000,
+    // The groups request auto-queues visual checks, so poll from the first
+    // idle response — a finished check drops to a slow tick instead of
+    // hammering the endpoint, and the batch mutation re-primes fast polling.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'done' || query.state.data?.status === 'error'
+        ? 30000
+        : 2000,
     staleTime: 0,
   })
 }

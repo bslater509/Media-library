@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router'
+import { formatBytes } from '../lib/format'
 import * as echarts from 'echarts/core'
 import type { EChartsCoreOption } from 'echarts/core'
 import { BarChart, PieChart, TreemapChart } from 'echarts/charts'
@@ -44,18 +45,6 @@ echarts.use([
   LegacyGridContainLabel,
   CanvasRenderer,
 ])
-
-function formatBytes(value: number): string {
-  if (!value) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = value
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
-}
 
 function useChartColors() {
   const mode = useThemeStore((state) => state.mode)

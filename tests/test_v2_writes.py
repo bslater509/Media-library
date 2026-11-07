@@ -214,6 +214,41 @@ def test_delete_reports_missing_files_per_item(write_env):
     assert response.json()["failed"][0]["path"] == missing
 
 
+def test_delete_survives_a_path_outside_the_library(write_env):
+    # One 403 must report itself, not abort the whole batch.
+    client = write_env["client"]
+    clip = write_env["clip"]
+    outside = write_env["library"].parent / "sneaky.mp4"
+    outside.write_bytes(b"x")
+    response = client.post(
+        "/api/manage/delete", json={"paths": [str(clip), str(outside)]}
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["deleted"] == [str(clip)]
+    assert result["failed"][0]["path"] == str(outside)
+    assert not clip.exists()
+    assert outside.exists()
+
+
+def test_a_symlink_escape_is_refused_but_an_in_library_link_passes(write_env):
+    from fastapi import HTTPException
+
+    from media_library.paths import resolve_library_path
+
+    library = write_env["library"]
+    escape = library / "escape.md"
+    escape.symlink_to("/etc/passwd")
+    with pytest.raises(HTTPException) as excinfo:
+        resolve_library_path(str(escape))
+    assert excinfo.value.status_code == 403
+
+    internal = library / "Trip" / "sunset.mp4"
+    inside_link = library / "link-to-sunset.mp4"
+    inside_link.symlink_to(internal)
+    assert resolve_library_path(str(inside_link)) == str(inside_link)
+
+
 def test_rename_recomputes_type_from_the_new_extension(write_env):
     client = write_env["client"]
     clip = write_env["clip"]

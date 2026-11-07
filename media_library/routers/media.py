@@ -131,7 +131,7 @@ async def transcode_media(request: Request, path: str, ss: float = 0):
         except Exception as exc:
             raise as_http_error(exc) from exc
     else:
-        target = resolve_existing_file(path)
+        target = await asyncio.to_thread(resolve_existing_file, path)
     process = await asyncio.create_subprocess_exec(
         *build_command(target, float(ss or 0)),
         stdout=asyncio.subprocess.PIPE,
@@ -152,7 +152,9 @@ async def stream_media(request: Request, path: str, download: bool = False):
         except Exception as exc:
             raise as_http_error(exc) from exc
         return await stream_path(request, target, download=download)
-    return await stream_path(request, resolve_existing_file(path), download=download)
+    return await stream_path(
+        request, await asyncio.to_thread(resolve_existing_file, path), download=download
+    )
 
 
 async def stream_path(request: Request, target: str, download: bool = False):
@@ -160,21 +162,25 @@ async def stream_path(request: Request, target: str, download: bool = False):
     stat = await _stat(target)
     file_size = stat.st_size
     etag = f'"{file_size:x}-{int(stat.st_mtime):x}"'
+    media_type = _media_type(target)
+    # SVG can carry scripts, so it is never offered for navigation in-app;
+    # <img> embedding in the viewer keeps working (disposition is
+    # navigation-only). nosniff stops the browser sniffing anything else.
+    force_attachment = download or media_type == "image/svg+xml"
     headers = {
         "Accept-Ranges": "bytes",
         "ETag": etag,
         "Last-Modified": _http_date(stat.st_mtime),
         "Cache-Control": "private, max-age=0, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
         "Content-Disposition": (
             f'attachment; filename="{os.path.basename(target)}"'
-            if download
+            if force_attachment
             else "inline"
         ),
     }
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
-
-    media_type = _media_type(target)
     range_header = request.headers.get("range")
     if range_header:
         parsed = _parse_range(range_header, file_size)
@@ -207,7 +213,7 @@ async def stream_path(request: Request, target: str, download: bool = False):
 
 async def _stat(path: str) -> os.stat_result:
     try:
-        return os.stat(path)
+        return await asyncio.to_thread(os.stat, path)
     except OSError as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
 

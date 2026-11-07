@@ -69,6 +69,3 @@ def build_router(prefix: str = "") -> APIRouter:
         return _serve_index()
 
     return router
-
-
-router = build_router()

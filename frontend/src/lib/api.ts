@@ -889,6 +889,9 @@ export const api = {
   sorterThumbnail: (path: string) =>
     `${API_BASE}/sorter/thumbnail?path=${encodeURIComponent(path)}`,
 
+  backupDownload: (kind: 'db' | 'thumbs') =>
+    `${API_BASE}/backups/download?kind=${kind}`,
+
   downloadStatus: () => request<DownloadStatus>('/downloads/status'),
 
   downloadQueue: (urls: string[], destination: string) =>

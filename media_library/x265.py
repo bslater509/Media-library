@@ -62,9 +62,8 @@ class X265Manager:
     # -- queue ---------------------------------------------------------
 
     async def enqueue(self, path: str) -> dict[str, Any]:
-        target = resolve_library_path(path)
-        if not os.path.isfile(target):
-            raise writes.WriteError("Video not found", 404)
+        # Off the event loop: this stats (possibly across a remote mount).
+        target = await asyncio.to_thread(self._validate_target, path)
         settings = get_settings()
         ext = os.path.splitext(target)[1].lower()
         if ext not in settings.video_exts:
@@ -113,6 +112,12 @@ class X265Manager:
             self._task = asyncio.create_task(self._loop())
         return _public(job)
 
+    def _validate_target(self, path: str) -> str:
+        target = resolve_library_path(path)
+        if not os.path.isfile(target):
+            raise writes.WriteError("Video not found", 404)
+        return target
+
     async def _probe_duration(self, path: str) -> float:
         """One ffprobe call when the index has not probed this file yet."""
         try:
@@ -128,7 +133,12 @@ class X265Manager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            stdout, _ = await process.communicate()
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=20)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                return 0.0
             import json
 
             payload = json.loads(stdout.decode("utf-8", "replace") or "{}")

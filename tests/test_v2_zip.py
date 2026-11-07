@@ -89,6 +89,17 @@ def test_split_zip_path():
     assert zipfs.is_zip_member("/lib/a.zip/x") is True
 
 
+def test_is_zip_member_matches_zipfs_and_not_a_plain_zip_file():
+    from media_library.paths import is_zip_member
+
+    # The same contract: a `.zip` component followed by inner-path content —
+    # the archive itself is a folder, not a member.
+    for path in ("/lib/a.zip/x.jpg", "/lib/a.zip"):
+        assert is_zip_member(path) == zipfs.is_zip_member(path)
+    assert is_zip_member("/lib/a.zip") is False
+    assert is_zip_member("/lib/a.zip/sub/x.jpg") is True
+
+
 def test_browse_a_zip_as_a_virtual_folder(zip_env):
     client = TestClient(create_app())
     path = str(zip_env["archive"])

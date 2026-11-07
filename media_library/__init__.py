@@ -9,4 +9,4 @@ read it, and ``tests/test_version.py`` fails if anything else restates it.
 ``python -m media_library.app`` run it.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"

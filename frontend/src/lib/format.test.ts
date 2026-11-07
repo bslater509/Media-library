@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   codecLabel,
+  formatBytes,
   formatDuration,
   imageLabel,
   isHevc,
@@ -55,5 +56,15 @@ describe('codecLabel', () => {
     expect(codecLabel(null)).toBeNull()
     expect(isHevc('h265')).toBe(true)
     expect(isHevc('h264')).toBe(false)
+  })
+})
+
+describe('formatBytes', () => {
+  it('keeps bytes exact below 1 KiB and rounds larger units', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(483)).toBe('483 B')
+    expect(formatBytes(1536)).toBe('1.5 KB')
+    expect(formatBytes(5_242_880)).toBe('5.0 MB')
+    expect(formatBytes(1_572_864_000)).toBe('1.5 GB')
   })
 })

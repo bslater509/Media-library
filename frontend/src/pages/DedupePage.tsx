@@ -49,19 +49,7 @@ import {
   Progress,
   Spinner,
 } from '../components/ui'
-import { resolutionLabel } from '../lib/format'
-
-function formatBytes(value: number): string {
-  if (!value) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = value
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
-}
+import { resolutionLabel, formatBytes } from '../lib/format'
 
 function verificationLabel(verification: DedupeGroup['verification']): string {
   if (!verification || !verification.available) return 'Not frame-checked'

@@ -1,6 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FileEntry } from '../../lib/api'
-import { clamp, resolutionLabel } from '../../lib/format'
+import { clamp } from '../../lib/format'
 import { layoutRows } from '../../lib/justified'
 import { MediaTile, type FileAction } from './MediaTile'
 
@@ -67,6 +67,14 @@ export function JustifiedGrid({
     return map
   }, [files])
 
+  const handleTileSelect = useCallback(
+    (index: number, event: React.MouseEvent<HTMLButtonElement>) => {
+      const file = files[index]
+      if (file && onSelect) onSelect(file, index, event)
+    },
+    [files, onSelect],
+  )
+
   return (
     <div ref={containerRef} className="flex w-full flex-col" style={{ gap }}>
       {rows.map((row, rowIndex) => (
@@ -82,17 +90,16 @@ export function JustifiedGrid({
             return (
               <MediaTile
                 key={item.id}
+                index={index}
                 file={item}
                 height={height}
                 width={tileWidth}
                 hint={hintFor?.(item) ?? null}
-                onOpen={() => onOpen(index)}
+                onOpen={onOpen}
                 onAction={onAction}
                 selected={selectedIds?.has(item.path) ?? false}
                 selectionMode={selectionMode}
-                onSelect={
-                  onSelect ? (event) => onSelect(item, index, event) : undefined
-                }
+                onSelect={onSelect ? handleTileSelect : undefined}
               />
             )
           })}
@@ -115,10 +122,4 @@ function GridSkeleton() {
       ))}
     </div>
   )
-}
-
-/** Alt text used by tile aria labels, exposed for tests. */
-export function tileAlt(file: FileEntry): string {
-  const resolution = resolutionLabel(file.width, file.height)
-  return resolution ? `${file.name} (${resolution})` : file.name
 }

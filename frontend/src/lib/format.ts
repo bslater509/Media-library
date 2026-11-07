@@ -70,7 +70,15 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-/** Breadcrumb trail label for the document title. */
-export function joinCrumbs(names: string[]): string {
-  return names.filter(Boolean).join(' / ')
+/** Human-readable byte count: "483 B", "12.4 MB". */
+export function formatBytes(value: number): string {
+  if (!value) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
 }

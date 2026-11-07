@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -176,8 +175,3 @@ def cache_usage() -> dict[str, int]:
 
 def purge_cache(archive: str) -> None:
     shutil.rmtree(_cache_path(archive), ignore_errors=True)
-
-
-# Re-exported for callers that only need the clock in tests.
-def _now() -> float:
-    return time.time()

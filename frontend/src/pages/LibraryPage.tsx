@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
   AlertTriangle,
@@ -177,33 +177,32 @@ export function LibraryPage() {
     selectionAnchor.current = null
   }
 
-  const selectFile = (
-    file: FileEntry,
-    index: number,
-    event: React.MouseEvent<HTMLElement>,
-  ) => {
-    setSelectionMode(true)
-    if (event.shiftKey && selectionAnchor.current !== null) {
-      const start = Math.min(selectionAnchor.current, index)
-      const end = Math.max(selectionAnchor.current, index)
+  const selectFile = useCallback(
+    (file: FileEntry, index: number, event: React.MouseEvent<HTMLElement>) => {
+      setSelectionMode(true)
+      if (event.shiftKey && selectionAnchor.current !== null) {
+        const start = Math.min(selectionAnchor.current, index)
+        const end = Math.max(selectionAnchor.current, index)
+        setSelectedPaths((previous) => {
+          const next = new Set(previous)
+          for (let cursor = start; cursor <= end; cursor += 1) {
+            const item = files[cursor]
+            if (item) next.add(item.path)
+          }
+          return next
+        })
+        return
+      }
+      selectionAnchor.current = index
       setSelectedPaths((previous) => {
         const next = new Set(previous)
-        for (let cursor = start; cursor <= end; cursor += 1) {
-          const item = files[cursor]
-          if (item) next.add(item.path)
-        }
+        if (next.has(file.path)) next.delete(file.path)
+        else next.add(file.path)
         return next
       })
-      return
-    }
-    selectionAnchor.current = index
-    setSelectedPaths((previous) => {
-      const next = new Set(previous)
-      if (next.has(file.path)) next.delete(file.path)
-      else next.add(file.path)
-      return next
-    })
-  }
+    },
+    [files],
+  )
 
   // Leaving a folder ends the selection; filtering drops rows that are no
   // longer visible so a bulk action never touches an unseen file.
@@ -301,25 +300,28 @@ export function LibraryPage() {
     )
   }
 
-  const handleAction = (action: FileAction, file: FileEntry) => {
-    if (action === 'favorite' || action === 'unfavorite') {
-      toggleFavorite.mutate(file.path, {
-        onSuccess: (result) =>
-          toast.success(
-            result.is_favorite ? 'Added to favorites' : 'Removed from favorites',
-          ),
-        onError: (error) =>
-          toast.error(error instanceof Error ? error.message : 'Could not update favorite'),
-      })
-      return
-    }
-    if (action === 'rename') setRenameTarget(file)
-    if (action === 'move') {
-      setMoveTargets([file])
-      setMoveOpen(true)
-    }
-    if (action === 'delete') setDeleteTargets([file])
-  }
+  const handleAction = useCallback(
+    (action: FileAction, file: FileEntry) => {
+      if (action === 'favorite' || action === 'unfavorite') {
+        toggleFavorite.mutate(file.path, {
+          onSuccess: (result) =>
+            toast.success(
+              result.is_favorite ? 'Added to favorites' : 'Removed from favorites',
+            ),
+          onError: (error) =>
+            toast.error(error instanceof Error ? error.message : 'Could not update favorite'),
+        })
+        return
+      }
+      if (action === 'rename') setRenameTarget(file)
+      if (action === 'move') {
+        setMoveTargets([file])
+        setMoveOpen(true)
+      }
+      if (action === 'delete') setDeleteTargets([file])
+    },
+    [toggleFavorite.mutate],
+  )
 
   const requestCompress = async () => {
     if (!currentPath) return
@@ -973,14 +975,5 @@ function LoadingFolder() {
         ))}
       </div>
     </div>
-  )
-}
-
-/** Small helper the empty state links to. */
-export function LibraryHint() {
-  return (
-    <Link to="/search" className="inline-flex items-center gap-1 text-accent hover:underline">
-      <ZoomIn className="size-3.5" /> Search the whole library
-    </Link>
   )
 }

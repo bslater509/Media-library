@@ -25,7 +25,10 @@ def resolve_library_path(raw: str | None) -> str:
 
     ``None``/empty resolves to the root. Paths outside the root raise 403;
     a path equal to the root's parent or ``/`` clamps to the root, as
-    does, so a stale bookmark can never escape the library.
+    does, so a stale bookmark can never escape the library. Symlinks are
+    followed for the containment check only, so a link that leaves the
+    library is rejected — the client- and index-facing path is returned
+    unchanged.
     """
     root = os.path.abspath(os.path.normpath(library_root()))
     if not raw or not raw.strip():
@@ -34,7 +37,9 @@ def resolve_library_path(raw: str | None) -> str:
     if candidate in (root, os.path.dirname(root), "/"):
         return root
     try:
-        if os.path.commonpath([root, candidate]) != root:
+        real_root = os.path.realpath(root)
+        real_candidate = os.path.realpath(candidate)
+        if os.path.commonpath([real_root, real_candidate]) != real_root:
             raise HTTPException(status_code=403, detail="Path is outside the library")
     except ValueError:
         raise HTTPException(status_code=403, detail="Invalid path") from None
@@ -52,9 +57,13 @@ def resolve_existing_file(raw: str) -> str:
 
 
 def is_zip_member(path: str) -> bool:
-    """True when ``path`` addresses a member of a ZIP virtual folder."""
-    parts = Path(path).parts
-    return any(part.lower().endswith(".zip") for part in parts[:-1])
+    """True when ``path`` addresses a member of a ZIP virtual folder.
+
+    Same contract as :func:`media_library.zipfs.is_zip_member` (the first
+    ``.zip`` path-component marker followed by an inner path), kept in sync so
+    a real directory named ``foo.zip`` is never mistaken for an archive.
+    """
+    return f".zip{os.sep}" in path.lower()
 
 
 def relative_to_root(path: str) -> str:

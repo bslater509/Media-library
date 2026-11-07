@@ -5,7 +5,7 @@ image collections — often tens of thousands of files on a slow remote mount
 (pCloud, NFS). One FastAPI process serves a JSON API at `/api` and a React
 client at `/`, backed by a single SQLite index.
 
-**Current release: v3.0.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v3.0.1** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 

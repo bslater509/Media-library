@@ -136,3 +136,27 @@ def test_unknown_media_is_refused(video_env):
     assert client.get(
         "/api/media/transcode", params={"path": "/etc/passwd"}
     ).status_code in (400, 403, 404)
+
+
+def test_jpg_streams_inline_and_sniff_safe(video_env):
+    client = TestClient(create_app())
+    image = video_env["library"] / "Clips" / "photo.jpg"
+    image.write_bytes(b"\xff\xd8fakejpeg")
+    response = client.get("/api/media", params={"path": str(image)})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.headers["content-disposition"] == "inline"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_svg_is_never_offered_for_navigation(video_env):
+    # An SVG can carry scripts, so in-app navigation must download it
+    # instead of rendering it in the app's origin.
+    client = TestClient(create_app())
+    svg = video_env["library"] / "Clips" / "signature.svg"
+    svg.write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+    response = client.get("/api/media", params={"path": str(svg)})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert response.headers["content-disposition"].startswith("attachment")
+    assert response.headers["x-content-type-options"] == "nosniff"

@@ -16,7 +16,7 @@ import {
   VolumeX,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type SorterDestination, type SorterItem } from '../lib/api'
+import { api, type SorterItem } from '../lib/api'
 import { cn } from '../lib/cn'
 import {
   useSorterConfig,
@@ -144,6 +144,10 @@ export function SorterPage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // A modal dialog (rename/delete confirmation, Radix menus) owns the
+      // keyboard: let it handle its keys and ignore the sorter's, or a
+      // keystroke in the confirmation stack could queue a move behind it.
+      if (event.defaultPrevented || renameItem || deleteItem) return
       const target = event.target as HTMLElement | null
       const typing =
         target?.tagName === 'INPUT' ||
@@ -198,7 +202,7 @@ export function SorterPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [current, destinations.data, doMove, doUndo, recents, skip])
+  }, [current, deleteItem, destinations.data, doMove, doUndo, recents, renameItem, skip])
 
   if (config.isLoading || queue.isLoading) {
     return (
@@ -666,9 +670,4 @@ function NewFolderForm({
       </div>
     </div>
   )
-}
-
-/** Shared with the destination list for tests. */
-export function destinationLabel(destination: SorterDestination): string {
-  return destination.name
 }

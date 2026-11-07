@@ -621,11 +621,21 @@ def _candidate_sizes(conn) -> list[int]:
 def _candidate_rows(conn, sizes: list[int]) -> list[sqlite3.Row]:
     if not sizes:
         return []
-    placeholders = ",".join("?" for _ in sizes)
-    return conn.execute(
-        f"{_FILE_SQL} WHERE f.size IN ({placeholders}) ORDER BY f.size DESC, f.path",
-        sizes,
-    ).fetchall()
+    rows: list[sqlite3.Row] = []
+    # Chunked like _cached_signatures, so a library with more distinct
+    # duplicated sizes than SQLite's variable limit still queries.
+    for start in range(0, len(sizes), 400):
+        chunk = sizes[start : start + 400]
+        placeholders = ",".join("?" for _ in chunk)
+        rows.extend(
+            conn.execute(
+                f"{_FILE_SQL} WHERE f.size IN ({placeholders}) "
+                "ORDER BY f.size DESC, f.path",
+                chunk,
+            ).fetchall()
+        )
+    rows.sort(key=lambda row: (-int(row["size"] or 0), row["path"]))
+    return rows
 
 
 def content_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:

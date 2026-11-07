@@ -101,8 +101,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # To a thread: a snapshot is a SQLite backup + VACUUM + poster tar,
+        # minutes on a big library, and must not block the loop on shutdown.
         try:
-            backups.create_snapshot()
+            await asyncio.to_thread(backups.create_snapshot)
             logger.info("[api] Wrote a shutdown snapshot")
         except Exception:
             logger.exception("[api] Shutdown snapshot failed")

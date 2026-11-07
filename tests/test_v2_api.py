@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from media_library import __version__
 from media_library import config as v2_config
 from media_library.app import create_app
 
@@ -260,7 +261,7 @@ def test_browse_filters_by_type_favorites_and_sort(v2_env):
 def test_onboarding_endpoint_describes_the_setup(v2_env):
     client = v2_env["client"]
     payload = client.get("/api/system/onboarding").json()
-    assert payload["version"] == "3.0.0"
+    assert payload["version"] == __version__
     assert payload["library_root"] == str(v2_env["library"])
     assert payload["source_available"] == os.path.isdir(payload["source_dir"])
     assert payload["counts"]["files"] == 2
@@ -275,7 +276,7 @@ def test_onboarding_endpoint_describes_the_setup(v2_env):
 def test_system_info_reports_totals(v2_env):
     client = v2_env["client"]
     info = client.get("/api/system/info").json()
-    assert info["version"] == "3.0.0"
+    assert info["version"] == __version__
     assert info["counts"] == {
         "files": 2,
         "folders": 3,

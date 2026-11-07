@@ -16,6 +16,7 @@ import {
   useBackupStatus,
   useBackupVerify,
 } from '../lib/queries'
+import { api } from '../lib/api'
 import {
   Badge,
   Button,
@@ -129,13 +130,13 @@ export function BackupsPage() {
                   Verify snapshot
                 </Button>
                 <a
-                  href="/api/backups/download?kind=db"
+                  href={api.backupDownload('db')}
                   className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-3 text-[13px] text-fg-muted hover:bg-surface-2 hover:text-fg"
                 >
                   <Download className="size-4" /> Database
                 </a>
                 <a
-                  href="/api/backups/download?kind=thumbs"
+                  href={api.backupDownload('thumbs')}
                   className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border px-3 text-[13px] text-fg-muted hover:bg-surface-2 hover:text-fg"
                 >
                   <Download className="size-4" /> Posters

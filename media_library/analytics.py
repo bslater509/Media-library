@@ -2,7 +2,7 @@
 
 Every figure comes from SQLite: no ``os.walk``, no ``os.scandir``, no media
 probe, no ``os.stat`` on a library file. That is what keeps the dashboard
-instant over a FUSE mount, and ``tests/test_analytics.py`` enforces it by
+instant over a FUSE mount, and ``tests/test_v2_analytics.py`` enforces it by
 poisoning the filesystem functions during the request.
 """
 

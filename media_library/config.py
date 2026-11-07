@@ -147,7 +147,7 @@ def load_settings() -> Settings:
         ),
         db_path=_resolve_db_path(data_dir),
         transcode_dir=_env_path("TRANSCODE_DIR", default=data_dir / "transcodes"),
-        own_workers=_env_bool("OWN_WORKERS", "V2_OWN_WORKERS", default=False),
+        own_workers=_env_bool("OWN_WORKERS", "V2_OWN_WORKERS", default=True),
         crawl_interval_minutes=_env_int(
             "CRAWL_INTERVAL_MINUTES", "V2_CRAWL_INTERVAL_MINUTES", default=30
         ),

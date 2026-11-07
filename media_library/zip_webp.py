@@ -12,7 +12,6 @@ from __future__ import annotations
 import io
 import os
 import shutil
-import threading
 import uuid
 import zipfile
 from pathlib import Path
@@ -26,7 +25,6 @@ from media_library.zipfs import purge_cache
 
 _CONVERTIBLE = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 _SKIP = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini"}
-_lock = threading.Lock()
 
 
 def _webp_bytes(data: bytes, quality: int) -> bytes:
@@ -73,7 +71,8 @@ def optimize_archive(
     q = quality if quality is not None else settings.webp_quality
     skip = settings.webp_skip_larger if skip_larger is None else skip_larger
 
-    with _lock:
+    # Per-archive lock (compress/unpack/webp-rewrite serialise on one file).
+    with zip_ops.archive_lock(str(archive)):
         staging = settings.zip_staging_dir
         staging.mkdir(parents=True, exist_ok=True)
         staged = staging / f"webp-{uuid.uuid4().hex}.zip"

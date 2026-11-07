@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
+import { formatBytes } from '../lib/format'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -46,18 +47,6 @@ function splitUrls(raw: string): string[] {
     .split(/\s+/)
     .map((value) => value.trim())
     .filter(Boolean)
-}
-
-function formatBytes(value: number): string {
-  if (!value) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = value
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -292,6 +281,12 @@ export function DownloadsPage() {
                       onSuccess: (result) =>
                         toast.success(
                           `Cleared ${result.cleared} finished download${result.cleared === 1 ? '' : 's'}`,
+                        ),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : 'Could not clear history',
                         ),
                     })
                   }

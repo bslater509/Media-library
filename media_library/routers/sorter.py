@@ -140,7 +140,11 @@ async def thumbnail(path: str):
 
     cache = get_settings().thumbnail_dir / "sorter"
     cache.mkdir(parents=True, exist_ok=True)
-    key = stable_id(f"{target}:{Path(target).stat().st_mtime}")
+
+    def _key_for(target: str) -> str:
+        return stable_id(f"{target}:{Path(target).stat().st_mtime}")
+
+    key = await asyncio.to_thread(_key_for, target)
     output = cache / f"s_{key}.jpg"
     if not output.is_file():
         process = await asyncio.create_subprocess_exec(
@@ -163,7 +167,14 @@ async def thumbnail(path: str):
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await process.wait()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=30)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise HTTPException(
+                status_code=504, detail="Preview frame extraction timed out"
+            ) from None
     if not output.is_file():
         raise HTTPException(status_code=404, detail="No preview frame")
     return FileResponse(

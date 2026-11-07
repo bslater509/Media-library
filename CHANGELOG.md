@@ -9,6 +9,42 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [3.0.1] - 2026-11-07
+
+### Fixed
+
+- **`OWN_WORKERS` now defaults to `true`**, matching the documentation; a fresh
+  installation starts the crawler, metadata prober and automatic snapshots
+  without setting anything.
+- The media streaming hot path no longer does remote-filesystem `stat`s on the
+  event loop: `/api/media` and `/api/media/transcode` resolve and stat through
+  a worker thread, as do the x265 and download queue endpoints.
+- The automatic shutdown snapshot runs off the event loop, so a large library
+  can no longer stall requests while the process exits.
+- ZIP compression, unpacking and WebP rewrites share a per-archive lock, so
+  two operations on the same archive can no longer race on `os.replace`.
+- Duplicate groups keep working on very large libraries with more distinct
+  duplicated sizes than SQLite's variable limit (query now chunked).
+- A path outside the library only fails its own entry in bulk delete instead
+  of rejecting the whole request; bulk move now rejects over-500 requests the
+  same way bulk delete does (no silent truncation).
+- The sorter preview gen ffmpeg call (and the x265 duration probe) carry a
+  timeout, so a wedged stream no longer hangs a request indefinitely.
+- `resolve_library_path` follows symlinks for the containment check: a link
+  inside the library pointing outside is a 403 now.
+- SVG files stream with `Content-Disposition: attachment` and
+  `X-Content-Type-Options: nosniff`, so they never execute in the app origin.
+
+### Changed
+
+- Client: keyboard shortcuts in the viewer and the video sorter no longer
+  fire through modal dialogs (Escape closes exactly the topmost one), gallery
+  tiles only re-render the tiles whose data changed, the dedupe frame-check
+  status and download-history polls idle down when there is nothing running,
+  and uploads are cancelled when the dialog is left. Shared `formatBytes` and
+  the two backup-download links routed through the API module; dead code
+  removed.
+
 ## [Unreleased]
 
 ### Added

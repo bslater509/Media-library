@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 import time
 import uuid
 import zipfile
@@ -26,6 +27,19 @@ from media_library.zipfs import cache_usage, purge_cache
 
 _JUNK = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini", ".directory"}
 _SKIP_DIRS = {"__MACOSX"}
+
+# One operation at a time per archive file (compress, unpack, WebP rewrite and
+# the member-cache sync-back all touch the same file). Keyed by normalized
+# path; entries are small and never pruned — a library has finite archives.
+_archive_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def archive_lock(path: str) -> threading.Lock:
+    """Serialise every mutation of one archive file across the ZIP modules."""
+    key = os.path.normpath(os.path.abspath(path)).lower()
+    with _locks_guard:
+        return _archive_locks.setdefault(key, threading.Lock())
 
 
 def _file_type(ext: str) -> str:
@@ -298,7 +312,11 @@ def compress_folder(folder: str) -> dict[str, Any]:
         raise writes.WriteError(checked["reason"] or "Folder is not eligible", 409)
     source = Path(checked["path"])
     target = Path(checked["target"])
+    with archive_lock(str(target)):
+        return _compress_locked(source, target)
 
+
+def _compress_locked(source: Path, target: Path) -> dict[str, Any]:
     staging_dir = get_settings().zip_staging_dir
     staging_dir.mkdir(parents=True, exist_ok=True)
     staged = staging_dir / f"{source.name}-{uuid.uuid4().hex}.zip"
@@ -360,6 +378,11 @@ def unpack_archive(archive: str) -> dict[str, Any]:
     source = Path(resolve_library_path(archive))
     if not source.is_file() or source.suffix.lower() != ".zip":
         raise writes.WriteError("ZIP archive not found", 404)
+    with archive_lock(str(source)):
+        return _unpack_locked(source)
+
+
+def _unpack_locked(source: Path) -> dict[str, Any]:
     destination = source.with_suffix("")
     if destination.exists():
         counter = 1

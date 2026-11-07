@@ -22,6 +22,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
 from media_library.cache import animated_path, thumbnail_path
 from media_library.config import get_settings
 from media_library.db import reader, writer
@@ -307,8 +309,11 @@ def delete_files(paths: list[str]) -> dict[str, Any]:
                 prepared.append((target, kind, mtime, size))
             else:
                 raise WriteError("Not found", 404)
-        except WriteError as exc:
-            failed.append({"path": raw, "error": exc.message})
+        except (WriteError, HTTPException) as exc:
+            # One bad path (e.g. outside the library, a 403) reports on its
+            # own instead of aborting the whole batch.
+            message = exc.message if isinstance(exc, WriteError) else str(exc.detail)
+            failed.append({"path": raw, "error": message})
 
     deleted: list[tuple[str, str, float, int]] = []
     for target, kind, mtime, size in prepared:
@@ -627,13 +632,17 @@ def move_files(
 ) -> dict[str, Any]:
     if conflict not in ("auto_rename", "skip", "error"):
         raise WriteError("Unknown conflict policy", 400)
+    if not paths:
+        raise WriteError("No items selected", 400)
+    if len(paths) > 500:
+        raise WriteError("Too many items in one request (max 500)", 400)
     dest = _resolve_dir(destination)
     moved: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
     occupied: set[str] = set()
 
-    for raw in paths[:500]:
+    for raw in paths:
         try:
             source = resolve_library_path(raw)
             if not os.path.exists(source):

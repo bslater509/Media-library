@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, FileUp, Loader2, UploadCloud, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatBytes } from '../../lib/format'
 import { api, type ConflictPolicy } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { makeUploadId, uploadFile, type UploadProgress } from '../../lib/upload'
@@ -25,18 +26,6 @@ interface UploadDialogProps {
   onCompleted: () => void
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let size = value / 1024
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unit]}`
-}
-
 /** Chunked, resumable uploads into the folder currently being browsed. */
 export function UploadDialog({
   open,
@@ -50,6 +39,10 @@ export function UploadDialog({
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Leaving the dialog (unmount, navigation) cancels an in-flight upload
+  // instead of letting the chunk loop finish invisibly.
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const upsert = (progress: UploadProgress) => {
     setItems((current) => {
@@ -262,14 +255,5 @@ export function UploadDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** Exported for the toolbar so the label and behaviour stay in one place. */
-export function UploadButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Button size="sm" onClick={onClick}>
-      <UploadCloud /> Upload
-    </Button>
   )
 }
