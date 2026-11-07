@@ -26,6 +26,10 @@ from media_library.paths import format_size, resolve_library_path
 _MP4_AUDIO = {"aac", "mp3", "ac3", "eac3", "alac"}
 _HEVC = {"hevc", "h265"}
 _HISTORY = 100
+# ffmpeg must emit a progress line at least this often; longer silence means
+# the process is wedged (e.g. a stuck read across a hung remote mount) and
+# the serial queue has to reclaim its slot.
+_READ_TIMEOUT = 300.0
 
 
 def _public(job: dict[str, Any]) -> dict[str, Any]:
@@ -68,12 +72,17 @@ class X265Manager:
         ext = os.path.splitext(target)[1].lower()
         if ext not in settings.video_exts:
             raise writes.WriteError("Not a video file", 400)
-        with reader() as conn:
-            row = conn.execute(
-                "SELECT video_codec, audio_codec, duration, mtime, size "
-                "FROM files WHERE path = ?",
-                (target,),
-            ).fetchone()
+
+        # The index read stays off the event loop with everything else.
+        def _row() -> Any:
+            with reader() as conn:
+                return conn.execute(
+                    "SELECT video_codec, audio_codec, duration, mtime, size "
+                    "FROM files WHERE path = ?",
+                    (target,),
+                ).fetchone()
+
+        row = await asyncio.to_thread(_row)
         if row is None:
             raise writes.WriteError("Not indexed", 404)
         if (row["video_codec"] or "").lower() in _HEVC:
@@ -82,6 +91,8 @@ class X265Manager:
             raise writes.WriteError("This file is already converting", 409)
         if any(job["source_path"] == target for job in self.queued):
             raise writes.WriteError("This file is already queued", 409)
+        # The GC stat-walks the output staging tree; keep it off the loop.
+        await asyncio.to_thread(self._gc_temp)
 
         duration = float(row["duration"] or 0)
         if duration <= 0:
@@ -209,7 +220,19 @@ class X265Manager:
         try:
             assert process.stdout is not None
             while True:
-                raw = await process.stdout.readline()
+                # An inactivity deadline keeps a wedged ffmpeg (blocked read
+                # across a hung FUSE mount) from deadlocking the serial
+                # queue forever, the same guard the download manager uses.
+                try:
+                    raw = await asyncio.wait_for(
+                        process.stdout.readline(), _READ_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+                    if lines:
+                        return 1, lines
+                    return 1, [f"ffmpeg stalled (no output for {int(_READ_TIMEOUT)}s)"]
                 if not raw:
                     break
                 line = raw.decode("utf-8", "replace").strip()
@@ -263,11 +286,15 @@ class X265Manager:
         job["started_at"] = time.time()
         settings = get_settings()
         source = job["source_path"]
-        with reader() as conn:
-            row = conn.execute(
-                "SELECT audio_codec FROM files WHERE path = ?", (source,)
-            ).fetchone()
-        audio = (row["audio_codec"] or "").lower() if row else ""
+
+        def _audio_codec() -> str | None:
+            with reader() as conn:
+                row = conn.execute(
+                    "SELECT audio_codec FROM files WHERE path = ?", (source,)
+                ).fetchone()
+            return (row["audio_codec"] or "").lower() if row else None
+
+        audio = await asyncio.to_thread(_audio_codec) or ""
         copy_audio = audio in _MP4_AUDIO
         job["audio_mode"] = "copy" if copy_audio else "aac"
 
@@ -374,6 +401,21 @@ def _commit(temp: str, target: str) -> None:
             if not os.path.exists(commit_tmp) or os.path.getsize(
                 commit_tmp
             ) != os.path.getsize(temp):
+                raise OSError("Cross-device x265 copy verification failed")
+
+            # Size alone does not prove the copy survived a flaky mount:
+            # compare head and tail million-byte samples before committing,
+            # so a corrupt copy is never written over the source.
+            def _sample(path: str, offset: int) -> bytes:
+                with open(path, "rb") as handle:
+                    handle.seek(offset)
+                    return handle.read(1024 * 1024)
+
+            size = os.path.getsize(temp)
+            tail = max(0, size - 1024 * 1024)
+            if _sample(temp, 0) != _sample(commit_tmp, 0) or _sample(
+                temp, tail
+            ) != _sample(commit_tmp, tail):
                 raise OSError("Cross-device x265 copy verification failed")
             os.replace(commit_tmp, target)
             try:

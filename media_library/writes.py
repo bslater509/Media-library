@@ -32,6 +32,25 @@ from media_library.paths import format_size, resolve_library_path, stable_id
 _UPLOAD_ID_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
 
 _gc_lock = threading.Lock()
+
+# Serialise chunk appends for one upload id: concurrent (retrying) clients
+# truncate/append the same .part file and would interleave bytes past the
+# finalize size check. Finalize and cancel prune their entry, so the dict
+# only holds in-flight uploads.
+_upload_locks: dict[str, threading.Lock] = {}
+_upload_locks_guard = threading.Lock()
+
+
+def _upload_lock(upload_id: str) -> threading.Lock:
+    with _upload_locks_guard:
+        return _upload_locks.setdefault((upload_id or "").lower(), threading.Lock())
+
+
+def _drop_upload_lock(upload_id: str) -> None:
+    with _upload_locks_guard:
+        _upload_locks.pop((upload_id or "").lower(), None)
+
+
 # None means "never checked". A zero timestamp would compare badly against
 # time.monotonic() on a machine whose uptime is shorter than the interval.
 _gc_checked_at: float | None = None
@@ -647,8 +666,11 @@ def move_files(
             source = resolve_library_path(raw)
             if not os.path.exists(source):
                 raise WriteError("File or folder not found", 404)
-        except WriteError as exc:
-            failed.append({"path": raw, "error": exc.message})
+        except (WriteError, HTTPException) as exc:
+            # resolve_library_path rejects outside-root paths with a 403;
+            # one bad path must fail its item, not the whole batch.
+            message = exc.message if isinstance(exc, WriteError) else str(exc.detail)
+            failed.append({"path": raw, "error": message})
             continue
 
         is_entry = os.path.isdir(source) or (
@@ -770,17 +792,18 @@ def staged_size(upload_id: str) -> dict[str, Any]:
 
 def stage_chunk(upload_id: str, offset: int, data: bytes) -> dict[str, Any]:
     path = _staging_file(upload_id)
-    existing = path.stat().st_size if path.is_file() else 0
-    if offset > existing:
-        raise WriteError(
-            f"Chunk starts past the staged data ({offset} > {existing})", 409
-        )
-    if offset + len(data) <= existing:
-        return {"received_bytes": existing, "duplicate": True}
-    with open(path, "ab") as handle:
-        if offset < existing:
-            handle.truncate(offset)
-        handle.write(data)
+    with _upload_lock(upload_id):
+        existing = path.stat().st_size if path.is_file() else 0
+        if offset > existing:
+            raise WriteError(
+                f"Chunk starts past the staged data ({offset} > {existing})", 409
+            )
+        if offset + len(data) <= existing:
+            return {"received_bytes": existing, "duplicate": True}
+        with open(path, "ab") as handle:
+            if offset < existing:
+                handle.truncate(offset)
+            handle.write(data)
     return {"received_bytes": offset + len(data), "duplicate": False}
 
 
@@ -832,55 +855,61 @@ def finalize_upload(
     if conflict not in ("auto_rename", "skip", "error"):
         raise WriteError("Unknown conflict policy", 400)
     staging = _staging_file(upload_id)
-    if not staging.is_file():
-        raise WriteError("No staged upload for this id", 404)
-    actual = staging.stat().st_size
-    if total_size is not None and actual != total_size:
-        raise WriteError(
-            f"Upload incomplete: {actual} of {total_size} bytes staged", 400
-        )
-    if actual == 0:
-        raise WriteError("Upload is empty", 400)
+    # Hold the same lock as stage_chunk so a late retry cannot truncate the
+    # .part file while finalize reads/copies it.
+    with _upload_lock(upload_id):
+        if not staging.is_file():
+            raise WriteError("No staged upload for this id", 404)
+        actual = staging.stat().st_size
+        if total_size is not None and actual != total_size:
+            raise WriteError(
+                f"Upload incomplete: {actual} of {total_size} bytes staged", 400
+            )
+        if actual == 0:
+            raise WriteError("Upload is empty", 400)
 
-    destination = _resolve_dir(folder)
-    clean = _validate_name(name)
-    target = os.path.join(destination, clean)
-    if os.path.exists(target):
-        if conflict == "skip":
-            staging.unlink(missing_ok=True)
-            return {"skipped": True, "path": target}
-        if conflict == "error":
-            raise WriteError("A file with that name already exists", 409)
-        target = _unique_target(destination, clean, set())
-
-    temp = os.path.join(destination, f".mllibtmp-{uuid.uuid4().hex}-{clean}")
-    try:
-        shutil.copyfile(staging, temp)
-        if os.path.getsize(temp) != actual:
-            raise WriteError("Staged copy was truncated", 500)
-        os.replace(temp, target)
-    except (OSError, WriteError) as exc:
+        destination = _resolve_dir(folder)
+        clean = _validate_name(name)
+        target = os.path.join(destination, clean)
+        if os.path.exists(target):
+            if conflict == "skip":
+                staging.unlink(missing_ok=True)
+                return {"skipped": True, "path": target}
+            if conflict == "error":
+                raise WriteError("A file with that name already exists", 409)
+            target = _unique_target(destination, clean, set())
+        temp = os.path.join(destination, f".mllibtmp-{uuid.uuid4().hex}-{clean}")
         try:
-            os.unlink(temp)
-        except OSError:
-            pass
-        if isinstance(exc, WriteError):
-            raise
-        raise WriteError(f"Could not write the file: {exc}", 500) from exc
+            shutil.copyfile(staging, temp)
+            if os.path.getsize(temp) != actual:
+                raise WriteError("Staged copy was truncated", 500)
+            os.replace(temp, target)
+        except (OSError, WriteError) as exc:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            if isinstance(exc, WriteError):
+                raise
+            raise WriteError(f"Could not write the file: {exc}", 500) from exc
 
-    try:
-        with writer() as conn, conn:
-            _index_new_file(conn, target)
-            _recompute_folder(conn, destination)
-    finally:
-        staging.unlink(missing_ok=True)
-    return {"skipped": False, "path": target}
+        try:
+            with writer() as conn, conn:
+                _index_new_file(conn, target)
+                _recompute_folder(conn, destination)
+        finally:
+            staging.unlink(missing_ok=True)
+            # The upload is complete: drop the per-id lock.
+            _drop_upload_lock(upload_id)
+        return {"skipped": False, "path": target}
 
 
 def cancel_upload(upload_id: str) -> dict[str, Any]:
     path = _staging_file(upload_id)
     removed = path.is_file()
-    path.unlink(missing_ok=True)
+    with _upload_lock(upload_id):
+        path.unlink(missing_ok=True)
+    _drop_upload_lock(upload_id)
     return {"cancelled": removed}
 
 

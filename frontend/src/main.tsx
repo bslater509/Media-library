@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
@@ -10,7 +10,7 @@ import { router } from './app/router'
 import { AuthGate } from './components/shell/AuthGate'
 import { TooltipProvider } from './components/ui'
 import { initTheme, useThemeStore } from './lib/stores'
-import { getSystemTheme, type ResolvedTheme } from './lib/theme'
+import { type ResolvedTheme, resolveTheme, subscribeSystemTheme } from './lib/theme'
 
 initTheme()
 
@@ -27,8 +27,11 @@ const queryClient = new QueryClient({
 /** Keeps the sonner toaster in step with the app theme. */
 function ThemedToaster() {
   const mode = useThemeStore((state) => state.mode)
-  const resolved: ResolvedTheme =
-    mode === 'system' ? getSystemTheme() : (mode as ResolvedTheme)
+  const resolved: ResolvedTheme = useSyncExternalStore(
+    subscribeSystemTheme,
+    () => resolveTheme(mode),
+    () => resolveTheme(mode),
+  )
   return (
     <Toaster
       position="bottom-right"

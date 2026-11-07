@@ -1016,6 +1016,15 @@ def hash_content(limit: int = 50) -> dict[str, Any]:
             WHERE f.size > 0 AND f.quick_hash IS NULL
               AND f.size IN (SELECT size FROM files WHERE size > 0
                              GROUP BY size HAVING COUNT(*) > 1)
+              -- ZIP members can never be hashed by the byte scanner; without
+              -- this filter they permanently occupy the batch window (they
+              -- share sizes, so they keep ranking first) and the sweep never
+              -- converges. Their groups form from dedupe content elsewhere.
+              AND f.folder_path NOT IN (
+                  SELECT path FROM folders WHERE is_zip = 1
+              )
+              -- The byte hash of a streaming transcode target/needs-transcode
+              -- file is still valid, so no extra type filter is needed.
             ORDER BY f.size DESC
             LIMIT ?
             """,
@@ -1040,7 +1049,8 @@ def hash_content(limit: int = 50) -> dict[str, Any]:
         remaining = conn.execute(
             "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND quick_hash IS NULL "
             "AND size IN (SELECT size FROM files WHERE size > 0 "
-            "GROUP BY size HAVING COUNT(*) > 1)"
+            "GROUP BY size HAVING COUNT(*) > 1) "
+            "AND folder_path NOT IN (SELECT path FROM folders WHERE is_zip = 1)"
         ).fetchone()["n"]
     if updates:
         invalidate_merged_cache()

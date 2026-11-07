@@ -115,7 +115,11 @@ def _parse_range(header: str, file_size: int) -> tuple[int, int] | None:
         if length <= 0:
             return None
         start = max(0, file_size - length)
-        return start, file_size - 1
+        end = file_size - 1
+        if start >= file_size or end < start:
+            # A suffix range on an empty file is unsatisfiable.
+            return None
+        return start, end
     start = int(raw_start)
     end = int(raw_end) if raw_end else file_size - 1
     if start >= file_size or end < start:
@@ -138,20 +142,6 @@ def _iter_file(path: str, start: int, end: int) -> Iterator[bytes]:
 _TRANSCODE_SEMAPHORE = asyncio.Semaphore(2)
 
 
-class _ReleasingResponse(StreamingResponse):
-    """StreamingResponse that frees the transcode slot when the stream ends."""
-
-    def __init__(self, content, semaphore: asyncio.Semaphore, **kwargs) -> None:
-        super().__init__(content, **kwargs)
-        self._semaphore = semaphore
-
-    async def stream_response(self, send) -> None:  # type: ignore[override]
-        try:
-            await super().stream_response(send)
-        finally:
-            self._semaphore.release()
-
-
 @router.get("/media/transcode")
 async def transcode_media(request: Request, path: str, ss: float = 0):
     """Live fragmented-MP4 stream for containers the browser cannot play."""
@@ -160,7 +150,8 @@ async def transcode_media(request: Request, path: str, ss: float = 0):
     await _TRANSCODE_SEMAPHORE.acquire()
     try:
         target = path
-        if is_zip_member(path):
+        # is_zip_member consults the index: keep it off the event loop.
+        if await asyncio.to_thread(is_zip_member, path):
             split = zipfs.split_zip_path(path)
             assert split is not None
             archive = resolve_library_path(split[0])
@@ -202,7 +193,7 @@ class _ReleasingResponse(StreamingResponse):
 @router.api_route("/media", methods=["GET", "HEAD"])
 async def stream_media(request: Request, path: str, download: bool = False):
     """Stream a library file with HTTP 206 partial-content support."""
-    if is_zip_member(path):
+    if await asyncio.to_thread(is_zip_member, path):
         split = zipfs.split_zip_path(path)
         assert split is not None
         archive = resolve_library_path(split[0])
@@ -291,7 +282,8 @@ async def get_thumbnail(path: str, kind: str = "static"):
     # Clamp first, like every media read: an index row from another library
     # root must never turn this endpoint into an arbitrary-file reader.
     path = resolve_library_path(path)
-    mtime, size, _file_type, _has_thumb = _row_stat(path)
+    # _row_stat opens SQLite: keep it off the event loop.
+    mtime, size, _file_type, _has_thumb = await asyncio.to_thread(_row_stat, path)
     key = _thumb_key(path, mtime, size)
     settings = get_settings()
     if kind == "animated":
@@ -404,7 +396,7 @@ async def thumbnail_exists(path: str, kind: str = "static") -> dict:
     # though the lookup is index + hash-named cache file today.
     path = resolve_library_path(path)
     try:
-        mtime, size, _t, _h = _row_stat(path)
+        mtime, size, _t, _h = await asyncio.to_thread(_row_stat, path)
     except HTTPException:
         return {"static": False, "animated": False}
     key = _thumb_key(path, mtime, size)

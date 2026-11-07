@@ -52,7 +52,9 @@ def test_known_exception_types_map_to_their_status():
     assert as_http_error(sqlite3.OperationalError("locked")).status_code == 503
     fallback = as_http_error(ValueError("unexpected"))
     assert fallback.status_code == 500
-    assert "unexpected" in fallback.detail
+    # Raw internal error text (paths and internals) must never leak to the
+    # client; unexpected exceptions only get a generic message.
+    assert fallback.detail == "Internal error"
 
 
 # ---------------------------------------------------------------------------

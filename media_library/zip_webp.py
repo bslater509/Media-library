@@ -26,15 +26,26 @@ from media_library.zipfs import purge_cache
 _CONVERTIBLE = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".heic", ".heif"}
 _SKIP = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini"}
 
+# Same decode budget as the loose-image converter (media_library/webp.py).
+_MAX_CONVERT_PIXELS = 60_000_000
+_MAX_AXIS = 30_000
 
-def _webp_bytes_stream(member, quality: int) -> bytes:
-    """Convert an already-open, lazily-read member (never fully buffered)."""
+
+def _webp_bytes_stream(member, quality: int) -> bytes | None:
+    """Convert an already-open, lazily-read member (never fully buffered).
+
+    Returns ``None`` when the member is too large to decode in-process; the
+    caller copies it through unchanged instead of allocating it fully.
+    """
     from PIL import Image, ImageOps
 
     from media_library.pillow_init import register_heif
 
     register_heif()
     with Image.open(member) as image:
+        width, height = image.size
+        if width * height > _MAX_CONVERT_PIXELS or max(width, height) > _MAX_AXIS:
+            return None
         source_format = (image.format or "").upper()
         image = ImageOps.exif_transpose(image)
         if image.mode in ("RGBA", "LA") or (
@@ -120,6 +131,12 @@ def optimize_archive(
                         except Exception:
                             _copy_member(source_zip, target_zip, info)
                             taken.add(name)
+                            continue
+                        if webp is None:
+                            # Undecodable size: copy through, don't decode it.
+                            _copy_member(source_zip, target_zip, info)
+                            taken.add(name)
+                            skipped += 1
                             continue
                         if skip and len(webp) >= data_size:
                             _copy_member(source_zip, target_zip, info)

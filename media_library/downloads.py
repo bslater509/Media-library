@@ -68,6 +68,14 @@ def _resolve_destination(destination: str) -> str:
     return dest
 
 
+def _retry_destination(destination: str) -> str:
+    """Same validation for a retry, with the original 409 wording."""
+    dest = resolve_library_path(destination)
+    if not os.path.isdir(dest):
+        raise writes.WriteError("The original destination no longer exists", 409)
+    return dest
+
+
 def tools_available() -> dict[str, bool]:
     return {
         "ytdlp": importlib.util.find_spec("yt_dlp") is not None,
@@ -188,7 +196,8 @@ class DownloadManager:
         if not queued:
             raise writes.WriteError("No valid URL to download", 400)
 
-        self._gc_staging()
+        # The GC sweeps and rmtree's the staging tree: keep it off the loop.
+        await asyncio.to_thread(self._gc_staging)
         for job in queued:
             self._spawn(job["id"])
         return {"jobs": [self._public(job) for job in queued], "rejected": rejected}
@@ -454,9 +463,7 @@ class DownloadManager:
             raise writes.WriteError("Download job not found", 404)
         if source["status"] not in ("failed", "cancelled"):
             raise writes.WriteError("Only failed or cancelled jobs can be retried", 409)
-        destination = resolve_library_path(source["destination"])
-        if not os.path.isdir(destination):
-            raise writes.WriteError("The original destination no longer exists", 409)
+        destination = await asyncio.to_thread(_retry_destination, source["destination"])
         job = self._new_job(source["url"], destination)
         self.jobs[job["id"]] = job
         self._spawn(job["id"])

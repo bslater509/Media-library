@@ -91,6 +91,15 @@ def _stats(conn) -> tuple[int, int, int]:
     )
 
 
+# Decoding an image into RGB costs 3 bytes per pixel (4 with alpha). Refuse
+# conversions that would allocate more than this in one go: a degraded
+# skip is better than an OOM inside a worker thread (~60 MP at RGBA).
+_MAX_CONVERT_PIXELS = 60_000_000
+# Pillow itself refuses anything beyond ~2*89.5 MP on open; the axis cap adds
+# a defence against absurd aspect ratios that pixel-guards alone allow.
+_MAX_CONVERT_AXIS = 30_000
+
+
 def _convert_one(path: str, quality: int, skip_larger: bool) -> dict[str, Any]:
     """Convert one image; returns outcome used to update the index."""
     from PIL import Image, ImageOps
@@ -109,6 +118,14 @@ def _convert_one(path: str, quality: int, skip_larger: bool) -> dict[str, Any]:
     temp = source.with_name(f".tmp_webp_{uuid.uuid4().hex}{target.suffix}")
     try:
         with Image.open(source) as image:
+            width, height = image.size
+            if (
+                width * height > _MAX_CONVERT_PIXELS
+                or max(width, height) > _MAX_CONVERT_AXIS
+            ):
+                # Too large to decode in-process: keep the original untouched
+                # rather than risking a multi-GB allocation per sweep item.
+                return {"status": "skipped", "path": path}
             image = ImageOps.exif_transpose(image)
             if image.mode in ("RGBA", "LA") or (
                 image.mode == "P" and "transparency" in image.info

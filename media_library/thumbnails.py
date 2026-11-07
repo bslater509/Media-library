@@ -22,39 +22,64 @@ from media_library.paths import is_zip_member
 from media_library.zipfs import extract_member, split_zip_path
 
 
+def mark_has_thumb(path: str, mtime: float, size: int, value: int) -> bool:
+    """Set ``has_thumb`` only if the row still matches the poster's key.
+
+    The file can change (or be re-indexed) while the poster is being
+    generated; a flag written for the old mtime/size would mark a poster
+    that will never exist, so the update silently skips instead. Returns
+    whether the row was actually marked.
+    """
+    with writer() as conn, conn:
+        row = conn.execute(
+            "SELECT mtime, size FROM files WHERE path = ?", (path,)
+        ).fetchone()
+        if row is None:
+            return False
+        if (
+            abs(float(row["mtime"] or 0) - mtime) < 1e-9
+            and int(row["size"] or 0) == size
+        ):
+            conn.execute("UPDATE files SET has_thumb = ? WHERE path = ?", (value, path))
+            return True
+        return False
+
+
 def generate_thumbnail(path: str, file_type: str, mtime: float, size: int) -> Path:
     """Build a poster for an image or video (ZIP members included)."""
     target = thumbnail_path(path, mtime, size)
-    if target.is_file():
-        return target
+    # Marking happens below on both paths, so a poster that exists while the
+    # row still says 0 (a crashed run between replace and commit) self-heals
+    # instead of leaving the sweep spinning on this row forever.
+    if not target.is_file():
+        source = path
+        if is_zip_member(path):
+            split = split_zip_path(path)
+            assert split is not None
+            archive, inner = split
+            if not os.path.isfile(archive):
+                raise writes.WriteError("ZIP archive not found", 404)
+            source = extract_member(archive, inner)
 
-    source = path
-    if is_zip_member(path):
-        split = split_zip_path(path)
-        assert split is not None
-        archive, inner = split
-        if not os.path.isfile(archive):
-            raise writes.WriteError("ZIP archive not found", 404)
-        source = extract_member(archive, inner)
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_name(f".tmp_thumb_{uuid.uuid4().hex}.jpg")
-    try:
-        if file_type == "video":
-            _video_poster(source, temp)
-        else:
-            _image_poster(source, temp)
-        if not temp.is_file() or temp.stat().st_size == 0:
-            raise writes.WriteError("Could not build a thumbnail", 500)
-        os.replace(temp, target)
-    finally:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp = target.with_name(f".tmp_thumb_{uuid.uuid4().hex}.jpg")
         try:
-            temp.unlink(missing_ok=True)
-        except OSError:
-            pass
+            if file_type == "video":
+                _video_poster(source, temp)
+            else:
+                _image_poster(source, temp)
+            if not temp.is_file() or temp.stat().st_size == 0:
+                raise writes.WriteError("Could not build a thumbnail", 500)
+            os.replace(temp, target)
+        finally:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
-    with writer() as conn, conn:
-        conn.execute("UPDATE files SET has_thumb = 1 WHERE path = ?", (path,))
+    # Only mark 1 when the row still matches the key we built the poster for;
+    # a re-indexed file resets the row itself and is retried with fresh values.
+    mark_has_thumb(path, mtime, size, 1)
     return target
 
 
@@ -120,6 +145,12 @@ _FRAME_WIDTH = 480
 def _video_row(path: str) -> tuple[float, int, float | None]:
     """Return ``(mtime, size, duration)`` for an indexed video."""
     from media_library.db import reader
+    from media_library.paths import resolve_library_path
+
+    # Clamp like every media endpoint: a stale index row from another
+    # library root must never turn the frame extractor into an
+    # arbitrary-file reader.
+    path = resolve_library_path(path)
 
     with reader() as conn:
         row = conn.execute(

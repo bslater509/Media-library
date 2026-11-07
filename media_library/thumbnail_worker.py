@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from media_library import thumbnails
 from media_library.db import reader, writer
 from media_library.paths import is_zip_member
 from media_library.thumbnails import generate_thumbnail
@@ -42,10 +43,11 @@ class ThumbnailSweep:
                 generated += 1
             except Exception:
                 failed += 1
-                with writer() as conn, conn:
-                    conn.execute(
-                        "UPDATE files SET has_thumb = -1 WHERE path = ?", (path,)
-                    )
+                # Mark the failure against the mtime/size this attempt was for.
+                # A file that changed underneath gets its fresh row retried.
+                thumbnails.mark_has_thumb(
+                    path, float(row["mtime"] or 0), int(row["size"] or 0), -1
+                )
         with reader() as conn:
             remaining = conn.execute(
                 "SELECT COUNT(*) AS n FROM files WHERE has_thumb = 0 "

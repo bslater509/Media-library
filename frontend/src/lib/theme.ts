@@ -55,6 +55,16 @@ export function setStoredTheme(mode: ThemeMode): ResolvedTheme {
   return applyTheme(mode)
 }
 
+/** Subscribe to OS light/dark flips (a stable snapshot subscription). */
+export function subscribeSystemTheme(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return () => {}
+  }
+  const query = window.matchMedia(DARK_QUERY)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
 /**
  * Re-apply the theme when the OS flips between light and dark. Only matters
  * while the preference is "system"; when `mode` is omitted the stored

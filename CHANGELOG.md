@@ -13,6 +13,29 @@ snapshot metadata.
 
 ### Fixed
 
+- A code audit's findings are fixed and pinned by tests (see
+  ``tests/test_audit_round2.py``): batch moves fail one item instead of
+  aborting the whole request on a rejected path; a suffix byte-range on an
+  empty file is no longer answered with an invalid ``0--1`` range;
+  concurrent upload chunks for one upload id no longer interleave in the
+  staged file (per-id lock, pruned at finalize/cancel); posters only mark
+  ``has_thumb`` for the ``mtime``/``size`` the key was built from, and a
+  poster that exists while the row still says 0 self-heals; ffprobe/decode
+  timeouts and mount I/O errors leave ``width NULL`` (retried) instead of
+  freezing ``0×0``; ZIP members can no longer starve the content-hash sweep
+  window; oversized images are copied through instead of decoded into
+  hundreds of MB during WebP conversion (library and archive rewrite);
+  the x265 encoder gets a 5-minute output-inactivity timeout so a wedged
+  ffmpeg cannot deadlock the serial queue, re-stats the archive for the
+  crawl race and sample-verifies the cross-device copy; unreadable folders
+  no longer abort the whole crawl; the frame/candidate/poster endpoints
+  clamp paths to the library root; unexpected mutation errors return a
+  generic 500 (no filesystem paths in the body); ``/api/health`` and
+  ``/api/system/status`` do their SQLite reads off the event loop; login
+  failures throttle repeat offenders; transcode shutdown bounds its wait.
+- The poster-chooser/frame endpoints clamp paths to the library root the
+  same way every other media read does, so index rows from another root
+  can never drive an FFmpeg read outside the library.
 - A real directory literally named ``foo.zip`` is no longer mistaken for a
   ZIP virtual folder: ``is_zip_member`` consults the index's ``is_zip``
   flag for the archive component (string shape alone cannot tell them

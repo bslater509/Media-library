@@ -282,8 +282,10 @@ Hard contracts:
 - `dir_mtime` is what makes the crawler incremental: a folder whose mtime still
   matches is skipped without re-stat-ing its children (they are still
   traversed). NULL forces a re-scan.
-- `width IS NULL` means "not probed yet". Failures are stored as `0×0` so the
-  file is not retried until it changes.
+- `width IS NULL` means "not probed yet". Definitive failures (ffprobe rejects
+  the file, the format is unidentified) are stored as `0×0` so the file is not
+  retried until it changes; transient failures (probe timeouts, mount I/O
+  errors) stay NULL and simply retry on a later sweep.
 - `has_thumb`: `1` poster cached, `0` pending, `-1` generation failed.
 - `has_animated`: `1` preview cached, `0` pending, `-1` failed.
 - `quick_hash = sha256(first 128 KB + size)`; `thumb_hash` is a bare 16-hex

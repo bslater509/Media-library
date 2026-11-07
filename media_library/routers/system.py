@@ -122,15 +122,16 @@ async def onboarding() -> dict:
 async def status() -> dict:
     """A small status body plus the crawler state."""
     settings = get_settings()
+    # SQLite reads stay off the event loop (the watchdog polls /health).
     try:
-        totals = library.counts()
+        totals = await asyncio.to_thread(library.counts)
     except sqlite3.Error as exc:
         raise HTTPException(
             status_code=503, detail=f"Index unavailable: {exc}"
         ) from exc
     return {
         "version": __version__,
-        "database": "ok" if is_available() else "unavailable",
+        "database": "ok" if await asyncio.to_thread(is_available) else "unavailable",
         "index": {
             "files": totals["files"],
             "folders": totals["folders"],
@@ -170,7 +171,7 @@ async def index_sync() -> dict:
 @router.get("/health", response_model=HealthResponse)
 async def health(response: Response) -> dict:
     """Cheap, credential-free liveness probe for systemd, watchdogs and containers."""
-    healthy = is_available()
+    healthy = await asyncio.to_thread(is_available)
     if not healthy:
         response.status_code = 503
     commit = build_info.get_commit()

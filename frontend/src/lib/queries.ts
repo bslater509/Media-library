@@ -43,7 +43,10 @@ export function useAuthSession() {
     queryKey: queryKeys.authSession,
     queryFn: api.authSession,
     retry: false,
-    staleTime: Infinity,
+    // Finite so the intended refetch-on-window-focus actually fires:
+    // staleTime: Infinity makes the focus refetch a no-op, so an
+    // out-of-band cookie invalidation was only noticed after a load.
+    staleTime: 60_000,
     refetchOnWindowFocus: true,
   })
 }
@@ -86,6 +89,9 @@ export function useIndexSync() {
     mutationFn: () => api.indexSync(),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.indexStatus })
+      // The crawl can bring in new files: stale browse/folder/search data
+      // fetched before the sync would hang around past its own change.
+      void invalidateLibrary(client)
     },
   })
 }

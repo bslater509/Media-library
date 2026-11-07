@@ -32,9 +32,13 @@ function useHoverCapable(): boolean {
 export function MediaImage({ file, className, animateOnHover = true }: MediaImageProps) {
   const hoverCapable = useHoverCapable()
   const [failed, setFailed] = useState(false)
+  // The poster failed AND the original image also failed to load: stop
+  // re-rendering a broken <img> once and for all with a placeholder.
+  const [failedOriginal, setFailedOriginal] = useState(false)
   const [hovering, setHovering] = useState(false)
 
   const baseSrc = useMemo(() => {
+    if (failedOriginal) return null
     if (failed) return file.type === 'image' ? file.media_url : null
     // Images and videos go through the thumbnail endpoint: when the cache entry
     // is missing it generates one (ZIP members and unprobed uploads included),
@@ -55,6 +59,12 @@ export function MediaImage({ file, className, animateOnHover = true }: MediaImag
   useEffect(() => {
     if (!animated) setHovering(false)
   }, [animated])
+
+  useEffect(() => {
+    // A different file re-uses the component: reset both failure states.
+    setFailed(false)
+    setFailedOriginal(false)
+  }, [file.path])
 
   if (!baseSrc) {
     return (
@@ -91,7 +101,7 @@ export function MediaImage({ file, className, animateOnHover = true }: MediaImag
       className={cn('h-full w-full object-cover', className)}
       onMouseEnter={() => hoverCapable && setHovering(true)}
       onMouseLeave={() => setHovering(false)}
-      onError={() => setFailed(true)}
+      onError={() => (failed ? setFailedOriginal(true) : setFailed(true))}
     />
   )
 }

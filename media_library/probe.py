@@ -1,9 +1,11 @@
 """Metadata probing: dimensions, duration, codecs, fps, capture time.
 
 One FFprobe pass per video and one Pillow open per image. The worker processes
-rows whose ``width`` is still NULL, marks failures as ``0 x 0`` so they are not
-retried until the file changes, and leaves ZIP members alone (their dimensions
-are backfilled from cached posters elsewhere).
+rows whose ``width`` is still NULL, marks definitive failures as ``0 x 0`` so
+they are not retried until the file changes, retries transient failures (a
+probe timeout on a slow remote mount, an I/O error) by leaving them NULL, and
+leaves ZIP members alone (their dimensions are backfilled from cached posters
+elsewhere).
 """
 
 from __future__ import annotations
@@ -41,7 +43,13 @@ def _fraction(value: str | None) -> float | None:
         return None
 
 
-def _probe_video(path: str) -> dict[str, Any] | None:
+# Sentinel: probing failed for a *transient* reason (EIO, a ffprobe timeout on
+# a slow remote mount). Leaving ``width NULL`` retries on the next sweep;
+# writing 0 x 0 would poison the row until the file itself changes.
+TRANSIENT: Any = object()
+
+
+def _probe_video(path: str):
     try:
         result = subprocess.run(
             [
@@ -61,7 +69,13 @@ def _probe_video(path: str) -> dict[str, Any] | None:
         if result.returncode != 0:
             return None
         payload = json.loads(result.stdout.decode("utf-8", "replace") or "{}")
-    except (OSError, subprocess.TimeoutExpired, ValueError):
+    except (subprocess.TimeoutExpired, ConnectionError, TimeoutError):
+        return TRANSIENT
+    except OSError:
+        # ffprobe itself was launched but the read through the mount failed,
+        # or the launch came back as an OS-level error: retry later.
+        return TRANSIENT
+    except ValueError:
         return None
 
     streams = payload.get("streams") or []
@@ -97,9 +111,9 @@ def _probe_video(path: str) -> dict[str, Any] | None:
     }
 
 
-def _probe_image(path: str) -> dict[str, Any] | None:
+def _probe_image(path: str):
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, UnidentifiedImageError
 
         from media_library.pillow_init import register_heif
 
@@ -127,11 +141,16 @@ def _probe_image(path: str) -> dict[str, Any] | None:
             "fps": None,
             "capture_time": capture,
         }
+    except UnidentifiedImageError:
+        # Not an image the backend can decode: a definitive failure.
+        return None
+    except OSError:
+        return TRANSIENT
     except Exception:
         return None
 
 
-def probe_media(path: str) -> dict[str, Any] | None:
+def probe_media(path: str):
     settings = get_settings()
     ext = os.path.splitext(path)[1].lower()
     if ext in settings.video_exts:
@@ -150,6 +169,7 @@ def probe_batch(limit: int = 20) -> dict[str, Any]:
         ).fetchall()
     probed = 0
     failed = 0
+    transient = 0
     for row in rows:
         path = row["path"]
         if is_zip_member(path):
@@ -166,6 +186,10 @@ def probe_batch(limit: int = 20) -> dict[str, Any]:
                     "UPDATE files SET width = 0, height = 0 WHERE path = ?", (path,)
                 )
                 failed += 1
+            elif result is TRANSIENT:
+                # Mount hiccup or a probe timeout: leave width NULL so the
+                # next sweep retries instead of freezing a bogus 0 x 0.
+                transient += 1
             else:
                 conn.execute(
                     "UPDATE files SET width = ?, height = ?, duration = ?, "
@@ -188,7 +212,12 @@ def probe_batch(limit: int = 20) -> dict[str, Any]:
             "SELECT COUNT(*) AS n FROM files WHERE width IS NULL "
             "AND type IN ('video', 'image')"
         ).fetchone()["n"]
-    return {"probed": probed, "failed": failed, "remaining": remaining or 0}
+    return {
+        "probed": probed,
+        "failed": failed,
+        "transient": transient,
+        "remaining": remaining or 0,
+    }
 
 
 class MetadataWorker:

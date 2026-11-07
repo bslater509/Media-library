@@ -200,8 +200,15 @@ def _index_zip_path(path: str, stat: os.stat_result) -> None:
     if infos is None:
         return
     with writer() as conn, conn:
-        # The archive may have changed (or been indexed by a folder scan)
-        # while we were reading its central directory; only apply SQL.
+        # Re-stat inside the txn: if the archive was replaced while we read
+        # its central directory (slow remote mount, concurrent WebP rewrite),
+        # ``infos`` is stale — skip and let the next crawl use the new stat.
+        try:
+            current = os.stat(path)
+        except OSError:
+            return
+        if current.st_mtime != stat.st_mtime or current.st_size != stat.st_size:
+            return
         row = conn.execute(
             "SELECT is_zip, dir_mtime FROM folders WHERE path = ?", (path,)
         ).fetchone()
@@ -254,7 +261,7 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
     # newly-changed archive cannot be read, nothing is written and the next
     # crawl retries it, exactly as before.
     fresh_archives: list[tuple[str, int]] = []
-    zip_payloads: dict[str, tuple[list[zipfile.ZipInfo], int]] = {}
+    zip_payloads: dict[str, tuple[list[zipfile.ZipInfo], os.stat_result]] = {}
     with reader() as conn:
         archive_rows = {
             row["path"]: (row["is_zip"], row["dir_mtime"])
@@ -275,7 +282,7 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
             continue
         infos = _read_zip_infos(path)
         if infos is not None:
-            zip_payloads[path] = (infos, child.st_mtime)
+            zip_payloads[path] = (infos, child)
 
     # Missing-child decisions, including the mount-safety confirm probes.
     with reader() as conn:
@@ -341,11 +348,24 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
             conn.execute(
                 "UPDATE folders SET parent_path = ? WHERE path = ?", (folder, path)
             )
-        for path, (infos, mtime) in zip_payloads.items():
+        for path, (infos, stat_at_read) in zip_payloads.items():
+            # Re-stat before writing: the archive may have been replaced
+            # (ZIP WebP rewrite / compress) between the read and write
+            # phases, and the old member list would resurrect stale rows.
+            try:
+                current = os.stat(path)
+            except OSError:
+                continue
+            if (
+                current.st_mtime != stat_at_read.st_mtime
+                or current.st_size != stat_at_read.st_size
+            ):
+                continue
             zip_ops.clear_archive_members(conn, path)
             zip_ops.index_archive(conn, path, infos)
             conn.execute(
-                "UPDATE folders SET dir_mtime = ? WHERE path = ?", (mtime, path)
+                "UPDATE folders SET dir_mtime = ? WHERE path = ?",
+                (stat_at_read.st_mtime, path),
             )
 
         # Prune files that vanished from a folder we could read successfully.
@@ -485,7 +505,13 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
                 total_folders=len(seen),
                 current_folder=folder,
             )
-            children = _scan_folder(folder, stat)
+            try:
+                children = _scan_folder(folder, stat)
+            except writes.WriteError:
+                # One unreadable folder on a flaky mount must not kill the
+                # whole crawl (the artwork sweep below depends on finishing).
+                _bump(prune_aborted=1, stale_folders=1)
+                continue
             queue.extend(children)
 
         artwork: dict[str, int] = {}

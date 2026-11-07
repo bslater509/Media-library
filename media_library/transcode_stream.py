@@ -55,6 +55,12 @@ async def relay(process: asyncio.subprocess.Process) -> AsyncIterator[bytes]:
     finally:
         try:
             process.terminate()
-            await process.wait()
+            # Bound the shutdown: a hung ffmpeg must not keep a stream task
+            # (and its transcode slot) forever.
+            try:
+                await asyncio.wait_for(process.wait(), 10)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
         except (ProcessLookupError, OSError):
             pass
