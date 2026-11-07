@@ -8,10 +8,24 @@ runtime are off by default; tests that exercise either switch them on.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from media_library import config as v2_config
 from media_library.schema import init_schema
+
+
+def pytest_configure(config):
+    """Create the parent of ``--basetemp`` before pytest does.
+
+    ``pytest.ini`` pins the base temp directory to ``data/pytest_tmp``, and
+    pytest creates it with a non-recursive ``mkdir``. ``data/`` is git-ignored,
+    so on a fresh checkout (CI included) it does not exist yet.
+    """
+    basetemp = config.getoption("basetemp", None)
+    if basetemp:
+        Path(basetemp).resolve().parent.mkdir(parents=True, exist_ok=True)
 
 
 @pytest.fixture(autouse=True)
