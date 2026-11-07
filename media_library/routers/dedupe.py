@@ -23,6 +23,8 @@ from media_library.schemas import (
     DedupeVerification,
     DedupeVerifyRequest,
     DedupeVerifyResponse,
+    DedupeVisualBatchRequest,
+    DedupeVisualCheckStatus,
     DedupeVisualVerifyRequest,
     IgnoredPairsPage,
 )
@@ -59,6 +61,19 @@ async def verify_visual(payload: DedupeVisualVerifyRequest) -> dict:
         return await asyncio.to_thread(dedupe.verify_visual_group, payload.paths)
     except Exception as exc:
         raise as_http_error(exc) from exc
+
+
+@router.post("/dedupe/verify-visual/batch", response_model=DedupeVisualCheckStatus)
+async def verify_visual_batch(payload: DedupeVisualBatchRequest) -> dict:
+    try:
+        return await asyncio.to_thread(dedupe.start_visual_checks, payload.groups)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.get("/dedupe/verify-visual/status", response_model=DedupeVisualCheckStatus)
+async def verify_visual_status() -> dict:
+    return await asyncio.to_thread(dedupe.visual_check_status)
 
 
 @router.post("/dedupe/reset", response_model=DedupeResetResponse)

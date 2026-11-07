@@ -19,8 +19,9 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any
 
 from media_library import writes
@@ -45,6 +46,26 @@ SELECT f.*, CASE WHEN fav.path IS NOT NULL THEN 1 ELSE 0 END AS is_favorite
 FROM files f
 LEFT JOIN favorites fav ON f.path = fav.path
 """
+
+# A batch of frame checks runs on one daemon thread, like the other queues, so
+# navigating away from the Duplicates page does not stop it and progress can be
+# read back from /api/dedupe/verify-visual/status.
+_verify_lock = threading.RLock()
+_verify_queue: deque[list[str]] = deque()
+_verify_thread: threading.Thread | None = None
+_verify_state: dict[str, Any] = {
+    "status": "idle",
+    "total_groups": 0,
+    "completed_groups": 0,
+    "queued_groups": 0,
+    "current": [],
+    "confirmed": 0,
+    "rejected": 0,
+    "unknown": 0,
+    "errors": 0,
+    "started_at": None,
+    "finished_at": None,
+}
 
 
 def quick_hash(path: str) -> str | None:
@@ -334,11 +355,143 @@ def verify_visual_group(paths: list[str]) -> dict[str, Any]:
     return summary
 
 
+def _status_locked() -> dict[str, Any]:
+    state = dict(_verify_state)
+    state["current"] = list(state["current"])
+    state["queued_groups"] = len(_verify_queue)
+    state["running"] = state["status"] in ("queued", "running")
+    return state
+
+
+def visual_check_status() -> dict[str, Any]:
+    """Progress of the current (or last) five-frame batch."""
+    with _verify_lock:
+        return _status_locked()
+
+
+def _ensure_verify_thread() -> None:
+    global _verify_thread
+    if _verify_thread is not None and _verify_thread.is_alive():
+        return
+    _verify_thread = threading.Thread(
+        target=_verify_loop, name="visual-frame-checks", daemon=True
+    )
+    _verify_thread.start()
+
+
+def start_visual_checks(groups: list[list[str]]) -> dict[str, Any]:
+    """Queue frame checks for one or more visual groups and return immediately."""
+    cleaned: list[tuple[tuple[str, ...], list[str]]] = []
+    seen: set[tuple[str, ...]] = set()
+    for group in groups:
+        paths = [path for path in group if isinstance(path, str) and path]
+        key = tuple(sorted(set(paths)))
+        if len(key) < 2 or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append((key, paths))
+    if not cleaned:
+        raise writes.WriteError("Choose at least one visual group", 400)
+
+    with _verify_lock:
+        existing = {tuple(sorted(set(group))) for group in _verify_queue}
+        if _verify_state["current"]:
+            existing.add(tuple(sorted(set(_verify_state["current"]))))
+        cleaned = [entry for entry in cleaned if entry[0] not in existing]
+
+        starting = not _verify_queue and not (
+            _verify_thread is not None and _verify_thread.is_alive()
+        )
+        if starting:
+            _verify_state.update(
+                status="queued",
+                total_groups=0,
+                completed_groups=0,
+                current=[],
+                confirmed=0,
+                rejected=0,
+                unknown=0,
+                errors=0,
+                started_at=time.time(),
+                finished_at=None,
+            )
+        if not cleaned:
+            return _status_locked()
+        _verify_queue.extend(paths for _key, paths in cleaned)
+        _verify_state["total_groups"] += len(cleaned)
+        _verify_state["queued_groups"] = len(_verify_queue)
+        _verify_state["finished_at"] = None
+        if _verify_state["status"] in ("idle", "done"):
+            _verify_state["status"] = "queued"
+        _ensure_verify_thread()
+        return _status_locked()
+
+
+def _verify_loop() -> None:
+    global _verify_thread
+    while True:
+        with _verify_lock:
+            if not _verify_queue:
+                _verify_state.update(
+                    status="done",
+                    current=[],
+                    queued_groups=0,
+                    finished_at=time.time(),
+                )
+                _verify_thread = None
+                return
+            group = _verify_queue.popleft()
+            _verify_state.update(
+                status="running",
+                current=list(group),
+                queued_groups=len(_verify_queue),
+            )
+
+        confirmed: bool | None = None
+        failed = False
+        try:
+            result = verify_visual_group(group)
+            confirmed = result.get("confirmed")
+        except Exception:
+            failed = True
+
+        with _verify_lock:
+            if failed:
+                _verify_state["errors"] += 1
+            elif confirmed is True:
+                _verify_state["confirmed"] += 1
+            elif confirmed is False:
+                _verify_state["rejected"] += 1
+            else:
+                _verify_state["unknown"] += 1
+            _verify_state["completed_groups"] += 1
+            _verify_state["current"] = []
+            _verify_state["queued_groups"] = len(_verify_queue)
+            if not _verify_queue:
+                _verify_state.update(status="done", finished_at=time.time())
+
+
 def reset_duplicates() -> dict[str, int]:
     """Forget every ignored pair and cached frame check."""
     with writer() as conn, conn:
         ignored = conn.execute("DELETE FROM ignored_duplicates").rowcount
         signatures = conn.execute("DELETE FROM visual_frames").rowcount
+    with _verify_lock:
+        _verify_queue.clear()
+        if not (_verify_thread is not None and _verify_thread.is_alive()):
+            _verify_state.update(
+                status="idle",
+                total_groups=0,
+                completed_groups=0,
+                queued_groups=0,
+                current=[],
+                confirmed=0,
+                rejected=0,
+                unknown=0,
+                errors=0,
+                started_at=None,
+                finished_at=None,
+            )
     return {"ignored_cleared": ignored or 0, "signatures_cleared": signatures or 0}
 
 

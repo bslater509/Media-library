@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -379,6 +380,46 @@ def test_verify_visual_group_needs_five_frame_agreement(dedupe_env, monkeypatch)
     assert rejected["pairs"][0]["matches"] == 0
 
 
+def test_visual_check_batch_reports_progress_and_survives_the_request(
+    dedupe_env, monkeypatch
+):
+    calls: list[list[str]] = []
+
+    def fake(paths: list[str]) -> dict:
+        calls.append(paths)
+        return {
+            "available": True,
+            "confirmed": len(calls) == 1,
+            "checked_pairs": 1,
+            "confirmed_pairs": 1 if len(calls) == 1 else 0,
+            "frames": 5,
+            "pairs": [],
+        }
+
+    monkeypatch.setattr(dedupe, "verify_visual_group", fake)
+    first = dedupe.start_visual_checks(
+        [
+            [str(dedupe_env["a"]), str(dedupe_env["b"])],
+            [str(dedupe_env["b"]), str(dedupe_env["a"])],  # duplicate group
+            [str(dedupe_env["va"]), str(dedupe_env["vb"])],
+        ]
+    )
+    assert first["total_groups"] == 2
+    assert first["running"] is True
+
+    deadline = time.time() + 5
+    status = dedupe.visual_check_status()
+    while status["running"] and time.time() < deadline:
+        time.sleep(0.01)
+        status = dedupe.visual_check_status()
+
+    assert status["status"] == "done"
+    assert status["completed_groups"] == 2
+    assert status["confirmed"] == 1
+    assert status["rejected"] == 1
+    assert len(calls) == 2
+
+
 def test_reset_duplicates_clears_ignored_pairs_and_frame_checks(dedupe_env):
     dedupe.ignore_pair(str(dedupe_env["a"]), str(dedupe_env["b"]), "content")
     with _db(dedupe_env) as conn:
@@ -452,7 +493,7 @@ def test_ignore_round_trip_and_page(dedupe_env):
     assert dedupe.ignored_page()["total"] == 0
 
 
-def test_router_wires_dedupe_and_validates_input(dedupe_env):
+def test_router_wires_dedupe_and_validates_input(dedupe_env, monkeypatch):
     client = TestClient(create_app())
 
     status = client.get("/api/dedupe/status").json()
@@ -504,6 +545,32 @@ def test_router_wires_dedupe_and_validates_input(dedupe_env):
     )
     assert frame_check.status_code == 200
     assert frame_check.json()["available"] is False
+
+    monkeypatch.setattr(
+        dedupe,
+        "verify_visual_group",
+        lambda paths: {
+            "available": True,
+            "confirmed": True,
+            "checked_pairs": 1,
+            "confirmed_pairs": 1,
+            "frames": 5,
+            "pairs": [],
+        },
+    )
+    batch = client.post(
+        "/api/dedupe/verify-visual/batch",
+        json={"groups": [[str(dedupe_env["va"]), str(dedupe_env["vb"])]]},
+    )
+    assert batch.status_code == 200
+    assert batch.json()["total_groups"] == 1
+    deadline = time.time() + 5
+    state = client.get("/api/dedupe/verify-visual/status").json()
+    while state["running"] and time.time() < deadline:
+        time.sleep(0.01)
+        state = client.get("/api/dedupe/verify-visual/status").json()
+    assert state["status"] == "done"
+    assert state["completed_groups"] == 1
 
     reset = client.post("/api/dedupe/reset").json()
     assert reset["ignored_cleared"] == 1

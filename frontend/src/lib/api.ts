@@ -337,6 +337,21 @@ export interface DedupeResetResult {
   signatures_cleared: number
 }
 
+export interface DedupeVisualCheckStatus {
+  status: 'idle' | 'queued' | 'running' | 'done' | string
+  running: boolean
+  total_groups: number
+  completed_groups: number
+  queued_groups: number
+  current: string[]
+  confirmed: number
+  rejected: number
+  unknown: number
+  errors: number
+  started_at: number | null
+  finished_at: number | null
+}
+
 export interface DedupeHashResult {
   hashed: number
   failed: number
@@ -901,6 +916,12 @@ export const api = {
 
   dedupeVerifyVisual: (paths: string[]) =>
     post<DedupeVerification>('/dedupe/verify-visual', { paths }),
+
+  dedupeVerifyVisualBatch: (groups: string[][]) =>
+    post<DedupeVisualCheckStatus>('/dedupe/verify-visual/batch', { groups }),
+
+  dedupeVerifyVisualStatus: () =>
+    request<DedupeVisualCheckStatus>('/dedupe/verify-visual/status'),
 
   dedupeReset: () => post<DedupeResetResult>('/dedupe/reset', {}),
 

@@ -33,6 +33,7 @@ export const queryKeys = {
   dedupeGroups: (mode: string, limit: number) =>
     ['dedupe', 'groups', mode, limit] as const,
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
+  dedupeVerifyStatus: ['dedupe', 'verify-visual', 'status'] as const,
   downloadStatus: ['downloads', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
 }
@@ -514,6 +515,26 @@ export function useDedupeVerifyVisual() {
   return useMutation({
     mutationFn: (paths: string[]) => api.dedupeVerifyVisual(paths),
     onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+    },
+  })
+}
+
+export function useDedupeVerifyVisualStatus() {
+  return useQuery({
+    queryKey: queryKeys.dedupeVerifyStatus,
+    queryFn: api.dedupeVerifyVisualStatus,
+    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+    staleTime: 0,
+  })
+}
+
+export function useStartDedupeVerifyVisual() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (groups: string[][]) => api.dedupeVerifyVisualBatch(groups),
+    onSuccess: (status) => {
+      client.setQueryData(queryKeys.dedupeVerifyStatus, status)
       void client.invalidateQueries({ queryKey: ['dedupe'] })
     },
   })

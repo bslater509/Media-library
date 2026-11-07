@@ -539,6 +539,25 @@ class DedupeVisualVerifyRequest(BaseModel):
     paths: list[str] = Field(min_length=2, max_length=200)
 
 
+class DedupeVisualBatchRequest(BaseModel):
+    groups: list[list[str]] = Field(min_length=1, max_length=500)
+
+
+class DedupeVisualCheckStatus(BaseModel):
+    status: str
+    running: bool
+    total_groups: int
+    completed_groups: int
+    queued_groups: int
+    current: list[str] = Field(default_factory=list)
+    confirmed: int
+    rejected: int
+    unknown: int
+    errors: int
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
 class DedupeResetResponse(BaseModel):
     ignored_cleared: int
     signatures_cleared: int

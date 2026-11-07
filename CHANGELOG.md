@@ -18,7 +18,9 @@ snapshot metadata.
   each frame and compares the pair; results are cached in the new
   `visual_frames` table. A group is confirmed when at least three samples
   agree, and the Duplicates page can check one group or every visible visual
-  group.
+  group. Batches run on a daemon thread with `POST
+  /api/dedupe/verify-visual/batch` and `GET /api/dedupe/verify-visual/status`,
+  so progress survives leaving and returning to the page.
 - **The Duplicates page compares videos side by side.** A compare dialog plays
   every file in the group, keeps the selected copy highlighted and shows the
   per-pair frame agreement.

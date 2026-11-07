@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
   AlertTriangle,
@@ -28,7 +28,8 @@ import {
   useDedupeResolve,
   useDedupeStatus,
   useDedupeUnignore,
-  useDedupeVerifyVisual,
+  useDedupeVerifyVisualStatus,
+  useStartDedupeVerifyVisual,
 } from '../lib/queries'
 import {
   Badge,
@@ -45,6 +46,7 @@ import {
   DialogTitle,
   EmptyState,
   IconButton,
+  Progress,
   Spinner,
 } from '../components/ui'
 import { resolutionLabel } from '../lib/format'
@@ -92,8 +94,6 @@ export function DedupePage() {
   const [limit, setLimit] = useState(25)
   const [hashing, setHashing] = useState(false)
   const [hashingProgress, setHashingProgress] = useState('')
-  const [verifyingAll, setVerifyingAll] = useState(false)
-  const [verifyProgress, setVerifyProgress] = useState('')
   const [keepChoice, setKeepChoice] = useState<Record<string, string>>({})
   const [confirm, setConfirm] = useState<{ group: DedupeGroup; keep: string } | null>(
     null,
@@ -109,13 +109,26 @@ export function DedupePage() {
   const resolve = useDedupeResolve()
   const ignore = useDedupeIgnore()
   const unignore = useDedupeUnignore()
-  const verify = useDedupeVerifyVisual()
+  const verifyStatus = useDedupeVerifyVisualStatus()
+  const startChecks = useStartDedupeVerifyVisual()
   const reset = useDedupeReset()
 
   const data = groups.data
   const unhashed =
     (status.data?.content.unhashed ?? 0) + (status.data?.visual.unhashed ?? 0)
   const compareGroup = data?.groups.find((group) => group.id === compareId) ?? null
+  const checkState = verifyStatus.data
+  const checking = checkState?.running ?? false
+  const checkedGroups = checkState?.completed_groups ?? 0
+  const totalCheckGroups = checkState?.total_groups ?? 0
+  const checkPercent =
+    totalCheckGroups > 0 ? Math.round((checkedGroups / totalCheckGroups) * 100) : 0
+
+  useEffect(() => {
+    if (checkState?.status === 'done') {
+      void client.invalidateQueries({ queryKey: ['dedupe', 'groups'] })
+    }
+  }, [checkState?.status, client])
 
   const openFile = (file: FileEntry) => {
     navigate(
@@ -155,10 +168,16 @@ export function DedupePage() {
   const setKeep = (group: DedupeGroup, path: string) =>
     setKeepChoice((current) => ({ ...current, [group.id]: path }))
 
+  const groupIsChecking = (group: DedupeGroup) =>
+    Boolean(
+      checkState?.current.length &&
+        group.files.some((file) => checkState.current.includes(file.path)),
+    )
+
   const verifyGroup = async (group: DedupeGroup) => {
     if (group.match_type !== 'visual') return
     try {
-      await verify.mutateAsync(group.files.map((file) => file.path))
+      await startChecks.mutateAsync([group.files.map((file) => file.path)])
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not check frames',
@@ -169,6 +188,7 @@ export function DedupePage() {
   const openCompare = (group: DedupeGroup) => {
     setCompareId(group.id)
     if (
+      !checking &&
       group.match_type === 'visual' &&
       !group.verification?.available &&
       group.files.some((file) => file.type === 'video')
@@ -188,21 +208,14 @@ export function DedupePage() {
       toast.info('Every visual group on this page is already frame-checked')
       return
     }
-    setVerifyingAll(true)
     try {
-      for (const [index, group] of pending.entries()) {
-        setVerifyProgress(`${index + 1}/${pending.length}`)
-        await verify.mutateAsync(group.files.map((file) => file.path))
-      }
-      await client.invalidateQueries({ queryKey: ['dedupe'] })
-      toast.success(`Frame-checked ${pending.length} visual group(s)`)
+      await startChecks.mutateAsync(
+        pending.map((group) => group.files.map((file) => file.path)),
+      )
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Could not check frames',
       )
-    } finally {
-      setVerifyingAll(false)
-      setVerifyProgress('')
     }
   }
 
@@ -256,7 +269,8 @@ export function DedupePage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {data?.groups.some(
+          {checking ||
+          data?.groups.some(
             (group) =>
               group.match_type === 'visual' && !group.verification?.available,
           ) ? (
@@ -264,18 +278,16 @@ export function DedupePage() {
               size="sm"
               variant="secondary"
               onClick={() => void verifyVisible()}
-              disabled={verifyingAll || verify.isPending}
+              disabled={checking || startChecks.isPending}
               title="Compare five sampled frames for each visual group on this page"
             >
-              {verifyingAll ? (
+              {checking ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <ShieldCheck />
               )}
-              {verifyingAll
-                ? verifyProgress
-                  ? `Checking ${verifyProgress}`
-                  : 'Checking…'
+              {checking
+                ? `Checking ${checkedGroups}/${totalCheckGroups}`
                 : 'Check 5 frames'}
             </Button>
           ) : null}
@@ -326,6 +338,31 @@ export function DedupePage() {
           </span>
         ) : null}
       </div>
+
+      {checkState && (checking || checkedGroups > 0) ? (
+        <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              {checking ? (
+                <Loader2 className="size-3.5 animate-spin text-accent" />
+              ) : (
+                <ShieldCheck className="size-3.5 text-success" />
+              )}
+              {checking
+                ? totalCheckGroups > 0
+                  ? `Checking group ${Math.min(checkedGroups + 1, totalCheckGroups)} of ${totalCheckGroups}`
+                  : 'Starting frame check…'
+                : `Last 5-frame check: ${checkedGroups}/${totalCheckGroups} groups`}
+            </span>
+            <span className="tabular-nums text-fg-subtle">
+              {checkState.confirmed} confirmed · {checkState.rejected} differ ·{' '}
+              {checkState.unknown} inconclusive
+              {checkState.errors ? ` · ${checkState.errors} failed` : ''}
+            </span>
+          </div>
+          {checking ? <Progress value={checkPercent} /> : null}
+        </div>
+      ) : null}
 
       {unhashed > 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-5 text-fg-muted">
@@ -465,7 +502,8 @@ export function DedupePage() {
                           type="button"
                           onClick={() => void verifyGroup(group)}
                           disabled={
-                            verify.isPending ||
+                            checking ||
+                            startChecks.isPending ||
                             !group.files.some((file) => file.type === 'video')
                           }
                           title={
@@ -475,7 +513,7 @@ export function DedupePage() {
                           }
                           className="inline-flex items-center gap-1.5 text-[11px] text-fg-subtle hover:text-fg disabled:opacity-50"
                         >
-                          {verify.isPending ? (
+                          {groupIsChecking(group) ? (
                             <Loader2 className="size-3.5 animate-spin" />
                           ) : (
                             <ShieldCheck className="size-3.5" />
@@ -742,11 +780,12 @@ export function DedupePage() {
                   variant="secondary"
                   onClick={() => void verifyGroup(compareGroup)}
                   disabled={
-                    verify.isPending ||
+                    checking ||
+                    startChecks.isPending ||
                     !compareGroup.files.some((file) => file.type === 'video')
                   }
                 >
-                  {verify.isPending ? (
+                  {groupIsChecking(compareGroup) ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <ShieldCheck />
