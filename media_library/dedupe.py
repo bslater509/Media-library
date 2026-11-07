@@ -776,13 +776,17 @@ def visual_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
     }
 
 
-def all_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
+def all_groups(
+    limit: int = 25, offset: int = 0, include_rejected: bool = False
+) -> dict[str, Any]:
     """One combined list: byte-identical groups first, visual extras beside them.
 
     A visual cluster made entirely of files that already appear in a content
     group adds nothing, so it is dropped. A cluster that also contains a
     genuinely different file keeps one representative of the byte-identical
-    group plus that extra, which is the only pair worth reviewing.
+    group plus that extra, which is the only pair worth reviewing. Visual
+    groups whose five-frame check disagreed are counted in ``rejected_groups``
+    and hidden unless ``include_rejected`` is set.
     """
     content = content_groups(limit=100_000, offset=0)
     visual = visual_groups(limit=100_000, offset=0)
@@ -826,18 +830,58 @@ def all_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
         for file in group["files"]
     ]
     cached = _cached_signatures(visual_paths)
+    rejected_groups = 0
+    visible: list[dict[str, Any]] = []
     for group in merged:
         if group["match_type"] != "visual":
+            visible.append(group)
             continue
         paths = [file["path"] for file in group["files"]]
-        group["verification"] = _verification_for(paths, cached)
+        verification = _verification_for(paths, cached)
+        group["verification"] = verification
+        if (
+            verification is not None
+            and verification["available"]
+            and verification["confirmed"] is False
+        ):
+            rejected_groups += 1
+            if not include_rejected:
+                continue
+        visible.append(group)
+
     return {
         "mode": "all",
-        "total_groups": len(merged),
-        "total_files": sum(len(group["files"]) for group in merged),
+        "total_groups": len(visible),
+        "total_files": sum(len(group["files"]) for group in visible),
         "unhashed": int(content["unhashed"]) + int(visual["unhashed"]),
-        "groups": merged[offset : offset + limit],
+        "rejected_groups": rejected_groups,
+        "groups": visible[offset : offset + limit],
     }
+
+
+def auto_verify_groups(groups: list[dict[str, Any]]) -> int:
+    """Queue a five-frame check for visual groups that have none yet."""
+    candidates: list[list[str]] = []
+    for group in groups:
+        if group.get("match_type") != "visual":
+            continue
+        verification = group.get("verification")
+        if verification and verification.get("available"):
+            continue
+        paths = [
+            file["path"]
+            for file in group.get("files", [])
+            if file.get("type") == "video"
+        ]
+        if len(paths) >= 2:
+            candidates.append(paths)
+    if not candidates:
+        return 0
+    try:
+        start_visual_checks(candidates)
+    except writes.WriteError:
+        return 0
+    return len(candidates)
 
 
 def status() -> dict[str, Any]:

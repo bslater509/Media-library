@@ -42,17 +42,26 @@ async def groups(
     mode: str = Query("all"),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_rejected: bool = Query(False),
+    auto_verify: bool = Query(True),
 ) -> dict:
     if mode not in ("all", "content", "visual"):
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail="Unknown match mode")
-    worker = {
-        "all": dedupe.all_groups,
-        "content": dedupe.content_groups,
-        "visual": dedupe.visual_groups,
-    }[mode]
-    return await asyncio.to_thread(worker, limit, offset)
+    if mode == "all":
+        result = await asyncio.to_thread(
+            dedupe.all_groups, limit, offset, include_rejected
+        )
+    else:
+        worker = {
+            "content": dedupe.content_groups,
+            "visual": dedupe.visual_groups,
+        }[mode]
+        result = await asyncio.to_thread(worker, limit, offset)
+    if auto_verify:
+        await asyncio.to_thread(dedupe.auto_verify_groups, result["groups"])
+    return result
 
 
 @router.post("/dedupe/verify-visual", response_model=DedupeVerification)

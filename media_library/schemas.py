@@ -504,6 +504,7 @@ class DedupeGroups(BaseModel):
     total_groups: int
     total_files: int
     unhashed: int
+    rejected_groups: int = 0
     groups: list[DedupeGroup]
 
 

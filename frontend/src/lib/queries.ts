@@ -30,8 +30,8 @@ export const queryKeys = {
   backupStatus: ['backups', 'status'] as const,
   emptyFolders: ['empty', 'folders'] as const,
   dedupeStatus: ['dedupe', 'status'] as const,
-  dedupeGroups: (mode: string, limit: number) =>
-    ['dedupe', 'groups', mode, limit] as const,
+  dedupeGroups: (mode: string, limit: number, includeRejected = false) =>
+    ['dedupe', 'groups', mode, limit, includeRejected] as const,
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   dedupeVerifyStatus: ['dedupe', 'verify-visual', 'status'] as const,
   downloadStatus: ['downloads', 'status'] as const,
@@ -435,10 +435,10 @@ export function useDedupeStatus() {
   })
 }
 
-export function useDedupeGroups(mode: string, limit = 25) {
+export function useDedupeGroups(mode: string, limit = 25, includeRejected = false) {
   return useQuery({
-    queryKey: queryKeys.dedupeGroups(mode, limit),
-    queryFn: () => api.dedupeGroups(mode, limit, 0),
+    queryKey: queryKeys.dedupeGroups(mode, limit, includeRejected),
+    queryFn: () => api.dedupeGroups(mode, limit, 0, includeRejected),
     staleTime: 15_000,
   })
 }
@@ -524,7 +524,9 @@ export function useDedupeVerifyVisualStatus() {
   return useQuery({
     queryKey: queryKeys.dedupeVerifyStatus,
     queryFn: api.dedupeVerifyVisualStatus,
-    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+    // The groups request auto-queues visual checks, so poll even while the
+    // first status response still says idle.
+    refetchInterval: 2000,
     staleTime: 0,
   })
 }

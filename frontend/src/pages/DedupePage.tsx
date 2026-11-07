@@ -102,9 +102,10 @@ export function DedupePage() {
   const [compareId, setCompareId] = useState<string | null>(null)
   const [ignoredLimit, setIgnoredLimit] = useState(50)
   const [showIgnored, setShowIgnored] = useState(false)
+  const [showRejected, setShowRejected] = useState(false)
 
   const status = useDedupeStatus()
-  const groups = useDedupeGroups('all', limit)
+  const groups = useDedupeGroups('all', limit, showRejected)
   const ignored = useDedupeIgnored(ignoredLimit)
   const resolve = useDedupeResolve()
   const ignore = useDedupeIgnore()
@@ -313,7 +314,7 @@ export function DedupePage() {
               )}
               {checking
                 ? `Checking ${checkedGroups}/${totalCheckGroups}`
-                : 'Check 5 frames'}
+                : 'Re-check 5 frames'}
             </Button>
           ) : null}
           <Button
@@ -362,6 +363,17 @@ export function DedupePage() {
             {data.total_files.toLocaleString()} files
           </span>
         ) : null}
+        {data?.rejected_groups ? (
+          <button
+            type="button"
+            onClick={() => setShowRejected((value) => !value)}
+            className="text-accent hover:underline"
+          >
+            {showRejected ? 'Hide' : 'Show'}{' '}
+            {data.rejected_groups.toLocaleString()} frame mismatch
+            {data.rejected_groups === 1 ? '' : 'es'}
+          </button>
+        ) : null}
       </div>
 
       {checkState && (checking || checkedGroups > 0) ? (
@@ -376,7 +388,7 @@ export function DedupePage() {
               {checking ? (
                 <>
                   {totalCheckGroups > 0
-                    ? `Checking group ${Math.min(checkedGroups + 1, totalCheckGroups)} of ${totalCheckGroups}`
+                    ? `Auto-checking group ${Math.min(checkedGroups + 1, totalCheckGroups)} of ${totalCheckGroups}`
                     : 'Starting frame check…'}
                   {activeFiles > 0
                     ? ` · file ${Math.min(Math.max(1, activeIndex), activeFiles)}/${activeFiles}`

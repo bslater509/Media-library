@@ -13,15 +13,15 @@ snapshot metadata.
 
 ### Added
 
-- **Visual duplicates are double-checked against five frames.** `POST
-  /api/dedupe/verify-visual` samples a video at 10–90% of its duration, hashes
-  each frame and compares the pair; results are cached in the new
-  `visual_frames` table. A group is confirmed when at least three samples
-  agree, and the Duplicates page can check one group or every visible visual
-  group. Batches run on a daemon thread with `POST
-  /api/dedupe/verify-visual/batch` and `GET /api/dedupe/verify-visual/status`,
-  so progress (group, file and sampled frame) survives leaving and returning
-  to the page.
+- **Visual duplicates are double-checked automatically against five frames.**
+  Sampling uses 10%, 30%, 50%, 70% and 90% of each video. Fetching duplicate
+  groups queues the check for every unchecked visual group on the page;
+  `POST /api/dedupe/verify-visual` still checks one group on demand. Results
+  are cached in `visual_frames`, and a group is confirmed when at least three
+  samples agree. Batches run on a daemon thread with progress (group, file and
+  sampled frame) at `GET /api/dedupe/verify-visual/status`, so it survives
+  leaving and returning to the page. Groups whose frames disagree are hidden
+  by default; the page offers a “Show frame mismatches” toggle.
 - **The Duplicates page compares videos side by side.** A compare dialog plays
   every file in the group, keeps the selected copy highlighted and shows the
   per-pair frame agreement.

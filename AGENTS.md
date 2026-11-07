@@ -383,10 +383,13 @@ preceded by a full byte comparison. Visual clusters use complete linkage on the
 double-checked against five sampled frames per video (10–90% of duration), and
 the result is cached in `visual_frames`. The client shows content and visual
 groups in one list; a visual cluster already covered by a byte-identical group
-is folded into it. A batch of checks runs on one daemon thread and exposes
-progress (group, file and sampled frame) at
+is folded into it. Fetching groups auto-queues a five-frame check for every
+visual group on the page; a batch of checks runs on one daemon thread and
+exposes progress (group, file and sampled frame) at
 `GET /api/dedupe/verify-visual/status`, so leaving the page does not stop it.
-`POST /api/dedupe/reset` clears every ignored pair and cached frame check.
+Groups whose frames disagree are hidden by default (`include_rejected=true`
+shows them). `POST /api/dedupe/reset` clears every ignored pair and cached
+frame check.
 
 ### Downloads
 Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged
@@ -470,7 +473,7 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `POST /transcode/x265/cancel`
 
 ### Dedupe, analytics, cleanup, backups
-`GET /dedupe/status` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=` ·
+`GET /dedupe/status` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&auto_verify=` ·
 `POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/verify-visual` ·
 `POST /dedupe/verify-visual/batch` · `GET /dedupe/verify-visual/status` ·
 `POST /dedupe/resolve` · `POST /dedupe/ignore` · `GET /dedupe/ignored` ·

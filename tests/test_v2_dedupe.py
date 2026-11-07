@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -339,6 +340,95 @@ def test_all_groups_merge_content_and_visual(tmp_path, dedupe_env):
         and group != {str(dedupe_env["a"]), str(dedupe_env["b"])}
         for group in paths
     )
+
+
+def test_all_groups_hides_groups_whose_frames_disagree(dedupe_env):
+    vd = dedupe_env["library"] / "A" / "visual-video-d.mp4"
+    ve = dedupe_env["library"] / "B" / "visual-video-e.mp4"
+    vd.write_bytes(b"video-d" * 20)
+    ve.write_bytes(b"video-e" * 21)
+    with _db(dedupe_env) as conn:
+        for path, hashes in (
+            (vd, ["0000000000000000"] * 5),
+            (ve, ["ffffffffffffffff"] * 5),
+        ):
+            stat = path.stat()
+            _insert_file(
+                conn,
+                path,
+                "video",
+                ".mp4",
+                stat.st_size,
+                stat.st_mtime,
+                None,
+                "bbbbbbbbbbbbbbbb",
+            )
+            conn.execute(
+                "INSERT INTO visual_frames "
+                "(path, mtime, size, duration, hashes, captured_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    str(path),
+                    stat.st_mtime,
+                    stat.st_size,
+                    100.0,
+                    json.dumps(hashes),
+                    time.time(),
+                ),
+            )
+
+    hidden = dedupe.all_groups(limit=100)
+    assert hidden["rejected_groups"] == 1
+    assert all(
+        {str(vd), str(ve)} != {file["path"] for file in group["files"]}
+        for group in hidden["groups"]
+    )
+
+    shown = dedupe.all_groups(limit=100, include_rejected=True)
+    rejected = [
+        group
+        for group in shown["groups"]
+        if {file["path"] for file in group["files"]} == {str(vd), str(ve)}
+    ]
+    assert len(rejected) == 1
+    assert rejected[0]["verification"]["confirmed"] is False
+
+
+def test_auto_verify_queues_only_unchecked_visual_groups(dedupe_env, monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake(paths: list[str], progress=None) -> dict:
+        calls.append(paths)
+        return {
+            "available": True,
+            "confirmed": True,
+            "checked_pairs": 1,
+            "confirmed_pairs": 1,
+            "frames": 5,
+            "pairs": [],
+        }
+
+    monkeypatch.setattr(dedupe, "verify_visual_group", fake)
+    group = {
+        "match_type": "visual",
+        "verification": None,
+        "files": [
+            {"path": str(dedupe_env["a"]), "type": "video"},
+            {"path": str(dedupe_env["b"]), "type": "video"},
+            {"path": str(dedupe_env["va"]), "type": "image"},
+        ],
+    }
+    assert dedupe.auto_verify_groups([group]) == 1
+    deadline = time.time() + 5
+    status = dedupe.visual_check_status()
+    while status["running"] and time.time() < deadline:
+        time.sleep(0.01)
+        status = dedupe.visual_check_status()
+    assert status["completed_groups"] == 1
+    assert calls == [[str(dedupe_env["a"]), str(dedupe_env["b"])]]
+
+    checked = {**group, "verification": {"available": True, "confirmed": True}}
+    assert dedupe.auto_verify_groups([checked]) == 0
 
 
 def test_verify_visual_group_needs_five_frame_agreement(dedupe_env, monkeypatch):

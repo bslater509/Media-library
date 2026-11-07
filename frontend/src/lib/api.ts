@@ -323,6 +323,7 @@ export interface DedupeGroups {
   total_groups: number
   total_files: number
   unhashed: number
+  rejected_groups: number
   groups: DedupeGroup[]
 }
 
@@ -907,8 +908,13 @@ export const api = {
 
   dedupeStatus: () => request<DedupeStatus>('/dedupe/status'),
 
-  dedupeGroups: (mode: string, limit = 25, offset = 0) =>
-    request<DedupeGroups>('/dedupe/groups', { mode, limit, offset }),
+  dedupeGroups: (mode: string, limit = 25, offset = 0, includeRejected = false) =>
+    request<DedupeGroups>('/dedupe/groups', {
+      mode,
+      limit,
+      offset,
+      include_rejected: includeRejected,
+    }),
 
   dedupeHash: (mode: string, limit = 50) =>
     post<DedupeHashResult>('/dedupe/hash', { mode, limit }),
