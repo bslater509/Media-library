@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from media_library_v2 import build_info
+from media_library import build_info
 
 _SHA = "0123456789abcdef0123456789abcdef01234567"
 
@@ -62,7 +62,7 @@ def test_follows_a_linked_worktree_gitfile(tmp_path, monkeypatch):
 
 def test_returns_none_without_a_git_directory(tmp_path, monkeypatch):
     _no_env(monkeypatch)
-    (tmp_path / "media_library_v2").mkdir()
+    (tmp_path / "media_library").mkdir()
     assert build_info.resolve_commit(tmp_path) is None
 
 

@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 def _thumb_path(thumbs: Path, path: Path, mtime: float, size: int) -> Path:
@@ -30,11 +30,11 @@ def write_env(tmp_path, monkeypatch):
     staging.mkdir()
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_UPLOAD_STAGING_DIR", str(staging))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("UPLOAD_STAGING_DIR", str(staging))
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -91,7 +91,7 @@ def write_env(tmp_path, monkeypatch):
             (clip.stat().st_size + image.stat().st_size, str(library / "Trip")),
         )
 
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     clip_stat = clip.stat()
     thumb = _thumb_path(thumbs, clip, clip_stat.st_mtime, clip_stat.st_size)
     thumb.write_bytes(b"poster")
@@ -119,11 +119,11 @@ def test_toggle_favorite_round_trip(write_env):
     client = write_env["client"]
     path = str(write_env["image"])
 
-    on = client.post("/api/v2/favorites/toggle", json={"path": path}).json()
+    on = client.post("/api/favorites/toggle", json={"path": path}).json()
     assert on["is_favorite"] is True
     assert on["counts"] == {"all": 2, "videos": 1, "images": 1}
 
-    off = client.post("/api/v2/favorites/toggle", json={"path": path}).json()
+    off = client.post("/api/favorites/toggle", json={"path": path}).json()
     assert off["is_favorite"] is False
     assert off["counts"] == {"all": 1, "videos": 1, "images": 0}
 
@@ -134,7 +134,7 @@ def test_rename_updates_index_favorites_and_poster(write_env):
     assert write_env["thumb"].is_file()
 
     response = client.post(
-        "/api/v2/manage/rename",
+        "/api/manage/rename",
         json={"path": str(old), "name": "sunset-final.mp4"},
     )
     assert response.status_code == 200, response.text
@@ -166,13 +166,11 @@ def test_rename_rejects_bad_names_and_collisions(write_env):
     client = write_env["client"]
     path = str(write_env["clip"])
     for bad in ("../escape.mp4", "a/b.mp4", ".hidden.mp4", " "):
-        response = client.post(
-            "/api/v2/manage/rename", json={"path": path, "name": bad}
-        )
+        response = client.post("/api/manage/rename", json={"path": path, "name": bad})
         assert response.status_code == 400, bad
 
     collision = client.post(
-        "/api/v2/manage/rename", json={"path": path, "name": "harbour.jpg"}
+        "/api/manage/rename", json={"path": path, "name": "harbour.jpg"}
     )
     assert collision.status_code == 409
 
@@ -181,7 +179,7 @@ def test_delete_removes_file_row_favorite_and_poster(write_env):
     client = write_env["client"]
     clip = write_env["clip"]
 
-    response = client.post("/api/v2/manage/delete", json={"paths": [str(clip)]})
+    response = client.post("/api/manage/delete", json={"paths": [str(clip)]})
     assert response.status_code == 200, response.text
     assert response.json()["deleted"] == [str(clip)]
     assert not clip.exists()
@@ -210,7 +208,7 @@ def test_delete_removes_file_row_favorite_and_poster(write_env):
 def test_delete_reports_missing_files_per_item(write_env):
     client = write_env["client"]
     missing = str(write_env["library"] / "Trip" / "nope.mp4")
-    response = client.post("/api/v2/manage/delete", json={"paths": [missing]})
+    response = client.post("/api/manage/delete", json={"paths": [missing]})
     assert response.status_code == 200
     assert response.json()["deleted"] == []
     assert response.json()["failed"][0]["path"] == missing
@@ -221,7 +219,7 @@ def test_rename_recomputes_type_from_the_new_extension(write_env):
     clip = write_env["clip"]
 
     response = client.post(
-        "/api/v2/manage/rename",
+        "/api/manage/rename",
         json={"path": str(clip), "name": "sunset.mkv"},
     )
     assert response.status_code == 200, response.text
@@ -231,7 +229,7 @@ def test_rename_recomputes_type_from_the_new_extension(write_env):
 
     renamed = Path(response.json()["path"])
     back = client.post(
-        "/api/v2/manage/rename",
+        "/api/manage/rename",
         json={"path": str(renamed), "name": "sunset.mp4"},
     )
     assert back.status_code == 200
@@ -260,7 +258,7 @@ def test_delete_a_zip_archive_removes_its_members(write_env):
             "INSERT INTO favorites (path, created_at) VALUES (?, ?)", (member, 1.0)
         )
 
-    response = client.post("/api/v2/manage/delete", json={"paths": [str(archive)]})
+    response = client.post("/api/manage/delete", json={"paths": [str(archive)]})
     assert response.status_code == 200, response.text
     assert response.json()["deleted"] == [str(archive)]
     assert not archive.exists()
@@ -291,7 +289,7 @@ def test_delete_a_folder_recursively(write_env):
     folder = write_env["library"] / "Trip"
     assert folder.is_dir()
 
-    response = client.post("/api/v2/manage/delete", json={"paths": [str(folder)]})
+    response = client.post("/api/manage/delete", json={"paths": [str(folder)]})
     assert response.status_code == 200, response.text
     assert response.json()["deleted"] == [str(folder)]
     assert not folder.exists()
@@ -320,7 +318,7 @@ def test_delete_a_folder_recursively(write_env):
 def test_refuses_to_delete_the_library_root(write_env):
     client = write_env["client"]
     response = client.post(
-        "/api/v2/manage/delete", json={"paths": [str(write_env["library"])]}
+        "/api/manage/delete", json={"paths": [str(write_env["library"])]}
     )
     assert response.status_code == 200
     assert response.json()["deleted"] == []
@@ -333,7 +331,7 @@ def test_create_folder_indexes_it(write_env):
     parent = write_env["library"] / "Trip"
 
     response = client.post(
-        "/api/v2/manage/folders", json={"parent": str(parent), "name": "Day 1"}
+        "/api/manage/folders", json={"parent": str(parent), "name": "Day 1"}
     )
     assert response.status_code == 200, response.text
     created = Path(response.json()["path"])
@@ -350,7 +348,7 @@ def test_create_folder_indexes_it(write_env):
     assert parent_row[0] == 1
 
     again = client.post(
-        "/api/v2/manage/folders", json={"parent": str(parent), "name": "Day 1"}
+        "/api/manage/folders", json={"parent": str(parent), "name": "Day 1"}
     )
     assert again.status_code == 409
 
@@ -362,7 +360,7 @@ def test_move_auto_renames_collisions_and_updates_index(write_env):
     (inbox / "sunset.mp4").write_bytes(b"existing")
 
     response = client.post(
-        "/api/v2/manage/move",
+        "/api/manage/move",
         json={
             "paths": [str(clip)],
             "destination": str(inbox),
@@ -390,7 +388,7 @@ def test_move_skip_and_error_policies(write_env):
     (inbox / "sunset.mp4").write_bytes(b"existing")
 
     skipped = client.post(
-        "/api/v2/manage/move",
+        "/api/manage/move",
         json={
             "paths": [str(clip)],
             "destination": str(inbox),
@@ -403,7 +401,7 @@ def test_move_skip_and_error_policies(write_env):
     assert clip.is_file()
 
     refused = client.post(
-        "/api/v2/manage/move",
+        "/api/manage/move",
         json={
             "paths": [str(clip)],
             "destination": str(inbox),
@@ -417,14 +415,12 @@ def test_move_skip_and_error_policies(write_env):
 def test_mutations_reject_paths_outside_the_library(write_env):
     client = write_env["client"]
     assert (
-        client.post(
-            "/api/v2/favorites/toggle", json={"path": "/etc/passwd"}
-        ).status_code
+        client.post("/api/favorites/toggle", json={"path": "/etc/passwd"}).status_code
         == 403
     )
     assert (
         client.post(
-            "/api/v2/manage/move",
+            "/api/manage/move",
             json={
                 "paths": [str(write_env["clip"])],
                 "destination": "/tmp",
@@ -434,7 +430,7 @@ def test_mutations_reject_paths_outside_the_library(write_env):
     )
     assert (
         client.post(
-            "/api/v2/manage/folders",
+            "/api/manage/folders",
             json={"parent": str(write_env["library"]), "name": "../out"},
         ).status_code
         == 400
@@ -442,12 +438,12 @@ def test_mutations_reject_paths_outside_the_library(write_env):
 
 
 def test_read_only_mode_refuses_mutations(write_env, monkeypatch):
-    monkeypatch.setenv("V2_DB_READ_ONLY", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "true")
     v2_config.reload_settings()
     client = write_env["client"]
 
     response = client.post(
-        "/api/v2/favorites/toggle", json={"path": str(write_env["image"])}
+        "/api/favorites/toggle", json={"path": str(write_env["image"])}
     )
     assert response.status_code == 503
     assert "Writes are disabled" in response.json()["detail"]
@@ -460,7 +456,7 @@ def test_resumable_upload_commits_and_indexes(write_env):
     second = b"b" * 500
 
     chunk = client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "0"},
         files={"file": ("blob", first, "application/octet-stream")},
     )
@@ -468,29 +464,27 @@ def test_resumable_upload_commits_and_indexes(write_env):
     assert chunk.json()["received_bytes"] == 1000
 
     duplicate = client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "0"},
         files={"file": ("blob", first, "application/octet-stream")},
     )
     assert duplicate.json() == {"received_bytes": 1000, "duplicate": True}
 
     gap = client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "5000"},
         files={"file": ("blob", second, "application/octet-stream")},
     )
     assert gap.status_code == 409
 
     rest = client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "1000"},
         files={"file": ("blob", second, "application/octet-stream")},
     )
     assert rest.json()["received_bytes"] == 1500
 
-    status = client.get(
-        "/api/v2/uploads/status", params={"upload_id": upload_id}
-    ).json()
+    status = client.get("/api/uploads/status", params={"upload_id": upload_id}).json()
     assert status == {
         "upload_id": upload_id,
         "exists": True,
@@ -498,7 +492,7 @@ def test_resumable_upload_commits_and_indexes(write_env):
     }
 
     incomplete = client.post(
-        "/api/v2/uploads/finalize",
+        "/api/uploads/finalize",
         json={
             "upload_id": upload_id,
             "name": "new clip.mp4",
@@ -509,7 +503,7 @@ def test_resumable_upload_commits_and_indexes(write_env):
     assert incomplete.status_code == 400
 
     done = client.post(
-        "/api/v2/uploads/finalize",
+        "/api/uploads/finalize",
         json={
             "upload_id": upload_id,
             "name": "new clip.mp4",
@@ -537,7 +531,7 @@ def test_upload_finalize_skip_keeps_existing_file(write_env):
     client = write_env["client"]
     upload_id = "skipupload01"
     client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "0"},
         files={"file": ("blob", b"payload", "application/octet-stream")},
     )
@@ -545,7 +539,7 @@ def test_upload_finalize_skip_keeps_existing_file(write_env):
     target.write_bytes(b"keep me")
 
     response = client.post(
-        "/api/v2/uploads/finalize",
+        "/api/uploads/finalize",
         json={
             "upload_id": upload_id,
             "name": "existing.mp4",
@@ -563,11 +557,11 @@ def test_upload_cancel_removes_staging(write_env):
     client = write_env["client"]
     upload_id = "cancelupload1"
     client.post(
-        "/api/v2/uploads/chunk",
+        "/api/uploads/chunk",
         data={"upload_id": upload_id, "offset": "0"},
         files={"file": ("blob", b"partial", "application/octet-stream")},
     )
-    response = client.post("/api/v2/uploads/cancel", json={"upload_id": upload_id})
+    response = client.post("/api/uploads/cancel", json={"upload_id": upload_id})
     assert response.json() == {"cancelled": True}
     assert not list(write_env["staging"].glob("*.part"))
 
@@ -576,7 +570,7 @@ def test_abandoned_upload_staging_is_swept(write_env, monkeypatch):
     """A closed tab's staged file is removed after the TTL, a fresh one is kept."""
     import time
 
-    from media_library_v2 import writes
+    from media_library import writes
 
     stale = write_env["staging"] / "staleupload01.part"
     stale.write_bytes(b"old")

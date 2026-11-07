@@ -11,9 +11,9 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
-from media_library_v2.schema import (
+from media_library import config as v2_config
+from media_library.app import create_app
+from media_library.schema import (
     OBSOLETE_INDEXES,
     init_schema,
     table_columns,
@@ -220,17 +220,17 @@ def test_startup_creates_the_schema_for_a_missing_index(tmp_path, monkeypatch):
     db = tmp_path / "absent" / "index.db"
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
     monkeypatch.setenv("DB_PATH", str(db))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
-    from media_library_v2.standalone import build_standalone_app
+    from media_library.app import create_app
 
-    with TestClient(build_standalone_app()) as client:
-        assert client.get("/api/v2/health").status_code == 200
+    with TestClient(create_app()) as client:
+        assert client.get("/api/health").status_code == 200
         assert db.is_file()
 
     assert "files" in table_columns(db)
@@ -246,11 +246,11 @@ def test_api_serves_a_freshly_created_index(tmp_path, monkeypatch):
 
     db = tmp_path / "index.db"
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
     monkeypatch.setenv("DB_PATH", str(db))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     init_schema(db)
@@ -283,13 +283,13 @@ def test_api_serves_a_freshly_created_index(tmp_path, monkeypatch):
             ),
         )
 
-    client = TestClient(build_v2_app())
-    body = client.get("/api/v2/library/browse", params={"path": str(library)}).json()
+    client = TestClient(create_app())
+    body = client.get("/api/library/browse", params={"path": str(library)}).json()
 
     assert [f["name"] for f in body["folders"]] == ["Trip"]
     assert body["total"] == 0  # the root holds no files of its own
     sub = client.get(
-        "/api/v2/library/browse", params={"path": str(library / "Trip")}
+        "/api/library/browse", params={"path": str(library / "Trip")}
     ).json()
     assert [f["name"] for f in sub["files"]] == ["aurora.mp4"]
     assert sub["indexed"] is True

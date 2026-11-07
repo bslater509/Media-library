@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from media_library_v2 import cache
-from media_library_v2 import config as v2_config
-from media_library_v2.probe import probe_batch
-from media_library_v2.thumbnail_worker import ThumbnailSweep
+from media_library import cache
+from media_library import config as v2_config
+from media_library.probe import probe_batch
+from media_library.thumbnail_worker import ThumbnailSweep
 
 
 @pytest.fixture
@@ -23,10 +23,10 @@ def workers_env(tmp_path, monkeypatch):
     thumbs = tmp_path / "thumbs"
     (thumbs / "animated").mkdir(parents=True)
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     video = library / "clip.mp4"
@@ -181,7 +181,7 @@ def test_thumbnail_sweep_generates_posters_and_marks_failures(workers_env):
 
 
 def test_runtime_stays_off_while_v1_owns_the_workers(workers_env):
-    from media_library_v2 import runtime
+    from media_library import runtime
 
     assert runtime.start_runtime() is False
     status = runtime.runtime_status()
@@ -191,9 +191,9 @@ def test_runtime_stays_off_while_v1_owns_the_workers(workers_env):
 
 
 def test_owned_runtime_starts_every_sweep(workers_env, monkeypatch):
-    monkeypatch.setenv("V2_OWN_WORKERS", "true")
+    monkeypatch.setenv("OWN_WORKERS", "true")
     v2_config.reload_settings()
-    from media_library_v2 import runtime
+    from media_library import runtime
 
     try:
         assert runtime.start_runtime() is True
@@ -215,7 +215,7 @@ def test_owned_runtime_starts_every_sweep(workers_env, monkeypatch):
 
 
 def test_orphaned_artwork_is_swept(workers_env):
-    from media_library_v2.cache import (
+    from media_library.cache import (
         animated_path,
         cache_key,
         sweep_orphaned_artwork,
@@ -249,7 +249,7 @@ def test_orphaned_artwork_is_swept(workers_env):
 
 
 def test_orphan_sweep_skips_an_empty_index(workers_env):
-    from media_library_v2.cache import sweep_orphaned_artwork
+    from media_library.cache import sweep_orphaned_artwork
 
     orphan = workers_env["thumbs"] / f"thumb_{'c' * 24}.jpg"
     orphan.write_bytes(b"orphan")

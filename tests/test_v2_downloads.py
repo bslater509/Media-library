@@ -11,17 +11,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import downloads as downloads_module
-from media_library_v2.downloads import (
+from media_library import config as v2_config
+from media_library import downloads as downloads_module
+from media_library.app import create_app
+from media_library.downloads import (
     DownloadManager,
     is_media_file,
     looks_unsupported,
     parse_progress_line,
     prefers_gallery_dl,
 )
-from media_library_v2.mount import build_v2_app
-from media_library_v2.routers import downloads as downloads_router
+from media_library.routers import downloads as downloads_router
 
 
 @pytest.fixture
@@ -32,12 +32,12 @@ def download_env(tmp_path, monkeypatch):
     staging.mkdir()
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("V2_DOWNLOAD_STAGING_DIR", str(staging))
+    monkeypatch.setenv("DOWNLOAD_STAGING_DIR", str(staging))
     monkeypatch.setenv("DOWNLOAD_WORKER_CONCURRENCY", "1")
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -347,14 +347,14 @@ def test_status_separates_active_and_queued(download_env):
 def test_router_reports_status_history_and_clear(download_env, monkeypatch):
     manager = DownloadManager()
     monkeypatch.setattr(downloads_router, "manager", manager)
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
 
-    status = client.get("/api/v2/downloads/status").json()
+    status = client.get("/api/downloads/status").json()
     assert status["active"] == []
     assert status["tools"]["gallery_dl"] in (True, False)
 
-    client.post("/api/v2/downloads/clear-history")
-    history = client.get("/api/v2/downloads/history").json()
+    client.post("/api/downloads/clear-history")
+    history = client.get("/api/downloads/history").json()
     assert history == {"items": [], "total": 0, "limit": 50, "offset": 0}
 
 

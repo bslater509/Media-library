@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -12,9 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from media_library_v2 import backups, writes
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import backups, writes
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -28,11 +27,11 @@ def backup_env(tmp_path, monkeypatch):
     staging = tmp_path / "staging"
     staging.mkdir()
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
     monkeypatch.setenv("LIBRARY_BACKUP_DIR", str(backup_dir))
-    monkeypatch.setenv("V2_BACKUP_STAGING_DIR", str(staging))
-    monkeypatch.setenv("V2_ALLOW_LIVE_RESTORE", "false")
+    monkeypatch.setenv("BACKUP_STAGING_DIR", str(staging))
+    monkeypatch.setenv("ALLOW_LIVE_RESTORE", "false")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -88,7 +87,7 @@ def test_create_snapshot_writes_db_tar_and_meta(backup_env):
     assert result["folders"] == 1
     assert result["thumbnails"] == 3
 
-    root = backup_env["backup_dir"] / "v2"
+    root = backup_env["backup_dir"]
     assert (root / "library.db").is_file()
     assert (root / "thumbnails.tar").is_file()
     assert (root / "meta.json").is_file()
@@ -151,27 +150,27 @@ def test_live_restore_is_refused_by_default(backup_env):
 
 
 def test_router_snapshot_status_verify_and_download(backup_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
 
-    before = client.get("/api/v2/backups/status").json()
+    before = client.get("/api/backups/status").json()
     assert before["exists"] is False
 
-    created = client.post("/api/v2/backups/snapshot")
+    created = client.post("/api/backups/snapshot")
     assert created.status_code == 200, created.text
     assert created.json()["files"] == 2
 
-    status = client.get("/api/v2/backups/status").json()
+    status = client.get("/api/backups/status").json()
     assert status["exists"] is True
     assert status["thumbnails"] == 3
 
-    verified = client.get("/api/v2/backups/verify").json()
+    verified = client.get("/api/backups/verify").json()
     assert verified["snapshot_integrity"] == "ok"
 
-    download = client.get("/api/v2/backups/download", params={"kind": "db"})
+    download = client.get("/api/backups/download", params={"kind": "db"})
     assert download.status_code == 200
     assert download.content.startswith(b"SQLite format 3")
 
-    refused = client.post("/api/v2/backups/restore")
+    refused = client.post("/api/backups/restore")
     assert refused.status_code == 409
 
 
@@ -184,7 +183,7 @@ def test_auto_restore_recovers_a_missing_index(backup_env):
 
     result = backups.auto_restore_if_missing()
     assert result["restored"] is True
-    assert result["source"] == "v2"
+    assert result["source"] == "snapshot"
     assert result["files"] == 2
     assert db_path.is_file()
     assert len(list(backup_env["thumbs"].glob("thumb_*.jpg"))) == 3
@@ -195,20 +194,6 @@ def test_auto_restore_leaves_a_present_index_alone(backup_env):
     result = backups.auto_restore_if_missing()
     assert result["restored"] is False
     assert result["reason"] == "index present"
-
-
-def test_auto_restore_falls_back_to_the_current_app_snapshot(backup_env):
-    backups.create_snapshot()
-    root = backup_env["backup_dir"] / "v2"
-    for name in ("library.db", "thumbnails.tar"):
-        shutil.copyfile(root / name, backup_env["backup_dir"] / name)
-    shutil.rmtree(root)
-    backup_env["db_path"].unlink()
-
-    result = backups.auto_restore_if_missing()
-    assert result["restored"] is True
-    assert result["source"] == "v1"
-    assert result["files"] == 2
 
 
 def test_auto_restore_reports_when_no_snapshot_exists(backup_env):

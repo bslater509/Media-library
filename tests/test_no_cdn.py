@@ -1,6 +1,6 @@
 """The client must not fetch anything from a CDN at runtime.
 
-Fonts, icons and the lightbox are bundled (``web/vite.config.ts`` inlines
+Fonts, icons and the lightbox are bundled (``vite.config.ts`` inlines
 ``lucide-react`` and the ``@fontsource`` faces into ``static/dist``). A remote
 ``<script>``/``<link>``/font URL would make the app depend on a third party at
 runtime, leak a request per visit and break an offline install — the previous

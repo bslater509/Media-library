@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Media Library</title>
+    <script>
+      // Apply the saved theme class before first paint so there is no flash.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('v2_theme')
+          var mode = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var root = document.documentElement
+          root.classList.toggle('dark', dark)
+          root.dataset.theme = mode
+          root.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (error) {
+          /* ignore unavailable storage */
+        }
+      })()
+    </script>
+    <script type="module" crossorigin src="/static/dist/assets/index-CyQrVFeK.js"></script>
+    <link rel="stylesheet" crossorigin href="/static/dist/assets/index-BXVe2po1.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

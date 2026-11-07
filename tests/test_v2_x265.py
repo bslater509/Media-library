@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import cache, writes
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
-from media_library_v2.x265 import X265Manager, parse_progress_line
+from media_library import cache, writes
+from media_library import config as v2_config
+from media_library.app import create_app
+from media_library.x265 import X265Manager, parse_progress_line
 
 
 @pytest.fixture
@@ -25,13 +25,13 @@ def x265_env(tmp_path, monkeypatch):
     transcodes = tmp_path / "transcodes"
     transcodes.mkdir()
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
     monkeypatch.setenv("TRANSCODE_DIR", str(transcodes))
     monkeypatch.setenv("X265_PRESET", "ultrafast")
     monkeypatch.setenv("X265_CRF", "30")
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     mkv = library / "A" / "clip.mkv"
@@ -273,20 +273,18 @@ def test_cancel_active_and_queued_jobs(x265_env):
 
 
 def test_router_reports_status_and_validates(x265_env):
-    client = TestClient(build_v2_app())
-    idle = client.get("/api/v2/transcode/x265/status").json()
+    client = TestClient(create_app())
+    idle = client.get("/api/transcode/x265/status").json()
     assert idle["active"] is None
     assert idle["queued"] == []
 
     missing = client.post(
-        "/api/v2/transcode/x265",
+        "/api/transcode/x265",
         json={"path": str(x265_env["library"] / "A" / "nope.mp4")},
     )
     assert missing.status_code == 404
 
-    already = client.post(
-        "/api/v2/transcode/x265", json={"path": str(x265_env["hevc"])}
-    )
+    already = client.post("/api/transcode/x265", json={"path": str(x265_env["hevc"])})
     assert already.status_code == 409
 
 
@@ -294,7 +292,7 @@ def test_index_rewrite_runs_off_the_event_loop(x265_env, monkeypatch):
     """The commit's write transaction must not run on the loop (AGENTS Rule 3)."""
     import threading
 
-    from media_library_v2 import x265 as x265_module
+    from media_library import x265 as x265_module
 
     manager = X265Manager()
     manager.run = _fake_run(manager, b"encoded")  # type: ignore[method-assign]

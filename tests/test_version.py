@@ -1,6 +1,6 @@
 """The application version must have exactly one source of truth.
 
-``media_library_v2.__version__`` is it: the FastAPI metadata, the health and
+``media_library.__version__`` is it: the FastAPI metadata, the health and
 info payloads and the backup snapshot metadata all read it. These tests fail the
 moment a second hardcoded literal is introduced, so a release bump cannot leave
 half the app reporting an older version.
@@ -13,19 +13,18 @@ import json
 import re
 from pathlib import Path
 
-from media_library_v2 import __version__
-from media_library_v2.mount import build_v2_app
-from media_library_v2.routers import system as system_router
+from media_library import __version__
+from media_library.app import create_app
+from media_library.routers import system as system_router
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Modules that report the version to the outside world must import it rather
 # than restating it: a literal here is exactly the drift this guards against.
 VERSION_REPORTERS = (
-    "media_library_v2/standalone.py",
-    "media_library_v2/mount.py",
-    "media_library_v2/backups.py",
-    "media_library_v2/routers/system.py",
+    "media_library/app.py",
+    "media_library/backups.py",
+    "media_library/routers/system.py",
 )
 
 
@@ -62,7 +61,7 @@ def test_reporters_import_the_version_instead_of_hardcoding_it():
 
 
 def test_fastapi_metadata_advertises_the_version():
-    app = build_v2_app()
+    app = create_app()
     assert app.version == __version__
     assert app.openapi()["info"]["version"] == __version__
 

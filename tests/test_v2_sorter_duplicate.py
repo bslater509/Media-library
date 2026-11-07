@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import dedupe
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library import dedupe
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -21,10 +21,10 @@ def sorter_env(tmp_path, monkeypatch):
     library.mkdir()
     incoming.mkdir()
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("INCOMING_DIR", str(incoming))
-    monkeypatch.setenv("V2_SOURCE_DIR", str(incoming))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
+    monkeypatch.setenv("SOURCE_DIR", str(incoming))
+    monkeypatch.setenv("DB_READ_ONLY", "false")
     v2_config.reload_settings()
 
     payload = b"same bytes" * 5000
@@ -64,7 +64,7 @@ def sorter_env(tmp_path, monkeypatch):
 
     try:
         yield {
-            "client": TestClient(build_v2_app()),
+            "client": TestClient(create_app()),
             "library": library,
             "incoming": incoming,
             "duplicate": duplicate,
@@ -77,7 +77,7 @@ def sorter_env(tmp_path, monkeypatch):
 
 def test_duplicate_match_returns_the_library_copy(sorter_env):
     response = sorter_env["client"].get(
-        "/api/v2/sorter/duplicate",
+        "/api/sorter/duplicate",
         params={"path": str(sorter_env["duplicate"])},
     )
     assert response.status_code == 200
@@ -90,7 +90,7 @@ def test_different_content_is_not_a_match(sorter_env):
     body = (
         sorter_env["client"]
         .get(
-            "/api/v2/sorter/duplicate",
+            "/api/sorter/duplicate",
             params={"path": str(sorter_env["fresh"])},
         )
         .json()
@@ -101,7 +101,7 @@ def test_different_content_is_not_a_match(sorter_env):
 
 def test_paths_outside_the_incoming_folder_are_refused(sorter_env):
     response = sorter_env["client"].get(
-        "/api/v2/sorter/duplicate",
+        "/api/sorter/duplicate",
         params={"path": str(sorter_env["library_copy"])},
     )
     assert response.status_code == 403

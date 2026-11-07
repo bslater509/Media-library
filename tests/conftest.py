@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from media_library_v2 import config as v2_config
-from media_library_v2.schema import init_schema
+from media_library import config as v2_config
+from media_library.schema import init_schema
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def isolated_index(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(db_path))
     monkeypatch.setenv("DATA_DIR", str(data_dir))
     # Never start the developer's owned workers (crawler, probes, snapshots).
-    monkeypatch.setenv("V2_OWN_WORKERS", "false")
+    monkeypatch.setenv("OWN_WORKERS", "false")
 
     init_schema(db_path)
     v2_config.reload_settings()

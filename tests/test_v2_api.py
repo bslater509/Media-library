@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import os
 import sqlite3
@@ -11,8 +10,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -24,10 +23,9 @@ def v2_env(tmp_path, monkeypatch):
     (library / "Iceland 2023").mkdir(parents=True)
     (library / "Alinity").mkdir(parents=True)
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "true")
-    monkeypatch.setenv("V2_ENABLED", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -107,7 +105,7 @@ def v2_env(tmp_path, monkeypatch):
     ]
     (thumbs / f"thumb_{key}.jpg").write_bytes(b"fakejpeg")
 
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     try:
         yield {"client": client, "library": library, "video": video, "image": image}
     finally:
@@ -116,13 +114,13 @@ def v2_env(tmp_path, monkeypatch):
 
 def test_browse_returns_folders_files_and_crumbs(v2_env):
     client = v2_env["client"]
-    root = client.get("/api/v2/library/browse").json()
+    root = client.get("/api/library/browse").json()
     assert root["path"] == str(v2_env["library"])
     assert [f["name"] for f in root["folders"]] == ["Alinity", "Iceland 2023"]
     assert root["indexed"] is True
 
     folder = client.get(
-        "/api/v2/library/browse",
+        "/api/library/browse",
         params={"path": str(v2_env["library"] / "Iceland 2023")},
     ).json()
     assert folder["total"] == 2
@@ -131,22 +129,22 @@ def test_browse_returns_folders_files_and_crumbs(v2_env):
     assert entry["type"] == "video"
     assert entry["width"] == 1920
     assert entry["playable"] is True
-    assert entry["thumb_url"].startswith("/api/v2/thumbnails?path=")
+    assert entry["thumb_url"].startswith("/api/thumbnails?path=")
     assert len(entry["id"]) == 16
     assert [c["name"] for c in folder["breadcrumbs"]] == ["library", "Iceland 2023"]
 
 
 def test_search_matches_name_and_relative_folder(v2_env):
     client = v2_env["client"]
-    by_name = client.get("/api/v2/library/search", params={"q": "aurora"}).json()
+    by_name = client.get("/api/library/search", params={"q": "aurora"}).json()
     assert by_name["total"] == 1
     assert by_name["results"][0]["rel_folder"] == "Iceland 2023"
 
-    by_folder = client.get("/api/v2/library/search", params={"q": "iceland"}).json()
+    by_folder = client.get("/api/library/search", params={"q": "iceland"}).json()
     assert {r["name"] for r in by_folder["results"]} == {"aurora.mp4", "harbour.jpg"}
 
     filtered = client.get(
-        "/api/v2/library/search", params={"q": "iceland", "type": "image"}
+        "/api/library/search", params={"q": "iceland", "type": "image"}
     ).json()
     assert [r["name"] for r in filtered["results"]] == ["harbour.jpg"]
 
@@ -155,77 +153,71 @@ def test_search_never_returns_the_library_root_match(v2_env):
     client = v2_env["client"]
     # The library directory is named "library"; that segment is the root and
     # is stripped from the path comparison, so it must not match every file.
-    result = client.get("/api/v2/library/search", params={"q": "library"}).json()
+    result = client.get("/api/library/search", params={"q": "library"}).json()
     assert result["total"] == 0
 
 
 def test_paths_outside_the_library_are_denied(v2_env):
     client = v2_env["client"]
-    assert (
-        client.get("/api/v2/library/browse", params={"path": "/etc"}).status_code == 403
-    )
-    assert (
-        client.get("/api/v2/media", params={"path": "/etc/hostname"}).status_code == 403
-    )
+    assert client.get("/api/library/browse", params={"path": "/etc"}).status_code == 403
+    assert client.get("/api/media", params={"path": "/etc/hostname"}).status_code == 403
 
 
 def test_media_supports_range_and_head(v2_env):
     client = v2_env["client"]
     path = str(v2_env["video"])
-    full = client.get("/api/v2/media", params={"path": path})
+    full = client.get("/api/media", params={"path": path})
     assert full.status_code == 200
     assert full.headers["accept-ranges"] == "bytes"
     assert len(full.content) == 1000
 
     partial = client.get(
-        "/api/v2/media", params={"path": path}, headers={"Range": "bytes=10-19"}
+        "/api/media", params={"path": path}, headers={"Range": "bytes=10-19"}
     )
     assert partial.status_code == 206
     assert partial.content == b"0123456789"
     assert partial.headers["content-range"] == "bytes 10-19/1000"
 
-    head = client.head("/api/v2/media", params={"path": path})
+    head = client.head("/api/media", params={"path": path})
     assert head.status_code == 200
     assert head.headers["content-length"] == "1000"
 
     bad = client.get(
-        "/api/v2/media", params={"path": path}, headers={"Range": "bytes=5000-"}
+        "/api/media", params={"path": path}, headers={"Range": "bytes=5000-"}
     )
     assert bad.status_code == 416
 
 
 def test_thumbnail_serves_the_v1_cache_key(v2_env):
     client = v2_env["client"]
-    ok = client.get("/api/v2/thumbnails", params={"path": str(v2_env["video"])})
+    ok = client.get("/api/thumbnails", params={"path": str(v2_env["video"])})
     assert ok.status_code == 200
     assert ok.content == b"fakejpeg"
     assert "immutable" in ok.headers["cache-control"]
 
-    missing = client.get("/api/v2/thumbnails", params={"path": str(v2_env["image"])})
+    missing = client.get("/api/thumbnails", params={"path": str(v2_env["image"])})
     assert missing.status_code == 404
 
 
 def test_folder_search_finds_folders_by_name(v2_env):
     client = v2_env["client"]
-    found = client.get("/api/v2/library/folders/search", params={"q": "ice"}).json()
+    found = client.get("/api/library/folders/search", params={"q": "ice"}).json()
     assert [folder["name"] for folder in found["results"]] == ["Iceland 2023"]
 
-    missed = client.get("/api/v2/library/folders/search", params={"q": "zzz"}).json()
+    missed = client.get("/api/library/folders/search", params={"q": "zzz"}).json()
     assert missed["results"] == []
 
 
 def test_browse_paginates_with_next_offset(v2_env):
     client = v2_env["client"]
     target = str(v2_env["library"] / "Iceland 2023")
-    page = client.get(
-        "/api/v2/library/browse", params={"path": target, "limit": 1}
-    ).json()
+    page = client.get("/api/library/browse", params={"path": target, "limit": 1}).json()
     assert len(page["files"]) == 1
     assert page["next_offset"] == 1
     assert page["total"] == 2
 
     second = client.get(
-        "/api/v2/library/browse",
+        "/api/library/browse",
         params={"path": target, "limit": 1, "offset": page["next_offset"]},
     ).json()
     assert second["next_offset"] is None
@@ -237,37 +229,37 @@ def test_browse_filters_by_type_favorites_and_sort(v2_env):
     target = str(v2_env["library"] / "Iceland 2023")
 
     images = client.get(
-        "/api/v2/library/browse", params={"path": target, "type": "image"}
+        "/api/library/browse", params={"path": target, "type": "image"}
     ).json()
     assert [f["name"] for f in images["files"]] == ["harbour.jpg"]
     assert images["total"] == 1
 
     favorites = client.get(
-        "/api/v2/library/browse", params={"path": target, "favorite": "true"}
+        "/api/library/browse", params={"path": target, "favorite": "true"}
     ).json()
     assert [f["name"] for f in favorites["files"]] == ["harbour.jpg"]
 
     none = client.get(
-        "/api/v2/library/browse",
+        "/api/library/browse",
         params={"path": target, "favorite": "true", "type": "video"},
     ).json()
     assert none["files"] == []
     assert none["total"] == 0
 
     largest = client.get(
-        "/api/v2/library/browse", params={"path": target, "sort": "size_desc"}
+        "/api/library/browse", params={"path": target, "sort": "size_desc"}
     ).json()
     assert [f["name"] for f in largest["files"]] == ["aurora.mp4", "harbour.jpg"]
 
     by_name_desc = client.get(
-        "/api/v2/library/browse", params={"path": target, "sort": "name_desc"}
+        "/api/library/browse", params={"path": target, "sort": "name_desc"}
     ).json()
     assert [f["name"] for f in by_name_desc["files"]] == ["harbour.jpg", "aurora.mp4"]
 
 
 def test_onboarding_endpoint_describes_the_setup(v2_env):
     client = v2_env["client"]
-    payload = client.get("/api/v2/system/onboarding").json()
+    payload = client.get("/api/system/onboarding").json()
     assert payload["version"] == "3.0.0"
     assert payload["library_root"] == str(v2_env["library"])
     assert payload["source_available"] == os.path.isdir(payload["source_dir"])
@@ -282,7 +274,7 @@ def test_onboarding_endpoint_describes_the_setup(v2_env):
 
 def test_system_info_reports_totals(v2_env):
     client = v2_env["client"]
-    info = client.get("/api/v2/system/info").json()
+    info = client.get("/api/system/info").json()
     assert info["version"] == "3.0.0"
     assert info["counts"] == {
         "files": 2,
@@ -292,28 +284,7 @@ def test_system_info_reports_totals(v2_env):
         "favorites": 1,
     }
     assert info["features"]["browse"] is True
-    assert client.get("/api/v2/health").json()["status"] == "ok"
-
-
-def _imported_modules(node: ast.AST) -> list[str]:
-    if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
-    if isinstance(node, ast.ImportFrom) and node.module:
-        return [node.module]
-    return []
-
-
-def test_v2_never_imports_v1():
-    """The rewrite must stay a rewrite: v2 never reaches into media_library."""
-    package = Path(__file__).resolve().parent.parent / "media_library_v2"
-    offenders: list[str] = []
-    for path in package.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            for module in _imported_modules(node):
-                if module == "media_library" or module.startswith("media_library."):
-                    offenders.append(f"{path}: {module}")
-    assert not offenders, offenders
+    assert client.get("/api/health").json()["status"] == "ok"
 
 
 def test_browse_dispatches_off_the_event_loop(v2_env, monkeypatch):
@@ -321,7 +292,7 @@ def test_browse_dispatches_off_the_event_loop(v2_env, monkeypatch):
     import asyncio
     import threading
 
-    from media_library_v2.routers import library as library_router
+    from media_library.routers import library as library_router
 
     seen: dict[str, int] = {}
 
@@ -337,7 +308,5 @@ def test_browse_dispatches_off_the_event_loop(v2_env, monkeypatch):
 
 def test_thumbnail_endpoint_rejects_paths_outside_the_library(v2_env):
     """A stale row from another library root must not become a file reader."""
-    response = v2_env["client"].get(
-        "/api/v2/thumbnails", params={"path": "/etc/passwd"}
-    )
+    response = v2_env["client"].get("/api/thumbnails", params={"path": "/etc/passwd"})
     assert response.status_code == 403

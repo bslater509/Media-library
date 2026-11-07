@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
-from media_library_v2.transcode_stream import build_command
+from media_library import config as v2_config
+from media_library.app import create_app
+from media_library.transcode_stream import build_command
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def video_env(tmp_path, monkeypatch):
     thumbs = tmp_path / "thumbs"
     (thumbs / "animated").mkdir(parents=True)
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
     v2_config.reload_settings()
 
@@ -97,9 +97,9 @@ def test_command_is_fragmented_mp4(video_env):
 
 
 def test_library_transcodes_an_mkv(video_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     response = client.get(
-        "/api/v2/media/transcode", params={"path": str(video_env["mkv"])}
+        "/api/media/transcode", params={"path": str(video_env["mkv"])}
     )
     assert response.status_code == 200, response.text
     assert len(response.content) > 1000
@@ -107,19 +107,19 @@ def test_library_transcodes_an_mkv(video_env):
 
 
 def test_file_entry_exposes_a_transcode_url(video_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     payload = client.get(
-        "/api/v2/library/browse", params={"path": str(video_env["mkv"].parent)}
+        "/api/library/browse", params={"path": str(video_env["mkv"].parent)}
     ).json()
     entry = payload["files"][0]
     assert entry["playable"] is False
-    assert entry["transcode_url"].startswith("/api/v2/media/transcode?path=")
-    assert entry["media_url"].startswith("/api/v2/media?path=")
+    assert entry["transcode_url"].startswith("/api/media/transcode?path=")
+    assert entry["media_url"].startswith("/api/media?path=")
 
 
 def test_video_poster_is_generated_on_demand(video_env):
-    client = TestClient(build_v2_app())
-    response = client.get("/api/v2/thumbnails", params={"path": str(video_env["mkv"])})
+    client = TestClient(create_app())
+    response = client.get("/api/thumbnails", params={"path": str(video_env["mkv"])})
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("image/jpeg")
     assert response.content[:2] == b"\xff\xd8"
@@ -132,7 +132,7 @@ def test_video_poster_is_generated_on_demand(video_env):
 
 
 def test_unknown_media_is_refused(video_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     assert client.get(
-        "/api/v2/media/transcode", params={"path": "/etc/passwd"}
+        "/api/media/transcode", params={"path": "/etc/passwd"}
     ).status_code in (400, 403, 404)

@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import analytics
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import analytics
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def analytics_env(tmp_path, monkeypatch):
     (library / "Empty").mkdir()
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(tmp_path / "thumbs"))
     v2_config.reload_settings()
     analytics.invalidate()
@@ -233,18 +233,18 @@ def test_overview_is_memoised_until_refreshed(analytics_env):
 
 
 def test_router_serves_the_overview_and_validates_limits(analytics_env, monkeypatch):
-    client = TestClient(build_v2_app())
-    response = client.get("/api/v2/analytics/overview", params={"folder_limit": 2})
+    client = TestClient(create_app())
+    response = client.get("/api/analytics/overview", params={"folder_limit": 2})
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["totals"]["files"] == 7
-    assert payload["largest_files"][0]["media_url"].startswith("/api/v2/media?path=")
+    assert payload["largest_files"][0]["media_url"].startswith("/api/media?path=")
 
     assert (
-        client.get("/api/v2/analytics/overview", params={"folder_limit": 0}).status_code
+        client.get("/api/analytics/overview", params={"folder_limit": 0}).status_code
         == 422
     )
     assert (
-        client.get("/api/v2/analytics/overview", params={"file_limit": 101}).status_code
+        client.get("/api/analytics/overview", params={"file_limit": 101}).status_code
         == 422
     )

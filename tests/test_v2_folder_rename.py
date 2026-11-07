@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import cache
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import cache
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -29,10 +29,10 @@ def rename_env(tmp_path, monkeypatch):
         bundle.writestr("inside.jpg", b"member")
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -84,7 +84,7 @@ def rename_env(tmp_path, monkeypatch):
 
     try:
         yield {
-            "client": TestClient(build_v2_app()),
+            "client": TestClient(create_app()),
             "library": library,
             "thumbs": thumbs,
             "db_path": db_path,
@@ -98,7 +98,7 @@ def rename_env(tmp_path, monkeypatch):
 def test_rename_folder_rewrites_disk_and_index(rename_env):
     library = rename_env["library"]
     response = rename_env["client"].post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "A"), "name": "Renamed A"},
     )
     assert response.status_code == 200
@@ -136,7 +136,7 @@ def test_rename_folder_moves_the_cached_poster(rename_env):
     assert old_poster.is_file()
 
     rename_env["client"].post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "A"), "name": "Moved"},
     )
 
@@ -183,7 +183,7 @@ def test_rename_zip_updates_member_paths(rename_env):
         )
 
     response = rename_env["client"].post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "B" / "bundle.zip"), "name": "renamed.zip"},
     )
     assert response.status_code == 200
@@ -207,17 +207,17 @@ def test_rename_folder_refuses_collisions_and_bad_names(rename_env):
     library = rename_env["library"]
     client = rename_env["client"]
     collision = client.post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "A"), "name": "B"},
     )
     assert collision.status_code == 409
     bad = client.post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "A"), "name": "../escape"},
     )
     assert bad.status_code == 400
     not_a_folder = client.post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(library / "A" / "one.jpg"), "name": "x.jpg"},
     )
     assert not_a_folder.status_code == 400
@@ -226,7 +226,7 @@ def test_rename_folder_refuses_collisions_and_bad_names(rename_env):
 def test_move_folder_to_another_parent(rename_env):
     library = rename_env["library"]
     response = rename_env["client"].post(
-        "/api/v2/manage/move",
+        "/api/manage/move",
         json={
             "paths": [str(library / "A")],
             "destination": str(library / "B"),
@@ -259,7 +259,7 @@ def test_move_folder_to_another_parent(rename_env):
 def test_cannot_move_a_folder_into_itself(rename_env):
     library = rename_env["library"]
     response = rename_env["client"].post(
-        "/api/v2/manage/move",
+        "/api/manage/move",
         json={
             "paths": [str(library / "A")],
             "destination": str(library / "A" / "sub"),
@@ -317,7 +317,7 @@ def test_rename_does_not_rewrite_a_sibling_matching_the_like_pattern(rename_env)
             )
 
     response = rename_env["client"].post(
-        "/api/v2/manage/folders/rename",
+        "/api/manage/folders/rename",
         json={"path": str(source), "name": "renamed"},
     )
     assert response.status_code == 200, response.text

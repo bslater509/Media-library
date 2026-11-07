@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import cache, dedupe
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import cache, dedupe
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 def _insert_file(
@@ -56,10 +56,10 @@ def dedupe_env(tmp_path, monkeypatch):
     thumbs = tmp_path / "thumbs"
     (thumbs / "animated").mkdir(parents=True)
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -372,32 +372,30 @@ def test_ignore_round_trip_and_page(dedupe_env):
 
 
 def test_router_wires_dedupe_and_validates_input(dedupe_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
 
-    status = client.get("/api/v2/dedupe/status").json()
+    status = client.get("/api/dedupe/status").json()
     assert status["content"]["candidate_files"] >= 4
 
-    groups = client.get("/api/v2/dedupe/groups", params={"mode": "content"}).json()
+    groups = client.get("/api/dedupe/groups", params={"mode": "content"}).json()
     assert groups["total_groups"] == 2
 
-    assert (
-        client.get("/api/v2/dedupe/groups", params={"mode": "nope"}).status_code == 400
-    )
+    assert client.get("/api/dedupe/groups", params={"mode": "nope"}).status_code == 400
 
     verify = client.post(
-        "/api/v2/dedupe/verify",
+        "/api/dedupe/verify",
         json={"keep": str(dedupe_env["a"]), "path": str(dedupe_env["b"])},
     ).json()
     assert verify["identical"] is True
 
     outside = client.post(
-        "/api/v2/dedupe/verify",
+        "/api/dedupe/verify",
         json={"keep": str(dedupe_env["a"]), "path": "/etc/passwd"},
     )
     assert outside.status_code == 403
 
     ignored = client.post(
-        "/api/v2/dedupe/ignore",
+        "/api/dedupe/ignore",
         json={
             "path1": str(dedupe_env["va"]),
             "path2": str(dedupe_env["vb"]),
@@ -405,5 +403,5 @@ def test_router_wires_dedupe_and_validates_input(dedupe_env):
         },
     ).json()
     assert ignored["ignored"] is True
-    page = client.get("/api/v2/dedupe/ignored").json()
+    page = client.get("/api/dedupe/ignored").json()
     assert page["total"] == 1

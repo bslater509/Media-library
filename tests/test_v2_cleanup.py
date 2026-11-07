@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from media_library_v2 import cleanup
-from media_library_v2 import config as v2_config
+from media_library import cleanup
+from media_library import config as v2_config
 
 
 @pytest.fixture
@@ -24,9 +24,9 @@ def empty_env(tmp_path, monkeypatch):
     (library / "Parent" / "Full" / "clip.mp4").write_bytes(b"video")
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])

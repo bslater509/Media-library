@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from media_library_v2 import cache, webp
-from media_library_v2 import config as v2_config
+from media_library import cache, webp
+from media_library import config as v2_config
 
 
 @pytest.fixture
@@ -20,10 +20,10 @@ def webp_env(tmp_path, monkeypatch):
     thumbs = tmp_path / "thumbs"
     (thumbs / "animated").mkdir(parents=True)
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     monkeypatch.setenv("WEBP_QUALITY", "80")
     monkeypatch.setenv("WEBP_SKIP_LARGER", "false")
     v2_config.reload_settings()

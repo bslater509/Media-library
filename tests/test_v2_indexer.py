@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import indexer
+from media_library import config as v2_config
+from media_library import indexer
 
 
 @pytest.fixture
@@ -30,10 +30,10 @@ def crawl_env(tmp_path, monkeypatch):
         bundle.writestr("img.jpg", b"image-bytes")
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
-    monkeypatch.setenv("V2_OWN_WORKERS", "false")
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
+    monkeypatch.setenv("OWN_WORKERS", "false")
     v2_config.reload_settings()
     indexer._update(
         status="idle",
@@ -198,12 +198,12 @@ def test_mass_disappearance_aborts_pruning(crawl_env):
 def test_sync_endpoint_requires_worker_ownership(crawl_env):
     from fastapi.testclient import TestClient
 
-    from media_library_v2.mount import build_v2_app
+    from media_library.app import create_app
 
-    client = TestClient(build_v2_app())
-    status = client.get("/api/v2/system/index/status").json()
+    client = TestClient(create_app())
+    status = client.get("/api/system/index/status").json()
     assert status["owned"] is False
-    assert client.post("/api/v2/system/index/sync").status_code == 409
+    assert client.post("/api/system/index/sync").status_code == 409
 
 
 def test_owned_crawl_sweeps_orphaned_artwork(crawl_env, tmp_path, monkeypatch):
@@ -212,7 +212,7 @@ def test_owned_crawl_sweeps_orphaned_artwork(crawl_env, tmp_path, monkeypatch):
     orphan = thumbs / f"thumb_{'d' * 24}.jpg"
     orphan.write_bytes(b"poster")
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_OWN_WORKERS", "true")
+    monkeypatch.setenv("OWN_WORKERS", "true")
     v2_config.reload_settings()
 
     result = indexer.crawl()

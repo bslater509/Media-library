@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parents[1] / "media_library_v2"
+PACKAGE = Path(__file__).resolve().parents[1] / "media_library"
 
 _OFFLOAD_CALLS = {"to_thread", "run_in_executor"}
 _MUTATING_SQL_PREFIXES = (

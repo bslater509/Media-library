@@ -7,9 +7,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import writes, zip_batch, zip_ops
-from media_library_v2.mount import build_v2_app
-from media_library_v2.zip_batch import ZipBatchRunner
+from media_library import writes, zip_batch, zip_ops
+from media_library.app import create_app
+from media_library.zip_batch import ZipBatchRunner
 
 
 def _wait(predicate, timeout=5.0):
@@ -132,22 +132,22 @@ def test_router_wires_batch_control(monkeypatch, runner):
         return {"folder": path}
 
     monkeypatch.setattr(zip_ops, "unpack_archive", fake)
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
 
-    assert client.get("/api/v2/zip/batch/status").json()["status"] == "idle"
+    assert client.get("/api/zip/batch/status").json()["status"] == "idle"
 
     started = client.post(
-        "/api/v2/zip/batch/start", json={"mode": "unpack", "paths": ["/a.zip"]}
+        "/api/zip/batch/start", json={"mode": "unpack", "paths": ["/a.zip"]}
     )
     assert started.status_code == 200, started.text
     assert _wait(lambda: runner.status()["status"] == "completed")
-    final = client.get("/api/v2/zip/batch/status").json()
+    final = client.get("/api/zip/batch/status").json()
     assert final["succeeded"] == 1
 
     assert (
         client.post(
-            "/api/v2/zip/batch/start", json={"mode": "nope", "paths": ["/a.zip"]}
+            "/api/zip/batch/start", json={"mode": "nope", "paths": ["/a.zip"]}
         ).status_code
         == 400
     )
-    assert client.post("/api/v2/zip/batch/pause").status_code == 409
+    assert client.post("/api/zip/batch/pause").status_code == 409

@@ -10,8 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -21,10 +21,10 @@ def bulk_env(tmp_path, monkeypatch):
     (thumbs / "animated").mkdir(parents=True)
     library.mkdir()
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     monkeypatch.setenv("WEBP_QUALITY", "80")
     monkeypatch.setenv("WEBP_SKIP_LARGER", "false")
     v2_config.reload_settings()
@@ -68,7 +68,7 @@ def bulk_env(tmp_path, monkeypatch):
 
     try:
         yield {
-            "client": TestClient(build_v2_app()),
+            "client": TestClient(create_app()),
             "library": library,
             "db_path": db_path,
             "files": files,
@@ -87,7 +87,7 @@ def test_favorite_batch_add_toggle_and_remove(bulk_env):
     second = _path(bulk_env, "two.jpg")
 
     added = client.post(
-        "/api/v2/favorites/batch",
+        "/api/favorites/batch",
         json={"paths": [first, second], "action": "add"},
     )
     assert added.status_code == 200
@@ -96,13 +96,13 @@ def test_favorite_batch_add_toggle_and_remove(bulk_env):
     assert body["counts"]["images"] == 2
 
     toggled = client.post(
-        "/api/v2/favorites/batch",
+        "/api/favorites/batch",
         json={"paths": [first], "action": "toggle"},
     ).json()
     assert toggled["counts"]["all"] == 1
 
     removed = client.post(
-        "/api/v2/favorites/batch",
+        "/api/favorites/batch",
         json={"paths": [first, second], "action": "remove"},
     ).json()
     assert removed["updated"] == 2
@@ -111,7 +111,7 @@ def test_favorite_batch_add_toggle_and_remove(bulk_env):
 
 def test_favorite_batch_reports_unindexed_paths(bulk_env):
     result = bulk_env["client"].post(
-        "/api/v2/favorites/batch",
+        "/api/favorites/batch",
         json={"paths": [str(bulk_env["library"] / "missing.jpg")], "action": "add"},
     )
     assert result.status_code == 200
@@ -125,7 +125,7 @@ def test_bulk_rename_updates_disk_and_index(bulk_env):
     first = _path(bulk_env, "one.jpg")
     second = _path(bulk_env, "two.jpg")
     result = client.post(
-        "/api/v2/manage/bulk-rename",
+        "/api/manage/bulk-rename",
         json={
             "renames": [
                 {"path": first, "name": "01-one.jpg"},
@@ -147,7 +147,7 @@ def test_bulk_rename_updates_disk_and_index(bulk_env):
 def test_bulk_rename_continues_after_a_failure(bulk_env):
     client = bulk_env["client"]
     result = client.post(
-        "/api/v2/manage/bulk-rename",
+        "/api/manage/bulk-rename",
         json={
             "renames": [
                 {"path": str(bulk_env["library"] / "missing.jpg"), "name": "x.jpg"},
@@ -166,7 +166,7 @@ def test_webp_optimize_only_converts_the_selected_paths(bulk_env):
     untouched = bulk_env["library"] / "two.jpg"
 
     result = client.post(
-        "/api/v2/webp/optimize",
+        "/api/webp/optimize",
         json={"paths": [selected], "limit": 20},
     )
     assert result.status_code == 200

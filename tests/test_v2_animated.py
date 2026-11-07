@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import animated
-from media_library_v2 import config as v2_config
-from media_library_v2.mount import build_v2_app
+from media_library import animated
+from media_library import config as v2_config
+from media_library.app import create_app
 
 
 def _make_video(target: Path, seconds: int = 4) -> None:
@@ -49,10 +49,10 @@ def media_env(tmp_path, monkeypatch):
     (thumbs / "animated").mkdir(parents=True)
     library.mkdir()
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(thumbs))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     video = library / "clip.mp4"
@@ -106,7 +106,7 @@ def media_env(tmp_path, monkeypatch):
 
     try:
         yield {
-            "client": TestClient(build_v2_app()),
+            "client": TestClient(create_app()),
             "library": library,
             "video": video,
             "image": image,
@@ -121,7 +121,7 @@ def media_env(tmp_path, monkeypatch):
 def _wait_ready(client: TestClient, video: Path, timeout: float = 60.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        body = client.get("/api/v2/thumbnails/animated/status").json()
+        body = client.get("/api/thumbnails/animated/status").json()
         if body["ready"] >= 1 or body["failed_total"] >= 1:
             return body
         time.sleep(0.2)
@@ -130,7 +130,7 @@ def _wait_ready(client: TestClient, video: Path, timeout: float = 60.0) -> dict:
 
 def test_candidates_offer_enough_frames(media_env):
     response = media_env["client"].get(
-        "/api/v2/thumbnails/candidates",
+        "/api/thumbnails/candidates",
         params={"path": str(media_env["video"])},
     )
     assert response.status_code == 200
@@ -144,12 +144,12 @@ def test_candidates_offer_enough_frames(media_env):
 def test_candidate_frames_reject_images_and_missing_files(media_env):
     client = media_env["client"]
     image = client.get(
-        "/api/v2/thumbnails/candidates",
+        "/api/thumbnails/candidates",
         params={"path": str(media_env["image"])},
     )
     assert image.status_code == 400
     missing = client.get(
-        "/api/v2/thumbnails/candidates",
+        "/api/thumbnails/candidates",
         params={"path": str(media_env["library"] / "nope.mp4")},
     )
     assert missing.status_code == 404
@@ -158,7 +158,7 @@ def test_candidate_frames_reject_images_and_missing_files(media_env):
 def test_frame_endpoint_returns_a_cached_jpeg(media_env):
     client = media_env["client"]
     response = client.get(
-        "/api/v2/thumbnails/frame",
+        "/api/thumbnails/frame",
         params={"path": str(media_env["video"]), "timestamp": 2.0},
     )
     assert response.status_code == 200
@@ -169,7 +169,7 @@ def test_frame_endpoint_returns_a_cached_jpeg(media_env):
 def test_set_poster_updates_the_row_and_cache(media_env):
     client = media_env["client"]
     response = client.post(
-        "/api/v2/thumbnails/poster",
+        "/api/thumbnails/poster",
         json={"path": str(media_env["video"]), "timestamp": 2.5},
     )
     assert response.status_code == 200
@@ -188,7 +188,7 @@ def test_set_poster_updates_the_row_and_cache(media_env):
 
 
 def _key(path: Path) -> str:
-    from media_library_v2.cache import cache_key
+    from media_library.cache import cache_key
 
     stat = path.stat()
     return cache_key(str(path), stat.st_mtime, stat.st_size)
@@ -197,7 +197,7 @@ def _key(path: Path) -> str:
 def test_animated_queue_generates_and_marks_the_row(media_env):
     client = media_env["client"]
     response = client.post(
-        "/api/v2/thumbnails/animated", json={"path": str(media_env["video"])}
+        "/api/thumbnails/animated", json={"path": str(media_env["video"])}
     )
     assert response.status_code == 200
     status = _wait_ready(client, media_env["video"])
@@ -216,42 +216,42 @@ def test_animated_queue_generates_and_marks_the_row(media_env):
 
 def test_batch_requires_a_scope(media_env):
     client = media_env["client"]
-    assert client.post("/api/v2/thumbnails/animated/batch", json={}).status_code == 400
+    assert client.post("/api/thumbnails/animated/batch", json={}).status_code == 400
 
 
 def test_batch_queues_missing_videos(media_env):
     client = media_env["client"]
     response = client.post(
-        "/api/v2/thumbnails/animated/batch",
+        "/api/thumbnails/animated/batch",
         json={"all_videos": True},
     )
     assert response.status_code == 200
     _wait_ready(client, media_env["video"])
-    status = client.get("/api/v2/thumbnails/animated/status").json()
+    status = client.get("/api/thumbnails/animated/status").json()
     assert status["ready"] == 1
 
 
 def test_cancel_empties_the_queue(media_env):
     client = media_env["client"]
-    response = client.post("/api/v2/thumbnails/animated/cancel")
+    response = client.post("/api/thumbnails/animated/cancel")
     assert response.status_code == 200
     assert response.json()["queued"] == 0
 
 
 def test_artwork_writes_are_refused_read_only(media_env, monkeypatch):
-    monkeypatch.setenv("V2_DB_READ_ONLY", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "true")
     v2_config.reload_settings()
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     assert (
         client.post(
-            "/api/v2/thumbnails/poster",
+            "/api/thumbnails/poster",
             json={"path": str(media_env["video"]), "timestamp": 1.0},
         ).status_code
         == 503
     )
     assert (
         client.post(
-            "/api/v2/thumbnails/animated", json={"path": str(media_env["video"])}
+            "/api/thumbnails/animated", json={"path": str(media_env["video"])}
         ).status_code
         == 503
     )
@@ -276,8 +276,8 @@ def test_poster_chooser_works_for_a_zip_member(media_env, tmp_path, monkeypatch)
     """A video inside an archive is extracted before ffmpeg runs on it."""
     import zipfile
 
-    from media_library_v2 import config as v2_config
-    from media_library_v2.cache import thumbnail_path
+    from media_library import config as v2_config
+    from media_library.cache import thumbnail_path
 
     monkeypatch.setenv("ZIP_CACHE_DIR", str(tmp_path / "zip_cache"))
     v2_config.reload_settings()
@@ -314,19 +314,19 @@ def test_poster_chooser_works_for_a_zip_member(media_env, tmp_path, monkeypatch)
         )
 
     client = media_env["client"]
-    candidates = client.get("/api/v2/thumbnails/candidates", params={"path": member})
+    candidates = client.get("/api/thumbnails/candidates", params={"path": member})
     assert candidates.status_code == 200, candidates.text
     assert len(candidates.json()["frames"]) >= 8
 
     poster = client.post(
-        "/api/v2/thumbnails/poster", json={"path": member, "timestamp": 1.0}
+        "/api/thumbnails/poster", json={"path": member, "timestamp": 1.0}
     )
     assert poster.status_code == 200, poster.text
     target = thumbnail_path(member, 1.0, 1234)
     assert target.is_file() and target.stat().st_size > 0
 
     frame = client.get(
-        "/api/v2/thumbnails/frame", params={"path": member, "timestamp": 2.0}
+        "/api/thumbnails/frame", params={"path": member, "timestamp": 2.0}
     )
     assert frame.status_code == 200
     assert frame.content[:2] == b"\xff\xd8"

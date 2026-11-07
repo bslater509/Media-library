@@ -12,9 +12,9 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import zip_webp, zipfs
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library import zip_webp, zipfs
+from media_library.app import create_app
 
 
 def _png_bytes(size: int = 160) -> bytes:
@@ -51,14 +51,14 @@ def zip_webp_env(tmp_path, monkeypatch):
     staging.mkdir()
     cache_dir = tmp_path / "zip_cache"
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("V2_ZIP_STAGING_DIR", str(staging))
+    monkeypatch.setenv("ZIP_STAGING_DIR", str(staging))
     monkeypatch.setenv("ZIP_CACHE_DIR", str(cache_dir))
     monkeypatch.setenv("WEBP_QUALITY", "80")
     monkeypatch.setenv("WEBP_SKIP_LARGER", "false")
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     archive = library / "album.zip"
@@ -205,20 +205,20 @@ def test_archive_without_images_is_untouched(zip_webp_env):
 
 
 def test_router_optimizes_and_validates(zip_webp_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     response = client.post(
-        "/api/v2/zip/webp/optimize", json={"path": str(zip_webp_env["archive"])}
+        "/api/zip/webp/optimize", json={"path": str(zip_webp_env["archive"])}
     )
     assert response.status_code == 200, response.text
     assert response.json()["converted"] == 2
 
     assert (
         client.post(
-            "/api/v2/zip/webp/optimize",
+            "/api/zip/webp/optimize",
             json={"path": str(zip_webp_env["library"] / "missing.zip")},
         ).status_code
         == 404
     )
     assert client.post(
-        "/api/v2/zip/webp/optimize", json={"path": "/etc/passwd"}
+        "/api/zip/webp/optimize", json={"path": "/etc/passwd"}
     ).status_code in (400, 403, 404)

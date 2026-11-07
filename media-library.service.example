@@ -6,9 +6,7 @@ After=network.target
 Type=simple
 User=your-username
 WorkingDirectory=/path/to/media-library
-# v2 is the app at `/`; `app.py` remains the previous single-file app if you
-# ever need to start it explicitly.
-ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/v2_app.py
+ExecStart=/path/to/media-library/venv/bin/python /path/to/media-library/app.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

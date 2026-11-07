@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import writes, zip_ops
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library import writes, zip_ops
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -28,12 +28,12 @@ def ops_env(tmp_path, monkeypatch):
     cache = tmp_path / "zip_cache"
 
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(tmp_path / "thumbs"))
-    monkeypatch.setenv("V2_ZIP_STAGING_DIR", str(staging))
+    monkeypatch.setenv("ZIP_STAGING_DIR", str(staging))
     monkeypatch.setenv("ZIP_CACHE_DIR", str(cache))
-    monkeypatch.setenv("V2_DB_READ_ONLY", "false")
-    monkeypatch.setenv("V2_WRITES", "true")
+    monkeypatch.setenv("DB_READ_ONLY", "false")
+    monkeypatch.setenv("WRITES", "true")
     v2_config.reload_settings()
 
     db_path = Path(os.environ["DB_PATH"])
@@ -224,22 +224,22 @@ def test_unpack_skips_traversal_members(ops_env):
 
 
 def test_router_exposes_check_and_overview(ops_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     album = ops_env["library"] / "Album"
 
-    checked = client.get("/api/v2/zip/check", params={"path": str(album)}).json()
+    checked = client.get("/api/zip/check", params={"path": str(album)}).json()
     assert checked["eligible"] is True
 
-    overview = client.get("/api/v2/zip/overview").json()
+    overview = client.get("/api/zip/overview").json()
     assert isinstance(overview["folders"], list)
     assert overview["cache"]["files"] >= 0
 
-    compressed = client.post("/api/v2/zip/compress", json={"path": str(album)})
+    compressed = client.post("/api/zip/compress", json={"path": str(album)})
     assert compressed.status_code == 200, compressed.text
     archive = compressed.json()["archive"]
-    after = client.get("/api/v2/zip/overview").json()
+    after = client.get("/api/zip/overview").json()
     assert any(item["path"] == archive for item in after["archives"])
 
-    unpacked = client.post("/api/v2/zip/unpack", json={"path": archive})
+    unpacked = client.post("/api/zip/unpack", json={"path": archive})
     assert unpacked.status_code == 200, unpacked.text
     assert (album / "one.jpg").is_file()

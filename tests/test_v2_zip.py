@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library_v2 import config as v2_config
-from media_library_v2 import zipfs
-from media_library_v2.mount import build_v2_app
+from media_library import config as v2_config
+from media_library import zipfs
+from media_library.app import create_app
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def zip_env(tmp_path, monkeypatch):
     library.mkdir()
     cache = tmp_path / "zip_cache"
     monkeypatch.setenv("LIBRARY_DIR", str(library))
-    monkeypatch.setenv("V2_LIBRARY_DIR", str(library))
+    monkeypatch.setenv("LIBRARY_DIR", str(library))
     monkeypatch.setenv("THUMBNAIL_DIR", str(tmp_path / "thumbs"))
     monkeypatch.setenv("ZIP_CACHE_DIR", str(cache))
     v2_config.reload_settings()
@@ -90,9 +90,9 @@ def test_split_zip_path():
 
 
 def test_browse_a_zip_as_a_virtual_folder(zip_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     path = str(zip_env["archive"])
-    response = client.get("/api/v2/library/browse", params={"path": path})
+    response = client.get("/api/library/browse", params={"path": path})
     assert response.status_code == 200
     payload = response.json()
     assert payload["path"] == path
@@ -102,17 +102,17 @@ def test_browse_a_zip_as_a_virtual_folder(zip_env):
 
 
 def test_member_media_is_extracted_and_range_streamed(zip_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     path = f"{zip_env['archive']}/sub/photo.jpg"
 
     partial = client.get(
-        "/api/v2/media", params={"path": path}, headers={"Range": "bytes=0-9"}
+        "/api/media", params={"path": path}, headers={"Range": "bytes=0-9"}
     )
     assert partial.status_code == 206
     assert partial.content == b"photo-byte"
     assert partial.headers["content-range"].startswith("bytes 0-9/")
 
-    full = client.get("/api/v2/media", params={"path": path})
+    full = client.get("/api/media", params={"path": path})
     assert full.status_code == 200
     assert full.content == b"photo-bytes" * 100
 
@@ -121,19 +121,19 @@ def test_member_media_is_extracted_and_range_streamed(zip_env):
 
 
 def test_member_traversal_and_missing_member_are_rejected(zip_env):
-    client = TestClient(build_v2_app())
+    client = TestClient(create_app())
     traversal = client.get(
-        "/api/v2/media", params={"path": f"{zip_env['archive']}/../etc/passwd"}
+        "/api/media", params={"path": f"{zip_env['archive']}/../etc/passwd"}
     )
     assert traversal.status_code in (400, 403)
 
     missing = client.get(
-        "/api/v2/media", params={"path": f"{zip_env['archive']}/nope.jpg"}
+        "/api/media", params={"path": f"{zip_env['archive']}/nope.jpg"}
     )
     assert missing.status_code == 404
 
 
 def test_member_outside_the_library_archive_is_denied(tmp_path):
-    client = TestClient(build_v2_app())
-    response = client.get("/api/v2/media", params={"path": "/etc/foo.zip/member.jpg"})
+    client = TestClient(create_app())
+    response = client.get("/api/media", params={"path": "/etc/foo.zip/member.jpg"})
     assert response.status_code in (403, 404)
