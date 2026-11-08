@@ -423,6 +423,14 @@ class SorterFolderRequest(BaseModel):
 # --- downloads -------------------------------------------------------------
 
 
+class DownloadFileProgress(BaseModel):
+    name: str
+    done: bool = False
+    percent: float | None = None
+    downloaded_bytes: int | None = None
+    total_bytes: int | None = None
+
+
 class DownloadJob(BaseModel):
     id: str
     url: str
@@ -437,6 +445,7 @@ class DownloadJob(BaseModel):
     downloader: str
     error: str
     files: list[str]
+    file_progress: list[DownloadFileProgress] = []
     playlist_index: int | None = None
     playlist_count: int | None = None
     created_at: float

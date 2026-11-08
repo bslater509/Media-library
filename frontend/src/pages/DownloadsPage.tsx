@@ -4,6 +4,7 @@ import { formatBytes } from '../lib/format'
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Download,
   FolderOpen,
@@ -15,7 +16,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { DownloadJob } from '../lib/api'
+import type { DownloadFileProgress, DownloadJob } from '../lib/api'
 import { cn } from '../lib/cn'
 import {
   useDownloadCancel,
@@ -369,6 +370,10 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
     job.playlist_index !== null && job.playlist_count !== null
       ? `${job.playlist_index}/${job.playlist_count}`
       : null
+  const files = job.file_progress ?? []
+  const [filesExpanded, setFilesExpanded] = useState(false)
+  const multiFile = files.length > 1
+  const doneCount = files.filter((row) => row.done).length
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border px-2.5 py-2">
       <div className="flex items-center gap-2">
@@ -399,6 +404,21 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
         </IconButton>
       </div>
       <Progress value={job.percent} />
+      {multiFile ? (
+        <button
+          type="button"
+          onClick={() => setFilesExpanded((value) => !value)}
+          className="flex items-center gap-1 self-start text-[10px] font-semibold tracking-wider text-fg-subtle uppercase hover:text-fg"
+          aria-expanded={filesExpanded}
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={cn('size-3 transition-transform', filesExpanded && 'rotate-180')}
+          />
+          {doneCount} / {files.length} files
+        </button>
+      ) : null}
+      {multiFile && filesExpanded ? <FileProgressList rows={files} /> : null}
       <div className="flex items-center justify-between gap-2 text-[10px] text-fg-subtle">
         <span className="truncate font-mono">{job.url}</span>
         <span className="shrink-0 tabular-nums">
@@ -412,8 +432,66 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
   )
 }
 
+function FileProgressList({ rows }: { rows: DownloadFileProgress[] }) {
+  return (
+    <ul className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-md bg-surface-2/60 px-2 py-1.5">
+      {rows.map((row, index) => (
+        <li key={`${row.name}-${index}`} className="flex items-center gap-2 text-[11px]">
+          <span
+            className={cn(
+              'flex size-3.5 shrink-0 items-center justify-center',
+              row.done ? 'text-success' : 'text-accent',
+            )}
+          >
+            {row.done ? (
+              <CheckCircle2 className="size-3" />
+            ) : (
+              <Loader2 className="size-3 animate-spin" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-fg-muted" title={row.name}>
+            {row.name}
+          </span>
+          <span className="shrink-0 tabular-nums text-fg-subtle">
+            {row.total_bytes
+              ? `${formatBytes(row.downloaded_bytes ?? 0)} / ${formatBytes(row.total_bytes)}`
+              : row.downloaded_bytes
+                ? formatBytes(row.downloaded_bytes)
+                : row.done
+                  ? 'done'
+                  : 'pending…'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function FinishedRow({ job, onRetry }: { job: DownloadJob; onRetry: () => void }) {
+  const meta = useMemo(() => {
+    if (job.status === 'completed') {
+      return {
+        summary: `${job.files.length} file${job.files.length === 1 ? '' : 's'} · ${job.downloader}`,
+        list: job.files.map((path) => ({ label: path.split('/').pop() || path, title: path })),
+        done: true,
+      }
+    }
+    const rows = job.file_progress ?? []
+    const landed = rows.filter((row) => row.done).length
+    if (rows.length) {
+      return {
+        summary: `Stopped after ${landed} file${landed === 1 ? '' : 's'} · ${job.downloader}`,
+        status: job.error || job.status,
+        // mirror of the active-row list: which files landed, which one stopped
+        list: rows.map((row) => ({ label: row.name, title: row.name })),
+        done: false,
+      }
+    }
+    return null
+  }, [job])
+
   const retryable = job.status === 'failed' || job.status === 'cancelled'
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="flex items-start gap-2 rounded-md border border-border px-2.5 py-2">
       <span className={cn('mt-0.5 shrink-0', STATUS_STYLES[job.status])}>
@@ -427,11 +505,47 @@ function FinishedRow({ job, onRetry }: { job: DownloadJob; onRetry: () => void }
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-fg">{job.title || job.url}</p>
-        <p className="truncate text-[11px] text-fg-subtle">
-          {job.status === 'completed'
-            ? `${job.files.length} file${job.files.length === 1 ? '' : 's'} · ${job.downloader}`
-            : job.error || job.status}
-        </p>
+        {meta ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              className="flex items-center gap-1 py-0.5 text-[11px] text-fg-muted hover:text-fg"
+              aria-expanded={expanded}
+            >
+              <ChevronDown
+                aria-hidden="true"
+                className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-180')}
+              />
+              {meta.summary}
+            </button>
+            {expanded && meta.list.length ? (
+              <ul className="flex max-h-44 flex-col gap-0.5 overflow-y-auto rounded-md bg-surface-2/60 px-2 py-1.5">
+                {meta.list.map((row) => (
+                  <li
+                    key={row.title}
+                    className="flex items-center gap-2 text-[11px]"
+                  >
+                    <CheckCircle2
+                      aria-hidden="true"
+                      className={cn('size-3 shrink-0', meta.done ? 'text-success' : 'text-fg-subtle')}
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-fg-muted"
+                      title={row.title}
+                    >
+                      {row.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        ) : (
+          <p className="truncate text-[11px] text-fg-subtle">
+            {job.error || job.status}
+          </p>
+        )}
         <p className="truncate font-mono text-[10px] text-fg-subtle">{job.destination}</p>
       </div>
       {retryable ? (

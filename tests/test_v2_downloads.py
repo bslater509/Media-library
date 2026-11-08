@@ -369,3 +369,148 @@ def test_finish_is_idempotent(download_env):
     manager._finish(job)
 
     assert len(manager.history) == 1
+
+
+def _clip_progress(name: str, percent: float, done_bytes: int, total: int) -> str:
+    return json.dumps(
+        {
+            "title": "Album",
+            "filename": f"/tmp/staging/{name}",
+            "percent": percent,
+            "downloaded_bytes": done_bytes,
+            "total_bytes": total,
+            "speed": None,
+            "eta": None,
+            "playlist_index": None,
+            "playlist_count": None,
+        }
+    )
+
+
+def test_multi_file_job_tracks_per_file_progress():
+    """Each yt-dlp filename becomes a row; the job percent reflects all rows."""
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/album", "/tmp/library/Inbox")
+    job["downloader"] = "yt-dlp"
+    staging = Path("/tmp/staging")
+
+    manager._apply_line(job, _clip_progress("a.mp4", 100.0, 100, 100), staging)
+    manager._apply_line(job, _clip_progress("b.mp4", 25.0, 50, 200), staging)
+    manager._apply_line(job, _clip_progress("c.mp4", 0.0, 4, 400), staging)
+
+    rows = [(row["name"], row["done"], row["percent"]) for row in job["file_progress"]]
+    assert rows == [
+        ("a.mp4", True, 100.0),
+        ("b.mp4", True, 25.0),
+        ("c.mp4", False, 0.0),
+    ]
+    # a's 100, b concluded at its full 200 when c started, c's first 4
+    assert job["percent"] == 43.4
+    assert job["downloaded_bytes"] == 304
+    assert job["total_bytes"] == 700
+    # a new name implies the previous file finished even without an exact 100%
+    assert next(row["name"] for row in job["file_progress"] if row["done"]) == "a.mp4"
+
+    manager._apply_line(job, _clip_progress("c.mp4", 100.0, 400, 400), staging)
+    assert job["percent"] == 100.0
+    assert all(row["done"] for row in job["file_progress"])
+
+
+def test_single_file_job_keeps_the_line_totals_in_its_row():
+    """One filename means one row; the job numbers equal the line values."""
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", "/tmp/library/Inbox")
+    job["downloader"] = "yt-dlp"
+
+    manager._apply_line(job, _progress(percent=42.0), Path("/tmp/staging"))
+
+    assert job["percent"] == 42.0
+    assert job["downloaded_bytes"] == 42
+    assert job["total_bytes"] == 100
+    assert job["file_progress"] == [
+        {
+            "name": "clip.mp4",
+            "done": False,
+            "percent": 42.0,
+            "downloaded_bytes": 42,
+            "total_bytes": 100,
+        }
+    ]
+
+
+def test_gallery_dl_lines_track_started_files():
+    """One staging-path line per album member, newest starts unfinished."""
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/album", "/tmp/library/Inbox")
+    job["downloader"] = "gallery-dl"
+    staging = Path("/tmp/staging")
+
+    manager._apply_line(job, f"{staging}/one.mp4", staging)
+    manager._apply_line(job, f"{staging}/two.jpg", staging)
+    manager._apply_line(job, f"{staging}/three.png", staging)
+
+    rows = [(row["name"], row["done"]) for row in job["file_progress"]]
+    assert rows == [("one.mp4", True), ("two.jpg", True), ("three.png", False)]
+    assert job["title"] == "three.png"
+    assert job["percent"] == 15.0
+    assert not any(row["total_bytes"] for row in job["file_progress"])
+
+    # a repeated line for the same file closes it instead of adding a row
+    manager._apply_line(job, f"{staging}/three.png", staging)
+    assert [row["name"] for row in job["file_progress"]] == [
+        "one.mp4",
+        "two.jpg",
+        "three.png",
+    ]
+    assert all(row["done"] for row in job["file_progress"])
+
+
+def test_row_total_falls_back_to_the_estimate():
+    """When only an estimate is available, rows size themselves from it."""
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", "/tmp/library/Inbox")
+    job["downloader"] = "yt-dlp"
+
+    line = json.dumps(
+        {
+            "filename": "/tmp/staging/a.mp4",
+            "percent": 50.0,
+            "downloaded_bytes": 300,
+            "total_bytes_estimate": 600,
+        }
+    )
+    manager._apply_line(job, line, Path("/tmp/staging"))
+
+    row = job["file_progress"][0]
+    assert row["total_bytes"] == 600
+    assert row["done"] is False
+    assert job["total_bytes"] == 600
+    assert job["downloaded_bytes"] == 300
+    assert job["percent"] == 50.0
+
+
+def test_router_job_payload_carries_file_progress(download_env):
+    """The API response model exposes the per-file rows."""
+    manager = DownloadManager()
+    manager.run = _fake_run(manager)  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/video"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    rows = [
+        entry
+        for entry in manager.history[0]["file_progress"]
+        if entry["name"] == "clip.mp4"
+    ]
+    assert rows == [
+        {
+            "name": "clip.mp4",
+            "done": True,
+            "percent": 42.0,
+            "downloaded_bytes": 42,
+            "total_bytes": 100,
+        }
+    ]

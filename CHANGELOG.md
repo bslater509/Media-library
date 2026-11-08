@@ -28,6 +28,14 @@ snapshot metadata.
 
 ### Added
 
+- **Per-file download progress.** Multi-file downloads (albums, playlists) no
+  longer show as one bouncing row: every job carries a `file_progress` list
+  (`name`, `done`, `percent`, sizes) built from yt-dlp's `filename` progress
+  lines and gallery-dl's per-file output lines, the job percent is weighted
+  across all known files instead of resetting per item, and the Downloads
+  page adds an expandable "N / M files" list on active rows plus the file
+  list on finished rows ("stopped after N files" for cancelled jobs).
+
 - **The Duplicates page can ignore images.** `GET /api/dedupe/groups`,
   `GET /api/dedupe/status` and `POST /api/dedupe/hash` accept
   `include_images=false` (the new Images switch on the page), which removes

@@ -266,6 +266,14 @@ export interface SorterConfig {
   undo_count: number
 }
 
+export interface DownloadFileProgress {
+  name: string
+  done: boolean
+  percent: number | null
+  downloaded_bytes: number | null
+  total_bytes: number | null
+}
+
 export interface DownloadJob {
   id: string
   url: string
@@ -280,6 +288,7 @@ export interface DownloadJob {
   downloader: string
   error: string
   files: string[]
+  file_progress: DownloadFileProgress[]
   playlist_index: number | null
   playlist_count: number | null
   created_at: number

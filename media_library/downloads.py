@@ -160,6 +160,7 @@ class DownloadManager:
             "downloader": "",
             "error": "",
             "files": [],
+            "file_progress": [],
             "playlist_index": None,
             "playlist_count": None,
             "created_at": time.time(),
@@ -271,6 +272,8 @@ class DownloadManager:
             detail = _tail(lines) or "The downloader produced no importable media"
             raise RuntimeError(detail)
         job["files"] = imported
+        for row in job["file_progress"]:
+            row["done"] = True
         job["status"] = "completed"
         job["percent"] = 100.0
         job["finished_at"] = time.time()
@@ -340,13 +343,57 @@ class DownloadManager:
 
     # -- progress ------------------------------------------------------
 
+    def _register_row(
+        self,
+        job: dict[str, Any],
+        name: str,
+        percent: float | None,
+        downloaded: int | None,
+        total: int | None,
+        *,
+        conclude_others: bool = True,
+    ) -> dict[str, Any]:
+        """Add or refresh one per-file row; a new name closes the previous file.
+
+        Downloaders work sequentially, so the first sighting of a new
+        filename means every earlier file finished. Rows are public state
+        (``file_progress``) and survive cancellation, which is what lets the
+        client show "stopped after N files" for albums.
+        """
+        rows = job.setdefault("file_progress", [])
+        row = next((entry for entry in rows if entry["name"] == name), None)
+        if row is None:
+            if conclude_others:
+                for other in rows:
+                    other["done"] = True
+            row = {
+                "name": name,
+                "done": False,
+                "percent": None,
+                "downloaded_bytes": None,
+                "total_bytes": None,
+            }
+            rows.append(row)
+        if percent is not None:
+            row["percent"] = round(percent, 1)
+            if percent >= 99.9:
+                row["done"] = True
+        if downloaded is not None:
+            row["downloaded_bytes"] = int(downloaded)
+        if total is not None:
+            row["total_bytes"] = int(total)
+        return row
+
     def _apply_line(self, job: dict[str, Any], line: str, staging: Path) -> None:
         data = parse_progress_line(line)
         if data is not None:
             if data.get("title"):
                 job["title"] = str(data["title"])
+            percent: float | None = None
             if data.get("percent") not in (None, "NA"):
-                job["percent"] = round(_coerce(data["percent"], job["percent"]), 1)
+                percent = _coerce(data["percent"], 0.0)
+                job["percent"] = round(percent, 1)
+            downloaded = None
             for key in ("downloaded_bytes", "total_bytes", "total_bytes_estimate"):
                 if data.get(key) not in (None, "NA"):
                     value = int(_coerce(data[key], 0))
@@ -355,6 +402,8 @@ class DownloadManager:
                             job["total_bytes"] = value
                     else:
                         job[key] = value
+                    if key == "downloaded_bytes":
+                        downloaded = value
             if data.get("speed") not in (None, "NA"):
                 job["speed"] = str(data["speed"])
             if data.get("eta") not in (None, "NA"):
@@ -363,10 +412,58 @@ class DownloadManager:
                 job["playlist_index"] = data["playlist_index"]
             if data.get("playlist_count") not in (None, "NA"):
                 job["playlist_count"] = data["playlist_count"]
+
+            # Album / chunk downloads: one JSON line per file with its own
+            # name, percent and sizes. Track rows and restate the job-level
+            # numbers so a multi-item job does not bounce 0→100 between items.
+            filename = data.get("filename")
+            if isinstance(filename, str) and filename:
+                total = None
+                if data.get("total_bytes") not in (None, "NA"):
+                    total = int(_coerce(data["total_bytes"], 0))
+                elif data.get("total_bytes_estimate") not in (None, "NA"):
+                    total = int(_coerce(data["total_bytes_estimate"], 0))
+                self._register_row(
+                    job,
+                    os.path.basename(filename),
+                    percent,
+                    downloaded,
+                    total,
+                )
+                known = [
+                    entry for entry in job["file_progress"] if entry["total_bytes"]
+                ]
+                if known:
+                    total_known = sum(entry["total_bytes"] for entry in known)
+                    done_bytes = sum(
+                        entry["total_bytes"]
+                        if entry["done"]
+                        else (entry["downloaded_bytes"] or 0)
+                        for entry in known
+                    )
+                    job["downloaded_bytes"] = done_bytes
+                    job["total_bytes"] = total_known
+                    job["percent"] = round(
+                        min(100.0, 100.0 * done_bytes / total_known), 1
+                    )
             return
 
         if job["downloader"] == "gallery-dl" and str(staging) in line:
-            job["title"] = Path(line).name
+            name = Path(line).name
+            job["title"] = name
+            seen = job.setdefault("_gallery_seen", set())
+            if name in seen:
+                # The same path logged twice: the file was started again, i.e.
+                # it completed once between the two lines.
+                row = next(
+                    (entry for entry in job["file_progress"] if entry["name"] == name),
+                    None,
+                )
+                if row is not None:
+                    row["done"] = True
+            else:
+                seen.add(name)
+                self._register_row(job, name, None, None, None)
             job["percent"] = min(95.0, round(job["percent"] + 5.0, 1))
 
     # -- commands ------------------------------------------------------
