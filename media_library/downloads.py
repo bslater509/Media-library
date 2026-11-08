@@ -4,15 +4,18 @@ yt-dlp runs as an isolated subprocess (never imported in-process), with an
 automatic gallery-dl fallback for sites yt-dlp cannot handle. Finished files are
 imported into the library through the same atomic, indexed path as uploads.
 
-Jobs live in memory: active/queued plus a 500-entry terminal history. A server
-restart drops the history and stops running downloads.
+Jobs live in memory: active/queued plus a 500-entry terminal history. The queue
+itself is persisted and restored at startup, so a restart resumes it; the
+history is still memory-only.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import json
+import logging
 import math
 import os
 import re
@@ -28,6 +31,8 @@ from urllib.parse import urlparse
 from media_library import writes
 from media_library.config import get_settings
 from media_library.paths import resolve_library_path
+
+logger = logging.getLogger("media_library.downloads")
 
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _NA_FIX = re.compile(r'"NA"')
@@ -48,6 +53,18 @@ _GALLERY_DL_HOSTS = ("gofile.io",)
 _OUTPUT_TIMEOUT = 300.0
 # How often the staging directory is weighed while a downloader is silent.
 _PROGRESS_POLL = 5.0
+# Queued jobs are written to disk so a restart keeps the queue. Progress lines
+# arrive faster than that; the coalescing writer bounds the file churn.
+_SAVE_INTERVAL = 10.0
+# How long a job's download archive is kept after its last write. It is only a
+# resume aid, so an unused one can go.
+_ARCHIVE_TTL_DAYS = 30
+# Largest member list a job will show. A pathological playlist must not grow
+# the in-memory status payload without bound.
+_MAX_QUEUE_ROWS = 2000
+# How long the member listing may take before it is abandoned. It only feeds
+# the GUI; the download itself is unaffected.
+_LIST_TIMEOUT = 1800.0
 _AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".flac"}
 _SKIPPED_EXTS = {
     ".json",
@@ -152,6 +169,40 @@ def _tail(lines: list[str], count: int = 6) -> str:
     return "\n".join(line for line in lines[-count:] if line).strip()
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write a small state file atomically (same directory, then replace)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    return data if isinstance(data, dict) else {}
+
+
+def _directory_names(path: str) -> set[str]:
+    try:
+        return set(os.listdir(path))
+    except OSError:
+        return set()
+
+
+def _archive_path(url: str, destination: str, downloader: str) -> Path:
+    """Resume ledger for one (URL, destination) pair and downloader.
+
+    The key carries the destination because an archive only records that a
+    member was fetched, not where it landed: the same album queued into two
+    folders must download twice. yt-dlp writes a plain-text list, gallery-dl a
+    SQLite database, so they never share a file.
+    """
+    digest = hashlib.sha256(f"{url}\n{destination}".encode()).hexdigest()[:24]
+    suffix = ".db" if downloader == "gallery-dl" else ".txt"
+    return get_settings().download_archive_dir / f"{digest}-{downloader}{suffix}"
+
+
 class DownloadManager:
     """Queue, run and track download jobs on the server's event loop."""
 
@@ -160,6 +211,10 @@ class DownloadManager:
         self.history: deque[dict[str, Any]] = deque(maxlen=_HISTORY_MAX)
         self._sem: asyncio.Semaphore | None = None
         self._tasks: set[asyncio.Task] = set()
+        self._restored = False
+        self._dirty = False
+        self._save_task: asyncio.Task | None = None
+        self._closing = False
 
     # -- queue ---------------------------------------------------------
 
@@ -185,6 +240,7 @@ class DownloadManager:
             "files": [],
             "file_progress": [],
             "_imported": set(),
+            "_skipped": 0,
             "playlist_index": None,
             "playlist_count": None,
             "created_at": time.time(),
@@ -225,7 +281,138 @@ class DownloadManager:
         await asyncio.to_thread(self._gc_staging)
         for job in queued:
             self._spawn(job["id"])
+        self._save_soon()
         return {"jobs": [self._public(job) for job in queued], "rejected": rejected}
+
+    # -- persistence ---------------------------------------------------
+
+    @staticmethod
+    def _snapshot(job: dict[str, Any]) -> dict[str, Any]:
+        data = DownloadManager._public(job)
+        data["imported"] = sorted(job.get("_imported") or ())
+        return data
+
+    async def _save(self) -> None:
+        payload = {"jobs": [self._snapshot(job) for job in self.jobs.values()]}
+        await asyncio.to_thread(
+            _write_json, get_settings().download_state_path, payload
+        )
+
+    async def _save_loop(self) -> None:
+        """Write the queue at most once per interval while it keeps changing."""
+        while self._dirty:
+            self._dirty = False
+            try:
+                await self._save()
+            except Exception:
+                logger.exception("[downloads] Could not write the queue state")
+                return
+            if self._dirty:
+                await asyncio.sleep(_SAVE_INTERVAL)
+
+    def _save_soon(self) -> None:
+        if self._closing:
+            return
+        self._dirty = True
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (a direct call from a test): the next save wins.
+            return
+        if self._save_task is None or self._save_task.done():
+            self._save_task = asyncio.create_task(self._save_loop())
+
+    async def persist(self) -> None:
+        """Flush the queue now (shutdown, or a deliberate checkpoint)."""
+        if self._save_task is not None and not self._save_task.done():
+            self._save_task.cancel()
+        self._dirty = False
+        try:
+            await self._save()
+        except Exception:
+            logger.exception("[downloads] Could not write the queue state")
+
+    async def shutdown(self) -> None:
+        """Stop the downloaders but keep the queue for the next process.
+
+        The queue file is written first, then the subprocesses die with the
+        server. Staging is deliberately left in place: a restored job reuses
+        its id, so completed members it never imported are picked up on the
+        next run (and yt-dlp continues a partial file).
+        """
+        await self.persist()
+        self._closing = True
+        for job in list(self.jobs.values()):
+            job["_cancel"] = True
+            for key in ("_process", "_list_process"):
+                process = job.get(key)
+                if process is None:
+                    continue
+                try:
+                    process.kill()
+                except (ProcessLookupError, OSError):
+                    pass
+        for task in list(self._tasks):
+            task.cancel()
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def restore(self) -> int:
+        """Reload the queued jobs left by the previous process and start them.
+
+        Only the queue is persisted (it is what survives a restart); finished
+        history stays in memory. Members already fetched are skipped by the
+        per-job download archive, and the destination's existing names show as
+        done in the queue listing, so a restored album resumes where it stopped.
+        """
+        if self._restored:
+            return 0
+        self._restored = True
+        try:
+            payload = await asyncio.to_thread(
+                _read_json, get_settings().download_state_path
+            )
+        except FileNotFoundError:
+            return 0
+        except (OSError, ValueError):
+            logger.exception("[downloads] Ignoring an unreadable queue state")
+            return 0
+
+        restored = 0
+        for raw in payload.get("jobs") or []:
+            if not isinstance(raw, dict):
+                continue
+            url = raw.get("url")
+            destination = raw.get("destination")
+            if not isinstance(url, str) or not isinstance(destination, str):
+                continue
+            job = self._new_job(url, destination)
+            if isinstance(raw.get("id"), str) and raw["id"]:
+                job["id"] = raw["id"]
+            for key in (
+                "percent",
+                "downloaded_bytes",
+                "total_bytes",
+                "title",
+                "downloader",
+                "playlist_index",
+                "playlist_count",
+                "created_at",
+            ):
+                if key in raw:
+                    job[key] = raw[key]
+            job["file_progress"] = [
+                row
+                for row in raw.get("file_progress") or []
+                if isinstance(row, dict) and isinstance(row.get("name"), str)
+            ]
+            job["status"] = "queued"
+            self.jobs[job["id"]] = job
+            self._spawn(job["id"])
+            restored += 1
+        if restored:
+            logger.info("[downloads] Restored %d queued job(s)", restored)
+        return restored
 
     def _spawn(self, job_id: str) -> None:
         task = asyncio.create_task(self._execute_job(job_id))
@@ -242,6 +429,7 @@ class DownloadManager:
                 return
             job["status"] = "downloading"
             job["started_at"] = time.time()
+            self._save_soon()
             staging = get_settings().download_staging_dir / job["id"]
             staging.mkdir(parents=True, exist_ok=True)
             try:
@@ -249,13 +437,33 @@ class DownloadManager:
             except asyncio.CancelledError:
                 job["status"] = "cancelled"
                 job["error"] = "Cancelled"
+                if not self._closing:
+                    await self._salvage(job, staging)
                 raise
             except Exception as exc:
                 job["status"] = "failed"
                 job["error"] = str(exc) or "Download failed"
+                await self._salvage(job, staging)
             finally:
-                shutil.rmtree(staging, ignore_errors=True)
+                if not self._closing:
+                    shutil.rmtree(staging, ignore_errors=True)
                 self._finish(job)
+
+    async def _salvage(self, job: dict[str, Any], staging: Path) -> None:
+        """Import the whole files a stopped job already fetched.
+
+        A partial download keeps its ``.part`` suffix and is not media, so it
+        stays out. Everything complete lands in the library, which keeps a
+        retry's cost to the unfinished member.
+        """
+        try:
+            imported, _skipped = await self.import_staged(
+                staging, job["destination"], skip=job["_imported"]
+            )
+        except Exception:
+            logger.warning("[downloads] Could not salvage staged files", exc_info=True)
+            return
+        job["files"] = list(dict.fromkeys(job["files"] + imported))
 
     async def _download(self, job: dict[str, Any], staging: Path) -> None:
         tools = tools_available()
@@ -270,7 +478,12 @@ class DownloadManager:
             )
 
         job["downloader"] = downloader
-        code, lines = await self.run(job, downloader, staging)
+        await asyncio.to_thread(
+            _archive_path(job["url"], job["destination"], downloader).parent.mkdir,
+            parents=True,
+            exist_ok=True,
+        )
+        code, lines = await self._run_and_list(job, downloader, staging)
         if job.get("_cancel"):
             raise asyncio.CancelledError
 
@@ -287,7 +500,14 @@ class DownloadManager:
             job["title"] = ""
             shutil.rmtree(staging, ignore_errors=True)
             staging.mkdir(parents=True, exist_ok=True)
-            code, lines = await self.run(job, "gallery-dl", staging)
+            await asyncio.to_thread(
+                _archive_path(
+                    job["url"], job["destination"], "gallery-dl"
+                ).parent.mkdir,
+                parents=True,
+                exist_ok=True,
+            )
+            code, lines = await self._run_and_list(job, "gallery-dl", staging)
             if job.get("_cancel"):
                 raise asyncio.CancelledError
 
@@ -295,25 +515,136 @@ class DownloadManager:
             staging, job["destination"], skip=job["_imported"]
         )
         job["files"] = list(dict.fromkeys(job["files"] + imported))
-        if not job["files"] and not imported and not skipped:
+        if (
+            not job["files"]
+            and not imported
+            and not skipped
+            and not job["_imported"]
+            and not job.get("_skipped")
+        ):
             detail = _tail(lines) or "The downloader produced no importable media"
             raise RuntimeError(detail)
         # ``skipped`` counts members the destination already contained, so a
         # re-run that lands everything existing is a success with 0 new files
+        landed = {Path(path).name for path in imported} | set(job["_imported"])
         for row in job["file_progress"]:
-            row["done"] = True
+            if row["name"] in landed:
+                row["done"] = True
         job["status"] = "completed"
         job["percent"] = 100.0
         job["finished_at"] = time.time()
+
+    async def _run_and_list(
+        self, job: dict[str, Any], downloader: str, staging: Path
+    ) -> tuple[int, list[str]]:
+        """Run the downloader, with the album listing running alongside it."""
+        listing = (
+            asyncio.create_task(self._prelist(job, staging))
+            if downloader == "gallery-dl"
+            else None
+        )
+        try:
+            return await self.run(job, downloader, staging)
+        finally:
+            if listing is not None:
+                listing.cancel()
+                await asyncio.gather(listing, return_exceptions=True)
+
+    async def _prelist(self, job: dict[str, Any], staging: Path) -> None:
+        """List every album member so the client can show the whole queue.
+
+        ``gallery-dl --simulate`` prints each member's target path exactly as
+        a real run would (``# <path>``) without downloading anything. Rows are
+        added as they arrive, and names the destination already contains are
+        marked done, so a resumed album shows what is already in the library.
+        A failure or timeout only costs the pending list.
+        """
+        command = self._gallery_dl_command(job, staging, simulate=True)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        except OSError:
+            return
+        job["_list_process"] = process
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _LIST_TIMEOUT
+        added = 0
+        complete = False
+        assert process.stdout is not None
+        try:
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                try:
+                    raw = await asyncio.wait_for(
+                        process.stdout.readline(), timeout=remaining
+                    )
+                except asyncio.TimeoutError:
+                    break
+                if not raw:
+                    complete = True
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("# ") or str(staging) not in line:
+                    continue
+                name = Path(line[2:].strip()).name
+                if not name or not is_media_file(Path(name)):
+                    continue
+                if any(row["name"] == name for row in job["file_progress"]):
+                    continue
+                if any(
+                    Path(row["name"]).stem == Path(name).stem
+                    for row in job["file_progress"]
+                ):
+                    # already learned under the name the downloader settled on
+                    continue
+                if len(job["file_progress"]) >= _MAX_QUEUE_ROWS:
+                    continue
+                self._register_row(job, name, None, None, None, conclude_others=False)
+                added += 1
+        finally:
+            job.pop("_list_process", None)
+            if process.returncode is None:
+                process.kill()
+            try:
+                await process.wait()
+            except Exception:
+                pass
+
+        if added:
+            present = await asyncio.to_thread(_directory_names, job["destination"])
+            if present:
+                stems = {Path(entry).stem for entry in present}
+                for row in job["file_progress"]:
+                    if row["name"] in present or Path(row["name"]).stem in stems:
+                        row["done"] = True
+        if complete and process.returncode == 0:
+            job["_queue_complete"] = True
+            self._refresh_percent(job)
+        self._save_soon()
+
+    def _refresh_percent(self, job: dict[str, Any]) -> None:
+        """Percent from the known queue once the listing is complete."""
+        if not job.get("_queue_complete"):
+            return
+        rows = job.get("file_progress") or []
+        if not rows:
+            return
+        done = sum(1 for row in rows if row.get("done"))
+        job["percent"] = round(min(99.0, 100.0 * done / len(rows)), 1)
 
     async def run(
         self, job: dict[str, Any], downloader: str, staging: Path
     ) -> tuple[int, list[str]]:
         """Run one downloader, folding its output into the job. Overridable in tests."""
         command = (
-            self._ytdlp_command(job["url"], staging)
+            self._ytdlp_command(job, staging)
             if downloader == "yt-dlp"
-            else self._gallery_dl_command(job["url"], staging)
+            else self._gallery_dl_command(job, staging)
         )
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -392,12 +723,8 @@ class DownloadManager:
         for name in done:
             path = staging / name
             if not path.is_file() or not is_media_file(path):
-                # Not media, not a plain file, or already evacuated: only
-                # mark it imported after a graceful retry at completion.
-                if not path.exists():
-                    job["_imported"].add(name)
-                continue
-            if name == job["title"]:
+                # A row can be done without a file here: the archive skipped it,
+                # or the listing already found it in the destination.
                 continue
             source = str(path)
             try:
@@ -411,6 +738,7 @@ class DownloadManager:
             job["_imported"].add(name)
             if result.get("target") and not result.get("skipped"):
                 job["files"].append(result["target"])
+        self._save_soon()
 
     async def import_staged(
         self, staging: Path, destination: str, skip: set[str] | None = None
@@ -449,6 +777,7 @@ class DownloadManager:
         total: int | None,
         *,
         conclude_others: bool = True,
+        match_stem: bool = False,
     ) -> dict[str, Any]:
         """Add or refresh one per-file row; a new name closes the previous file.
 
@@ -456,9 +785,22 @@ class DownloadManager:
         filename means every earlier file finished. Rows are public state
         (``file_progress``) and survive cancellation, which is what lets the
         client show "stopped after N files" for albums.
+
+        ``match_stem`` reconciles a listed member with the name the downloader
+        finally chose: gallery-dl fixes an extension from the response
+        (``.mp4`` served as ``video/m4v`` lands as ``.m4v``), so the listing
+        and the download disagree on the suffix while the stem stays put.
         """
         rows = job.setdefault("file_progress", [])
         row = next((entry for entry in rows if entry["name"] == name), None)
+        if row is None and match_stem:
+            stem = Path(name).stem
+            row = next(
+                (entry for entry in rows if Path(entry["name"]).stem == stem),
+                None,
+            )
+            if row is not None:
+                row["name"] = name
         if row is None:
             if conclude_others:
                 for other in rows:
@@ -471,6 +813,7 @@ class DownloadManager:
                 "total_bytes": None,
             }
             rows.append(row)
+            self._save_soon()
         if percent is not None:
             row["percent"] = round(percent, 1)
             if percent >= 99.9:
@@ -546,26 +889,27 @@ class DownloadManager:
             return
 
         if job["downloader"] == "gallery-dl" and str(staging) in line:
-            name = Path(line.strip()).name
+            skipped = line.startswith("# ")
+            name = Path(line[2:].strip() if skipped else line.strip()).name
             job["title"] = name
-            seen = job.setdefault("_gallery_seen", set())
-            if name in seen:
-                # The same path logged twice: the file was started again, i.e.
-                # it completed once between the two lines.
-                row = next(
-                    (entry for entry in job["file_progress"] if entry["name"] == name),
-                    None,
-                )
-                if row is not None:
-                    row["done"] = True
+            row = self._register_row(
+                job, name, None, None, None, conclude_others=False, match_stem=True
+            )
+            # Pipe output prints a member once it is done (success) or skipped
+            # by the archive (# path). A path that is neither is a line from a
+            # start message, so it must not be handed to the library yet.
+            if skipped or (staging / name).is_file():
+                row["done"] = True
+            if skipped:
+                job["_skipped"] = job.get("_skipped", 0) + 1
+            if job.get("_queue_complete"):
+                self._refresh_percent(job)
             else:
-                seen.add(name)
-                self._register_row(job, name, None, None, None)
-            job["percent"] = min(95.0, round(job["percent"] + 5.0, 1))
+                job["percent"] = min(95.0, round(job["percent"] + 5.0, 1))
 
     # -- commands ------------------------------------------------------
 
-    def _ytdlp_command(self, url: str, staging: Path) -> list[str]:
+    def _ytdlp_command(self, job: dict[str, Any], staging: Path) -> list[str]:
         progress = (
             'download:{"type":"progress",'
             '"title":%(title)j,'
@@ -586,6 +930,8 @@ class DownloadManager:
             "--newline",
             "--no-colors",
             "--ignore-errors",
+            "--download-archive",
+            str(_archive_path(job["url"], job["destination"], "yt-dlp")),
             "--match-filter",
             "!is_live & !is_upcoming",
             "-f",
@@ -600,23 +946,25 @@ class DownloadManager:
         cookies = get_settings().download_cookies_file
         if cookies and os.path.isfile(cookies):
             command += ["--cookies", cookies]
-        command.append(url)
+        command.append(job["url"])
         return command
 
-    def _gallery_dl_command(self, url: str, staging: Path) -> list[str]:
-        command = [
-            sys.executable,
-            "-m",
-            "gallery_dl",
-            "--dest",
-            str(staging),
-            "-o",
-            "directory=[]",
-        ]
+    def _gallery_dl_command(
+        self, job: dict[str, Any], staging: Path, *, simulate: bool = False
+    ) -> list[str]:
+        command = [sys.executable, "-m", "gallery_dl"]
+        if simulate:
+            command.append("--simulate")
+        else:
+            command += [
+                "--download-archive",
+                str(_archive_path(job["url"], job["destination"], "gallery-dl")),
+            ]
+        command += ["--dest", str(staging), "-o", "directory=[]"]
         cookies = get_settings().download_cookies_file
         if cookies and os.path.isfile(cookies):
             command += ["--cookies", cookies]
-        command.append(url)
+        command.append(job["url"])
         return command
 
     # -- job control ---------------------------------------------------
@@ -633,18 +981,19 @@ class DownloadManager:
             job["error"] = job.get("error") or "Download ended unexpectedly"
         self.jobs.pop(job["id"], None)
         self.history.append(job)
+        self._save_soon()
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         job = self.jobs.get(job_id)
         if not job:
             raise writes.WriteError("Download job not found", 404)
         job["_cancel"] = True
-        process = job.get("_process")
-        if process is not None:
-            try:
-                process.kill()
-            except (ProcessLookupError, OSError):
-                pass
+        for process in (job.get("_process"), job.get("_list_process")):
+            if process is not None:
+                try:
+                    process.kill()
+                except (ProcessLookupError, OSError):
+                    pass
         if job["status"] == "queued":
             job["status"] = "cancelled"
             job["error"] = "Cancelled"
@@ -661,6 +1010,7 @@ class DownloadManager:
         job = self._new_job(source["url"], destination)
         self.jobs[job["id"]] = job
         self._spawn(job["id"])
+        self._save_soon()
         return {"job": self._public(job)}
 
     def clear_history(self) -> dict[str, Any]:
@@ -710,15 +1060,23 @@ class DownloadManager:
 
     def _gc_staging(self) -> None:
         root = get_settings().download_staging_dir
-        if not root.is_dir():
-            return
-        cutoff = time.time() - 24 * 3600
-        for entry in root.iterdir():
-            try:
-                if entry.is_dir() and entry.stat().st_mtime < cutoff:
-                    shutil.rmtree(entry, ignore_errors=True)
-            except OSError:
-                continue
+        if root.is_dir():
+            cutoff = time.time() - 24 * 3600
+            for entry in root.iterdir():
+                try:
+                    if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                        shutil.rmtree(entry, ignore_errors=True)
+                except OSError:
+                    continue
+        archives = get_settings().download_archive_dir
+        if archives.is_dir():
+            cutoff = time.time() - _ARCHIVE_TTL_DAYS * 86400
+            for entry in archives.iterdir():
+                try:
+                    if entry.is_file() and entry.stat().st_mtime < cutoff:
+                        entry.unlink()
+                except OSError:  # pragma: no cover - the entry vanished mid-sweep
+                    continue
 
     @staticmethod
     def _public(job: dict[str, Any]) -> dict[str, Any]:

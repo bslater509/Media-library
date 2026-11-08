@@ -22,6 +22,25 @@ snapshot metadata.
 
 ### Added
 
+- **Downloads resume, and the queue survives a restart.** Every job now passes
+  a `--download-archive` scoped to its URL, destination and downloader, so
+  retrying a failed or cancelled album fetches only the members it does not
+  already list instead of starting from file 1; whole files a stopped job left
+  in staging are imported into the library before cleanup (a partial `.part`
+  stays out), and shutdown leaves staging in place for the next run. The
+  queued/running jobs and their per-file rows are written atomically to
+  `${DATA_DIR}/download_queue.json` at most every 10 seconds and restored as
+  queued at startup.
+
+- **The Downloads page shows the whole album queue.** gallery-dl jobs run a
+  `--simulate` listing next to the download, which adds a `file_progress` row
+  for every album member as it is discovered, marks names the destination
+  already holds as done, and drives the job percent from the known queue.
+  Active rows open with the full file list (done, current, pending) instead of
+  waiting for each file to finish, and finished rows show "stopped after N of
+  M files". The listing is best-effort: a slow or blocked album only delays the
+  pending rows, never the download.
+
 - **Index scan from the Tools page.** A Library index card starts an
   incremental scan ("Scan for changes") or a full rescan, and shows live
   progress: folders scanned/skipped/discovered, the folder in flight, elapsed

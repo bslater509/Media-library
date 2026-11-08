@@ -371,9 +371,11 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
       ? `${job.playlist_index}/${job.playlist_count}`
       : null
   const files = job.file_progress ?? []
-  const [filesExpanded, setFilesExpanded] = useState(false)
+  const [filesExpanded, setFilesExpanded] = useState<boolean | null>(null)
   const multiFile = files.length > 1
+  const expanded = filesExpanded ?? multiFile
   const doneCount = files.filter((row) => row.done).length
+  const current = files.findIndex((row) => !row.done)
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border px-2.5 py-2">
       <div className="flex items-center gap-2">
@@ -407,18 +409,20 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
       {multiFile ? (
         <button
           type="button"
-          onClick={() => setFilesExpanded((value) => !value)}
+          onClick={() => setFilesExpanded(!expanded)}
           className="flex items-center gap-1 self-start text-[10px] font-semibold tracking-wider text-fg-subtle uppercase hover:text-fg"
-          aria-expanded={filesExpanded}
+          aria-expanded={expanded}
         >
           <ChevronDown
             aria-hidden="true"
-            className={cn('size-3 transition-transform', filesExpanded && 'rotate-180')}
+            className={cn('size-3 transition-transform', expanded && 'rotate-180')}
           />
           {doneCount} / {files.length} files
         </button>
       ) : null}
-      {multiFile && filesExpanded ? <FileProgressList rows={files} /> : null}
+      {multiFile && expanded ? (
+        <FileProgressList rows={files} current={current} />
+      ) : null}
       <div className="flex items-center justify-between gap-2 text-[10px] text-fg-subtle">
         <span className="truncate font-mono">{job.url}</span>
         <span className="shrink-0 tabular-nums">
@@ -432,7 +436,13 @@ function JobRow({ job, onCancel }: { job: DownloadJob; onCancel: () => void }) {
   )
 }
 
-function FileProgressList({ rows }: { rows: DownloadFileProgress[] }) {
+function FileProgressList({
+  rows,
+  current,
+}: {
+  rows: DownloadFileProgress[]
+  current: number
+}) {
   return (
     <ul className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-md bg-surface-2/60 px-2 py-1.5">
       {rows.map((row, index) => (
@@ -440,16 +450,24 @@ function FileProgressList({ rows }: { rows: DownloadFileProgress[] }) {
           <span
             className={cn(
               'flex size-3.5 shrink-0 items-center justify-center',
-              row.done ? 'text-success' : 'text-accent',
+              row.done ? 'text-success' : index === current ? 'text-accent' : 'text-fg-subtle',
             )}
           >
             {row.done ? (
               <CheckCircle2 className="size-3" />
-            ) : (
+            ) : index === current ? (
               <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Clock className="size-3" />
             )}
           </span>
-          <span className="min-w-0 flex-1 truncate font-mono text-fg-muted" title={row.name}>
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate font-mono',
+              row.done ? 'text-fg-muted' : 'text-fg-subtle',
+            )}
+            title={row.name}
+          >
             {row.name}
           </span>
           <span className="shrink-0 tabular-nums text-fg-subtle">
@@ -459,7 +477,7 @@ function FileProgressList({ rows }: { rows: DownloadFileProgress[] }) {
                 ? formatBytes(row.downloaded_bytes)
                 : row.done
                   ? 'done'
-                  : 'pending…'}
+                  : 'queued'}
           </span>
         </li>
       ))}
@@ -470,21 +488,40 @@ function FileProgressList({ rows }: { rows: DownloadFileProgress[] }) {
 function FinishedRow({ job, onRetry }: { job: DownloadJob; onRetry: () => void }) {
   const meta = useMemo(() => {
     if (job.status === 'completed') {
+      const rows = job.file_progress ?? []
+      const landed = rows.filter((row) => row.done).length
       return {
-        summary: `${job.files.length} file${job.files.length === 1 ? '' : 's'} · ${job.downloader}`,
-        list: job.files.map((path) => ({ label: path.split('/').pop() || path, title: path })),
-        done: true,
+        summary: rows.length
+          ? `${landed} of ${rows.length} files · ${job.downloader}`
+          : `${job.files.length} file${job.files.length === 1 ? '' : 's'} · ${job.downloader}`,
+        list: rows.length
+          ? rows.map((row) => ({
+              label: row.name,
+              title: row.name,
+              done: row.done,
+            }))
+          : job.files.map((path) => ({
+              label: path.split('/').pop() || path,
+              title: path,
+              done: true,
+            })),
       }
     }
     const rows = job.file_progress ?? []
     const landed = rows.filter((row) => row.done).length
     if (rows.length) {
       return {
-        summary: `Stopped after ${landed} file${landed === 1 ? '' : 's'} · ${job.downloader}`,
+        summary:
+          landed === rows.length
+            ? `${landed} file${landed === 1 ? '' : 's'} · ${job.downloader}`
+            : `Stopped after ${landed} of ${rows.length} files · ${job.downloader}`,
         status: job.error || job.status,
-        // mirror of the active-row list: which files landed, which one stopped
-        list: rows.map((row) => ({ label: row.name, title: row.name })),
-        done: false,
+        // the whole planned queue: what landed, what is still missing
+        list: rows.map((row) => ({
+          label: row.name,
+          title: row.name,
+          done: row.done,
+        })),
       }
     }
     return null
@@ -526,10 +563,17 @@ function FinishedRow({ job, onRetry }: { job: DownloadJob; onRetry: () => void }
                     key={row.title}
                     className="flex items-center gap-2 text-[11px]"
                   >
-                    <CheckCircle2
-                      aria-hidden="true"
-                      className={cn('size-3 shrink-0', meta.done ? 'text-success' : 'text-fg-subtle')}
-                    />
+                    {row.done ? (
+                      <CheckCircle2
+                        aria-hidden="true"
+                        className="size-3 shrink-0 text-success"
+                      />
+                    ) : (
+                      <Clock
+                        aria-hidden="true"
+                        className="size-3 shrink-0 text-fg-subtle"
+                      />
+                    )}
                     <span
                       className="min-w-0 flex-1 truncate font-mono text-fg-muted"
                       title={row.title}

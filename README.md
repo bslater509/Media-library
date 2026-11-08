@@ -31,7 +31,9 @@ client at `/`, backed by a single SQLite index.
   queue that flags likely damaged files (zero-byte, failed probe, failed
   poster) for review.
 - **Downloads** — queue one or many URLs into a folder: yt-dlp with a
-  gallery-dl fallback, live progress, cancel, retry, paginated history.
+  gallery-dl fallback, live progress, cancel, retry, paginated history. The
+  queue survives a restart, a failed album resumes where it stopped, and every
+  album member shows up in the queue (done or pending) before it downloads.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and
   files, media mix, reclaimable space, quality histogram, health pills, and a
   daily growth history recorded automatically (chart library size over time).
@@ -122,6 +124,8 @@ as a fallback, so a pre-upgrade file keeps working.
 | `WEBP_QUALITY` / `WEBP_SKIP_LARGER` | `85` / `false` | WebP conversion |
 | `X265_PRESET` / `X265_CRF` | `medium` / `18` | HEVC encode settings |
 | `UPLOAD_STAGING_DIR` | `${DATA_DIR}/upload_staging` | Resumable upload chunks |
+| `DOWNLOAD_STAGING_DIR` | `${DATA_DIR}/download_staging` | Downloader working dirs |
+| `DOWNLOAD_STATE` / `DOWNLOAD_ARCHIVE_DIR` | `${DATA_DIR}/download_queue.json` / `${DATA_DIR}/download_archives` | Persisted queue and per-URL resume ledgers |
 | `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel URL downloads |
 | `DOWNLOAD_COOKIES_FILE` | *(empty)* | Cookies for gated sites |
 | `ZIP_CACHE_MAX_SIZE_GB` | `5.0` | LRU ceiling for extracted archives |
@@ -220,7 +224,7 @@ npm run build                          # typecheck + build
   like an empty library (the crawler guards against transient failures, but a
   genuine empty mount is indistinguishable).
 - **In-memory queues.** Sorter undo, download history and ZIP batch state do
-  not survive a restart.
+  not survive a restart (the download queue itself does).
 
 ---
 

@@ -97,6 +97,8 @@ class Settings:
     backup_staging_dir: Path
     allow_live_restore: bool
     download_staging_dir: Path
+    download_state_path: Path
+    download_archive_dir: Path
     download_concurrency: int
     download_cookies_file: str
     zip_cache_dir: Path
@@ -180,6 +182,16 @@ def load_settings() -> Settings:
             "DOWNLOAD_STAGING_DIR",
             "V2_DOWNLOAD_STAGING_DIR",
             default=data_dir / "download_staging",
+        ),
+        download_state_path=_env_path(
+            "DOWNLOAD_STATE",
+            "V2_DOWNLOAD_STATE",
+            default=data_dir / "download_queue.json",
+        ),
+        download_archive_dir=_env_path(
+            "DOWNLOAD_ARCHIVE_DIR",
+            "V2_DOWNLOAD_ARCHIVE_DIR",
+            default=data_dir / "download_archives",
         ),
         download_concurrency=_env_int("DOWNLOAD_WORKER_CONCURRENCY", default=2),
         download_cookies_file=_env_str("DOWNLOAD_COOKIES_FILE"),

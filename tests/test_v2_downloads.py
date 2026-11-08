@@ -438,16 +438,19 @@ def test_single_file_job_keeps_the_line_totals_in_its_row():
     ]
 
 
-def test_gallery_dl_lines_track_started_files():
-    """One staging-path line per album member, newest starts unfinished."""
+def test_gallery_dl_lines_complete_members(download_env, tmp_path):
+    """Pipe output prints a member once it is done, or skipped by the archive."""
     manager = DownloadManager()
     job = manager._new_job("https://example.com/album", "/tmp/library/Inbox")
     job["downloader"] = "gallery-dl"
-    staging = Path("/tmp/staging")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "one.mp4").write_bytes(b"1")
+    (staging / "two.jpg").write_bytes(b"2")
 
     manager._apply_line(job, f"{staging}/one.mp4", staging)
-    manager._apply_line(job, f"{staging}/two.jpg", staging)
-    manager._apply_line(job, f"{staging}/three.png", staging)
+    manager._apply_line(job, f"# {staging}/two.jpg", staging)  # archive skip
+    manager._apply_line(job, f"{staging}/three.png", staging)  # not written yet
 
     rows = [(row["name"], row["done"]) for row in job["file_progress"]]
     assert rows == [("one.mp4", True), ("two.jpg", True), ("three.png", False)]
@@ -455,7 +458,8 @@ def test_gallery_dl_lines_track_started_files():
     assert job["percent"] == 15.0
     assert not any(row["total_bytes"] for row in job["file_progress"])
 
-    # a repeated line for the same file closes it instead of adding a row
+    # a repeated line for the same file does not add a row
+    (staging / "three.png").write_bytes(b"3")
     manager._apply_line(job, f"{staging}/three.png", staging)
     assert [row["name"] for row in job["file_progress"]] == [
         "one.mp4",
@@ -542,7 +546,7 @@ class _StubProcess:
 
 
 def test_gallery_dl_imports_each_album_file_as_it_completes(download_env, monkeypatch):
-    """A staged file joins the library as soon as the next member starts."""
+    """A staged file joins the library the moment its line arrives."""
     inbox = download_env["inbox"]
     staging = download_env["staging"] / "album"
     staging.mkdir(parents=True)
@@ -563,33 +567,27 @@ def test_gallery_dl_imports_each_album_file_as_it_completes(download_env, monkey
     assert code == 0
     assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
         ("one.jpg", True),
-        ("two.jpg", False),
+        ("two.jpg", True),
     ]
-    # one.jpg was handed to the library mid-download, already indexed
-    assert Path(job["files"][0]) == inbox / "one.jpg"
+    # both members were handed to the library mid-download, already indexed
+    assert sorted(Path(path).name for path in job["files"]) == ["one.jpg", "two.jpg"]
     assert not (staging / "one.jpg").exists()
+    assert not (staging / "two.jpg").exists()
     with _db(download_env) as conn:
         rows = conn.execute(
             "SELECT path FROM files WHERE folder_path = ?", (str(inbox),)
         ).fetchall()
-    assert len(rows) == 1 and Path(rows[0][0]).name == "one.jpg"
+    assert sorted(Path(row[0]).name for row in rows) == ["one.jpg", "two.jpg"]
 
-    # the end-of-job handoff picks up the rest without importing one.jpg twice
+    # the end-of-job handoff has nothing left to move
     imported, skipped = asyncio.run(
         manager.import_staged(staging, str(inbox), skip=job["_imported"])
     )
-    assert imported == [str(inbox / "two.jpg")]
-    assert skipped == 0
-    job["files"] = list(dict.fromkeys(job["files"] + imported))
-    assert sorted(Path(path).name for path in job["files"]) == ["one.jpg", "two.jpg"]
-    assert (inbox / "one.jpg").exists()
-    assert (inbox / "two.jpg").exists()
+    assert imported == [] and skipped == 0
 
 
-def test_evacuation_marks_a_missing_done_row_and_skips_the_current_file(
-    download_env,
-):
-    """Never-written names do not block evacuation of later members."""
+def test_evacuation_ignores_a_listed_member_without_a_file(download_env):
+    """A prelisted or archive-skipped row never blocks the real files."""
     staging = download_env["staging"] / "album3"
     staging.mkdir(parents=True)
     (staging / "current.jpg").write_bytes(b"c")
@@ -598,27 +596,21 @@ def test_evacuation_marks_a_missing_done_row_and_skips_the_current_file(
     job["downloader"] = "gallery-dl"
 
     async def scenario():
-        manager._apply_line(job, f"{staging / 'gone.jpg'}\n".strip(), staging)
-        manager._apply_line(job, f"{staging / 'current.jpg'}\n".strip(), staging)
-        # the same path logged twice concludes the file while it is still
-        # the title: evacuation must not move an in-flight file
-        manager._apply_line(job, f"{staging / 'current.jpg'}\n".strip(), staging)
+        manager._apply_line(job, f"# {staging / 'planned.jpg'}", staging)
+        manager._apply_line(job, f"{staging / 'current.jpg'}", staging)
 
     asyncio.run(scenario())
     asyncio.run(manager._evacuate_done_files(job, staging))
 
-    assert job["_imported"] == {"gone.jpg"}
-    assert job["files"] == []
-    assert (staging / "current.jpg").exists()
+    assert job["_imported"] == {"current.jpg"}
+    assert job["files"] == [str(download_env["inbox"] / "current.jpg")]
+    assert not (staging / "current.jpg").exists()
     imported, skipped = asyncio.run(
         manager.import_staged(
             staging, str(download_env["inbox"]), skip=job["_imported"]
         )
     )
-    # the final handoff picks up where evacuation left off
-    assert len(imported) == 1 and Path(imported[0]).name == "current.jpg"
-    assert (download_env["inbox"] / "current.jpg").exists()
-    assert skipped == 0
+    assert imported == [] and skipped == 0
 
 
 def test_import_staged_skips_names_already_handed_to_the_library(download_env):

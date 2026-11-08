@@ -118,8 +118,23 @@ async def lifespan(app: FastAPI):
 
     start_runtime()
     try:
+        restored_downloads = await downloads_router.manager.restore()
+        if restored_downloads:
+            logger.info(
+                "[api] Restored %d queued download(s) from the last run",
+                restored_downloads,
+            )
+    except Exception:
+        logger.exception("[api] Could not restore the download queue")
+    try:
         yield
     finally:
+        # Stop the downloaders first: the queue file is already written and
+        # the snapshot below can take minutes.
+        try:
+            await downloads_router.manager.shutdown()
+        except Exception:
+            logger.exception("[api] Could not shut the downloads down cleanly")
         # To a thread: a snapshot is a SQLite backup + VACUUM + poster tar,
         # minutes on a big library, and must not block the loop on shutdown.
         try:

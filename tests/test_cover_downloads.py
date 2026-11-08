@@ -562,11 +562,12 @@ def test_run_builds_cookie_commands(download_env, tmp_path, monkeypatch):
     try:
         manager = DownloadManager()
         staging = download_env["staging"]
-        yt = manager._ytdlp_command("https://example.com/a", staging)
+        job = manager._new_job("https://example.com/a", "/tmp/library/Inbox")
+        yt = manager._ytdlp_command(job, staging)
         assert yt[0] == sys.executable
         assert yt[1:3] == ["-m", "yt_dlp"]
         assert yt[-3:] == ["--cookies", str(cookies), "https://example.com/a"]
-        gallery = manager._gallery_dl_command("https://example.com/a", staging)
+        gallery = manager._gallery_dl_command(job, staging)
         assert gallery[1:3] == ["-m", "gallery_dl"]
         assert gallery[-3:] == ["--cookies", str(cookies), "https://example.com/a"]
     finally:
@@ -576,12 +577,43 @@ def test_run_builds_cookie_commands(download_env, tmp_path, monkeypatch):
 def test_command_builders_skip_missing_cookies(download_env):
     manager = DownloadManager()
     staging = download_env["staging"]
-    yt = manager._ytdlp_command("https://example.com/a", staging)
+    job = manager._new_job("https://example.com/a", "/tmp/library/Inbox")
+    yt = manager._ytdlp_command(job, staging)
     assert "--cookies" not in yt
     assert yt[-1] == "https://example.com/a"
-    gallery = manager._gallery_dl_command("https://example.com/a", staging)
+    gallery = manager._gallery_dl_command(job, staging)
     assert "--cookies" not in gallery
     assert gallery[-1] == "https://example.com/a"
+
+
+def test_commands_carry_a_per_url_resume_archive(download_env):
+    manager = DownloadManager()
+    staging = download_env["staging"]
+    job = manager._new_job("https://example.com/a", "/tmp/library/Inbox")
+    other = manager._new_job("https://example.com/b", "/tmp/library/Inbox")
+    elsewhere = manager._new_job("https://example.com/a", "/tmp/library/Other")
+
+    yt = manager._ytdlp_command(job, staging)
+    gallery = manager._gallery_dl_command(job, staging)
+    simulate = manager._gallery_dl_command(job, staging, simulate=True)
+
+    yt_archive = yt[yt.index("--download-archive") + 1]
+    gallery_archive = gallery[gallery.index("--download-archive") + 1]
+    assert yt_archive.endswith("-yt-dlp.txt")
+    assert gallery_archive.endswith("-gallery-dl.db")
+    assert yt_archive != gallery_archive
+    # the same URL into another folder must not share a resume ledger
+    assert (
+        manager._ytdlp_command(elsewhere, staging)[yt.index("--download-archive") + 1]
+        != yt_archive
+    )
+    assert (
+        manager._ytdlp_command(other, staging)[yt.index("--download-archive") + 1]
+        != yt_archive
+    )
+    # the listing never touches the archive
+    assert "--download-archive" not in simulate
+    assert "--simulate" in simulate
 
 
 def test_cancel_flag_after_run_marks_the_job_cancelled(download_env):
@@ -1153,3 +1185,543 @@ def test_worker_registration_snapshot():
     finally:
         growth.register_worker(None)
     assert growth.worker_status() is None
+
+
+# ------------------------------------------------- downloads: queue and resume
+
+
+def test_prelist_fills_the_queue_and_marks_existing_members(download_env, monkeypatch):
+    """gallery-dl --simulate lists the whole album without downloading it."""
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    inbox = download_env["inbox"]
+    (inbox / "b.m4v").write_bytes(b"old")
+    lines = [
+        f"# {staging / 'a.m4v'}\n".encode(),
+        f"# {staging / 'b.m4v'}\n".encode(),
+        f"# {staging / 'notes.json'}\n".encode(),
+        f"# {staging / 'c.m4v'}\n".encode(),
+    ]
+    _stub_subprocess(monkeypatch, [lines])
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
+        ("a.m4v", False),
+        ("b.m4v", True),
+        ("c.m4v", False),
+    ]
+    assert job["_queue_complete"] is True
+    assert job["percent"] == 33.3
+
+
+def test_prelist_survives_a_missing_downloader(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+
+    async def broken(*command, **kwargs):
+        raise OSError("gallery-dl went away")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", broken)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert job["file_progress"] == []
+    assert "_queue_complete" not in job
+
+
+def test_prelist_stops_at_its_deadline(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    monkeypatch.setattr(downloads_module, "_LIST_TIMEOUT", 0.001)
+
+    class _SlowStream:
+        async def readline(self):
+            await asyncio.sleep(1)
+            return b""
+
+    class _SlowProcess:
+        stdout = _SlowStream()
+        returncode = None
+
+        def kill(self):
+            self.returncode = -9
+
+        async def wait(self):
+            return self.returncode
+
+    async def fake_exec(*command, **kwargs):
+        return _SlowProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert job["file_progress"] == []
+    assert "_queue_complete" not in job
+
+
+def test_fully_archived_album_completes_with_no_new_files(download_env, monkeypatch):
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        # every member is skipped by the returned archive
+        manager._apply_line(job, f"# {staging}/a.m4v", staging)
+        manager._apply_line(job, f"# {staging}/b.m4v", staging)
+        return 0, []
+
+    async def no_listing(job, staging):
+        return None
+
+    manager.run = run  # type: ignore[method-assign]
+    monkeypatch.setattr(manager, "_prelist", no_listing)
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "completed"
+    assert job["files"] == []
+    assert all(row["done"] for row in job["file_progress"])
+
+
+def test_a_failed_job_salvages_its_finished_members(download_env):
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        (staging / "done.m4v").write_bytes(b"x" * 10)
+        (staging / "half.m4v.part").write_bytes(b"y" * 4)
+        raise RuntimeError("cdn stalled")
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/x"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "failed"
+    assert "cdn stalled" in job["error"]
+    assert job["files"] == [str(download_env["inbox"] / "done.m4v")]
+    assert (download_env["inbox"] / "done.m4v").read_bytes() == b"x" * 10
+    assert not (download_env["inbox"] / "half.m4v.part").exists()
+
+
+def test_queue_is_persisted_and_restored_after_a_restart(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    job["status"] = "downloading"
+    job["file_progress"] = [
+        {
+            "name": "clip.mp4",
+            "done": False,
+            "percent": 12.0,
+            "downloaded_bytes": 12,
+            "total_bytes": 100,
+        }
+    ]
+    job["_imported"] = {"known.mp4"}
+    manager.jobs[job["id"]] = job
+
+    asyncio.run(manager.persist())
+
+    state = json.loads(
+        downloads_module.get_settings().download_state_path.read_text(encoding="utf-8")
+    )
+    saved = state["jobs"][0]
+    assert saved["url"] == job["url"]
+    assert saved["status"] == "downloading"
+    assert saved["imported"] == ["known.mp4"]
+    assert saved["file_progress"][0]["name"] == "clip.mp4"
+
+    restored = DownloadManager()
+    _fake_run(restored)
+
+    async def restart():
+        count = await restored.restore()
+        await restored.wait_idle()
+        return count
+
+    assert asyncio.run(restart()) == 1
+    assert [job_entry["id"] for job_entry in restored.history] == [job["id"]]
+    assert restored.history[0]["status"] == "completed", restored.history[0]["error"]
+
+
+def test_restore_without_state_is_a_noop(download_env):
+    manager = DownloadManager()
+    assert asyncio.run(manager.restore()) == 0
+    assert manager.jobs == {}
+    assert asyncio.run(manager.restore()) == 0  # a second pass does nothing
+
+
+def test_restore_ignores_a_corrupt_state_file(download_env):
+    path = downloads_module.get_settings().download_state_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    manager = DownloadManager()
+    assert asyncio.run(manager.restore()) == 0
+
+
+def test_restore_drops_rows_without_a_url_or_destination(download_env):
+    path = downloads_module.get_settings().download_state_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    "not a job",
+                    {"url": "https://example.com/a"},
+                    {"destination": "/tmp/x"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    manager = DownloadManager()
+    assert asyncio.run(manager.restore()) == 0
+
+
+def test_shutdown_keeps_the_queue_and_the_staging_of_a_running_job(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    job["status"] = "downloading"
+    manager.jobs[job["id"]] = job
+    staging = download_env["staging"] / job["id"]
+    staging.mkdir()
+    (staging / "done.m4v").write_bytes(b"x")
+
+    asyncio.run(manager.shutdown())
+
+    assert manager._closing is True
+    state = json.loads(
+        downloads_module.get_settings().download_state_path.read_text(encoding="utf-8")
+    )
+    assert [entry["url"] for entry in state["jobs"]] == ["https://example.com/x"]
+    assert (staging / "done.m4v").exists()
+
+
+def test_a_failed_queue_write_does_not_escape(download_env, monkeypatch):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    manager.jobs[job["id"]] = job
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(downloads_module, "_write_json", boom)
+
+    async def scenario():
+        manager._save_soon()
+        assert manager._save_task is not None
+        await manager._save_task
+
+    asyncio.run(scenario())
+    assert manager._closing is False
+
+
+def test_directory_names_tolerates_a_missing_folder(tmp_path):
+    assert downloads_module._directory_names(str(tmp_path / "nope")) == set()
+    folder = tmp_path / "dest"
+    folder.mkdir()
+    (folder / "kept.m4v").write_bytes(b"x")
+    assert downloads_module._directory_names(str(folder)) == {"kept.m4v"}
+
+
+def test_refresh_percent_ignores_an_incomplete_or_empty_queue():
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", "/tmp/x")
+    job["percent"] = 7.0
+    manager._refresh_percent(job)
+    assert job["percent"] == 7.0
+    job["_queue_complete"] = True
+    manager._refresh_percent(job)
+    assert job["percent"] == 7.0
+
+
+def test_save_soon_without_a_running_loop_only_marks_it_dirty(download_env):
+    manager = DownloadManager()
+    manager._save_soon()
+    assert manager._save_task is None
+    assert manager._dirty is True
+    manager._closing = True
+    manager._dirty = False
+    manager._save_soon()
+    assert manager._dirty is False
+
+
+def test_persist_cancels_a_pending_save_and_reports_write_errors(
+    download_env, monkeypatch
+):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    manager.jobs[job["id"]] = job
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    async def scenario():
+        manager._save_soon()
+        assert manager._save_task is not None
+        monkeypatch.setattr(downloads_module, "_write_json", boom)
+        await manager.persist()
+
+    asyncio.run(scenario())
+
+
+def test_prelist_exits_at_a_zero_deadline(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    _stub_subprocess(monkeypatch, [[f"# {staging / 'a.m4v'}\n".encode()]])
+    monkeypatch.setattr(downloads_module, "_LIST_TIMEOUT", 0.0)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert job["file_progress"] == []
+
+
+def test_prelist_ignores_noise_duplicates_and_caps_the_queue(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    lines = [
+        b"an unrelated log line\n",
+        f"# {staging / 'a.m4v'}\n".encode(),
+        f"# {staging / 'a.m4v'}\n".encode(),
+        f"# {staging / 'b.m4v'}\n".encode(),
+    ]
+    _stub_subprocess(monkeypatch, [lines])
+    monkeypatch.setattr(downloads_module, "_MAX_QUEUE_ROWS", 1)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert [row["name"] for row in job["file_progress"]] == ["a.m4v"]
+
+
+def test_prelist_tolerates_a_process_that_cannot_be_reaped(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+
+    class _Unreapable:
+        returncode = 0
+
+        class _Stdout:
+            async def readline(self):
+                return b""
+
+        stdout = _Stdout()
+
+        async def wait(self):
+            raise OSError("gone")
+
+    async def fake_exec(*command, **kwargs):
+        return _Unreapable()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert job["file_progress"] == []
+
+
+def test_a_salvage_failure_is_swallowed(download_env, monkeypatch):
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        (staging / "done.m4v").write_bytes(b"x")
+        raise RuntimeError("boom")
+
+    async def broken_import(*args, **kwargs):
+        raise OSError("mount went away")
+
+    manager.run = run  # type: ignore[method-assign]
+    monkeypatch.setattr(manager, "import_staged", broken_import)
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/x"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "failed"
+    assert job["files"] == []
+
+
+def test_gallery_dl_lines_use_the_listed_queue_for_percent(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", "/tmp/library/Inbox")
+    job["downloader"] = "gallery-dl"
+    job["_queue_complete"] = True
+    for name in ("a.m4v", "b.m4v", "c.m4v", "d.m4v"):
+        manager._register_row(job, name, None, None, None, conclude_others=False)
+    staging = download_env["staging"]
+    (staging / "a.m4v").write_bytes(b"x")
+
+    manager._apply_line(job, f"{staging}/a.m4v", staging)
+
+    assert job["percent"] == 25.0
+
+
+def test_shutdown_kills_processes_and_joins_running_tasks(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/x", str(download_env["inbox"]))
+    manager.jobs[job["id"]] = job
+
+    class _Process:
+        killed = False
+
+        def kill(self):
+            self.killed = True
+
+    class _DeadProcess:
+        def kill(self):
+            raise ProcessLookupError("already gone")
+
+    process = _Process()
+    job["_process"] = process
+    job["_list_process"] = _DeadProcess()
+
+    async def scenario():
+        task = asyncio.create_task(asyncio.sleep(60))
+        manager._tasks.add(task)
+        await manager.shutdown()
+        assert task.cancelled()
+
+    asyncio.run(scenario())
+
+    assert process.killed is True
+
+
+def test_gc_removes_stale_download_archives(download_env):
+    archive_dir = downloads_module.get_settings().download_archive_dir
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stale = archive_dir / "stale.txt"
+    stale.write_text("x", encoding="utf-8")
+    os.utime(stale, (0, 0))
+    fresh = archive_dir / "fresh.txt"
+    fresh.write_text("x", encoding="utf-8")
+
+    DownloadManager()._gc_staging()
+
+    assert not stale.exists()
+    assert fresh.exists()
+
+
+def test_lifespan_restores_downloads_and_shuts_them_down(download_env, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from media_library.app import create_app
+    from media_library.routers import downloads as downloads_router
+
+    manager = downloads_router.manager
+    calls: list[str] = []
+
+    async def fake_restore():
+        calls.append("restore")
+        return 1
+
+    async def fake_shutdown():
+        calls.append("shutdown")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(manager, "restore", fake_restore)
+    monkeypatch.setattr(manager, "shutdown", fake_shutdown)
+
+    with TestClient(create_app()) as client:
+        assert client.get("/api/downloads/history").status_code == 200
+
+    assert calls == ["restore", "shutdown"]
+
+
+def test_lifespan_tolerates_a_restore_failure(download_env, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from media_library.app import create_app
+    from media_library.routers import downloads as downloads_router
+
+    manager = downloads_router.manager
+
+    async def broken_restore():
+        raise RuntimeError("state unreadable")
+
+    async def broken_shutdown():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(manager, "restore", broken_restore)
+    monkeypatch.setattr(manager, "shutdown", broken_shutdown)
+
+    with TestClient(create_app()) as client:
+        assert client.get("/api/downloads/history").status_code == 200
+
+
+def test_a_download_renames_a_listed_row_when_the_extension_changes(download_env):
+    """gallery-dl fixes the extension from the response; the row follows."""
+    staging = download_env["staging"]
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", "/tmp/library/Inbox")
+    job["downloader"] = "gallery-dl"
+    manager._register_row(job, "clip.mp4", None, None, None, conclude_others=False)
+
+    (staging / "clip.m4v").write_bytes(b"x")
+    manager._apply_line(job, f"{staging}/clip.m4v", staging)
+
+    assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
+        ("clip.m4v", True)
+    ]
+
+
+def test_prelist_keeps_the_name_the_download_already_reported(
+    download_env, monkeypatch
+):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    _stub_subprocess(monkeypatch, [[f"# {staging / 'clip.mp4'}\n".encode()]])
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+    manager._register_row(job, "clip.m4v", None, None, None)
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert [row["name"] for row in job["file_progress"]] == ["clip.m4v"]
+
+
+def test_prelist_marks_a_member_done_when_only_the_extension_differs(
+    download_env, monkeypatch
+):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    inbox = download_env["inbox"]
+    (inbox / "clip.m4v").write_bytes(b"old")
+    _stub_subprocess(monkeypatch, [[f"# {staging / 'clip.mp4'}\n".encode()]])
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
+        ("clip.mp4", True)
+    ]

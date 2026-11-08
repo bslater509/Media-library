@@ -352,20 +352,19 @@ def test_cookie_file_is_only_passed_when_it_exists(library_env, monkeypatch, tmp
         manager = DownloadManager()
         staging = tmp_path / "staging"
         staging.mkdir()
+        job = manager._new_job("https://x.test/v", str(tmp_path))
         missing = tmp_path / "no-such-cookies.txt"
         monkeypatch.setenv("DOWNLOAD_COOKIES_FILE", str(missing))
         v2_config.reload_settings()
-        assert "--cookies" not in manager._ytdlp_command("https://x.test/v", staging)
-        assert "--cookies" not in manager._gallery_dl_command(
-            "https://x.test/v", staging
-        )
+        assert "--cookies" not in manager._ytdlp_command(job, staging)
+        assert "--cookies" not in manager._gallery_dl_command(job, staging)
 
         present = tmp_path / "cookies.txt"
         present.write_text("# Netscape HTTP Cookie File\n")
         monkeypatch.setenv("DOWNLOAD_COOKIES_FILE", str(present))
         v2_config.reload_settings()
-        ytdlp = manager._ytdlp_command("https://x.test/v", staging)
-        gallery = manager._gallery_dl_command("https://x.test/v", staging)
+        ytdlp = manager._ytdlp_command(job, staging)
+        gallery = manager._gallery_dl_command(job, staging)
         assert ytdlp[ytdlp.index("--cookies") + 1] == str(present)
         assert gallery[gallery.index("--cookies") + 1] == str(present)
     finally:

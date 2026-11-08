@@ -205,6 +205,7 @@ media-library/
 ├── tests/                     # pytest suite (30 modules)
 └── data/                      # runtime, git-ignored: library.db, thumbnails/,
                                # transcodes/, upload_staging/, download_staging/,
+                               # download_archives/, download_queue.json,
                                # cache/zips/, backup_staging/
 ```
 
@@ -233,6 +234,8 @@ environment by their own modules, not through `config.py`'s `Settings`.
 | `UPLOAD_STAGING_DIR` | `$DATA_DIR/upload_staging` | Resumable upload chunks |
 | `UPLOAD_STAGING_TTL_HOURS` | `24` | Abandoned upload retention |
 | `DOWNLOAD_STAGING_DIR` | `$DATA_DIR/download_staging` | yt-dlp / gallery-dl working dirs |
+| `DOWNLOAD_STATE` | `$DATA_DIR/download_queue.json` | Persisted download queue (restored at startup) |
+| `DOWNLOAD_ARCHIVE_DIR` | `$DATA_DIR/download_archives` | Per-(URL, folder) resume ledgers; unused ones pruned after 30 days |
 | `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel downloads |
 | `DOWNLOAD_COOKIES_FILE` | *(empty)* | Netscape cookies for gated sites |
 | `SORTER_STATE` | `$DATA_DIR/sorter_state.json` | Recent sorter destinations |
@@ -349,12 +352,13 @@ daemon thread that pauses between items.
 | `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
-| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. Each job tracks a `file_progress` row per downloaded file (yt-dlp `filename` lines; gallery-dl staging-path lines), weights the job percent across them, and for gallery-dl imports each concluded file into the library mid-download (`import_staged` at the end skips the already-imported names; yt-dlp stays batch-imported until its merges finish). |
+| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 
 Progress is exposed by `/api/system/status` (index, workers, runtime ownership)
-and the per-feature status routes. x265, downloads and ZIP batches are also
-in-memory: a restart stops running jobs and clears their history.
+and the per-feature status routes. x265 and ZIP batches are also in-memory: a
+restart stops their jobs and clears their history. Downloads persist their
+queue (finished history is still memory-only) and resume after a restart.
 
 ---
 
@@ -424,9 +428,16 @@ reset / resolve / hash operations.
 Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged
 to MP4), with gallery-dl as the fallback for sites yt-dlp lacks — including its
 `[Piracy]` blocklist refusals — and for `gofile.io`, which skips yt-dlp
-entirely. Media extensions land in the target folder with `auto_rename`
-collisions; sidecar files are dropped. Retry clones a failed/cancelled job,
-clear-history drops finished rows only.
+entirely. Media extensions land in the target folder, skipping names the folder
+already contains; sidecar files are dropped. Every job passes a
+`--download-archive` scoped to its URL, destination and downloader, so retrying
+a failed album fetches only the members the archive does not list, and whole
+files a stopped job left in staging are imported before cleanup (a `.part` is
+not media and stays out). gallery-dl albums get a `file_progress` row per
+member from a `--simulate` listing that runs alongside the download; names the
+destination already holds are marked done, so the client shows the full queue
+and where a resume starts. Retry clones a failed/cancelled job, clear-history
+drops finished rows only.
 
 ### Snapshots and recovery
 `POST /api/backups/snapshot` writes a `sqlite3.backup` copy (VACUUM-compacted),
