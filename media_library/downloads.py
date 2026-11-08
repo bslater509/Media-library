@@ -20,6 +20,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -65,6 +66,11 @@ _MAX_QUEUE_ROWS = 2000
 # How long the member listing may take before it is abandoned. It only feeds
 # the GUI; the download itself is unaffected.
 _LIST_TIMEOUT = 1800.0
+# Downloaded containers: kept in <destination>/archives instead of imported.
+_ARCHIVE_EXTS = {".rar", ".7z", ".zip"}
+_EXTRACTABLE_EXTS = {".rar", ".7z"}
+_PART_VOLUME_RE = re.compile(r"\.part0*(\d+)\.rar$", re.IGNORECASE)
+_EXTRACT_TIMEOUT = 6 * 3600
 _AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".flac"}
 _SKIPPED_EXTS = {
     ".json",
@@ -140,6 +146,14 @@ def is_media_file(path: Path) -> bool:
     )
 
 
+def is_archive_file(path: Path) -> bool:
+    return path.suffix.lower() in _ARCHIVE_EXTS
+
+
+def is_downloadable_file(path: Path) -> bool:
+    return is_media_file(path) or is_archive_file(path)
+
+
 def _coerce(value: Any, fallback: float) -> float:
     try:
         number = float(value)
@@ -170,7 +184,7 @@ def _downloadable_extensions() -> set[str]:
     return {
         ext.lstrip(".").lower()
         for ext in settings.video_exts | settings.image_exts | _AUDIO_EXTS
-    }
+    } | {ext.lstrip(".") for ext in _ARCHIVE_EXTS}
 
 
 def _extension_filter() -> str:
@@ -220,6 +234,143 @@ def _archive_path(url: str, destination: str, downloader: str) -> Path:
     digest = hashlib.sha256(f"{url}\n{destination}".encode()).hexdigest()[:24]
     suffix = ".db" if downloader == "gallery-dl" else ".txt"
     return get_settings().download_archive_dir / f"{digest}-{downloader}{suffix}"
+
+
+def _extracted_path(destination: str) -> Path:
+    digest = hashlib.sha256(destination.encode()).hexdigest()[:24]
+    return get_settings().download_archive_dir / f"extracted-{digest}.json"
+
+
+def _load_extracted(path: Path) -> set[str]:
+    try:
+        data = _read_json(path)
+    except (OSError, ValueError):
+        return set()
+    return {entry for entry in data.get("done") or () if isinstance(entry, str)}
+
+
+def _set_first_part(archives: Path, name: str) -> Path | None:
+    """The volume to hand 7z for a set, or None while it has not arrived."""
+    match = _PART_VOLUME_RE.search(name)
+    if match:
+        base = name[: match.start()]
+        for digits in ("01", "1", "001"):
+            candidate = archives / f"{base}.part{digits}.rar"
+            if candidate.exists():
+                return candidate
+        return None
+    if name.lower().endswith((".rar", ".7z")):
+        return archives / name
+    return None
+
+
+def _is_first_volume(name: str) -> bool:
+    match = _PART_VOLUME_RE.search(name)
+    if match:
+        return int(match.group(1)) == 1
+    return name.lower().endswith((".rar", ".7z"))
+
+
+def _store_archive(source: str, destination: str) -> str | None:
+    """Move a downloaded container to ``<destination>/archives``.
+
+    A name already there is left alone and the staged copy is dropped, so a
+    resumed album does not duplicate or overwrite a finished volume.
+    """
+    archives = Path(destination) / "archives"
+    archives.mkdir(parents=True, exist_ok=True)
+    name = Path(source).name
+    target = archives / name
+    if target.exists():
+        Path(source).unlink(missing_ok=True)
+        return None
+    temp = archives / f".mllibtmp-{uuid.uuid4().hex[:8]}-{name}"
+    try:
+        shutil.move(source, temp)
+        os.replace(temp, target)
+    except Exception:
+        temp.unlink(missing_ok=True)
+        raise
+    return str(target)
+
+
+def _extract_volume(first: Path, destination: str) -> bool:
+    """Decompress one complete RAR/7z set into the destination's archives.
+
+    Extracts into a hidden work directory and only moves the results out on
+    success, so a set with a missing volume cannot leave half a film in the
+    library. The first volume's name marks the set as done; 7z locates the
+    sibling volumes itself.
+    """
+    tool = shutil.which("7z") or shutil.which("7zz") or shutil.which("7za")
+    if tool is None:
+        logger.warning("[downloads] 7z is not installed: %s stays archived", first)
+        return False
+    archives = Path(destination) / "archives"
+    marker = _extracted_path(destination)
+    done = _load_extracted(marker)
+    if first.name in done:
+        return False
+    temp = archives / ".media-library-extracting"
+    shutil.rmtree(temp, ignore_errors=True)
+    temp.mkdir(parents=True, exist_ok=True)
+    try:
+        try:
+            result = subprocess.run(
+                [tool, "x", "-y", "-aoa", f"-o{temp}", str(first)],
+                capture_output=True,
+                text=True,
+                timeout=_EXTRACT_TIMEOUT,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0:
+            logger.info(
+                "[downloads] %s is not complete yet: %s",
+                first.name,
+                (result.stderr or result.stdout).strip()[-200:],
+            )
+            return False
+        for entry in sorted(temp.iterdir()):
+            target = archives / entry.name
+            if entry.is_dir() and target.is_dir():
+                shutil.copytree(entry, target, dirs_exist_ok=True)
+            else:
+                if target.is_dir():
+                    shutil.rmtree(target, ignore_errors=True)
+                elif target.exists():
+                    target.unlink()
+                shutil.move(str(entry), str(target))
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+    done.add(first.name)
+    _write_json(marker, {"done": sorted(done)})
+    return True
+
+
+def _keep_archive(source: Path, destination: str) -> str | None:
+    """Archive one completed download and try to extract its set."""
+    target = _store_archive(str(source), destination)
+    archives = Path(destination) / "archives"
+    first = _set_first_part(archives, source.name)
+    if first is not None:
+        _extract_volume(first, destination)
+    return target
+
+
+def _extract_pending(destination: str) -> int:
+    """Try every set already sitting in the archives folder (a resumed job)."""
+    archives = Path(destination) / "archives"
+    if not archives.is_dir():
+        return 0
+    extracted = 0
+    for name in sorted(_directory_names(str(archives))):
+        if not _is_first_volume(name):
+            continue
+        if _extract_volume(archives / name, destination):
+            extracted += 1
+    return extracted
 
 
 class _Interrupted(RuntimeError):
@@ -567,6 +718,7 @@ class DownloadManager:
             staging, job["destination"], skip=job["_imported"]
         )
         job["files"] = list(dict.fromkeys(job["files"] + imported))
+        await asyncio.to_thread(_extract_pending, job["destination"])
         if code != 0:
             detail = _tail(lines) or "no output"
             raise RuntimeError(
@@ -651,7 +803,7 @@ class DownloadManager:
                 if not line.startswith("# "):
                     continue
                 name = Path(line[2:].strip()).name
-                if not name or not is_media_file(Path(name)):
+                if not name or not is_downloadable_file(Path(name)):
                     continue
                 if any(row["name"] == name for row in job["file_progress"]):
                     continue
@@ -676,6 +828,9 @@ class DownloadManager:
 
         if added:
             present = await asyncio.to_thread(_directory_names, job["destination"])
+            present |= await asyncio.to_thread(
+                _directory_names, str(Path(job["destination"]) / "archives")
+            )
             if present:
                 stems = {Path(entry).stem for entry in present}
                 for row in job["file_progress"]:
@@ -766,14 +921,15 @@ class DownloadManager:
         return code, lines
 
     async def _evacuate_done_files(self, job: dict[str, Any], staging: Path) -> None:
-        """Import every concluded gallery-dl file still sitting in staging.
+        """Import or archive every concluded gallery-dl file in staging.
 
-        Album members arrive one at a time; a row is concluded only once the
-        next member starts, so its file is closed and safe to move out. The
-        file travels to the destination immediately (
-        ``writes.import_file`` moves and indexes it), leaving it visible in
-        the library mid-download. A failure is swallowed and the file stays
-        in staging; the end-of-job import retries it.
+        Album members arrive one at a time; the downloader prints a member's
+        path when it is finished, so the file is closed and safe to move out.
+        Media travels to the destination immediately (``writes.import_file``
+        moves and indexes it), containers go to ``<destination>/archives`` and
+        are extracted when their set is complete, which leaves everything
+        visible in the library mid-download. A failure is swallowed and the
+        file stays in staging; the end-of-job import retries it.
         """
         done = [
             row["name"]
@@ -782,9 +938,22 @@ class DownloadManager:
         ]
         for name in done:
             path = staging / name
-            if not path.is_file() or not is_media_file(path):
+            if not path.is_file():
                 # A row can be done without a file here: the archive skipped it,
                 # or the listing already found it in the destination.
+                continue
+            if is_archive_file(path):
+                try:
+                    target = await asyncio.to_thread(
+                        _keep_archive, path, job["destination"]
+                    )
+                except Exception:
+                    return
+                job["_imported"].add(name)
+                if target:
+                    job["files"].append(target)
+                continue
+            if not is_media_file(path):
                 continue
             source = str(path)
             try:
@@ -803,19 +972,27 @@ class DownloadManager:
     async def import_staged(
         self, staging: Path, destination: str, skip: set[str] | None = None
     ) -> tuple[list[str], int]:
-        """Import every media file from the job's staging dir into the library.
+        """Import media and archive containers from the job's staging dir.
 
-        ``skip`` lists source basenames already handed to the library by the
-        incremental evacuation during the download itself. A name that
-        already exists in the destination is skipped in place, so result[1]
-        counts files the destination already contained.
+        ``skip`` lists source basenames already handed over by the incremental
+        evacuation during the download itself. A media name that already exists
+        in the destination is skipped in place, so result[1] counts files the
+        destination already contained. Containers move to ``archives`` and are
+        extracted there.
         """
         imported: list[str] = []
         skipped = 0
         for path in sorted(staging.rglob("*")):
-            if not path.is_file() or not is_media_file(path):
+            if not path.is_file():
                 continue
             if skip and path.name in skip:
+                continue
+            if is_archive_file(path):
+                target = await asyncio.to_thread(_keep_archive, path, destination)
+                if target:
+                    imported.append(target)
+                continue
+            if not is_media_file(path):
                 continue
             result = await asyncio.to_thread(
                 writes.import_file, str(path), destination, "skip"

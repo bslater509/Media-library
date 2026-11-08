@@ -14,6 +14,7 @@ import os
 import pathlib
 import shutil
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -614,11 +615,11 @@ def test_commands_carry_a_per_url_resume_archive(download_env):
     # the listing never touches the archive
     assert "--download-archive" not in simulate
     assert "--simulate" in simulate
-    # both runs ask for media only: an importer cannot take a RAR volume
+    # both runs ask for media and archives; a RAR is kept now, not discarded
     for command in (gallery, simulate):
         expression = command[command.index("--filter") + 1]
         assert "'mp4'" in expression and "'jpg'" in expression
-        assert "'rar'" not in expression
+        assert "'rar'" in expression and "'7z'" in expression
 
 
 def test_cancel_flag_after_run_marks_the_job_cancelled(download_env):
@@ -1838,3 +1839,315 @@ def test_an_interrupted_gallery_dl_fallback_keeps_the_job(download_env):
 def test_resume_later_without_a_running_loop_is_a_noop(download_env):
     manager = DownloadManager()
     manager._resume_later("missing")  # outside asyncio.run: no loop to schedule on
+
+
+# ------------------------------------------------- downloads: archive volumes
+
+
+class _FakeSevenZip:
+    """Stand-in for 7z: writes one media file into the -o directory."""
+
+    def __init__(self, code: int = 0):
+        self.code = code
+        self.calls: list[list[str]] = []
+
+    def __call__(self, command, **kwargs):
+        self.calls.append(list(command))
+        out = next(arg[2:] for arg in command if arg.startswith("-o"))
+        pathlib.Path(out).joinpath("released.mp4").write_bytes(b"v")
+        return subprocess.CompletedProcess(command, self.code, "", "")
+
+
+def test_archives_are_downloadable_but_not_media():
+    assert downloads_module.is_downloadable_file(Path("clip.mp4"))
+    assert downloads_module.is_downloadable_file(Path("VIDS.part01.rar"))
+    assert downloads_module.is_downloadable_file(Path("set.7z"))
+    assert downloads_module.is_downloadable_file(Path("set.zip"))
+    assert not downloads_module.is_downloadable_file(Path("notes.json"))
+    assert not downloads_module.is_media_file(Path("VIDS.part01.rar"))
+
+
+def test_store_archive_moves_a_volume_into_the_archives_folder(download_env):
+    inbox = download_env["inbox"]
+    staging = download_env["staging"] / "job"
+    staging.mkdir()
+    volume = staging / "VIDS.part02.rar"
+    volume.write_bytes(b"r" * 6)
+
+    target = downloads_module._store_archive(str(volume), str(inbox))
+
+    assert target == str(inbox / "archives" / "VIDS.part02.rar")
+    assert pathlib.Path(target).read_bytes() == b"r" * 6
+    assert not volume.exists()
+
+    # a second copy of a name already kept is dropped, not overwritten
+    again = staging / "VIDS.part02.rar"
+    again.write_bytes(b"x")
+    assert downloads_module._store_archive(str(again), str(inbox)) is None
+    assert not again.exists()
+    assert pathlib.Path(target).read_bytes() == b"r" * 6
+
+
+def test_a_failed_archive_copy_leaves_no_temp(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    staging = download_env["staging"] / "job2"
+    staging.mkdir()
+    volume = staging / "set.rar"
+    volume.write_bytes(b"r")
+
+    def broken(*args, **kwargs):
+        raise OSError("mount dropped")
+
+    monkeypatch.setattr(downloads_module.shutil, "move", broken)
+    with pytest.raises(OSError):
+        downloads_module._store_archive(str(volume), str(inbox))
+    assert list((inbox / "archives").glob(".mllibtmp-*")) == []
+
+
+def test_the_first_volume_is_found_whatever_the_numbering(tmp_path):
+    archives = tmp_path / "archives"
+    archives.mkdir()
+    (archives / "VIDS.part01.rar").write_bytes(b"r")
+    (archives / "OLD.part1.rar").write_bytes(b"r")
+    (archives / "SET.7z").write_bytes(b"7")
+
+    assert downloads_module._set_first_part(archives, "VIDS.part21.rar") == (
+        archives / "VIDS.part01.rar"
+    )
+    assert downloads_module._set_first_part(archives, "OLD.part07.rar") == (
+        archives / "OLD.part1.rar"
+    )
+    assert downloads_module._set_first_part(archives, "SET.7z") == archives / "SET.7z"
+    assert downloads_module._set_first_part(archives, "notes.txt") is None
+    assert not (archives / "LATE.part01.rar").exists()
+    assert downloads_module._set_first_part(archives, "LATE.part02.rar") is None
+
+
+def test_first_volume_detection():
+    assert downloads_module._is_first_volume("VIDS.part01.rar")
+    assert downloads_module._is_first_volume("VIDS.part1.rar")
+    assert downloads_module._is_first_volume("SET.7z")
+    assert not downloads_module._is_first_volume("VIDS.part21.rar")
+    assert not downloads_module._is_first_volume("notes.txt")
+
+
+def test_extract_volume_moves_results_out_and_marks_the_set(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    first = archives / "VIDS.part01.rar"
+    first.write_bytes(b"r")
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+
+    assert downloads_module._extract_volume(first, str(inbox)) is True
+    assert (archives / "released.mp4").read_bytes() == b"v"
+    assert not (archives / ".media-library-extracting").exists()
+    assert fake.calls[0][1:4] == ["x", "-y", "-aoa"]
+
+    # the marker keeps a re-run from unpacking the same set again
+    assert downloads_module._extract_volume(first, str(inbox)) is False
+    assert len(fake.calls) == 1
+
+
+def test_extract_volume_leaves_nothing_when_the_set_is_incomplete(
+    download_env, monkeypatch
+):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    first = archives / "VIDS.part01.rar"
+    first.write_bytes(b"r")
+    fake = _FakeSevenZip(code=2)
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+
+    assert downloads_module._extract_volume(first, str(inbox)) is False
+    assert list(archives.iterdir()) == [first]
+    assert not (archives / ".media-library-extracting").exists()
+
+
+def test_extract_volume_without_seven_zip_keeps_the_archive(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    first = archives / "SET.7z"
+    first.write_bytes(b"r")
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: None)
+
+    assert downloads_module._extract_volume(first, str(inbox)) is False
+    assert first.exists()
+
+
+def test_extract_volume_tolerates_a_broken_tool(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    first = archives / "SET.7z"
+    first.write_bytes(b"r")
+
+    def broken(*args, **kwargs):
+        raise OSError("spawn failed")
+
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", broken)
+    assert downloads_module._extract_volume(first, str(inbox)) is False
+
+
+def test_store_and_extract_on_import(download_env, monkeypatch):
+    """A staged RAR lands in archives/ and its set is unpacked."""
+    inbox = download_env["inbox"]
+    staging = download_env["staging"] / "archivejob"
+    staging.mkdir()
+    (staging / "VIDS.part01.rar").write_bytes(b"r")
+    (staging / "clip.mp4").write_bytes(b"m")
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+    manager = DownloadManager()
+
+    imported, skipped = asyncio.run(manager.import_staged(staging, str(inbox)))
+
+    assert sorted(Path(path).name for path in imported) == [
+        "VIDS.part01.rar",
+        "clip.mp4",
+    ]
+    assert skipped == 0
+    assert (inbox / "archives" / "VIDS.part01.rar").exists()
+    assert (inbox / "archives" / "released.mp4").exists()
+    assert (inbox / "clip.mp4").exists()
+
+
+def test_evacuation_archives_a_finished_volume_mid_download(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    staging = download_env["staging"] / "archivemid"
+    staging.mkdir()
+    volume = staging / "VIDS.part01.rar"
+    volume.write_bytes(b"r")
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["downloader"] = "gallery-dl"
+
+    async def scenario():
+        manager._apply_line(job, f"{staging / 'VIDS.part01.rar'}", staging)
+
+    asyncio.run(scenario())
+    asyncio.run(manager._evacuate_done_files(job, staging))
+
+    assert job["_imported"] == {"VIDS.part01.rar"}
+    assert job["files"] == [str(inbox / "archives" / "VIDS.part01.rar")]
+    assert not volume.exists()
+
+
+def test_extract_pending_covers_a_resumed_job(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    (archives / "VIDS.part01.rar").write_bytes(b"r")
+    (archives / "VIDS.part02.rar").write_bytes(b"r")
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+
+    assert downloads_module._extract_pending(str(inbox)) == 1
+    assert len(fake.calls) == 1
+    assert (archives / "released.mp4").exists()
+    # nothing left to do on a second pass
+    assert downloads_module._extract_pending(str(inbox)) == 0
+
+
+def test_prelist_lists_archives_and_marks_stored_volumes(download_env, monkeypatch):
+    staging = download_env["staging"] / "album"
+    staging.mkdir()
+    inbox = download_env["inbox"]
+    (inbox / "archives").mkdir()
+    (inbox / "archives" / "VIDS.part01.rar").write_bytes(b"r")
+    lines = [
+        b"# VIDS.part01.rar\n",
+        b"# VIDS.part02.rar\n",
+        b"# clip.mp4\n",
+    ]
+    _stub_subprocess(monkeypatch, [lines])
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["downloader"] = "gallery-dl"
+
+    asyncio.run(manager._prelist(job, staging))
+
+    assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
+        ("VIDS.part01.rar", True),
+        ("VIDS.part02.rar", False),
+        ("clip.mp4", False),
+    ]
+
+
+class _TreeSevenZip:
+    """7z stand-in that lays out a directory, a clashing file and a stale file."""
+
+    def __call__(self, command, **kwargs):
+        out = pathlib.Path(next(arg[2:] for arg in command if arg.startswith("-o")))
+        (out / "pack").mkdir()
+        (out / "pack" / "inside.mp4").write_bytes(b"n")
+        (out / "clash.mp4").write_bytes(b"f")
+        (out / "over.mp4").write_bytes(b"new")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+
+def test_extract_volume_merges_and_replaces_what_is_already_there(
+    download_env, monkeypatch
+):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    (archives / "pack").mkdir(parents=True)
+    (archives / "pack" / "old.mp4").write_bytes(b"o")
+    (archives / "clash.mp4").mkdir()
+    (archives / "over.mp4").write_bytes(b"old")
+    first = archives / "SET.7z"
+    first.write_bytes(b"r")
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", _TreeSevenZip())
+
+    assert downloads_module._extract_volume(first, str(inbox)) is True
+    assert (archives / "pack" / "old.mp4").exists()
+    assert (archives / "pack" / "inside.mp4").exists()
+    assert archives / "clash.mp4" / "inside.mp4"
+    assert (archives / "over.mp4").read_bytes() == b"new"
+
+
+def test_evacuation_keeps_an_archive_when_storing_it_fails(download_env, monkeypatch):
+    staging = download_env["staging"] / "archivestorefail"
+    staging.mkdir()
+    volume = staging / "VIDS.part01.rar"
+    volume.write_bytes(b"r")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+    manager._apply_line(job, f"{staging / 'VIDS.part01.rar'}", staging)
+
+    def boom(*args, **kwargs):
+        raise OSError("mount dropped")
+
+    monkeypatch.setattr(downloads_module, "_keep_archive", boom)
+    asyncio.run(manager._evacuate_done_files(job, staging))
+
+    assert job["_imported"] == set()
+    assert volume.exists()
+
+
+def test_evacuation_ignores_sidecars(download_env):
+    staging = download_env["staging"] / "sidecar"
+    staging.mkdir()
+    (staging / "notes.txt").write_bytes(b"t")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+    manager._apply_line(job, f"{staging / 'notes.txt'}", staging)
+
+    asyncio.run(manager._evacuate_done_files(job, staging))
+
+    assert job["_imported"] == set()
+    assert (staging / "notes.txt").exists()

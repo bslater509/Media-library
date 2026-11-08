@@ -22,6 +22,17 @@ snapshot metadata.
 
 ### Added
 
+- **Downloaded archives are kept and unpacked.** `.rar`, `.7z` and `.zip`
+  containers no longer get dropped by the importer: they move to an `archives`
+  folder inside the download destination as each one completes, and a RAR/7z
+  set is extracted there with the system `7z` once its first volume and the
+  rest of the set are present. Extraction runs in a hidden work directory and
+  only successful output is moved into place, so a set with a missing volume
+  never leaves a truncated film in the library; the first volume's name is
+  recorded in `DOWNLOAD_ARCHIVE_DIR` so a resumed job does not unpack a set
+  twice. The queue listing and download filter now include the archive
+  extensions, and volumes already in `archives` show as done.
+
 - **Downloads resume, and the queue survives a restart.** Every job now passes
   a `--download-archive` scoped to its URL, destination and downloader, so
   retrying a failed or cancelled album fetches only the members it does not

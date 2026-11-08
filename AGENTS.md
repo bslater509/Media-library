@@ -352,7 +352,7 @@ daemon thread that pauses between items.
 | `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
-| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count`. |
+| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup, and a signal-killed downloader puts the job back to queued instead of finishing it. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination/`archives` names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count`. Archive containers are kept in `<destination>/archives` and RAR/7z sets are unpacked there with the system `7z`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 
 Progress is exposed by `/api/system/status` (index, workers, runtime ownership)
@@ -429,15 +429,21 @@ Jobs run yt-dlp (`--ignore-errors`, skip live/premiere, best video+audio merged
 to MP4), with gallery-dl as the fallback for sites yt-dlp lacks — including its
 `[Piracy]` blocklist refusals — and for `gofile.io`, which skips yt-dlp
 entirely. Media extensions land in the target folder, skipping names the folder
-already contains; sidecar files are dropped. Every job passes a
+already contains; sidecar files are dropped. Containers (`.rar`, `.7z`, `.zip`)
+are kept too: they move to `<destination>/archives` as they complete, and a
+RAR/7z set is extracted in place with the system `7z` once its first volume and
+siblings are present (extraction happens in a hidden work directory and only
+successful output is moved out, so a missing volume leaves no half film; the
+first volume's name in `extracted-<hash>.json` marks a set done). The
+crawler indexes the unpacked media on its next pass. Every job passes a
 `--download-archive` scoped to its URL, destination and downloader, so retrying
 a failed album fetches only the members the archive does not list, and whole
 files a stopped job left in staging are imported before cleanup (a `.part` is
 not media and stays out). gallery-dl albums get a `file_progress` row per
 member from a `--simulate` listing that runs alongside the download; names the
-destination already holds are marked done, so the client shows the full queue
-and where a resume starts. Retry clones a failed/cancelled job, clear-history
-drops finished rows only.
+destination (or its `archives/`) already holds are marked done, so the client
+shows the full queue and where a resume starts. Retry clones a
+failed/cancelled job, clear-history drops finished rows only.
 
 ### Snapshots and recovery
 `POST /api/backups/snapshot` writes a `sqlite3.backup` copy (VACUUM-compacted),

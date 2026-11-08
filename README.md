@@ -34,6 +34,7 @@ client at `/`, backed by a single SQLite index.
   gallery-dl fallback, live progress, cancel, retry, paginated history. The
   queue survives a restart, a failed album resumes where it stopped, and every
   album member shows up in the queue (done or pending) before it downloads.
+  RAR/7z containers are kept in an `archives` subfolder and unpacked there.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and
   files, media mix, reclaimable space, quality histogram, health pills, and a
   daily growth history recorded automatically (chart library size over time).
@@ -56,6 +57,12 @@ client at `/`, backed by a single SQLite index.
   sudo apt update && sudo apt install -y ffmpeg     # Debian / Ubuntu
   sudo dnf install -y ffmpeg                        # Fedora / RHEL
   brew install ffmpeg                               # macOS
+  ```
+- **7z** (optional, only to unpack downloaded RAR/7z sets)
+  ```bash
+  sudo apt install -y 7zip                          # Debian / Ubuntu
+  sudo dnf install -y p7zip                         # Fedora / RHEL
+  brew install sevenzip                             # macOS
   ```
 - **Node.js 22+** and npm (client build)
 
