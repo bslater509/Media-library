@@ -514,3 +514,158 @@ def test_router_job_payload_carries_file_progress(download_env):
             "total_bytes": 100,
         }
     ]
+
+
+class _StubProcess:
+    """Minimal stand-in for an asyncio subprocess: stdout only, exit 0."""
+
+    killed = False
+
+    class _Stdout:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self.chunks = list(chunks)
+
+        async def readline(self) -> bytes:
+            if not self.chunks:
+                return b""
+            await asyncio.sleep(0)
+            return self.chunks.pop(0)
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.stdout = self._Stdout(chunks)
+
+    def kill(self) -> None:
+        self.killed = True
+
+    async def wait(self) -> int:
+        return 0
+
+
+def test_gallery_dl_imports_each_album_file_as_it_completes(download_env, monkeypatch):
+    """A staged file joins the library as soon as the next member starts."""
+    inbox = download_env["inbox"]
+    staging = download_env["staging"] / "album"
+    staging.mkdir(parents=True)
+    (staging / "one.jpg").write_bytes(b"1")
+    (staging / "two.jpg").write_bytes(b"22")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["downloader"] = "gallery-dl"
+
+    async def fake_exec(*command, **kwargs):
+        return _StubProcess(
+            [f"{staging / 'one.jpg'}\n".encode(), f"{staging / 'two.jpg'}\n".encode()]
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    code, _lines = asyncio.run(manager.run(job, "gallery-dl", staging))
+
+    assert code == 0
+    assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
+        ("one.jpg", True),
+        ("two.jpg", False),
+    ]
+    # one.jpg was handed to the library mid-download, already indexed
+    assert Path(job["files"][0]) == inbox / "one.jpg"
+    assert not (staging / "one.jpg").exists()
+    with _db(download_env) as conn:
+        rows = conn.execute(
+            "SELECT path FROM files WHERE folder_path = ?", (str(inbox),)
+        ).fetchall()
+    assert len(rows) == 1 and Path(rows[0][0]).name == "one.jpg"
+
+    # the end-of-job handoff picks up the rest without importing one.jpg twice
+    imported = asyncio.run(
+        manager.import_staged(staging, str(inbox), skip=job["_imported"])
+    )
+    assert imported == [str(inbox / "two.jpg")]
+    job["files"] = list(dict.fromkeys(job["files"] + imported))
+    assert sorted(Path(path).name for path in job["files"]) == ["one.jpg", "two.jpg"]
+    assert (inbox / "one.jpg").exists()
+    assert (inbox / "two.jpg").exists()
+
+
+def test_evacuation_marks_a_missing_done_row_and_skips_the_current_file(
+    download_env,
+):
+    """Never-written names do not block evacuation of later members."""
+    staging = download_env["staging"] / "album3"
+    staging.mkdir(parents=True)
+    (staging / "current.jpg").write_bytes(b"c")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+
+    async def scenario():
+        manager._apply_line(job, f"{staging / 'gone.jpg'}\n".strip(), staging)
+        manager._apply_line(job, f"{staging / 'current.jpg'}\n".strip(), staging)
+        # the same path logged twice concludes the file while it is still
+        # the title: evacuation must not move an in-flight file
+        manager._apply_line(job, f"{staging / 'current.jpg'}\n".strip(), staging)
+
+    asyncio.run(scenario())
+    asyncio.run(manager._evacuate_done_files(job, staging))
+
+    assert job["_imported"] == {"gone.jpg"}
+    assert job["files"] == []
+    assert (staging / "current.jpg").exists()
+    imported = asyncio.run(
+        manager.import_staged(
+            staging, str(download_env["inbox"]), skip=job["_imported"]
+        )
+    )
+    # the final handoff picks up where evacuation left off
+    assert len(imported) == 1 and Path(imported[0]).name == "current.jpg"
+    assert (download_env["inbox"] / "current.jpg").exists()
+
+
+def test_import_staged_skips_names_already_handed_to_the_library(download_env):
+    staging = download_env["staging"] / "album4"
+    staging.mkdir(parents=True)
+    (staging / "part.jpg").write_bytes(b"p")
+    (staging / "kept.jpg").write_bytes(b"k")
+    manager = DownloadManager()
+    imported = asyncio.run(
+        manager.import_staged(staging, str(download_env["inbox"]), skip={"part.jpg"})
+    )
+    assert len(imported) == 1 and Path(imported[0]).name == "kept.jpg"
+    assert (download_env["inbox"] / "kept.jpg").exists()
+    assert (staging / "part.jpg").exists()
+
+
+def test_evacuation_failure_keeps_the_file_for_the_final_import(
+    download_env, monkeypatch
+):
+    """An import error mid-album never loses the staged file."""
+    import media_library.downloads as downloads_module
+    from media_library import writes
+
+    staging = download_env["staging"] / "album2"
+    staging.mkdir(parents=True)
+    (staging / "a.jpg").write_bytes(b"x")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["downloader"] = "gallery-dl"
+    original_import = writes.import_file
+
+    async def scenario():
+        # two lines: the first file concludes, the second is in flight
+        manager._apply_line(job, f"{staging / 'a.jpg'}\n".strip(), staging)
+        manager._apply_line(job, f"{staging / 'b.jpg'}\n", staging)
+
+    def boom(source, destination, conflict):
+        raise writes.WriteError("Temporarily unavailable", 503)
+
+    monkeypatch.setattr(downloads_module.writes, "import_file", boom)
+    asyncio.run(scenario())
+    assert job["file_progress"][0]["done"] is True
+
+    asyncio.run(manager._evacuate_done_files(job, staging))
+    assert (staging / "a.jpg").exists()
+    assert job["files"] == []
+
+    # the failure clears: the next round moves it into the library
+    monkeypatch.setattr(downloads_module.writes, "import_file", original_import)
+    asyncio.run(manager._evacuate_done_files(job, staging))
+    assert job["files"] == [str(download_env["inbox"] / "a.jpg")]
+    assert not (staging / "a.jpg").exists()

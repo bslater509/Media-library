@@ -28,6 +28,14 @@ snapshot metadata.
 
 ### Added
 
+- **Downloads land in the library while they run.** A gallery-dl album no
+  longer waits for the whole job: each finished member is imported (moved
+  and indexed) as soon as the next one starts, so it is browsable mid-
+  download and staging space drains as it goes. The end-of-job import skips
+  the names that already left staging. yt-dlp stays batch-imported: its
+  files pass through merging after their progress finishes, so only the
+  final artifacts are safe to hand over.
+
 - **Per-file download progress.** Multi-file downloads (albums, playlists) no
   longer show as one bouncing row: every job carries a `file_progress` list
   (`name`, `done`, `percent`, sizes) built from yt-dlp's `filename` progress

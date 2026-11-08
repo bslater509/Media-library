@@ -349,7 +349,7 @@ daemon thread that pauses between items.
 | `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
-| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. Each job tracks a `file_progress` row per downloaded file (yt-dlp `filename` lines; gallery-dl staging-path lines) and weights the job percent across them. |
+| `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. Each job tracks a `file_progress` row per downloaded file (yt-dlp `filename` lines; gallery-dl staging-path lines), weights the job percent across them, and for gallery-dl imports each concluded file into the library mid-download (`import_staged` at the end skips the already-imported names; yt-dlp stays batch-imported until its merges finish). |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 
 Progress is exposed by `/api/system/status` (index, workers, runtime ownership)

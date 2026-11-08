@@ -161,6 +161,7 @@ class DownloadManager:
             "error": "",
             "files": [],
             "file_progress": [],
+            "_imported": set(),
             "playlist_index": None,
             "playlist_count": None,
             "created_at": time.time(),
@@ -267,11 +268,13 @@ class DownloadManager:
             if job.get("_cancel"):
                 raise asyncio.CancelledError
 
-        imported = await self.import_staged(staging, job["destination"])
-        if not imported:
+        imported = await self.import_staged(
+            staging, job["destination"], skip=job["_imported"]
+        )
+        if not imported and not job["files"]:
             detail = _tail(lines) or "The downloader produced no importable media"
             raise RuntimeError(detail)
-        job["files"] = imported
+        job["files"] = list(dict.fromkeys(job["files"] + imported))
         for row in job["file_progress"]:
             row["done"] = True
         job["status"] = "completed"
@@ -320,6 +323,11 @@ class DownloadManager:
                 if len(lines) > 400:
                     del lines[:200]
                 self._apply_line(job, line, staging)
+                if job["downloader"] == "gallery-dl":
+                    # Hand finished album members to the library while the
+                    # rest is still downloading (yt-dlp stays batch-imported:
+                    # its files go through post-processing after 100%).
+                    await self._evacuate_done_files(job, staging)
                 if job.get("_cancel"):
                     process.kill()
                     break
@@ -328,11 +336,55 @@ class DownloadManager:
         code = await process.wait()
         return code, lines
 
-    async def import_staged(self, staging: Path, destination: str) -> list[str]:
-        """Import every media file from the job's staging dir into the library."""
+    async def _evacuate_done_files(self, job: dict[str, Any], staging: Path) -> None:
+        """Import every concluded gallery-dl file still sitting in staging.
+
+        Album members arrive one at a time; a row is concluded only once the
+        next member starts, so its file is closed and safe to move out. The
+        file travels to the destination immediately (
+        ``writes.import_file`` moves and indexes it), leaving it visible in
+        the library mid-download. A failure is swallowed and the file stays
+        in staging; the end-of-job import retries it.
+        """
+        done = [
+            row["name"]
+            for row in job["file_progress"]
+            if row["done"] and row["name"] not in job["_imported"]
+        ]
+        for name in done:
+            path = staging / name
+            if not path.is_file() or not is_media_file(path):
+                # Not media, not a plain file, or already evacuated: only
+                # mark it imported after a graceful retry at completion.
+                if not path.exists():
+                    job["_imported"].add(name)
+                continue
+            if name == job["title"]:
+                continue
+            source = str(path)
+            try:
+                result = await asyncio.to_thread(
+                    writes.import_file, source, job["destination"], "auto_rename"
+                )
+            except Exception:
+                return
+            if result.get("target"):
+                job["_imported"].add(name)
+                job["files"].append(result["target"])
+
+    async def import_staged(
+        self, staging: Path, destination: str, skip: set[str] | None = None
+    ) -> list[str]:
+        """Import every media file from the job's staging dir into the library.
+
+        ``skip`` lists source basenames already handed to the library by the
+        incremental evacuation during the download itself.
+        """
         imported: list[str] = []
         for path in sorted(staging.rglob("*")):
             if not path.is_file() or not is_media_file(path):
+                continue
+            if skip and path.name in skip:
                 continue
             result = await asyncio.to_thread(
                 writes.import_file, str(path), destination, "auto_rename"
@@ -449,7 +501,7 @@ class DownloadManager:
             return
 
         if job["downloader"] == "gallery-dl" and str(staging) in line:
-            name = Path(line).name
+            name = Path(line.strip()).name
             job["title"] = name
             seen = job.setdefault("_gallery_seen", set())
             if name in seen:
