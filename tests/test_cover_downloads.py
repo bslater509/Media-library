@@ -646,11 +646,14 @@ def test_import_staged_moves_only_media(download_env):
     (staging / ".secret.mp4").write_bytes(b"v")
     (staging / "nested").mkdir()
 
-    imported = asyncio.run(manager.import_staged(staging, str(download_env["inbox"])))
+    imported, skipped = asyncio.run(
+        manager.import_staged(staging, str(download_env["inbox"]))
+    )
 
     assert len(imported) == 1
     assert Path(imported[0]).name == "clip.mp4"
     assert Path(imported[0]).exists()
+    assert skipped == 0
 
 
 def test_apply_line_tracks_every_progress_field():

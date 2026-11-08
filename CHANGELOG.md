@@ -31,10 +31,14 @@ snapshot metadata.
 - **Downloads land in the library while they run.** A gallery-dl album no
   longer waits for the whole job: each finished member is imported (moved
   and indexed) as soon as the next one starts, so it is browsable mid-
-  download and staging space drains as it goes. The end-of-job import skips
-  the names that already left staging. yt-dlp stays batch-imported: its
-  files pass through merging after their progress finishes, so only the
-  final artifacts are safe to hand over.
+  download and staging space drains as it goes. Imports skip names that
+  the destination already contains — the gallery-dl import path is
+  skip-existing rather than auto-rename, so re-running an album that is
+  already in the folder completes with no duplicate `(n)` copies and no
+  lost files; the staged leftovers stay in staging until the job's own
+  cleanup removes them. yt-dlp stays batch-imported: its files pass
+  through merging after their progress finishes, so only the final
+  artifacts are safe to hand over.
 
 - **Per-file download progress.** Multi-file downloads (albums, playlists) no
   longer show as one bouncing row: every job carries a `file_progress` list

@@ -268,13 +268,15 @@ class DownloadManager:
             if job.get("_cancel"):
                 raise asyncio.CancelledError
 
-        imported = await self.import_staged(
+        imported, skipped = await self.import_staged(
             staging, job["destination"], skip=job["_imported"]
         )
-        if not imported and not job["files"]:
+        job["files"] = list(dict.fromkeys(job["files"] + imported))
+        if not job["files"] and not imported and not skipped:
             detail = _tail(lines) or "The downloader produced no importable media"
             raise RuntimeError(detail)
-        job["files"] = list(dict.fromkeys(job["files"] + imported))
+        # ``skipped`` counts members the destination already contained, so a
+        # re-run that lands everything existing is a success with 0 new files
         for row in job["file_progress"]:
             row["done"] = True
         job["status"] = "completed"
@@ -364,34 +366,41 @@ class DownloadManager:
             source = str(path)
             try:
                 result = await asyncio.to_thread(
-                    writes.import_file, source, job["destination"], "auto_rename"
+                    writes.import_file, source, job["destination"], "skip"
                 )
             except Exception:
                 return
-            if result.get("target"):
-                job["_imported"].add(name)
+            # missing-but-listed names and files already in the destination
+            # both count as seen; only genuinely new members change the count
+            job["_imported"].add(name)
+            if result.get("target") and not result.get("skipped"):
                 job["files"].append(result["target"])
 
     async def import_staged(
         self, staging: Path, destination: str, skip: set[str] | None = None
-    ) -> list[str]:
+    ) -> tuple[list[str], int]:
         """Import every media file from the job's staging dir into the library.
 
         ``skip`` lists source basenames already handed to the library by the
-        incremental evacuation during the download itself.
+        incremental evacuation during the download itself. A name that
+        already exists in the destination is skipped in place, so result[1]
+        counts files the destination already contained.
         """
         imported: list[str] = []
+        skipped = 0
         for path in sorted(staging.rglob("*")):
             if not path.is_file() or not is_media_file(path):
                 continue
             if skip and path.name in skip:
                 continue
             result = await asyncio.to_thread(
-                writes.import_file, str(path), destination, "auto_rename"
+                writes.import_file, str(path), destination, "skip"
             )
-            if result.get("target"):
+            if result.get("skipped"):
+                skipped += 1
+            elif result.get("target"):
                 imported.append(result["target"])
-        return imported
+        return imported, skipped
 
     # -- progress ------------------------------------------------------
 

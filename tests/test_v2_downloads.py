@@ -575,10 +575,11 @@ def test_gallery_dl_imports_each_album_file_as_it_completes(download_env, monkey
     assert len(rows) == 1 and Path(rows[0][0]).name == "one.jpg"
 
     # the end-of-job handoff picks up the rest without importing one.jpg twice
-    imported = asyncio.run(
+    imported, skipped = asyncio.run(
         manager.import_staged(staging, str(inbox), skip=job["_imported"])
     )
     assert imported == [str(inbox / "two.jpg")]
+    assert skipped == 0
     job["files"] = list(dict.fromkeys(job["files"] + imported))
     assert sorted(Path(path).name for path in job["files"]) == ["one.jpg", "two.jpg"]
     assert (inbox / "one.jpg").exists()
@@ -609,7 +610,7 @@ def test_evacuation_marks_a_missing_done_row_and_skips_the_current_file(
     assert job["_imported"] == {"gone.jpg"}
     assert job["files"] == []
     assert (staging / "current.jpg").exists()
-    imported = asyncio.run(
+    imported, skipped = asyncio.run(
         manager.import_staged(
             staging, str(download_env["inbox"]), skip=job["_imported"]
         )
@@ -617,6 +618,7 @@ def test_evacuation_marks_a_missing_done_row_and_skips_the_current_file(
     # the final handoff picks up where evacuation left off
     assert len(imported) == 1 and Path(imported[0]).name == "current.jpg"
     assert (download_env["inbox"] / "current.jpg").exists()
+    assert skipped == 0
 
 
 def test_import_staged_skips_names_already_handed_to_the_library(download_env):
@@ -625,12 +627,55 @@ def test_import_staged_skips_names_already_handed_to_the_library(download_env):
     (staging / "part.jpg").write_bytes(b"p")
     (staging / "kept.jpg").write_bytes(b"k")
     manager = DownloadManager()
-    imported = asyncio.run(
+    imported, skipped = asyncio.run(
         manager.import_staged(staging, str(download_env["inbox"]), skip={"part.jpg"})
     )
     assert len(imported) == 1 and Path(imported[0]).name == "kept.jpg"
     assert (download_env["inbox"] / "kept.jpg").exists()
     assert (staging / "part.jpg").exists()
+    assert skipped == 0
+
+
+def test_import_staged_counts_files_the_destination_already_had(download_env):
+    staging = download_env["staging"] / "album5"
+    staging.mkdir(parents=True)
+    (staging / "known.mp4").write_bytes(b"k")
+    (download_env["inbox"] / "known.mp4").write_bytes(b"old")
+    manager = DownloadManager()
+    imported, skipped = asyncio.run(
+        manager.import_staged(staging, str(download_env["inbox"]))
+    )
+    assert imported == [] and skipped == 1
+    # the staged copy stays behind so the partial job still completes
+    assert (staging / "known.mp4").exists()
+
+
+def test_rerun_of_a_fully_downloaded_album_succeeds_with_no_new_files(download_env):
+    """Retrying a finished album counts as done: everything was a skip."""
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        job["downloader"] = downloader
+        line = f"{staging / 'clip.mp4'}".strip()
+        (staging / "clip.mp4").write_bytes(b"x")
+        manager._apply_line(job, line, staging)
+        return 0, [line]
+
+    manager.run = run  # type: ignore[method-assign]
+    inbox = download_env["inbox"]
+    (inbox / "clip.mp4").write_bytes(b"x")
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(inbox))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "completed"
+    assert job["percent"] == 100.0
+    assert job["files"] == []
+    assert (inbox / "clip.mp4").exists() and (inbox / "clip.mp4").read_bytes() == b"x"
 
 
 def test_evacuation_failure_keeps_the_file_for_the_final_import(
