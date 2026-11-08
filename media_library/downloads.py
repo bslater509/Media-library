@@ -165,6 +165,25 @@ def _staged_bytes(staging: Path) -> int:
     return total
 
 
+def _downloadable_extensions() -> set[str]:
+    settings = get_settings()
+    return {
+        ext.lstrip(".").lower()
+        for ext in settings.video_exts | settings.image_exts | _AUDIO_EXTS
+    }
+
+
+def _extension_filter() -> str:
+    """gallery-dl ``--filter`` that keeps only files the importer accepts.
+
+    Without it an album like a game rip pulls tens of gigabytes of RAR volumes
+    that ``import_staged`` then discards as non-media. Items whose extension is
+    unknown stay in the run: gallery-dl resolves those from the response.
+    """
+    quoted = ", ".join(f"'{ext}'" for ext in sorted(_downloadable_extensions()))
+    return f"extension in ({quoted}) or not extension"
+
+
 def _tail(lines: list[str], count: int = 6) -> str:
     return "\n".join(line for line in lines[-count:] if line).strip()
 
@@ -515,6 +534,12 @@ class DownloadManager:
             staging, job["destination"], skip=job["_imported"]
         )
         job["files"] = list(dict.fromkeys(job["files"] + imported))
+        if code != 0:
+            detail = _tail(lines) or "no output"
+            raise RuntimeError(
+                f"Download stopped (exit {code}) after "
+                f"{len(job['files'])} file(s): {detail}"
+            )
         if (
             not job["files"]
             and not imported
@@ -553,11 +578,12 @@ class DownloadManager:
     async def _prelist(self, job: dict[str, Any], staging: Path) -> None:
         """List every album member so the client can show the whole queue.
 
-        ``gallery-dl --simulate`` prints each member's target path exactly as
-        a real run would (``# <path>``) without downloading anything. Rows are
-        added as they arrive, and names the destination already contains are
-        marked done, so a resumed album shows what is already in the library.
-        A failure or timeout only costs the pending list.
+        ``gallery-dl --simulate`` prints each member's target name as a skip
+        line (``# <name>``, bare when the path was never built) without
+        downloading anything. Rows are added as they arrive, and names the
+        destination already contains are marked done, so a resumed album shows
+        what is already in the library. A failure or timeout only costs the
+        pending list.
         """
         command = self._gallery_dl_command(job, staging, simulate=True)
         try:
@@ -589,7 +615,7 @@ class DownloadManager:
                     complete = True
                     break
                 line = raw.decode("utf-8", "replace").strip()
-                if not line.startswith("# ") or str(staging) not in line:
+                if not line.startswith("# "):
                     continue
                 name = Path(line[2:].strip()).name
                 if not name or not is_media_file(Path(name)):
@@ -703,6 +729,7 @@ class DownloadManager:
         finally:
             job.pop("_process", None)
         code = await process.wait()
+        logger.info("[downloads] %s exited with code %s", downloader, code)
         return code, lines
 
     async def _evacuate_done_files(self, job: dict[str, Any], staging: Path) -> None:
@@ -960,7 +987,14 @@ class DownloadManager:
                 "--download-archive",
                 str(_archive_path(job["url"], job["destination"], "gallery-dl")),
             ]
-        command += ["--dest", str(staging), "-o", "directory=[]"]
+        command += [
+            "--filter",
+            _extension_filter(),
+            "--dest",
+            str(staging),
+            "-o",
+            "directory=[]",
+        ]
         cookies = get_settings().download_cookies_file
         if cookies and os.path.isfile(cookies):
             command += ["--cookies", cookies]
@@ -981,6 +1015,14 @@ class DownloadManager:
             job["error"] = job.get("error") or "Download ended unexpectedly"
         self.jobs.pop(job["id"], None)
         self.history.append(job)
+        logger.info(
+            "[downloads] Job %s on %s: %s (%s file%s)",
+            job["id"],
+            job.get("url", "")[:80],
+            job.get("status"),
+            len(job.get("files") or ()),
+            "" if len(job.get("files") or ()) == 1 else "s",
+        )
         self._save_soon()
 
     def cancel(self, job_id: str) -> dict[str, Any]:

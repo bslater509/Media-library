@@ -614,6 +614,11 @@ def test_commands_carry_a_per_url_resume_archive(download_env):
     # the listing never touches the archive
     assert "--download-archive" not in simulate
     assert "--simulate" in simulate
+    # both runs ask for media only: an importer cannot take a RAR volume
+    for command in (gallery, simulate):
+        expression = command[command.index("--filter") + 1]
+        assert "'mp4'" in expression and "'jpg'" in expression
+        assert "'rar'" not in expression
 
 
 def test_cancel_flag_after_run_marks_the_job_cancelled(download_env):
@@ -1197,10 +1202,10 @@ def test_prelist_fills_the_queue_and_marks_existing_members(download_env, monkey
     inbox = download_env["inbox"]
     (inbox / "b.m4v").write_bytes(b"old")
     lines = [
-        f"# {staging / 'a.m4v'}\n".encode(),
+        b"# a.m4v\n",
         f"# {staging / 'b.m4v'}\n".encode(),
-        f"# {staging / 'notes.json'}\n".encode(),
-        f"# {staging / 'c.m4v'}\n".encode(),
+        b"# notes.json\n",
+        b"# c.m4v\n",
     ]
     _stub_subprocess(monkeypatch, [lines])
     manager = DownloadManager()
@@ -1725,3 +1730,32 @@ def test_prelist_marks_a_member_done_when_only_the_extension_differs(
     assert [(row["name"], row["done"]) for row in job["file_progress"]] == [
         ("clip.mp4", True)
     ]
+
+
+def test_a_run_that_stops_early_fails_but_keeps_its_files(download_env):
+    """A non-zero exit with some files landed is a failure, not a success.
+
+    gallery-dl returns non-zero when a member or the connection fails. The
+    finished members are salvaged and the job stays retryable, so the archive
+    resumes instead of the client showing a half album as completed.
+    """
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        (staging / "landed.mp4").write_bytes(b"x" * 4)
+        return 4, ["[bunkr][error] Request failed"]
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "failed"
+    assert "exit 4" in job["error"]
+    assert "Request failed" in job["error"]
+    assert job["files"] == [str(download_env["inbox"] / "landed.mp4")]
+    assert (download_env["inbox"] / "landed.mp4").exists()
