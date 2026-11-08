@@ -94,7 +94,7 @@ export function useIndexStatus() {
 export function useIndexSync() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: () => api.indexSync(),
+    mutationFn: (full: boolean = true) => api.indexSync(full),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.indexStatus })
       // The crawl can bring in new files: stale browse/folder/search data

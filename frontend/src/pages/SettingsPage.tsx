@@ -190,7 +190,7 @@ export function SettingsPage() {
                   className="w-fit"
                   disabled={syncIndex.isPending || index.data.status === 'crawling'}
                   onClick={() =>
-                    syncIndex.mutate(undefined, {
+                    syncIndex.mutate(true, {
                       onSuccess: () => toast.success('Full crawl started'),
                       onError: (error) =>
                         toast.error(

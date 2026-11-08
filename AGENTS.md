@@ -338,7 +338,7 @@ daemon thread that pauses between items.
 
 | Unit | What it does |
 |---|---|
-| `CrawlerThread` | Incremental crawl of the library: folders, ZIP archives, file rows; prune with mount-safety guards (confirm gone with retries, abort a folder whose children mostly look missing). Inspects the full mount after `POST /api/system/index/sync`. |
+| `CrawlerThread` | Incremental crawl of the library: folders, ZIP archives, file rows; prune with mount-safety guards (confirm gone with retries, abort a folder whose children mostly look missing). `POST /api/system/index/sync?full=false` runs it incrementally; the default (`full=true`) ignores `dir_mtime`. Every run reports folders scanned/skipped, loose files seen/added/updated/removed, archives rebuilt, elapsed time and the folder in flight through `/api/system/index/status`. |
 | `MetadataWorker` | One FFprobe pass per video/image: display dimensions (rotation applied), duration, codecs, fps, capture time; ZIP members take dimensions from the cached poster. |
 | `ThumbnailSweep` | Posters for `has_thumb = 0`. ZIP members are skipped (`-1`) because they are generated on demand. |
 | `_BatchSweep("webp-sweep")` | Converts loose images to WebP, releasing heap between batches. |
@@ -454,7 +454,7 @@ unavailable / read-only).
 | `GET /system/info` | Version, library root, counts, capability flags |
 | `GET /system/status` | Counts, runtime mode, crawler state |
 | `GET /system/index/status` | Owned runtime + crawler counters |
-| `POST /system/index/sync` | Forced crawl; 409 unless `OWN_WORKERS` |
+| `POST /system/index/sync?full=` | Start a crawl (default `full=true` re-reads every folder; `full=false` keeps the incremental `dir_mtime` skip); 409 unless `OWN_WORKERS` |
 | `GET /system/onboarding` | First-run tour payload (paths, counts, tools, backup) |
 
 ### Library (`routers/library.py`, `media.py`)

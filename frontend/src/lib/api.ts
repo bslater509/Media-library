@@ -547,6 +547,16 @@ export interface IndexStatus {
   stale_folders: number
   stale_files: number
   error: string
+  started_at: number
+  finished_at: number
+  duration_seconds: number
+  elapsed_seconds: number
+  force_full: boolean
+  files_seen: number
+  files_added: number
+  files_updated: number
+  files_removed: number
+  archives_indexed: number
 }
 
 export interface X265Job {
@@ -1021,7 +1031,12 @@ export const api = {
 
   indexStatus: () => request<IndexStatus>('/system/index/status'),
 
-  indexSync: () => post<{ started: boolean }>('/system/index/sync', {}),
+  indexSync: (full = true) =>
+    request<{ started: boolean }>(
+      '/system/index/sync',
+      { full },
+      { method: 'POST' },
+    ),
 
   thumbnailCandidates: (path: string, interval = 30, count?: number) =>
     request<ThumbnailCandidates>('/thumbnails/candidates', {

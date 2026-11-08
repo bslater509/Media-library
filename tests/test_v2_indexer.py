@@ -195,6 +195,51 @@ def test_mass_disappearance_aborts_pruning(crawl_env):
     assert remaining == 6
 
 
+def test_crawl_reports_detailed_progress(crawl_env):
+    first = indexer.crawl()
+    assert first["files_seen"] == 4  # A/one.jpg, A/two.mp4, A/sub/deep.jpg, B/three.jpg
+    assert first["files_added"] == 4
+    assert first["files_updated"] == 0
+    assert first["files_removed"] == 0
+    assert first["archives_indexed"] == 1  # B/bundle.zip
+    assert first["force_full"] is False
+    assert first["started_at"] > 0
+    assert first["finished_at"] >= first["started_at"]
+    assert first["duration_seconds"] >= 0
+
+    library = crawl_env["library"]
+    (library / "A" / "one.jpg").write_bytes(b"one" * 120)
+    (library / "A" / "added.jpg").write_bytes(b"added")  # bumps A's mtime
+    second = indexer.crawl()
+    assert second["files_updated"] == 1
+    assert second["files_added"] == 1
+    assert second["files_removed"] == 0
+
+    (library / "A" / "two.mp4").unlink()
+    third = indexer.crawl()
+    assert third["files_removed"] == 1
+
+
+def test_sync_endpoint_passes_full_flag(crawl_env, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from media_library.app import create_app
+
+    monkeypatch.setenv("OWN_WORKERS", "true")
+    v2_config.reload_settings()
+    seen: list[bool] = []
+
+    def fake_start(force_full: bool = False) -> bool:
+        seen.append(force_full)
+        return True
+
+    monkeypatch.setattr(indexer, "start_crawl", fake_start)
+    client = TestClient(create_app())
+    assert client.post("/api/system/index/sync?full=false").status_code == 200
+    assert client.post("/api/system/index/sync").status_code == 200
+    assert seen == [False, True]
+
+
 def test_sync_endpoint_requires_worker_ownership(crawl_env):
     from fastapi.testclient import TestClient
 

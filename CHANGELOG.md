@@ -9,6 +9,18 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [Unreleased]
+
+### Added
+
+- **Index scan from the Tools page.** A Library index card starts an
+  incremental scan ("Scan for changes") or a full rescan, and shows live
+  progress: folders scanned/skipped/discovered, the folder in flight, elapsed
+  time, loose files seen/added/changed/removed, ZIP archives rebuilt, the last
+  run's duration and the mount-safety warnings. `POST /api/system/index/sync`
+  accepts `full=false` for the incremental variant; the default stays a full
+  rescan.
+
 ## [3.2.0] - 2026-11-08
 
 ### Removed

@@ -157,13 +157,14 @@ async def index_status() -> dict:
 
 
 @router.post("/system/index/sync", response_model=IndexSyncResponse)
-async def index_sync() -> dict:
+async def index_sync(full: bool = True) -> dict:
+    """Start a crawl. ``full=false`` keeps the incremental ``dir_mtime`` skip."""
     if not get_settings().own_workers:
         raise HTTPException(
             status_code=409,
             detail="The owned runtime is off. Set OWN_WORKERS=true to let it crawl.",
         )
-    if not indexer.start_crawl(force_full=True):
+    if not indexer.start_crawl(force_full=full):
         raise HTTPException(status_code=409, detail="A crawl is already running")
     return {"started": True, "status": indexer.status()}
 

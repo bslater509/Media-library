@@ -44,6 +44,17 @@ state: dict[str, Any] = {
     "stale_files": 0,
     "error": "",
     "artwork_swept": {},
+    # Per-run progress, reset by every crawl. ``files_*`` counts loose files
+    # in the folders this run actually scanned; skipped folders are not read.
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "duration_seconds": 0.0,
+    "force_full": False,
+    "files_seen": 0,
+    "files_added": 0,
+    "files_updated": 0,
+    "files_removed": 0,
+    "archives_indexed": 0,
 }
 _state_lock = threading.Lock()
 _crawl_lock = threading.Lock()
@@ -63,7 +74,13 @@ def _bump(**addends: Any) -> None:
 
 def status() -> dict[str, Any]:
     with _state_lock:
-        return dict(state)
+        snapshot = dict(state)
+    started = float(snapshot.get("started_at") or 0)
+    if snapshot.get("status") == "crawling" and started:
+        snapshot["elapsed_seconds"] = max(0.0, time.time() - started)
+    else:
+        snapshot["elapsed_seconds"] = float(snapshot.get("duration_seconds") or 0)
+    return snapshot
 
 
 def _confirm_gone(path: str, retries: int = 3) -> bool:
@@ -194,11 +211,14 @@ def _read_zip_infos(path: str) -> list[zipfile.ZipInfo] | None:
         return None
 
 
-def _index_zip_path(path: str, stat: os.stat_result) -> None:
-    """Re-index a changed archive, keeping remote reads outside the write txn."""
+def _index_zip_path(path: str, stat: os.stat_result) -> bool:
+    """Re-index a changed archive, keeping remote reads outside the write txn.
+
+    Returns True when the member rows were rebuilt.
+    """
     infos = _read_zip_infos(path)
     if infos is None:
-        return
+        return False
     with writer() as conn, conn:
         # Re-stat inside the txn: if the archive was replaced while we read
         # its central directory (slow remote mount, concurrent WebP rewrite),
@@ -206,9 +226,9 @@ def _index_zip_path(path: str, stat: os.stat_result) -> None:
         try:
             current = os.stat(path)
         except OSError:
-            return
+            return False
         if current.st_mtime != stat.st_mtime or current.st_size != stat.st_size:
-            return
+            return False
         row = conn.execute(
             "SELECT is_zip, dir_mtime FROM folders WHERE path = ?", (path,)
         ).fetchone()
@@ -218,12 +238,13 @@ def _index_zip_path(path: str, stat: os.stat_result) -> None:
             and row["dir_mtime"] is not None
             and abs(float(row["dir_mtime"]) - stat.st_mtime) <= 0.001
         ):
-            return
+            return False
         zip_ops.clear_archive_members(conn, path)
         zip_ops.index_archive(conn, path, infos)
         conn.execute(
             "UPDATE folders SET dir_mtime = ? WHERE path = ?", (stat.st_mtime, path)
         )
+    return True
 
 
 def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
@@ -287,7 +308,7 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
     # Missing-child decisions, including the mount-safety confirm probes.
     with reader() as conn:
         indexed_files = conn.execute(
-            "SELECT path FROM files WHERE folder_path = ?", (folder,)
+            "SELECT path, size, mtime FROM files WHERE folder_path = ?", (folder,)
         ).fetchall()
         child_rows = conn.execute(
             "SELECT path FROM folders WHERE parent_path = ?", (folder,)
@@ -348,6 +369,7 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
             conn.execute(
                 "UPDATE folders SET parent_path = ? WHERE path = ?", (folder, path)
             )
+        archives_rebuilt = 0
         for path, (infos, stat_at_read) in zip_payloads.items():
             # Re-stat before writing: the archive may have been replaced
             # (ZIP WebP rewrite / compress) between the read and write
@@ -367,6 +389,7 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
                 "UPDATE folders SET dir_mtime = ? WHERE path = ?",
                 (stat_at_read.st_mtime, path),
             )
+            archives_rebuilt += 1
 
         # Prune files that vanished from a folder we could read successfully.
         for row in indexed_files:
@@ -395,6 +418,25 @@ def _scan_folder(folder: str, stat: os.stat_result) -> list[str]:
                 folder,
             ),
         )
+    indexed_by_path = {row["path"]: row for row in indexed_files}
+    files_added = sum(1 for path in files if path not in indexed_by_path)
+    files_updated = sum(
+        1
+        for path, child in files.items()
+        if path in indexed_by_path
+        and (
+            indexed_by_path[path]["size"] != child.st_size
+            or abs(float(indexed_by_path[path]["mtime"] or 0) - child.st_mtime) >= 0.001
+        )
+    )
+    files_removed = sum(1 for row in indexed_files if row["path"] not in files)
+    _bump(
+        files_seen=len(files),
+        files_added=files_added,
+        files_updated=files_updated,
+        files_removed=files_removed,
+        archives_indexed=archives_rebuilt,
+    )
     if prune_aborted:
         _bump(prune_aborted=1, stale_folders=stale_folders, stale_files=stale_files)
     elif stale_folders:
@@ -429,6 +471,7 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
         raise writes.WriteError("A crawl is already running", 409)
     settings = get_settings()
     root = str(settings.library_dir)
+    started = time.time()
     _update(
         status="crawling",
         scanned_folders=0,
@@ -439,6 +482,15 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
         stale_folders=0,
         stale_files=0,
         error="",
+        started_at=started,
+        finished_at=0.0,
+        duration_seconds=0.0,
+        force_full=force_full,
+        files_seen=0,
+        files_added=0,
+        files_updated=0,
+        files_removed=0,
+        archives_indexed=0,
     )
     try:
         if not os.path.isdir(root):
@@ -495,8 +547,8 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
                         archive["dir_mtime"] is None
                         or abs(float(archive["dir_mtime"]) - archive_stat.st_mtime)
                         > 0.001
-                    ):
-                        _index_zip_path(archive["path"], archive_stat)
+                    ) and _index_zip_path(archive["path"], archive_stat):
+                        _bump(archives_indexed=1)
                 continue
 
             scanned += 1
@@ -524,16 +576,26 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
                 artwork = {}
 
         _bump(revision=1)
+        finished = time.time()
         _update(
             status="idle",
-            last_synced=time.time(),
+            last_synced=finished,
             current_folder="",
             total_folders=len(seen),
             artwork_swept=artwork,
+            finished_at=finished,
+            duration_seconds=max(0.0, finished - started),
         )
         return status()
     except Exception as exc:
-        _update(status="error", error=str(exc), current_folder="")
+        failed = time.time()
+        _update(
+            status="error",
+            error=str(exc),
+            current_folder="",
+            finished_at=failed,
+            duration_seconds=max(0.0, failed - started),
+        )
         raise
     finally:
         _crawl_lock.release()
