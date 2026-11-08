@@ -38,10 +38,16 @@ _UNSUPPORTED_HINTS = (
     "This website is no longer supported",
 )
 _GALLERY_DL_HOSTS = ("gofile.io",)
-# Longest stretch without a fresh output line before a downloader is killed.
-# Progress lines arrive every few seconds while anything is moving, so this
-# is an inactivity timeout, not a total download budget.
+# Longest stretch without a fresh output line *or* staging-directory growth
+# before a downloader is killed. yt-dlp prints progress every few seconds, but
+# gallery-dl in pipe mode prints only when a file starts (and that line only
+# reaches the pipe when it eagerly flushes), so on a slow CDN a single large
+# file can stream for far longer than this without a line. Growing bytes in
+# staging count as activity, which keeps that a true inactivity timeout rather
+# than a per-file download budget.
 _OUTPUT_TIMEOUT = 300.0
+# How often the staging directory is weighed while a downloader is silent.
+_PROGRESS_POLL = 5.0
 _AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".opus", ".ogg", ".wav", ".flac"}
 _SKIPPED_EXTS = {
     ".json",
@@ -123,6 +129,23 @@ def _coerce(value: Any, fallback: float) -> float:
     except (TypeError, ValueError):
         return fallback
     return fallback if math.isnan(number) else number
+
+
+def _staged_bytes(staging: Path) -> int:
+    """Bytes currently written into a job's staging dir.
+
+    Runs on a worker thread while a downloader is silent; a change between two
+    samples is proof the subprocess is still moving bytes.
+    """
+    total = 0
+    for root, _dirs, names in os.walk(staging):
+        for name in names:
+            try:
+                total += os.stat(os.path.join(root, name)).st_size
+            except OSError:
+                # A file can be renamed between listing and stat.
+                continue
+    return total
 
 
 def _tail(lines: list[str], count: int = 6) -> str:
@@ -300,24 +323,37 @@ class DownloadManager:
         job["_process"] = process
         lines: list[str] = []
         assert process.stdout is not None
+        loop = asyncio.get_running_loop()
+        last_activity = loop.time()
+        seen_bytes = _staged_bytes(staging)
         try:
             while True:
                 try:
                     raw = await asyncio.wait_for(
-                        process.stdout.readline(), timeout=_OUTPUT_TIMEOUT
+                        process.stdout.readline(), timeout=_PROGRESS_POLL
                     )
                 except asyncio.TimeoutError:
+                    written = await asyncio.to_thread(_staged_bytes, staging)
+                    now = loop.time()
+                    if written != seen_bytes:
+                        # Bytes are landing even though nothing was printed.
+                        seen_bytes = written
+                        last_activity = now
+                        continue
+                    if now - last_activity < _OUTPUT_TIMEOUT:
+                        continue
                     # Without this a wedged network fetch holds one of the
                     # DOWNLOAD_WORKER_CONCURRENCY slots forever and the job
                     # sits "downloading" with no recovery but a manual cancel.
                     process.kill()
                     await process.wait()
                     raise RuntimeError(
-                        f"{downloader} produced no output for "
+                        f"{downloader} produced no output or file growth for "
                         f"{_OUTPUT_TIMEOUT:g}s: timed out"
                     ) from None
                 if not raw:
                     break
+                last_activity = loop.time()
                 line = raw.decode("utf-8", "replace").strip()
                 if not line:
                     continue

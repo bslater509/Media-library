@@ -11,6 +11,15 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Large gallery-dl downloads are no longer killed as "wedged".** The
+  downloader prints nothing while a file streams in pipe mode, so a file that
+  took longer than five minutes — routine on a throttled CDN, and every file
+  of a large album — tripped the inactivity timeout. The watchdog now also
+  counts growth in the job's staging directory as activity, so it only stops a
+  process that has produced no output *and* written no bytes for five minutes.
+
 ### Added
 
 - **Index scan from the Tools page.** A Library index card starts an

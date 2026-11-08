@@ -436,8 +436,10 @@ def test_download_falls_back_when_ytdlp_hits_unsupported(download_env):
 def test_run_kills_a_wedged_process(download_env, monkeypatch):
     staging = download_env["staging"]
     commands, processes = _stub_subprocess(
-        monkeypatch, [[asyncio.TimeoutError("no output")]]
+        monkeypatch, [[asyncio.TimeoutError("no output")] * 10_000]
     )
+    monkeypatch.setattr(downloads_module, "_OUTPUT_TIMEOUT", 0.05)
+    monkeypatch.setattr(downloads_module, "_PROGRESS_POLL", 0.001)
     manager = DownloadManager()
     job = manager._new_job("https://example.com/a", "unused")
 
@@ -448,6 +450,54 @@ def test_run_kills_a_wedged_process(download_env, monkeypatch):
     assert processes[0].killed is True
     assert commands[0][2] == "yt_dlp"
     assert "_process" not in job
+
+
+def test_staged_bytes_ignores_a_file_that_vanishes(download_env, monkeypatch):
+    staging = download_env["staging"]
+    kept = staging / "kept.m4v"
+    kept.write_bytes(b"x" * 10)
+    doomed = staging / "doomed.m4v"
+    doomed.write_bytes(b"y" * 5)
+    real_stat = os.stat
+
+    def flaky(path, *args, **kwargs):
+        if str(path).endswith("doomed.m4v"):
+            raise FileNotFoundError(path)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(downloads_module.os, "stat", flaky)
+
+    assert downloads_module._staged_bytes(staging) == 10
+    assert downloads_module._staged_bytes(staging / "missing") == 0
+
+
+def test_run_keeps_a_silent_download_that_is_still_growing(download_env, monkeypatch):
+    """gallery-dl prints nothing while a file streams in pipe mode.
+
+    A large file on a slow CDN must not be mistaken for a wedged process just
+    because no line arrived: growing staging bytes are activity too.
+    """
+    staging = download_env["staging"]
+    timeouts = [asyncio.TimeoutError("no output")] * 3
+    _commands, processes = _stub_subprocess(monkeypatch, [timeouts + [b""]])
+    monkeypatch.setattr(downloads_module, "_OUTPUT_TIMEOUT", 10.0)
+    monkeypatch.setattr(downloads_module, "_PROGRESS_POLL", 0.001)
+    seen: list[int] = []
+
+    def growing(_staging):
+        seen.append(len(seen))
+        return len(seen) * 1_000
+
+    monkeypatch.setattr(downloads_module, "_staged_bytes", growing)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", "unused")
+
+    code, lines = asyncio.run(manager.run(job, "gallery-dl", staging))
+
+    assert code == 0
+    assert processes[0].killed is False
+    assert lines == []
+    assert len(seen) >= 3
 
 
 def test_run_exits_when_the_job_is_cancelled(download_env, monkeypatch):
