@@ -271,6 +271,14 @@ def _is_first_volume(name: str) -> bool:
     return name.lower().endswith((".rar", ".7z"))
 
 
+def _set_key(name: str) -> str:
+    """A volume set's identity: volumes named part1/part01 share one key."""
+    match = _PART_VOLUME_RE.search(name)
+    if match:
+        return name[: match.start()]
+    return name
+
+
 def _store_archive(source: str, destination: str) -> str | None:
     """Move a downloaded container to ``<destination>/archives``.
 
@@ -309,7 +317,8 @@ def _extract_volume(first: Path, destination: str) -> bool:
     archives = Path(destination) / "archives"
     marker = _extracted_path(destination)
     done = _load_extracted(marker)
-    if first.name in done:
+    key = _set_key(first.name)
+    if key in done:
         return False
     temp = archives / ".media-library-extracting"
     shutil.rmtree(temp, ignore_errors=True)
@@ -344,19 +353,9 @@ def _extract_volume(first: Path, destination: str) -> bool:
                 shutil.move(str(entry), str(target))
     finally:
         shutil.rmtree(temp, ignore_errors=True)
-    done.add(first.name)
+    done.add(key)
     _write_json(marker, {"done": sorted(done)})
     return True
-
-
-def _keep_archive(source: Path, destination: str) -> str | None:
-    """Archive one completed download and try to extract its set."""
-    target = _store_archive(str(source), destination)
-    archives = Path(destination) / "archives"
-    first = _set_first_part(archives, source.name)
-    if first is not None:
-        _extract_volume(first, destination)
-    return target
 
 
 def _extract_pending(destination: str) -> int:
@@ -718,7 +717,10 @@ class DownloadManager:
             staging, job["destination"], skip=job["_imported"]
         )
         job["files"] = list(dict.fromkeys(job["files"] + imported))
-        await asyncio.to_thread(_extract_pending, job["destination"])
+        if job.get("_queue_complete"):
+            await self._extract_ready(job)
+        else:
+            await asyncio.to_thread(_extract_pending, job["destination"])
         if code != 0:
             detail = _tail(lines) or "no output"
             raise RuntimeError(
@@ -945,13 +947,14 @@ class DownloadManager:
             if is_archive_file(path):
                 try:
                     target = await asyncio.to_thread(
-                        _keep_archive, path, job["destination"]
+                        _store_archive, str(path), job["destination"]
                     )
                 except Exception:
                     return
                 job["_imported"].add(name)
                 if target:
                     job["files"].append(target)
+                await self._extract_ready(job)
                 continue
             if not is_media_file(path):
                 continue
@@ -977,8 +980,9 @@ class DownloadManager:
         ``skip`` lists source basenames already handed over by the incremental
         evacuation during the download itself. A media name that already exists
         in the destination is skipped in place, so result[1] counts files the
-        destination already contained. Containers move to ``archives`` and are
-        extracted there.
+        destination already contained. Containers move to ``archives``; the
+        job's ``_extract_ready`` unpacks complete sets once the listing says no
+        more volumes are coming.
         """
         imported: list[str] = []
         skipped = 0
@@ -988,7 +992,7 @@ class DownloadManager:
             if skip and path.name in skip:
                 continue
             if is_archive_file(path):
-                target = await asyncio.to_thread(_keep_archive, path, destination)
+                target = await asyncio.to_thread(_store_archive, str(path), destination)
                 if target:
                     imported.append(target)
                 continue
@@ -1002,6 +1006,40 @@ class DownloadManager:
             elif result.get("target"):
                 imported.append(result["target"])
         return imported, skipped
+
+    async def _extract_ready(self, job: dict[str, Any]) -> int:
+        """Unpack every archive set whose members the queue says are all in.
+
+        A set is only handed to 7z once every volume the listing knows about
+        sits in ``archives``. Extracting earlier would decompress the parts
+        already present and then fail on the missing one, repeating the whole
+        run for each volume that arrives.
+        """
+        if not job.get("_queue_complete"):
+            return 0
+        destination = job["destination"]
+        archives = Path(destination) / "archives"
+        if not archives.is_dir():
+            return 0
+        present = await asyncio.to_thread(_directory_names, str(archives))
+        groups: dict[str, set[str]] = {}
+        for row in job["file_progress"]:
+            name = row["name"]
+            if is_archive_file(Path(name)):
+                groups.setdefault(_set_key(name), set()).add(name)
+        extracted = 0
+        for expected in groups.values():
+            if not expected <= present:
+                continue
+            firsts = sorted(name for name in expected if _is_first_volume(name))
+            if not firsts:
+                continue
+            first = _set_first_part(archives, firsts[0])
+            if first is None:
+                continue
+            if await asyncio.to_thread(_extract_volume, first, destination):
+                extracted += 1
+        return extracted
 
     # -- progress ------------------------------------------------------
 

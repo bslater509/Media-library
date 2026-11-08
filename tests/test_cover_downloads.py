@@ -1929,6 +1929,9 @@ def test_first_volume_detection():
     assert downloads_module._is_first_volume("SET.7z")
     assert not downloads_module._is_first_volume("VIDS.part21.rar")
     assert not downloads_module._is_first_volume("notes.txt")
+    assert downloads_module._set_key("VIDS.part01.rar") == "VIDS"
+    assert downloads_module._set_key("VIDS.part1.rar") == "VIDS"
+    assert downloads_module._set_key("SET.7z") == "SET.7z"
 
 
 def test_extract_volume_moves_results_out_and_marks_the_set(download_env, monkeypatch):
@@ -1996,7 +1999,7 @@ def test_extract_volume_tolerates_a_broken_tool(download_env, monkeypatch):
 
 
 def test_store_and_extract_on_import(download_env, monkeypatch):
-    """A staged RAR lands in archives/ and its set is unpacked."""
+    """A staged RAR lands in archives/ and its complete set is unpacked."""
     inbox = download_env["inbox"]
     staging = download_env["staging"] / "archivejob"
     staging.mkdir()
@@ -2006,17 +2009,58 @@ def test_store_and_extract_on_import(download_env, monkeypatch):
     monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
     monkeypatch.setattr(downloads_module.subprocess, "run", fake)
     manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["_queue_complete"] = True
+    manager._register_row(job, "VIDS.part01.rar", None, None, None)
 
-    imported, skipped = asyncio.run(manager.import_staged(staging, str(inbox)))
+    async def scenario():
+        imported, skipped = await manager.import_staged(staging, str(inbox))
+        extracted = await manager._extract_ready(job)
+        return imported, skipped, extracted
+
+    imported, skipped, extracted = asyncio.run(scenario())
 
     assert sorted(Path(path).name for path in imported) == [
         "VIDS.part01.rar",
         "clip.mp4",
     ]
     assert skipped == 0
+    assert extracted == 1
     assert (inbox / "archives" / "VIDS.part01.rar").exists()
     assert (inbox / "archives" / "released.mp4").exists()
     assert (inbox / "clip.mp4").exists()
+
+
+def test_extract_ready_waits_for_the_last_volume(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    (archives / "VIDS.part01.rar").write_bytes(b"r")
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["_queue_complete"] = True
+    manager._register_row(job, "VIDS.part01.rar", None, None, None)
+    manager._register_row(job, "VIDS.part02.rar", None, None, None)
+
+    # part02 is still downloading: nothing is handed to 7z yet
+    assert asyncio.run(manager._extract_ready(job)) == 0
+    assert fake.calls == []
+
+    (archives / "VIDS.part02.rar").write_bytes(b"r")
+    assert asyncio.run(manager._extract_ready(job)) == 1
+    assert len(fake.calls) == 1
+    # the marker keeps the next pass quiet
+    assert asyncio.run(manager._extract_ready(job)) == 0
+    assert len(fake.calls) == 1
+
+
+def test_extract_ready_needs_a_complete_listing(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    assert asyncio.run(manager._extract_ready(job)) == 0
 
 
 def test_evacuation_archives_a_finished_volume_mid_download(download_env, monkeypatch):
@@ -2131,7 +2175,7 @@ def test_evacuation_keeps_an_archive_when_storing_it_fails(download_env, monkeyp
     def boom(*args, **kwargs):
         raise OSError("mount dropped")
 
-    monkeypatch.setattr(downloads_module, "_keep_archive", boom)
+    monkeypatch.setattr(downloads_module, "_store_archive", boom)
     asyncio.run(manager._evacuate_done_files(job, staging))
 
     assert job["_imported"] == set()
@@ -2151,3 +2195,65 @@ def test_evacuation_ignores_sidecars(download_env):
 
     assert job["_imported"] == set()
     assert (staging / "notes.txt").exists()
+
+
+def test_extract_ready_without_an_archives_folder(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    job["_queue_complete"] = True
+    manager._register_row(job, "VIDS.part01.rar", None, None, None)
+    assert asyncio.run(manager._extract_ready(job)) == 0
+
+
+def test_extract_ready_skips_a_set_with_no_first_volume(download_env):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    (archives / "VIDS.part02.rar").write_bytes(b"r")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["_queue_complete"] = True
+    manager._register_row(job, "VIDS.part02.rar", None, None, None)
+    assert asyncio.run(manager._extract_ready(job)) == 0
+
+
+def test_extract_ready_survives_a_missing_first_volume(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    archives = inbox / "archives"
+    archives.mkdir()
+    (archives / "VIDS.part01.rar").write_bytes(b"r")
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(inbox))
+    job["_queue_complete"] = True
+    manager._register_row(job, "VIDS.part01.rar", None, None, None)
+    monkeypatch.setattr(downloads_module, "_set_first_part", lambda *args: None)
+    assert asyncio.run(manager._extract_ready(job)) == 0
+
+
+def test_a_completed_job_extracts_its_ready_sets(download_env, monkeypatch):
+    inbox = download_env["inbox"]
+    fake = _FakeSevenZip()
+    monkeypatch.setattr(downloads_module.shutil, "which", lambda name: "/usr/bin/7z")
+    monkeypatch.setattr(downloads_module.subprocess, "run", fake)
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        job["_queue_complete"] = True
+        job["downloader"] = downloader
+        (staging / "VIDS.part01.rar").write_bytes(b"r")
+        (staging / "clip.mp4").write_bytes(b"m")
+        manager._register_row(job, "VIDS.part01.rar", None, None, None)
+        return 0, []
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(inbox))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = manager.history[0]
+    assert job["status"] == "completed"
+    assert (inbox / "archives" / "VIDS.part01.rar").exists()
+    assert (inbox / "archives" / "released.mp4").exists()
