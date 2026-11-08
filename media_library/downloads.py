@@ -317,8 +317,7 @@ def _extract_volume(first: Path, destination: str) -> bool:
     archives = Path(destination) / "archives"
     marker = _extracted_path(destination)
     done = _load_extracted(marker)
-    key = _set_key(first.name)
-    if key in done:
+    if first.name in done:
         return False
     temp = archives / ".media-library-extracting"
     shutil.rmtree(temp, ignore_errors=True)
@@ -353,7 +352,7 @@ def _extract_volume(first: Path, destination: str) -> bool:
                 shutil.move(str(entry), str(target))
     finally:
         shutil.rmtree(temp, ignore_errors=True)
-    done.add(key)
+    done.add(first.name)
     _write_json(marker, {"done": sorted(done)})
     return True
 
@@ -1031,14 +1030,14 @@ class DownloadManager:
         for expected in groups.values():
             if not expected <= present:
                 continue
-            firsts = sorted(name for name in expected if _is_first_volume(name))
-            if not firsts:
-                continue
-            first = _set_first_part(archives, firsts[0])
-            if first is None:
-                continue
-            if await asyncio.to_thread(_extract_volume, first, destination):
-                extracted += 1
+            for name in sorted(expected):
+                if not _is_first_volume(name):
+                    continue
+                first = _set_first_part(archives, name)
+                if first is None:
+                    continue
+                if await asyncio.to_thread(_extract_volume, first, destination):
+                    extracted += 1
         return extracted
 
     # -- progress ------------------------------------------------------
