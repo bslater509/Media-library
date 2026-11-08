@@ -222,6 +222,10 @@ def _archive_path(url: str, destination: str, downloader: str) -> Path:
     return get_settings().download_archive_dir / f"{digest}-{downloader}{suffix}"
 
 
+class _Interrupted(RuntimeError):
+    """The downloader was stopped by a signal: keep the job for a resume."""
+
+
 class DownloadManager:
     """Queue, run and track download jobs on the server's event loop."""
 
@@ -459,14 +463,39 @@ class DownloadManager:
                 if not self._closing:
                     await self._salvage(job, staging)
                 raise
+            except _Interrupted as exc:
+                # A signal cut the downloader off (a stop, an OOM kill, an
+                # admin kill). There is nothing wrong with the job itself, so
+                # it stays queued and keeps its staging for the next run.
+                job["status"] = "queued"
+                job["error"] = ""
+                job["_keep_queued"] = True
+                logger.warning("[downloads] Job %s interrupted: %s", job["id"], exc)
             except Exception as exc:
                 job["status"] = "failed"
                 job["error"] = str(exc) or "Download failed"
                 await self._salvage(job, staging)
             finally:
-                if not self._closing:
-                    shutil.rmtree(staging, ignore_errors=True)
-                self._finish(job)
+                if job.pop("_keep_queued", False):
+                    self._save_soon()
+                    self._resume_later(job["id"])
+                else:
+                    if not self._closing:
+                        shutil.rmtree(staging, ignore_errors=True)
+                    self._finish(job)
+
+    def _resume_later(self, job_id: str) -> None:
+        """Restart an interrupted job after a grace period (unless shutting down)."""
+        try:
+            asyncio.get_running_loop().call_later(10.0, self._respawn, job_id)
+        except RuntimeError:
+            pass
+
+    def _respawn(self, job_id: str) -> None:
+        job = self.jobs.get(job_id)
+        if job is None or job.get("status") != "queued" or self._closing:
+            return
+        self._spawn(job_id)
 
     async def _salvage(self, job: dict[str, Any], staging: Path) -> None:
         """Import the whole files a stopped job already fetched.
@@ -505,6 +534,8 @@ class DownloadManager:
         code, lines = await self._run_and_list(job, downloader, staging)
         if job.get("_cancel"):
             raise asyncio.CancelledError
+        if code < 0:
+            raise _Interrupted(f"{downloader} was terminated (signal {-code})")
 
         files = list(staging.rglob("*"))
         has_media = any(path.is_file() and is_media_file(path) for path in files)
@@ -529,6 +560,8 @@ class DownloadManager:
             code, lines = await self._run_and_list(job, "gallery-dl", staging)
             if job.get("_cancel"):
                 raise asyncio.CancelledError
+            if code < 0:
+                raise _Interrupted(f"gallery-dl was terminated (signal {-code})")
 
         imported, skipped = await self.import_staged(
             staging, job["destination"], skip=job["_imported"]

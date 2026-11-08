@@ -1759,3 +1759,82 @@ def test_a_run_that_stops_early_fails_but_keeps_its_files(download_env):
     assert "Request failed" in job["error"]
     assert job["files"] == [str(download_env["inbox"] / "landed.mp4")]
     assert (download_env["inbox"] / "landed.mp4").exists()
+
+
+def test_a_signal_killed_downloader_keeps_the_job_queued(download_env):
+    """A stop must not turn into a completed/failed job that leaves the queue."""
+    manager = DownloadManager()
+
+    async def run(job, downloader, staging):
+        (staging / "half.mp4.part").write_bytes(b"x")
+        return -15, []
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    job = next(iter(manager.jobs.values()))
+    assert job["status"] == "queued"
+    assert list(manager.history) == []
+    staging = downloads_module.get_settings().download_staging_dir / job["id"]
+    assert (staging / "half.mp4.part").exists()
+    state = json.loads(
+        downloads_module.get_settings().download_state_path.read_text(encoding="utf-8")
+    )
+    assert [entry["id"] for entry in state["jobs"]] == [job["id"]]
+
+    # a queued job that is still around can be cancelled as usual
+    manager.cancel(job["id"])
+    assert manager.history[-1]["status"] == "cancelled"
+
+
+def test_an_interrupted_job_is_respawned_when_the_server_stays_up(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://example.com/a", str(download_env["inbox"]))
+    manager.jobs[job["id"]] = job
+    spawned: list[str] = []
+    manager._spawn = lambda job_id: spawned.append(job_id)  # type: ignore[method-assign]
+
+    manager._respawn(job["id"])
+    assert spawned == [job["id"]]
+
+    job["status"] = "downloading"
+    manager._respawn(job["id"])
+    manager._closing = True
+    job["status"] = "queued"
+    manager._respawn(job["id"])
+    manager._respawn("missing")
+    assert spawned == [job["id"]]
+
+
+def test_an_interrupted_gallery_dl_fallback_keeps_the_job(download_env):
+    manager = DownloadManager()
+    calls: list[str] = []
+
+    async def run(job, downloader, staging):
+        calls.append(downloader)
+        if downloader == "yt-dlp":
+            return 1, ["ERROR: Unsupported URL: https://example.com/x"]
+        return -9, []
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://example.com/a"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == ["yt-dlp", "gallery-dl"]
+    job = next(iter(manager.jobs.values()))
+    assert job["status"] == "queued"
+    manager.cancel(job["id"])
+
+
+def test_resume_later_without_a_running_loop_is_a_noop(download_env):
+    manager = DownloadManager()
+    manager._resume_later("missing")  # outside asyncio.run: no loop to schedule on

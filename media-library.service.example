@@ -18,6 +18,12 @@ Environment=MALLOC_ARENA_MAX=2
 # headroom that it cannot wedge in kernel memory reclaim under the cap.
 MemoryHigh=3G
 MemoryMax=5G
+# The default control-group kill SIGTERMs the downloader subprocesses at the
+# same moment as the server, so a restart looks like a crashed download. With
+# mixed only the server is signalled: it writes the queue and stops its own
+# children.
+KillMode=mixed
+TimeoutStopSec=120
 
 [Install]
 WantedBy=multi-user.target
