@@ -163,11 +163,10 @@ def _signature_for(
 
     mtime = float(row["mtime"] or 0)
     size = int(row["size"] or 0)
-    if (
-        cached is not None
-        and float(cached["mtime"] or 0) == mtime
-        and int(cached["size"] or 0) == size
-    ):
+    # The signature is kept for as long as the file exists, not per mtime/size:
+    # a remote mount that bumps timestamps must not force expensive re-sampling.
+    # Deletes/removes clear the row; renames move it with the file.
+    if cached is not None:
         hashes = _parse_hashes(cached["hashes"])
         if hashes is not None:
             return {
@@ -214,7 +213,7 @@ def _signature_for(
 
 
 def _cached_signatures(paths: list[str]) -> dict[str, dict[str, Any]]:
-    """Signatures already stored for these paths, ignoring stale rows."""
+    """Signatures stored for these paths while their file row still exists."""
     if not paths:
         return {}
     result: dict[str, dict[str, Any]] = {}
@@ -224,17 +223,12 @@ def _cached_signatures(paths: list[str]) -> dict[str, dict[str, Any]]:
         placeholders = ",".join("?" for _ in chunk)
         with reader() as conn:
             rows = conn.execute(
-                "SELECT vf.path, vf.mtime, vf.size, vf.duration, vf.hashes, "
-                "f.mtime AS file_mtime, f.size AS file_size "
+                "SELECT vf.path, vf.mtime, vf.size, vf.duration, vf.hashes "
                 "FROM visual_frames vf JOIN files f ON f.path = vf.path "
                 f"WHERE vf.path IN ({placeholders})",
                 chunk,
             ).fetchall()
         for row in rows:
-            if float(row["mtime"] or 0) != float(row["file_mtime"] or 0):
-                continue
-            if int(row["size"] or 0) != int(row["file_size"] or 0):
-                continue
             hashes = _parse_hashes(row["hashes"])
             if hashes is None:
                 continue
@@ -611,17 +605,22 @@ def _group_fully_ignored(paths: list[str], ignored: set[frozenset[str]]) -> bool
     return True
 
 
-def _candidate_sizes(conn) -> list[int]:
+def _candidate_sizes(conn, include_images: bool = True) -> list[int]:
+    image_filter = "" if include_images else " AND type != 'image'"
     rows = conn.execute(
-        "SELECT size FROM files WHERE size > 0 GROUP BY size "
+        "SELECT size FROM files WHERE size > 0"
+        f"{image_filter} GROUP BY size "
         "HAVING COUNT(*) > 1 ORDER BY size DESC"
     ).fetchall()
     return [int(row["size"]) for row in rows]
 
 
-def _candidate_rows(conn, sizes: list[int]) -> list[sqlite3.Row]:
+def _candidate_rows(
+    conn, sizes: list[int], include_images: bool = True
+) -> list[sqlite3.Row]:
     if not sizes:
         return []
+    image_filter = "" if include_images else " AND f.type != 'image'"
     rows: list[sqlite3.Row] = []
     # Chunked like _cached_signatures, so a library with more distinct
     # duplicated sizes than SQLite's variable limit still queries.
@@ -630,7 +629,7 @@ def _candidate_rows(conn, sizes: list[int]) -> list[sqlite3.Row]:
         placeholders = ",".join("?" for _ in chunk)
         rows.extend(
             conn.execute(
-                f"{_FILE_SQL} WHERE f.size IN ({placeholders}) "
+                f"{_FILE_SQL} WHERE f.size IN ({placeholders}){image_filter} "
                 "ORDER BY f.size DESC, f.path",
                 chunk,
             ).fetchall()
@@ -639,9 +638,13 @@ def _candidate_rows(conn, sizes: list[int]) -> list[sqlite3.Row]:
     return rows
 
 
-def content_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
+def content_groups(
+    limit: int = 25, offset: int = 0, include_images: bool = True
+) -> dict[str, Any]:
     with reader() as conn:
-        rows = _candidate_rows(conn, _candidate_sizes(conn))
+        rows = _candidate_rows(
+            conn, _candidate_sizes(conn, include_images), include_images
+        )
         ignored = _ignored_pairs(conn)
 
     bucket: dict[tuple[int, str], list[sqlite3.Row]] = defaultdict(list)
@@ -690,15 +693,21 @@ def _hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def visual_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
+def visual_groups(
+    limit: int = 25, offset: int = 0, include_images: bool = True
+) -> dict[str, Any]:
+    image_filter = "" if include_images else " AND f.type != 'image'"
     with reader() as conn:
         rows = conn.execute(
-            f"{_FILE_SQL} WHERE length(f.thumb_hash) = 16 ORDER BY f.path"
+            f"{_FILE_SQL} WHERE length(f.thumb_hash) = 16{image_filter} ORDER BY f.path"
         ).fetchall()
         ignored = _ignored_pairs(conn)
-        unhashed = conn.execute(
+        unhashed_query = (
             "SELECT COUNT(*) AS n FROM files WHERE has_thumb = 1 AND thumb_hash IS NULL"
-        ).fetchone()["n"]
+        )
+        if not include_images:
+            unhashed_query += " AND type != 'image'"
+        unhashed = conn.execute(unhashed_query).fetchone()["n"]
 
     items: list[tuple[sqlite3.Row, int]] = []
     for row in rows:
@@ -788,7 +797,10 @@ def visual_groups(limit: int = 25, offset: int = 0) -> dict[str, Any]:
 
 
 def all_groups(
-    limit: int = 25, offset: int = 0, include_rejected: bool = False
+    limit: int = 25,
+    offset: int = 0,
+    include_rejected: bool = False,
+    include_images: bool = True,
 ) -> dict[str, Any]:
     """One combined list: byte-identical groups first, visual extras beside them.
 
@@ -805,7 +817,7 @@ def all_groups(
     ignore list changes, not per page turn. Verification stamps are applied
     per request so they always reflect the latest frame checks.
     """
-    merged, _unhashed = _cached_merged_state()
+    merged, _unhashed = _cached_merged_state(include_images)
     visual_paths = [
         file["path"]
         for group in merged
@@ -836,7 +848,7 @@ def all_groups(
         "mode": "all",
         "total_groups": len(visible),
         "total_files": sum(len(group["files"]) for group in visible),
-        "unhashed": _cached_unhashed(),
+        "unhashed": _cached_unhashed(include_images),
         "rejected_groups": rejected_groups,
         "groups": visible[offset : offset + limit],
     }
@@ -849,6 +861,7 @@ _merge_cache: dict[str, Any] = {
     "merged": None,
     "unhashed": 0,
     "fingerprint": None,
+    "include_images": True,
 }
 
 
@@ -856,12 +869,18 @@ def invalidate_merged_cache() -> None:
     """Drop the cached group universe (called after changes that edit it)."""
     with _merge_cache_lock:
         _merge_cache.update(
-            {"at": 0.0, "merged": None, "unhashed": 0, "fingerprint": None}
+            {
+                "at": 0.0,
+                "merged": None,
+                "unhashed": 0,
+                "fingerprint": None,
+                "include_images": True,
+            }
         )
 
 
-def _cached_unhashed() -> int:
-    return int(_cached_merged_state()[1])
+def _cached_unhashed(include_images: bool = True) -> int:
+    return int(_cached_merged_state(include_images)[1])
 
 
 def _merge_fingerprint() -> tuple[int, int]:
@@ -888,7 +907,9 @@ def _merge_fingerprint() -> tuple[int, int]:
     return files, ignored
 
 
-def _cached_merged_state() -> tuple[list[dict[str, Any]], int]:
+def _cached_merged_state(
+    include_images: bool = True,
+) -> tuple[list[dict[str, Any]], int]:
     """The merged+sorted group list and combined unhashed count."""
     now = time.monotonic()
     fingerprint = _merge_fingerprint()
@@ -896,11 +917,12 @@ def _cached_merged_state() -> tuple[list[dict[str, Any]], int]:
         if (
             _merge_cache["merged"] is not None
             and _merge_cache["fingerprint"] == fingerprint
+            and _merge_cache["include_images"] == include_images
             and now - _merge_cache["at"] < _MERGE_CACHE_TTL
         ):
             return _merge_cache["merged"], _merge_cache["unhashed"]
-    content = content_groups(limit=100_000, offset=0)
-    visual = visual_groups(limit=100_000, offset=0)
+    content = content_groups(limit=100_000, offset=0, include_images=include_images)
+    visual = visual_groups(limit=100_000, offset=0, include_images=include_images)
     owner: dict[str, str] = {}
     for group in content["groups"]:
         for file in group["files"]:
@@ -942,6 +964,7 @@ def _cached_merged_state() -> tuple[list[dict[str, Any]], int]:
                 "merged": merged,
                 "unhashed": unhashed,
                 "fingerprint": fingerprint,
+                "include_images": include_images,
             }
         )
     return merged, unhashed
@@ -972,22 +995,27 @@ def auto_verify_groups(groups: list[dict[str, Any]]) -> int:
     return len(candidates)
 
 
-def status() -> dict[str, Any]:
+def status(include_images: bool = True) -> dict[str, Any]:
+    image_filter = "" if include_images else " AND type != 'image'"
     with reader() as conn:
         candidate_files = conn.execute(
-            "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND size IN ("
-            "SELECT size FROM files WHERE size > 0 GROUP BY size HAVING COUNT(*) > 1)"
+            "SELECT COUNT(*) AS n FROM files WHERE size > 0"
+            f"{image_filter} AND size IN ("
+            "SELECT size FROM files WHERE size > 0"
+            f"{image_filter} GROUP BY size HAVING COUNT(*) > 1)"
         ).fetchone()["n"]
         unhashed_content = conn.execute(
-            "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND quick_hash IS NULL "
-            "AND size IN (SELECT size FROM files WHERE size > 0 "
-            "GROUP BY size HAVING COUNT(*) > 1)"
+            "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND quick_hash IS NULL"
+            f"{image_filter} AND size IN (SELECT size FROM files WHERE size > 0"
+            f"{image_filter} GROUP BY size HAVING COUNT(*) > 1)"
         ).fetchone()["n"]
         visual_ready = conn.execute(
             "SELECT COUNT(*) AS n FROM files WHERE length(thumb_hash) = 16"
+            f"{image_filter}"
         ).fetchone()["n"]
         visual_unhashed = conn.execute(
             "SELECT COUNT(*) AS n FROM files WHERE has_thumb = 1 AND thumb_hash IS NULL"
+            f"{image_filter}"
         ).fetchone()["n"]
         ignored = conn.execute(
             "SELECT COUNT(*) AS n FROM ignored_duplicates"
@@ -1005,17 +1033,19 @@ def status() -> dict[str, Any]:
     }
 
 
-def hash_content(limit: int = 50) -> dict[str, Any]:
+def hash_content(limit: int = 50, include_images: bool = True) -> dict[str, Any]:
     """Hash up to ``limit`` candidate files that have no quick hash yet."""
     hashed = 0
     failed = 0
+    image_filter = "" if include_images else " AND f.type != 'image'"
+    plain_image_filter = "" if include_images else " AND type != 'image'"
     with reader() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT f.path FROM files f
             WHERE f.size > 0 AND f.quick_hash IS NULL
               AND f.size IN (SELECT size FROM files WHERE size > 0
-                             GROUP BY size HAVING COUNT(*) > 1)
+                             GROUP BY size HAVING COUNT(*) > 1){image_filter}
               -- ZIP members can never be hashed by the byte scanner; without
               -- this filter they permanently occupy the batch window (they
               -- share sizes, so they keep ranking first) and the sweep never
@@ -1047,9 +1077,9 @@ def hash_content(limit: int = 50) -> dict[str, Any]:
             conn.executemany("UPDATE files SET quick_hash = ? WHERE path = ?", updates)
     with reader() as conn:
         remaining = conn.execute(
-            "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND quick_hash IS NULL "
-            "AND size IN (SELECT size FROM files WHERE size > 0 "
-            "GROUP BY size HAVING COUNT(*) > 1) "
+            "SELECT COUNT(*) AS n FROM files WHERE size > 0 AND quick_hash IS NULL"
+            f"{plain_image_filter} AND size IN (SELECT size FROM files WHERE size > 0"
+            " GROUP BY size HAVING COUNT(*) > 1) "
             "AND folder_path NOT IN (SELECT path FROM folders WHERE is_zip = 1)"
         ).fetchone()["n"]
     if updates:
@@ -1057,12 +1087,13 @@ def hash_content(limit: int = 50) -> dict[str, Any]:
     return {"hashed": hashed, "failed": failed, "remaining": remaining or 0}
 
 
-def hash_visual(limit: int = 50) -> dict[str, Any]:
+def hash_visual(limit: int = 50, include_images: bool = True) -> dict[str, Any]:
     """Compute pHashes for up to ``limit`` files that have a cached poster."""
+    image_filter = "" if include_images else " AND type != 'image'"
     with reader() as conn:
         rows = conn.execute(
             "SELECT path, mtime, size FROM files WHERE has_thumb = 1 "
-            "AND thumb_hash IS NULL ORDER BY path LIMIT ?",
+            f"AND thumb_hash IS NULL{image_filter} ORDER BY path LIMIT ?",
             (limit,),
         ).fetchall()
     updates: list[tuple[str, str]] = []
@@ -1081,6 +1112,7 @@ def hash_visual(limit: int = 50) -> dict[str, Any]:
     with reader() as conn:
         remaining = conn.execute(
             "SELECT COUNT(*) AS n FROM files WHERE has_thumb = 1 AND thumb_hash IS NULL"
+            f"{image_filter}"
         ).fetchone()["n"]
     if updates:
         invalidate_merged_cache()

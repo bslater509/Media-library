@@ -181,7 +181,7 @@ def test_reclaimable_and_health(analytics_env):
     assert reclaimable["duplicates"]["bytes"] == 1000 + 200
     assert reclaimable["webp"]["saved_bytes"] == 300
     assert reclaimable["webp"]["pending"] == 4
-    assert reclaimable["zip"]["folders"] == 1  # only C is leaf + images only
+    assert "zip" not in reclaimable  # compression was removed from the app
     assert reclaimable["empty_folders"] == 1
 
     health = payload["health"]

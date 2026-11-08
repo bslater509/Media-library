@@ -15,7 +15,9 @@ import argparse
 import asyncio
 import logging
 import os
+import shutil
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI
@@ -98,6 +100,21 @@ async def lifespan(app: FastAPI):
             "[api] The index is read-only and has no usable schema; "
             "start once with DB_READ_ONLY=false or restore a snapshot"
         )
+
+    # One-time migration from the removed ZIP-compression feature: sweep the
+    # staging directory its builders wrote to (idempotent; ZIP_CACHE_DIR, the
+    # member cache browsable archives still need, is untouched).
+    legacy_staging = os.environ.get("ZIP_STAGING_DIR") or os.environ.get(
+        "V2_ZIP_STAGING_DIR"
+    )
+    staging_path = (
+        settings.data_dir / "zip_staging"
+        if not legacy_staging
+        else Path(legacy_staging)
+    )
+    if staging_path.is_dir():
+        await asyncio.to_thread(shutil.rmtree, staging_path, ignore_errors=True)
+        logger.info("[api] Removed the obsolete zip staging directory")
 
     start_runtime()
     try:

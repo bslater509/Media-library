@@ -5,7 +5,7 @@ image collections — often tens of thousands of files on a slow remote mount
 (pCloud, NFS). One FastAPI process serves a JSON API at `/api` and a React
 client at `/`, backed by a single SQLite index.
 
-**Current release: v3.1.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+**Current release: v3.2.0** · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
 
 ---
 
@@ -25,10 +25,11 @@ client at `/`, backed by a single SQLite index.
   poster chooser that samples frames across a clip and can set any of them.
 - **Processing** — metadata probing (dimensions, duration, codecs, fps, capture
   time), in-place x265 (HEVC) conversion with live progress, WebP optimisation,
-  content and visual dedupe with side-by-side playback and a five-frame visual
-  check, ZIP browsing/compression/unpacking (with batches and archive-level
-  WebP), empty-folder cleanup, and a verification queue that flags likely
-  damaged files (zero-byte, failed probe, failed poster) for review.
+  content and visual dedupe with side-by-side playback, an optional images
+  filter and a cached five-frame visual check, ZIP virtual browsing and
+  unpacking (single or batched), empty-folder cleanup, and a verification
+  queue that flags likely damaged files (zero-byte, failed probe, failed
+  poster) for review.
 - **Downloads** — queue one or many URLs into a folder: yt-dlp with a
   gallery-dl fallback, live progress, cancel, retry, paginated history.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and

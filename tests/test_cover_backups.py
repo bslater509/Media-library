@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library import backups, writes, zip_batch, zip_ops, zip_webp
+from media_library import backups, writes, zip_batch, zip_ops
 from media_library import config as v2_config
 from media_library.app import create_app
 from media_library.zip_batch import ZipBatchRunner
@@ -461,52 +461,30 @@ def test_zip_router_translates_errors(monkeypatch):
     def boom(path):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(zip_ops, "check_folder", boom)
-    monkeypatch.setattr(zip_ops, "compress_folder", boom)
     monkeypatch.setattr(zip_ops, "unpack_archive", boom)
-    monkeypatch.setattr(zip_webp, "optimize_archive", boom)
     client = TestClient(create_app())
 
-    assert client.get("/api/zip/check", params={"path": "/x"}).status_code == 500
-    assert client.post("/api/zip/compress", json={"path": "/x"}).status_code == 500
     assert client.post("/api/zip/unpack", json={"path": "/x"}).status_code == 500
-    assert client.post("/api/zip/webp/optimize", json={"path": "/x"}).status_code == 500
 
 
-def test_zip_router_lists_overview_and_webp(monkeypatch):
-    candidate = [
+def test_zip_router_lists_the_overview(monkeypatch):
+    archive = [
         {
-            "path": "/pics",
-            "name": "pics",
+            "path": "/a.zip",
+            "name": "a.zip",
             "file_count": 3,
             "size_formatted": "3 KB",
         }
     ]
-    monkeypatch.setattr(zip_ops, "archive_candidates", lambda folder: candidate)
-    monkeypatch.setattr(zip_ops, "archives", lambda: candidate)
+    monkeypatch.setattr(zip_ops, "archives", lambda: archive)
     monkeypatch.setattr(zip_ops, "cache_info", lambda: {"bytes": 1})
-    monkeypatch.setattr(
-        zip_webp,
-        "optimize_archive",
-        lambda path: {
-            "archive": path,
-            "changed": True,
-            "converted": 1,
-            "skipped": 0,
-            "saved_bytes": 12,
-            "saved_formatted": "12 B",
-            "members": 4,
-        },
-    )
     client = TestClient(create_app())
 
     overview = client.get("/api/zip/overview")
     assert overview.status_code == 200, overview.text
-    assert overview.json()["folders"][0]["name"] == "pics"
-
-    optimized = client.post("/api/zip/webp/optimize", json={"path": "/a.zip"})
-    assert optimized.status_code == 200, optimized.text
-    assert optimized.json()["archive"] == "/a.zip"
+    payload = overview.json()
+    assert payload["archives"][0]["name"] == "a.zip"
+    assert "folders" not in payload
 
 
 # -- media_library/routers/zip_batch.py and media_library/zip_batch.py --------
@@ -521,11 +499,11 @@ def test_zip_batch_router_full_control(monkeypatch):
         blocker.wait(3)
         return {"folder": path}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", blocking)
+    monkeypatch.setattr(zip_ops, "unpack_archive", blocking)
     client = TestClient(create_app())
 
     started = client.post(
-        "/api/zip/batch/start", json={"mode": "compress", "paths": ["/a.zip"]}
+        "/api/zip/batch/start", json={"mode": "unpack", "paths": ["/a.zip"]}
     )
     assert started.status_code == 200, started.text
     assert started.json()["status"] == "running"
@@ -580,31 +558,10 @@ def test_batch_rejects_bad_requests(monkeypatch):
         runner.start("zap", ["/a.zip"])
     assert caught.value.status == 400
 
-    monkeypatch.setattr(zip_ops, "archive_candidates", lambda folder: [])
+    monkeypatch.setattr(zip_ops, "archives", list)
     with pytest.raises(writes.WriteError) as empty:
-        runner.start("compress")
+        runner.start("unpack")
     assert empty.value.status == 400
-
-
-def test_batch_default_queue_for_compress(monkeypatch):
-    runner = ZipBatchRunner()
-    seen: list[str] = []
-    monkeypatch.setattr(
-        zip_ops,
-        "archive_candidates",
-        lambda folder: [{"path": "/a"}, {"path": "/b"}],
-    )
-
-    def fake(path):
-        seen.append(path)
-        return {"archive": path}
-
-    monkeypatch.setattr(zip_ops, "compress_folder", fake)
-    status = runner.start("compress")
-    assert status["status"] == "running"
-    assert status["total"] == 2
-    assert _wait(lambda: runner.status()["status"] == "completed")
-    assert seen == ["/a", "/b"]
 
 
 def test_batch_default_queue_for_unpack(monkeypatch):
@@ -649,10 +606,10 @@ def test_batch_error_log_is_capped_at_twenty_entries(monkeypatch):
     paths = [f"/f{index}" for index in range(21)]
 
     def fail(path):
-        raise RuntimeError("cannot archive")
+        raise RuntimeError("cannot unpack")
 
-    monkeypatch.setattr(zip_ops, "compress_folder", fail)
-    runner.start("compress", paths)
+    monkeypatch.setattr(zip_ops, "unpack_archive", fail)
+    runner.start("unpack", paths)
     assert _wait(lambda: runner.status()["status"] == "completed")
     final = runner.status()
     assert final["failed"] == 21
@@ -666,10 +623,10 @@ def test_batch_pauses_between_items_and_resumes(monkeypatch):
 
     def slow(path):
         time.sleep(0.08)
-        return {"archive": path}
+        return {"folder": path}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", slow)
-    runner.start("compress", ["/1", "/2", "/3", "/4"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", slow)
+    runner.start("unpack", ["/1.zip", "/2.zip", "/3.zip", "/4.zip"])
     assert _wait(lambda: runner.status()["processed"] >= 1)
     paused = runner.pause()
     assert paused["status"] == "paused"
@@ -688,10 +645,10 @@ def test_batch_cancelled_while_paused_skips_the_queue(monkeypatch):
 
     def blocking(path):
         blocker.wait(3)
-        return {"archive": path}
+        return {"folder": path}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", blocking)
-    runner.start("compress", ["/1", "/2", "/3"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", blocking)
+    runner.start("unpack", ["/1.zip", "/2.zip", "/3.zip"])
     assert _wait(lambda: runner.status()["status"] == "running")
     runner.pause()
     cancelled = runner.cancel()

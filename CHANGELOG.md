@@ -9,9 +9,41 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
-## [Unreleased]
+## [3.2.0] - 2026-11-08
+
+### Removed
+
+- **ZIP compression.** Folders are no longer archived into ZIPs:
+  `POST /api/zip/compress` and `GET /api/zip/check` are gone, as are the
+  "Folders ready to archive" card, the compress action on the Library page
+  and the ZIP-eligible metric on the Analytics page. Archives remain
+  first-class citizens — they still open as virtual folders with member
+  streaming, posters and previews — and unpacking keeps its single and batch
+  paths (`POST /api/zip/unpack`, `/api/zip/batch/*`, both unpack-only now).
+  Per-archive WebP rewrites (`POST /api/zip/webp/optimize`) are also gone;
+  image members stay excluded from the loose-image optimizer. On startup the
+  obsolete archive staging directory is swept (honouring a leftover
+  `ZIP_STAGING_DIR`/`V2_ZIP_STAGING_DIR` env value), removing that setting
+  together with its directory.
 
 ### Added
+
+- **The Duplicates page can ignore images.** `GET /api/dedupe/groups`,
+  `GET /api/dedupe/status` and `POST /api/dedupe/hash` accept
+  `include_images=false` (the new Images switch on the page), which removes
+  image rows from groups, counts and hash batches. The page's Show images
+  switch defaults to off; the API keeps images unless asked to omit them.
+
+### Changed
+
+- **Duplicate groups preselect the largest file to keep.** The highlighted
+  choice and the delete preview follow that default until another copy is
+  clicked; equal sizes keep the first file in the group.
+
+- **Five-frame checks are kept for the file's lifetime.** A cached
+  `visual_frames` signature is no longer discarded when a file's `mtime` or
+  size changes; renames and moves carry it to the new path, while deletes,
+  prunes and the Reset action still clear it.
 
 - **Media verification queue.** A new owned worker pages through the index
   (keyset batches of 200 paths, never a filesystem walk) and flags

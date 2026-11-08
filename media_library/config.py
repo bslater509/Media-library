@@ -101,7 +101,6 @@ class Settings:
     download_cookies_file: str
     zip_cache_dir: Path
     zip_cache_max_size_gb: float
-    zip_staging_dir: Path
     webp_quality: int
     webp_skip_larger: bool
     static_dir: Path
@@ -186,9 +185,6 @@ def load_settings() -> Settings:
         download_cookies_file=_env_str("DOWNLOAD_COOKIES_FILE"),
         zip_cache_dir=_env_path("ZIP_CACHE_DIR", default=data_dir / "cache" / "zips"),
         zip_cache_max_size_gb=_env_float("ZIP_CACHE_MAX_SIZE_GB", default=5.0),
-        zip_staging_dir=_env_path(
-            "ZIP_STAGING_DIR", "V2_ZIP_STAGING_DIR", default=data_dir / "zip_staging"
-        ),
         webp_quality=min(100, max(1, _env_int("WEBP_QUALITY", default=85))),
         webp_skip_larger=_env_bool("WEBP_SKIP_LARGER", default=False),
         static_dir=(BASE_DIR / "static").resolve(),

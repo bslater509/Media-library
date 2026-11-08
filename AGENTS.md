@@ -23,8 +23,8 @@ at `/`.
 - **Processing**: background poster and looping animated-WebP previews,
   metadata probing (dimensions, duration, codecs, fps, capture time), live
   transcoding for non-web containers, in-place x265 (HEVC) conversion, WebP
-  optimisation, dedupe (content hash and perceptual pHash), ZIP compression /
-  unpacking / virtual browsing, URL+playlist downloads (yt-dlp, gallery-dl
+  optimisation, dedupe (content hash and perceptual pHash), ZIP unpacking and
+  virtual archive browsing, URL+playlist downloads (yt-dlp, gallery-dl
   fallback), library analytics, and SQLite snapshots with auto-restore.
 - **Auth**: optional single shared password (`APP_PASSWORD`), stateless signed
   cookie, no server-side session store.
@@ -176,7 +176,7 @@ media-library/
 │   ├── dedupe.py              # quick hash, pHash, resolve
 │   ├── downloads.py           # yt-dlp / gallery-dl manager
 │   ├── sorter.py              # incoming queue, destinations, moves, undo
-│   ├── zipfs.py / zip_ops.py / zip_webp.py / zip_batch.py
+│   ├── zipfs.py / zip_ops.py / zip_batch.py
 │   ├── cleanup.py             # empty-folder cleanup
 │   ├── analytics.py           # index-only rollups
 │   ├── backups.py / restore.py
@@ -205,7 +205,7 @@ media-library/
 ├── tests/                     # pytest suite (30 modules)
 └── data/                      # runtime, git-ignored: library.db, thumbnails/,
                                # transcodes/, upload_staging/, download_staging/,
-                               # zip_staging/, cache/zips/, backup_staging/
+                               # cache/zips/, backup_staging/
 ```
 
 ---
@@ -236,7 +236,6 @@ environment by their own modules, not through `config.py`'s `Settings`.
 | `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel downloads |
 | `DOWNLOAD_COOKIES_FILE` | *(empty)* | Netscape cookies for gated sites |
 | `SORTER_STATE` | `$DATA_DIR/sorter_state.json` | Recent sorter destinations |
-| `ZIP_STAGING_DIR` | `$DATA_DIR/zip_staging` | Local archive assembly |
 | `ZIP_CACHE_DIR` | `$DATA_DIR/cache/zips` | Extracted archive members |
 | `ZIP_CACHE_MAX_SIZE_GB` | `5.0` | LRU ceiling for that cache |
 | `LIBRARY_BACKUP_DIR` | `$LIBRARY_DIR/.media_library_backup` | Snapshot location |
@@ -299,9 +298,10 @@ Hard contracts:
   the sorter's "already in the library" warning and cached work depend on them.
 - `webp_optimized`: `1` done/native, `0` pending, `-1` skipped (larger).
 - `visual_frames.hashes` is a JSON list of five 16-hex pHashes (or nulls) taken
-  at 10–90% of a video's duration. It is keyed by path and invalidated when the
-  file's `mtime`/`size` changes, so a visual group can be double-checked
-  without re-running FFmpeg every page load.
+  at 10–90% of a video's duration. It is keyed by path and kept for as long as
+  the file exists: an `mtime`/`size` change does not invalidate it, a rename or
+  move rewrites the key, and a delete/prune or `POST /api/dedupe/reset` drops
+  it. A visual group can therefore be re-checked without re-running FFmpeg.
 
 - `watch_history` is one rollup row per viewed file: `play_count` counts
   recordings, `seconds_watched` keeps a high-water mark (a shorter rewatch or
@@ -350,7 +350,7 @@ daemon thread that pauses between items.
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. |
-| ZIP batch runner | One compress/unpack archive at a time; pause takes effect between items. |
+| ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 
 Progress is exposed by `/api/system/status` (index, workers, runtime ownership)
 and the per-feature status routes. x265, downloads and ZIP batches are also
@@ -388,27 +388,29 @@ in-memory: a restart stops running jobs and clears their history.
 ### WebP
 Loose images convert one file at a time (atomic `.tmp` → `os.replace`), poster
 and hashes are updated, and a native `.webp` is marked optimised without
-conversion. Archives are rewritten as a unit on demand (browse or
-`POST /api/zip/webp/optimize`), never by the background sweep.
+conversion. Archive members are excluded from the loose-image sweep and are
+never rewritten in place; unpack first.
 
 ### ZIP
 - `zipfs` inspects the central directory (fast, no extraction) and extracts a
   member into `ZIP_CACHE_DIR/<hash>` on first access, LRU-trimmed to
   `ZIP_CACHE_MAX_SIZE_GB`.
-- Compress: build on local staging, verify with `testzip()`, copy as `.tmp`,
-  `os.replace`, then replace the folder's index subtree with archive members.
 - Unpack: extract to a temporary sibling (skipping `..`), rename into place,
   delete the archive, re-index.
-- A per-archive lock serialises compress, unpack, WebP rewrite and sync-back.
+- A per-archive lock serialises unpack and the member-cache purge.
 
 ### Dedupe
 Content groups come from identical sizes and `quick_hash`; every deletion is
 preceded by a full byte comparison. Visual clusters use complete linkage on the
-64-bit poster pHash (distance ≤ 2) capped at 12 files. Any visual group can be
-double-checked against five sampled frames per video (10–90% of duration), and
-the result is cached in `visual_frames`. The client shows content and visual
-groups in one list; a visual cluster already covered by a byte-identical group
-is folded into it. Fetching groups auto-queues a five-frame check for every
+64-bit poster pHash (distance ≤ 2) capped at 12 files. `include_images=false`
+removes image rows from content groups, visual groups, status counts and hash
+batches (the client's Show images switch, off by default), while the API
+default keeps them. Any visual group can be double-checked
+against five sampled frames per video (10–90% of duration), and the result is
+cached in `visual_frames` for the file's lifetime. The client shows content and
+visual groups in one list and preselects the largest file as the copy to keep;
+a visual cluster already covered by a byte-identical group is folded into it.
+Fetching groups auto-queues a five-frame check for every
 visual group on the page; a batch of checks runs on one daemon thread and
 exposes progress (group, file and sampled frame) at
 `GET /api/dedupe/verify-visual/status`, so leaving the page does not stop it.
@@ -498,14 +500,13 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 
 ### Processing (`routers/webp.py`, `zip.py`, `zip_batch.py`, `x265.py`)
 `GET /webp/status` · `POST /webp/optimize` ·
-`GET /zip/check?path=` · `GET /zip/overview` · `POST /zip/compress` ·
-`POST /zip/unpack` · `POST /zip/webp/optimize` ·
+`GET /zip/overview` · `POST /zip/unpack` ·
 `POST /zip/batch/start|pause|resume|cancel` · `GET /zip/batch/status` ·
 `POST /transcode/x265` · `GET /transcode/x265/status?path=` ·
 `POST /transcode/x265/cancel`
 
 ### Dedupe, analytics, cleanup, backups
-`GET /dedupe/status` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&auto_verify=` ·
+`GET /dedupe/status?include_images=` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&include_images=&auto_verify=` ·
 `POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/verify-visual` ·
 `POST /dedupe/verify-visual/batch` · `GET /dedupe/verify-visual/status` ·
 `POST /dedupe/resolve` · `POST /dedupe/ignore` · `GET /dedupe/ignored` ·

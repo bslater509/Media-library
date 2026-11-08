@@ -179,7 +179,10 @@ def _apply_file_move(conn, old: str, new: str) -> None:
     )
     conn.execute("UPDATE favorites SET path = ? WHERE path = ?", (new, old))
     conn.execute("UPDATE watch_history SET path = ? WHERE path = ?", (new, old))
-    conn.execute("DELETE FROM visual_frames WHERE path = ?", (old,))
+    # Keep the five-frame check with the file across a rename/move. A stale
+    # row already sitting on the destination is discarded first.
+    conn.execute("DELETE FROM visual_frames WHERE path = ?", (new,))
+    conn.execute("UPDATE visual_frames SET path = ? WHERE path = ?", (new, old))
     _recompute_folder(conn, os.path.dirname(old))
     if os.path.dirname(new) != os.path.dirname(old):
         _recompute_folder(conn, os.path.dirname(new))

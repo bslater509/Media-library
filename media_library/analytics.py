@@ -360,17 +360,6 @@ def _reclaimable(conn) -> dict[str, Any]:
         "SELECT COUNT(*) AS n FROM files WHERE type = 'image' AND ext != '.webp' "
         "AND COALESCE(webp_optimized, 0) = 0"
     ).fetchone()["n"]
-    zip_folders = conn.execute(
-        """
-        SELECT COUNT(*) AS n, COALESCE(SUM(total_size), 0) AS bytes FROM folders f
-        WHERE COALESCE(f.is_zip, 0) = 0
-          AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_path = f.path)
-          AND (SELECT COUNT(*) FROM files x WHERE x.folder_path = f.path
-               AND x.type = 'image') >= 2
-          AND NOT EXISTS (SELECT 1 FROM files v WHERE v.folder_path = f.path
-               AND v.type = 'video')
-        """
-    ).fetchone()
     empty = conn.execute(
         """
         SELECT COUNT(*) AS n FROM folders f
@@ -392,11 +381,6 @@ def _reclaimable(conn) -> dict[str, Any]:
             ),
             "converted": (stats["converted_count"] if stats else 0) or 0,
             "pending": pending_webp or 0,
-        },
-        "zip": {
-            "folders": zip_folders["n"] or 0,
-            "bytes": zip_folders["bytes"] or 0,
-            "size_formatted": library.format_size(zip_folders["bytes"] or 0),
         },
         "empty_folders": empty or 0,
     }

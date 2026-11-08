@@ -1,9 +1,9 @@
 """Sequential ZIP batch jobs.
 
-One runner at a time, on a daemon thread: each archive operation is the same
-validated compress/unpack used by the single-item endpoints, so batch mode adds
-scheduling, not a second implementation. Pause takes effect between items (an
-archive is never left half-written), and cancel clears the queue.
+One runner at a time, on a daemon thread: each archive is the same validated
+unpack used by the single-item endpoint, so batch mode adds scheduling, not a
+second implementation. Pause takes effect between items (an archive is never
+left half-written), and cancel clears the queue.
 """
 
 from __future__ import annotations
@@ -39,12 +39,12 @@ class ZipBatchRunner:
     # -- control -------------------------------------------------------
 
     def start(self, mode: str, paths: list[str] | None = None) -> dict[str, Any]:
-        if mode not in ("compress", "unpack"):
+        if mode != "unpack":
             raise writes.WriteError("Unknown batch mode", 400)
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise writes.WriteError("A ZIP batch is already running", 409)
-            queue = list(paths) if paths else self._default_queue(mode)
+            queue = list(paths) if paths else self._default_queue()
             if not queue:
                 raise writes.WriteError("No eligible items to process", 400)
             self._pause.clear()
@@ -62,14 +62,9 @@ class ZipBatchRunner:
                 "started_at": time.time(),
                 "finished_at": None,
             }
-            operation = (
-                zip_ops.compress_folder
-                if mode == "compress"
-                else zip_ops.unpack_archive
-            )
             self._thread = threading.Thread(
                 target=self._run,
-                args=(queue, operation),
+                args=(queue, zip_ops.unpack_archive),
                 name="zip-batch",
                 daemon=True,
             )
@@ -77,9 +72,7 @@ class ZipBatchRunner:
             return self.status()
 
     @staticmethod
-    def _default_queue(mode: str) -> list[str]:
-        if mode == "compress":
-            return [item["path"] for item in zip_ops.archive_candidates("")]
+    def _default_queue() -> list[str]:
         return [item["path"] for item in zip_ops.archives()]
 
     def _run(

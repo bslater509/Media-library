@@ -587,6 +587,7 @@ class DedupeStatus(BaseModel):
 class DedupeHashRequest(BaseModel):
     mode: str = "content"
     limit: int = Field(default=50, ge=1, le=200)
+    include_images: bool = True
 
 
 class DedupeHashResponse(BaseModel):
@@ -743,27 +744,6 @@ class EmptyDeleteResponse(BaseModel):
     remaining: int
 
 
-class ZipCheck(BaseModel):
-    path: str
-    target: str
-    eligible: bool
-    images: int
-    videos: int
-    reason: str
-
-
-class ZipCompressRequest(BaseModel):
-    path: str
-
-
-class ZipCompressResponse(BaseModel):
-    archive: str
-    members: int
-    bytes: int
-    size_formatted: str
-    removed: str
-
-
 class ZipUnpackRequest(BaseModel):
     path: str
 
@@ -774,13 +754,6 @@ class ZipUnpackResponse(BaseModel):
     removed: str
 
 
-class ZipCandidate(BaseModel):
-    path: str
-    name: str
-    file_count: int
-    size_formatted: str
-
-
 class ZipArchive(BaseModel):
     path: str
     name: str
@@ -789,7 +762,6 @@ class ZipArchive(BaseModel):
 
 
 class ZipOverview(BaseModel):
-    folders: list[ZipCandidate]
     archives: list[ZipArchive]
     cache: dict[str, Any]
 
@@ -914,21 +886,6 @@ class ZipBatchStatus(BaseModel):
     errors: list[dict[str, str]]
     started_at: float | None = None
     finished_at: float | None = None
-
-
-class ZipWebpRequest(BaseModel):
-    path: str
-
-
-class ZipWebpResponse(BaseModel):
-    archive: str
-    changed: bool
-    converted: int
-    skipped: int
-    saved_bytes: int
-    saved_formatted: str
-    members: int
-    size_formatted: str | None = None
 
 
 class AnalyticsOverview(BaseModel):

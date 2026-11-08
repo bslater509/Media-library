@@ -404,7 +404,7 @@ export function AnalyticsPage() {
         <CardHeader>
           <CardTitle>Reclaimable space</CardTitle>
         </CardHeader>
-        <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Metric
             label="Duplicate candidates"
             value={data.reclaimable.duplicates.size_formatted}
@@ -414,11 +414,6 @@ export function AnalyticsPage() {
             label="Saved by WebP"
             value={data.reclaimable.webp.saved_formatted}
             hint={`${data.reclaimable.webp.converted.toLocaleString()} converted · ${data.reclaimable.webp.pending.toLocaleString()} still to go`}
-          />
-          <Metric
-            label="ZIP-eligible image folders"
-            value={data.reclaimable.zip.size_formatted}
-            hint={`${data.reclaimable.zip.folders.toLocaleString()} leaf folders`}
           />
           <Metric
             label="Empty folders"

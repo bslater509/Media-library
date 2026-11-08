@@ -93,7 +93,7 @@ export function LibraryPage() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [zipPending, setZipPending] = useState<'compress' | 'unpack' | null>(null)
+  const [zipPending, setZipPending] = useState<'unpack' | null>(null)
   const [zipBusy, setZipBusy] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
@@ -327,43 +327,19 @@ export function LibraryPage() {
     [toggleFavorite.mutate],
   )
 
-  const requestCompress = async () => {
-    if (!currentPath) return
-    try {
-      const check = await api.zipCheck(currentPath)
-      if (!check.eligible) {
-        toast.error(check.reason || 'This folder cannot be archived')
-        return
-      }
-      setZipPending('compress')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not check the folder')
-    }
-  }
-
   const runZipAction = async () => {
     if (!zipPending || !currentPath) return
     setZipBusy(true)
     try {
-      if (zipPending === 'compress') {
-        const result = await api.zipCompress(currentPath)
-        toast.success(
-          `${result.members} file${result.members === 1 ? '' : 's'} archived (${result.size_formatted})`,
-        )
-        setZipPending(null)
-        if (parent) navigateTo(parent)
-        else void query.refetch()
-      } else {
-        const result = await api.zipUnpack(currentPath)
-        toast.success(
-          `${result.files} file${result.files === 1 ? '' : 's'} restored`,
-        )
-        setZipPending(null)
-        navigateTo(result.folder)
-      }
+      const result = await api.zipUnpack(currentPath)
+      toast.success(
+        `${result.files} file${result.files === 1 ? '' : 's'} restored`,
+      )
+      setZipPending(null)
+      navigateTo(result.folder)
       await invalidateLibrary(queryClient)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'ZIP operation failed')
+      toast.error(error instanceof Error ? error.message : 'Unpack failed')
     } finally {
       setZipBusy(false)
     }
@@ -532,16 +508,7 @@ export function LibraryPage() {
               >
                 <ArchiveRestore />
               </IconButton>
-            ) : (
-              <IconButton
-                aria-label="Compress this folder to ZIP"
-                title="Compress this folder to ZIP"
-                onClick={() => void requestCompress()}
-                disabled={!currentPath}
-              >
-                <Archive />
-              </IconButton>
-            )}
+            ) : null}
             <Button
               size="sm"
               className="hidden sm:inline-flex"
@@ -870,17 +837,12 @@ export function LibraryPage() {
       >
         <DialogContent aria-describedby={undefined} className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {zipPending === 'compress'
-                ? 'Compress this folder?'
-                : 'Unpack this archive?'}
-            </DialogTitle>
+            <DialogTitle>Unpack this archive?</DialogTitle>
           </DialogHeader>
           <DialogBody>
             <p className="text-sm leading-6 text-fg-muted">
-              {zipPending === 'compress'
-                ? 'The folder is replaced by a ZIP archive and its files become archive members. The original folder is removed.'
-                : 'The archive is extracted into a sibling folder and the ZIP is deleted. Existing names are never overwritten.'}
+              The archive is extracted into a sibling folder and the ZIP is
+              deleted. Existing names are never overwritten.
             </p>
             <p className="mt-2 truncate font-mono text-[11px] text-fg-subtle">
               {currentPath}
@@ -895,14 +857,8 @@ export function LibraryPage() {
               Cancel
             </Button>
             <Button onClick={() => void runZipAction()} disabled={zipBusy}>
-              {zipBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : zipPending === 'compress' ? (
-                <Archive />
-              ) : (
-                <ArchiveRestore />
-              )}
-              {zipPending === 'compress' ? 'Compress' : 'Unpack'}
+              {zipBusy ? <Loader2 className="size-4 animate-spin" /> : <ArchiveRestore />}
+              Unpack
             </Button>
           </DialogFooter>
         </DialogContent>

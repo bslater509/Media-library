@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import {
   Archive,
@@ -7,20 +6,18 @@ import {
   ArrowRight,
   Loader2,
   FolderArchive,
-  ImageDown,
   Pause,
   Play,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type ZipArrayItem, type ZipCandidate } from '../lib/api'
+import { type ZipArrayItem } from '../lib/api'
 import {
   useZipBatch,
   useZipBatchCancel,
   useZipBatchPause,
   useZipBatchResume,
   useZipBatchStart,
-  useZipCompress,
   useZipOverview,
   useZipUnpack,
 } from '../lib/queries'
@@ -38,24 +35,15 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
-  IconButton,
   Progress,
   Spinner,
 } from '../components/ui'
 
-type Pending =
-  | { kind: 'compress'; item: ZipCandidate }
-  | { kind: 'unpack'; item: ZipArrayItem }
-
 export function ZipPage() {
   const overview = useZipOverview()
-  const compress = useZipCompress()
   const unpack = useZipUnpack()
-  const [pending, setPending] = useState<Pending | null>(null)
-  const [confirmBatch, setConfirmBatch] = useState<'compress' | 'unpack' | null>(null)
-  const [webpTarget, setWebpTarget] = useState<ZipArrayItem | null>(null)
-  const [webpBusy, setWebpBusy] = useState(false)
-  const queryClient = useQueryClient()
+  const [pending, setPending] = useState<ZipArrayItem | null>(null)
+  const [confirmBatch, setConfirmBatch] = useState(false)
   const batch = useZipBatch()
   const startBatch = useZipBatchStart()
   const pauseBatch = useZipBatchPause()
@@ -65,7 +53,7 @@ export function ZipPage() {
   const batchActive = ['running', 'paused'].includes(batchStatus?.status ?? '')
   const lastBatchStatus = useRef('')
 
-  const busy = compress.isPending || unpack.isPending
+  const busy = unpack.isPending
   const batchBusy =
     startBatch.isPending || pauseBatch.isPending || resumeBatch.isPending || cancelBatch.isPending
 
@@ -77,71 +65,31 @@ export function ZipPage() {
     lastBatchStatus.current = status
   }, [batchStatus?.status, overview])
 
-  const optimizeWebp = async () => {
-    if (!webpTarget) return
-    setWebpBusy(true)
-    try {
-      const result = await api.zipOptimizeWebp(webpTarget.path)
-      toast.success(
-        result.changed
-          ? `${result.converted} image${result.converted === 1 ? '' : 's'} converted to WebP · ${result.saved_formatted} saved`
-          : 'No image in this archive needed conversion',
-      )
-      setWebpTarget(null)
-      void overview.refetch()
-      void queryClient.invalidateQueries({ queryKey: ['zip'] })
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Could not rewrite the archive',
-      )
-    } finally {
-      setWebpBusy(false)
-    }
-  }
-
   const beginBatch = () => {
     if (!confirmBatch) return
-    startBatch.mutate(confirmBatch, {
+    startBatch.mutate('unpack', {
       onSuccess: () => {
-        toast.success(
-          confirmBatch === 'compress'
-            ? 'Batch compression started'
-            : 'Batch unpack started',
-        )
-        setConfirmBatch(null)
+        toast.success('Batch unpack started')
+        setConfirmBatch(false)
       },
       onError: (error) =>
         toast.error(error instanceof Error ? error.message : 'Could not start the batch'),
     })
   }
-  const folders = overview.data?.folders ?? []
   const archives = overview.data?.archives ?? []
 
   const submit = () => {
     if (!pending) return
-    if (pending.kind === 'compress') {
-      compress.mutate(pending.item.path, {
-        onSuccess: (result) => {
-          toast.success(
-            `${result.members} file${result.members === 1 ? '' : 's'} archived into ${result.size_formatted}`,
-          )
-          setPending(null)
-        },
-        onError: (error) =>
-          toast.error(error instanceof Error ? error.message : 'Compression failed'),
-      })
-    } else {
-      unpack.mutate(pending.item.path, {
-        onSuccess: (result) => {
-          toast.success(
-            `${result.files} file${result.files === 1 ? '' : 's'} restored`,
-          )
-          setPending(null)
-        },
-        onError: (error) =>
-          toast.error(error instanceof Error ? error.message : 'Unpack failed'),
-      })
-    }
+    unpack.mutate(pending.path, {
+      onSuccess: (result) => {
+        toast.success(
+          `${result.files} file${result.files === 1 ? '' : 's'} restored`,
+        )
+        setPending(null)
+      },
+      onError: (error) =>
+        toast.error(error instanceof Error ? error.message : 'Unpack failed'),
+    })
   }
 
   return (
@@ -153,8 +101,8 @@ export function ZipPage() {
             ZIP archives
           </h1>
           <p className="text-xs text-fg-muted">
-            Compress leaf image folders or unpack an archive back into a folder.
-            Archives also open as virtual folders in the Library.
+            Unpack an archive back into a folder. Archives also open as virtual
+            folders in the Library.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -180,7 +128,7 @@ export function ZipPage() {
                 ) : (
                   <Archive aria-hidden="true" className="size-4 text-fg-subtle" />
                 )}
-                Batch {batchStatus.mode === 'compress' ? 'compression' : 'unpacking'}
+                Batch unpacking
                 <Badge
                   variant={
                     batchStatus.status === 'completed'
@@ -262,125 +210,60 @@ export function ZipPage() {
           <Spinner /> Reading the index…
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="flex items-center gap-2">
-                    <FolderArchive aria-hidden="true" className="size-4 text-fg-subtle" />
-                    Folders ready to archive
-                  </CardTitle>
-                  <Badge variant="outline">{folders.length}</Badge>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!folders.length || batchActive}
-                  onClick={() => setConfirmBatch('compress')}
-                >
-                  <Archive /> Compress all
-                </Button>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <FolderArchive aria-hidden="true" className="size-4 text-fg-subtle" />
+                  Archives
+                </CardTitle>
+                <Badge variant="outline">{archives.length}</Badge>
               </div>
-            </CardHeader>
-            <CardBody className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
-              {folders.length ? (
-                folders.map((folder) => (
-                  <div
-                    key={folder.path}
-                    className="flex items-center gap-2 rounded-sm border border-border px-2 py-1.5"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-fg">{folder.name}</p>
-                      <p className="truncate font-mono text-[10px] text-fg-subtle">
-                        {folder.path}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-[10px] text-fg-subtle">
-                      {folder.file_count} files · {folder.size_formatted}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setPending({ kind: 'compress', item: folder })}
-                    >
-                      <Archive /> Compress
-                    </Button>
-                  </div>
-                ))
-              ) : (
-                <EmptyState
-                  icon={<FolderArchive />}
-                  title="No eligible folders"
-                  description="A folder needs at least two images, no videos and no nested archives."
-                />
-              )}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="flex items-center gap-2">
-                    <ArchiveRestore aria-hidden="true" className="size-4 text-fg-subtle" />
-                    Archives
-                  </CardTitle>
-                  <Badge variant="outline">{archives.length}</Badge>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!archives.length || batchActive}
-                  onClick={() => setConfirmBatch('unpack')}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!archives.length || batchActive}
+                onClick={() => setConfirmBatch(true)}
+              >
+                <ArchiveRestore /> Unpack all
+              </Button>
+            </div>
+          </CardHeader>
+          <CardBody className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
+            {archives.length ? (
+              archives.map((archive) => (
+                <div
+                  key={archive.path}
+                  className="flex items-center gap-2 rounded-sm border border-border px-2 py-1.5"
                 >
-                  <ArchiveRestore /> Unpack all
-                </Button>
-              </div>
-            </CardHeader>
-            <CardBody className="flex max-h-[28rem] flex-col gap-1.5 overflow-y-auto">
-              {archives.length ? (
-                archives.map((archive) => (
-                  <div
-                    key={archive.path}
-                    className="flex items-center gap-2 rounded-sm border border-border px-2 py-1.5"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-fg">{archive.name}</p>
-                      <p className="truncate font-mono text-[10px] text-fg-subtle">
-                        {archive.path}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-[10px] text-fg-subtle">
-                      {archive.file_count} files · {archive.size_formatted}
-                    </span>
-                    <IconButton
-                      aria-label={`Convert images to WebP in ${archive.name}`}
-                      title="Convert images to WebP inside this archive"
-                      size={28}
-                      onClick={() => setWebpTarget(archive)}
-                    >
-                      <ImageDown />
-                    </IconButton>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setPending({ kind: 'unpack', item: archive })}
-                    >
-                      <ArchiveRestore /> Unpack
-                    </Button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs text-fg">{archive.name}</p>
+                    <p className="truncate font-mono text-[10px] text-fg-subtle">
+                      {archive.path}
+                    </p>
                   </div>
-                ))
-              ) : (
-                <EmptyState
-                  icon={<ArchiveRestore />}
-                  title="No archives indexed"
-                  description="Compressed folders appear here and in the Library."
-                />
-              )}
-            </CardBody>
-          </Card>
-        </div>
+                  <span className="shrink-0 text-[10px] text-fg-subtle">
+                    {archive.file_count} files · {archive.size_formatted}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPending(archive)}
+                  >
+                    <ArchiveRestore /> Unpack
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <EmptyState
+                icon={<ArchiveRestore />}
+                title="No archives indexed"
+                description="ZIP files in the library appear here and open as virtual folders."
+              />
+            )}
+          </CardBody>
+        </Card>
       )}
 
       <Dialog
@@ -389,100 +272,41 @@ export function ZipPage() {
       >
         <DialogContent aria-describedby={undefined} className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {pending?.kind === 'compress'
-                ? `Compress “${pending.item.name}”?`
-                : `Unpack “${pending?.item.name}”?`}
-            </DialogTitle>
+            <DialogTitle>Unpack “{pending?.name}”?</DialogTitle>
           </DialogHeader>
           <DialogBody>
-            {pending?.kind === 'compress' ? (
-              <p className="text-sm leading-6 text-fg-muted">
-                The folder is replaced by{' '}
-                <span className="font-mono text-xs">{pending.item.path}.zip</span> and
-                its files are indexed as archive members. The original folder is
-                removed.
-              </p>
-            ) : (
-              <p className="text-sm leading-6 text-fg-muted">
-                The archive is extracted into a sibling folder and then deleted.
-                Existing names are never overwritten.
-              </p>
-            )}
+            <p className="text-sm leading-6 text-fg-muted">
+              The archive is extracted into a sibling folder and then deleted.
+              Existing names are never overwritten.
+            </p>
+            <p className="mt-2 truncate font-mono text-[11px] text-fg-subtle">
+              {pending?.path}
+            </p>
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPending(null)} disabled={busy}>
               Cancel
             </Button>
             <Button onClick={submit} disabled={busy}>
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : pending?.kind === 'compress' ? (
-                <Archive />
-              ) : (
-                <ArchiveRestore />
-              )}
-              {pending?.kind === 'compress' ? 'Compress folder' : 'Unpack archive'}
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArchiveRestore />}
+              Unpack archive
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog
-        open={webpTarget !== null}
-        onOpenChange={(open) => (open ? undefined : setWebpTarget(null))}
+        open={confirmBatch}
+        onOpenChange={(open) => (open ? undefined : setConfirmBatch(false))}
       >
         <DialogContent aria-describedby={undefined} className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Convert images to WebP in “{webpTarget?.name}”?</DialogTitle>
+            <DialogTitle>Unpack all {archives.length} archives?</DialogTitle>
           </DialogHeader>
           <DialogBody>
             <p className="text-sm leading-6 text-fg-muted">
-              Every JPEG, PNG, BMP and TIFF member is re-encoded to WebP; all
-              other files are copied unchanged. The archive is rebuilt on local
-              staging, verified, then swapped in atomically.
-            </p>
-            <p className="mt-2 truncate font-mono text-[11px] text-fg-subtle">
-              {webpTarget?.path}
-            </p>
-          </DialogBody>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setWebpTarget(null)}
-              disabled={webpBusy}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void optimizeWebp()} disabled={webpBusy}>
-              {webpBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <ImageDown />
-              )}
-              Convert images
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={confirmBatch !== null}
-        onOpenChange={(open) => (open ? undefined : setConfirmBatch(null))}
-      >
-        <DialogContent aria-describedby={undefined} className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {confirmBatch === 'compress'
-                ? `Compress all ${folders.length} folders?`
-                : `Unpack all ${archives.length} archives?`}
-            </DialogTitle>
-          </DialogHeader>
-          <DialogBody>
-            <p className="text-sm leading-6 text-fg-muted">
-              {confirmBatch === 'compress'
-                ? 'Every eligible leaf image folder is replaced by a ZIP archive, one at a time. Folders containing videos or nested archives are skipped by the server.'
-                : 'Every indexed archive is extracted into a sibling folder and then deleted, one at a time. Existing names are never overwritten.'}
+              Every indexed archive is extracted into a sibling folder and then
+              deleted, one at a time. Existing names are never overwritten.
             </p>
             <p className="mt-2 text-[11px] leading-5 text-warning">
               This runs in the background and can be paused or cancelled between
@@ -492,7 +316,7 @@ export function ZipPage() {
           <DialogFooter>
             <Button
               variant="ghost"
-              onClick={() => setConfirmBatch(null)}
+              onClick={() => setConfirmBatch(false)}
               disabled={startBatch.isPending}
             >
               Cancel
@@ -501,7 +325,7 @@ export function ZipPage() {
               {startBatch.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
-                <Archive />
+                <ArchiveRestore />
               )}
               Start batch
             </Button>

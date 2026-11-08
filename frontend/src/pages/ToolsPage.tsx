@@ -67,7 +67,7 @@ export function ToolsPage() {
     {
       title: 'WebP optimizer',
       description:
-        'Convert loose images to WebP atomically, with a running space-saved total. Archive members are converted from the ZIP page.',
+        'Convert loose images to WebP atomically, with a running space-saved total. Files inside archives are excluded.',
       icon: <ImageDown />,
       to: '/tools/images',
       cta: 'Optimize images',
@@ -75,10 +75,10 @@ export function ToolsPage() {
     {
       title: 'ZIP archives',
       description:
-        'Compress leaf image folders (one or all), unpack archives (one or all), convert archive images to WebP, and browse them as virtual folders in the Library.',
+        'Unpack archives (one or all, as a batch) and browse them as virtual folders in the Library.',
       icon: <Archive />,
       to: '/tools/zip',
-      cta: 'Compress or unpack',
+      cta: 'Unpack archives',
     },
     {
       title: 'Library backup',

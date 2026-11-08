@@ -448,13 +448,11 @@ export interface EmptyDeleteResult {
   remaining: number
 }
 
-export interface ZipCheck {
+export interface ZipArrayItem {
   path: string
-  target: string
-  eligible: boolean
-  images: number
-  videos: number
-  reason: string
+  name: string
+  file_count: number
+  size_formatted: string
 }
 
 export interface ThumbnailFrame {
@@ -489,32 +487,9 @@ export interface AnimatedStatus {
   failed_total: number
 }
 
-export interface ZipCandidate {
-  path: string
-  name: string
-  file_count: number
-  size_formatted: string
-}
-
 export interface ZipOverview {
-  folders: ZipCandidate[]
   archives: ZipArrayItem[]
   cache: { files: number; bytes: number; size_formatted: string }
-}
-
-export interface ZipArrayItem {
-  path: string
-  name: string
-  file_count: number
-  size_formatted: string
-}
-
-export interface ZipCompressResult {
-  archive: string
-  members: number
-  bytes: number
-  size_formatted: string
-  removed: string
 }
 
 export interface ZipUnpackResult {
@@ -523,19 +498,8 @@ export interface ZipUnpackResult {
   removed: string
 }
 
-export interface ZipWebpResult {
-  archive: string
-  changed: boolean
-  converted: number
-  skipped: number
-  saved_bytes: number
-  saved_formatted: string
-  members: number
-  size_formatted?: string | null
-}
-
 export interface ZipBatchStatus {
-  mode: 'compress' | 'unpack' | null
+  mode: 'unpack' | null
   status: 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
   total: number
   processed: number
@@ -713,7 +677,6 @@ export interface AnalyticsOverview {
   reclaimable: {
     duplicates: { groups: number; files: number; bytes: number; size_formatted: string }
     webp: { saved_bytes: number; saved_formatted: string; converted: number; pending: number }
-    zip: { folders: number; bytes: number; size_formatted: string }
     empty_folders: number
   }
   health: {
@@ -964,18 +927,30 @@ export const api = {
   downloadHistory: (limit = 50, offset = 0) =>
     request<DownloadHistory>('/downloads/history', { limit, offset }),
 
-  dedupeStatus: () => request<DedupeStatus>('/dedupe/status'),
+  dedupeStatus: (includeImages = true) =>
+    request<DedupeStatus>('/dedupe/status', { include_images: includeImages }),
 
-  dedupeGroups: (mode: string, limit = 25, offset = 0, includeRejected = false) =>
+  dedupeGroups: (
+    mode: string,
+    limit = 25,
+    offset = 0,
+    includeRejected = false,
+    includeImages = true,
+  ) =>
     request<DedupeGroups>('/dedupe/groups', {
       mode,
       limit,
       offset,
       include_rejected: includeRejected,
+      include_images: includeImages,
     }),
 
-  dedupeHash: (mode: string, limit = 50) =>
-    post<DedupeHashResult>('/dedupe/hash', { mode, limit }),
+  dedupeHash: (mode: string, limit = 50, includeImages = true) =>
+    post<DedupeHashResult>('/dedupe/hash', {
+      mode,
+      limit,
+      include_images: includeImages,
+    }),
 
   dedupeResolve: (keep: string, deletes: string[], mode: string) =>
     post<DedupeResolveResult>('/dedupe/resolve', {
@@ -1018,21 +993,13 @@ export const api = {
   deleteEmptyFolders: (paths: string[]) =>
     post<EmptyDeleteResult>('/folders/empty/delete', { paths }),
 
-  zipCheck: (path: string) => request<ZipCheck>('/zip/check', { path }),
-
   zipOverview: () => request<ZipOverview>('/zip/overview'),
-
-  zipCompress: (path: string) =>
-    post<ZipCompressResult>('/zip/compress', { path }),
 
   zipUnpack: (path: string) => post<ZipUnpackResult>('/zip/unpack', { path }),
 
-  zipOptimizeWebp: (path: string) =>
-    post<ZipWebpResult>('/zip/webp/optimize', { path }),
-
   zipBatchStatus: () => request<ZipBatchStatus>('/zip/batch/status'),
 
-  zipBatchStart: (mode: 'compress' | 'unpack', paths?: string[]) =>
+  zipBatchStart: (mode: 'unpack', paths?: string[]) =>
     post<ZipBatchStatus>('/zip/batch/start', { mode, paths }),
 
   zipBatchPause: () => post<ZipBatchStatus>('/zip/batch/pause', {}),

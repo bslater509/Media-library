@@ -1,10 +1,10 @@
-"""ZIP compression, unpacking and the index rewrite that follows them.
+"""ZIP unpacking and the index rewrite that follows it.
 
-Single-archive operations only: the source/destination is resolved and
-validated, the archive is built on local staging and committed atomically, then
-the index rows for the affected subtree are replaced in one transaction. A
-failure after the filesystem change leaves rows for the crawler to reconcile,
-which is why the index write is the last step.
+Unpacking is a single-archive operation: the destination is resolved and
+validated, the archive is extracted into a temporary sibling and renamed into
+place, then the index rows for the affected subtree are replaced in one
+transaction. A failure after the filesystem change leaves rows for the crawler
+to reconcile, which is why the index write is the last step.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from media_library.zipfs import cache_usage, purge_cache
 _JUNK = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini", ".directory"}
 _SKIP_DIRS = {"__MACOSX"}
 
-# One operation at a time per archive file (compress, unpack, WebP rewrite and
-# the member-cache sync-back all touch the same file). Keyed by normalized
-# path; entries are small and never pruned — a library has finite archives.
+# One operation at a time per archive file (unpack and the member-cache purge
+# both touch the same file). Keyed by normalized path; entries are small and
+# never pruned — a library has finite archives.
 _archive_locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
@@ -258,7 +258,7 @@ def _index_tree(conn, root: str, plan=None) -> int:
 
 
 def index_archive(conn, archive: str, infos: list[zipfile.ZipInfo]) -> int:
-    """Public wrapper used by the archive WebP rewrite."""
+    """Re-index an archive subtree; the indexer uses this when a zip file changes."""
     return _index_archive(conn, archive, infos)
 
 
@@ -268,142 +268,6 @@ def clear_archive_members(conn, archive: str) -> None:
         "DELETE FROM visual_frames WHERE substr(path, 1, ?) = ?",
         (len(archive) + 1, archive + os.sep),
     )
-
-
-def check_folder(folder: str) -> dict[str, Any]:
-    root = resolve_library_path(folder)
-    if not os.path.isdir(root):
-        raise writes.WriteError("Folder not found", 404)
-    if root == resolve_library_path(None):
-        raise writes.WriteError("Refusing to compress the library root", 400)
-    prefix = root + os.sep
-    with reader() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM files WHERE type = 'video' AND "
-            "(folder_path = ? OR substr(folder_path, 1, ?) = ?) "
-            "AND substr(folder_path, -4) != '.zip'",
-            (root, len(prefix), prefix),
-        ).fetchone()
-        videos = int(row["n"] or 0)
-        images = int(
-            conn.execute(
-                "SELECT COUNT(*) AS n FROM files WHERE type = 'image' AND "
-                "(folder_path = ? OR substr(folder_path, 1, ?) = ?) "
-                "AND substr(folder_path, -4) != '.zip'",
-                (root, len(prefix), prefix),
-            ).fetchone()["n"]
-            or 0
-        )
-        nested_archives = int(
-            conn.execute(
-                "SELECT COUNT(*) AS n FROM folders WHERE is_zip = 1 AND "
-                "(path = ? OR substr(path, 1, ?) = ?)",
-                (root, len(prefix), prefix),
-            ).fetchone()["n"]
-            or 0
-        )
-    target = root + ".zip"
-    reason = ""
-    if nested_archives:
-        reason = "Contains ZIP archives; unpack or move them first"
-    elif videos:
-        reason = "Contains videos; ZIP archives are for image folders"
-    elif images < 1:
-        reason = "No images to archive"
-    elif os.path.exists(target):
-        reason = "An archive with this name already exists"
-    return {
-        "path": root,
-        "eligible": not reason,
-        "images": images,
-        "videos": videos,
-        "target": target,
-        "reason": reason,
-    }
-
-
-def _walk_archive_members(root: str) -> list[tuple[str, str]]:
-    entries: list[tuple[str, str]] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            name
-            for name in dirnames
-            if name not in _SKIP_DIRS and not name.startswith(".")
-        )
-        for name in sorted(filenames):
-            if name in _JUNK or name.startswith("."):
-                continue
-            full = os.path.join(dirpath, name)
-            entries.append((full, os.path.relpath(full, root).replace(os.sep, "/")))
-    return entries
-
-
-def compress_folder(folder: str) -> dict[str, Any]:
-    checked = check_folder(folder)
-    if not checked["eligible"]:
-        raise writes.WriteError(checked["reason"] or "Folder is not eligible", 409)
-    source = Path(checked["path"])
-    target = Path(checked["target"])
-    with archive_lock(str(target)):
-        return _compress_locked(source, target)
-
-
-def _compress_locked(source: Path, target: Path) -> dict[str, Any]:
-    staging_dir = get_settings().zip_staging_dir
-    staging_dir.mkdir(parents=True, exist_ok=True)
-    staged = staging_dir / f"{source.name}-{uuid.uuid4().hex}.zip"
-
-    members = _walk_archive_members(str(source))
-    if not members:
-        raise writes.WriteError("Folder has no files to archive", 400)
-
-    try:
-        with zipfile.ZipFile(
-            staged, "w", zipfile.ZIP_DEFLATED, compresslevel=6
-        ) as archive:
-            for full, arcname in members:
-                archive.write(full, arcname)
-        with zipfile.ZipFile(staged) as archive:
-            bad = archive.testzip()
-            if bad:
-                raise writes.WriteError(f"Archive verification failed at {bad}", 500)
-            infos = archive.infolist()
-        target_tmp = target.with_name(f".tmp-{uuid.uuid4().hex}-{target.name}")
-        shutil.copyfile(staged, target_tmp)
-        if target_tmp.stat().st_size != staged.stat().st_size:
-            raise writes.WriteError("Archive copy was truncated", 500)
-        os.replace(target_tmp, target)
-    except OSError as exc:
-        raise writes.WriteError(f"Could not create the archive: {exc}", 500) from exc
-    finally:
-        try:
-            staged.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    parent = str(source.parent)
-    try:
-        shutil.rmtree(source)
-    except OSError as exc:
-        try:
-            target.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise writes.WriteError(
-            f"Could not remove the source folder: {exc}", 500
-        ) from exc
-
-    with writer() as conn, conn:
-        _remove_subtree(conn, str(source))
-        count = _index_archive(conn, str(target), infos)
-        _update_parent(conn, parent)
-    return {
-        "archive": str(target),
-        "members": count,
-        "bytes": target.stat().st_size,
-        "size_formatted": format_size(target.stat().st_size),
-        "removed": str(source),
-    }
 
 
 def unpack_archive(archive: str) -> dict[str, Any]:
@@ -454,33 +318,6 @@ def _unpack_locked(source: Path) -> dict[str, Any]:
         "files": count,
         "removed": str(source),
     }
-
-
-def archive_candidates(folder: str) -> list[dict[str, Any]]:
-    with reader() as conn:
-        rows = conn.execute(
-            """
-            SELECT fo.path, fo.name, fo.file_count, fo.total_size
-            FROM folders fo
-            WHERE COALESCE(fo.is_zip, 0) = 0
-              AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_path = fo.path)
-              AND (SELECT COUNT(*) FROM files x WHERE x.folder_path = fo.path
-                   AND x.type = 'image') >= 2
-              AND NOT EXISTS (SELECT 1 FROM files v WHERE v.folder_path = fo.path
-                   AND v.type = 'video')
-            ORDER BY fo.total_size DESC
-            LIMIT 200
-            """
-        ).fetchall()
-    return [
-        {
-            "path": row["path"],
-            "name": row["name"],
-            "file_count": row["file_count"] or 0,
-            "size_formatted": format_size(row["total_size"] or 0),
-        }
-        for row in rows
-    ]
 
 
 def archives() -> list[dict[str, Any]]:

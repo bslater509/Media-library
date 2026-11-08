@@ -264,8 +264,8 @@ def test_signature_for_uses_the_cached_frames(library_env):
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 str(video),
-                1000.0,
-                size,
+                999.0,
+                4242,
                 150.0,
                 json.dumps(["aaaaaaaaaaaaaaaa"] * 5),
                 1.0,
@@ -275,6 +275,7 @@ def test_signature_for_uses_the_cached_frames(library_env):
     assert cached is not None
     assert cached["duration"] == 150.0
     assert cached["hashes"] == ["aaaaaaaaaaaaaaaa"] * 5
+    # The cached signature wins even when the stored stats differ.
     assert cached["mtime"] == 1000.0
     assert cached["size"] == size
 
@@ -322,13 +323,13 @@ def test_signature_for_duration_fallback(library_env, monkeypatch):
     assert signature is not None
     assert signature["duration"] == 42.0
 
+    # A missing cache row plus a failing candidates probe lands on duration <= 0.
     with sqlite3.connect(library_env["db_path"]) as conn:
-        conn.execute("UPDATE files SET mtime = 2000.0 WHERE path = ?", (str(video),))
+        conn.execute("DELETE FROM visual_frames WHERE path = ?", (str(video),))
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("no probe")
 
-    # A cache miss plus a failing candidates probe lands on duration <= 0.
     monkeypatch.setattr(thumbnails, "candidates", boom)
     assert dedupe._signature_for(str(video)) is None
 
@@ -339,12 +340,13 @@ def test_signature_for_duration_fallback(library_env, monkeypatch):
 def test_cached_signatures_filters(library_env):
     library = library_env["library"]
     good = library / "A" / "vid-good.mp4"
-    stale_mtime = library / "A" / "vid-mtime.mp4"
-    stale_size = library / "A" / "vid-size.mp4"
+    changed_mtime = library / "A" / "vid-mtime.mp4"
+    changed_size = library / "A" / "vid-size.mp4"
     bad_hashes = library / "A" / "vid-bad.mp4"
+    removed = library / "A" / "vid-removed.mp4"
     signature = json.dumps(["aaaaaaaaaaaaaaaa"] * 5)
     with sqlite3.connect(library_env["db_path"]) as conn:
-        for row in (good, stale_mtime, stale_size, bad_hashes):
+        for row in (good, changed_mtime, changed_size, bad_hashes):
             _real_file(conn, row, duration=100.0)
         conn.executemany(
             "INSERT INTO visual_frames "
@@ -352,14 +354,21 @@ def test_cached_signatures_filters(library_env):
             "VALUES (?, ?, ?, ?, ?, ?)",
             [
                 (str(good), 1000.0, 7, 100.0, signature, 1.0),
-                (str(stale_mtime), 9999.0, 7, 100.0, signature, 1.0),
-                (str(stale_size), 1000.0, 4242, 100.0, signature, 1.0),
+                (str(changed_mtime), 9999.0, 7, 100.0, signature, 1.0),
+                (str(changed_size), 1000.0, 4242, 100.0, signature, 1.0),
                 (str(bad_hashes), 1000.0, 7, 100.0, "[]", 1.0),
+                (str(removed), 1000.0, 7, 100.0, signature, 1.0),
             ],
         )
-    paths = [str(good), str(stale_mtime), str(stale_size), str(bad_hashes)]
+    paths = [
+        str(good),
+        str(changed_mtime),
+        str(changed_size),
+        str(bad_hashes),
+        str(removed),
+    ]
     result = dedupe._cached_signatures(paths)
-    assert list(result) == [str(good)]
+    assert list(result) == [str(good), str(changed_mtime), str(changed_size)]
     assert result[str(good)]["duration"] == 100.0
     assert dedupe._cached_signatures([]) == {}
 
@@ -747,6 +756,95 @@ def test_visual_groups_variants(library_env):
         str(library / "A" / "v-f2.jpg") not in {f["path"] for f in g["files"]}
         for g in result["groups"]
     )
+
+
+def test_image_filter_excludes_images_from_both_scanners(library_env):
+    library = library_env["library"]
+    with sqlite3.connect(library_env["db_path"]) as conn:
+        for name, kind, quick, thumb in (
+            ("img-a.jpg", "image", "d" * 64, "1111000000000000"),
+            ("img-b.jpg", "image", "d" * 64, "1111000000000001"),
+            ("vid-a.mp4", "video", "e" * 64, "2222000000000000"),
+            ("vid-b.mp4", "video", "e" * 64, "2222000000000001"),
+        ):
+            _real_file(
+                conn,
+                library / "A" / name,
+                kind=kind,
+                quick=quick,
+                thumb_hash=thumb,
+            )
+
+    content = dedupe.content_groups(limit=10, include_images=False)
+    assert include_images_paths(content) == {
+        str(library / "A" / "vid-a.mp4"),
+        str(library / "A" / "vid-b.mp4"),
+    }
+
+    visual = dedupe.visual_groups(limit=10, include_images=False)
+    assert include_images_paths(visual) == {
+        str(library / "A" / "vid-a.mp4"),
+        str(library / "A" / "vid-b.mp4"),
+    }
+    assert visual["unhashed"] == 0
+
+    combined = dedupe.all_groups(limit=10, include_images=False)
+    assert include_images_paths(combined) == {
+        str(library / "A" / "vid-a.mp4"),
+        str(library / "A" / "vid-b.mp4"),
+    }
+
+    # Flip the shared merged cache back on: images are visible again.
+    with_images = dedupe.all_groups(limit=10)
+    assert any(
+        file["path"].endswith(".jpg")
+        for group in with_images["groups"]
+        for file in group["files"]
+    )
+
+
+def test_status_and_hashing_can_skip_images(library_env):
+    library = library_env["library"]
+    with sqlite3.connect(library_env["db_path"]) as conn:
+        for name, kind in (
+            ("skip-a.jpg", "image"),
+            ("skip-b.jpg", "image"),
+            ("skip-a.mp4", "video"),
+            ("skip-b.mp4", "video"),
+        ):
+            _real_file(conn, library / "A" / name, kind=kind)
+
+    status = dedupe.status(include_images=False)
+    assert status["content"]["candidate_files"] == 2
+    assert status["visual"]["unhashed"] == 2
+
+    hashed = dedupe.hash_content(limit=10, include_images=False)
+    assert hashed["hashed"] == 2
+    assert hashed["remaining"] == 0
+    with sqlite3.connect(library_env["db_path"]) as conn:
+        image_hashes = conn.execute(
+            "SELECT quick_hash FROM files WHERE type = 'image'"
+        ).fetchall()
+        video_hashes = conn.execute(
+            "SELECT quick_hash FROM files WHERE type = 'video'"
+        ).fetchall()
+    assert image_hashes == [(None,), (None,)]
+    assert all(row[0] for row in video_hashes)
+
+    dedupe.hash_visual(limit=10, include_images=False)
+    with sqlite3.connect(library_env["db_path"]) as conn:
+        image_thumbs = conn.execute(
+            "SELECT thumb_hash FROM files WHERE type = 'image'"
+        ).fetchall()
+        video_thumbs = conn.execute(
+            "SELECT thumb_hash FROM files WHERE type = 'video'"
+        ).fetchall()
+    assert image_thumbs == [(None,), (None,)]
+    assert all(row[0] for row in video_thumbs)
+
+
+def include_images_paths(result):
+    return {file["path"] for group in result["groups"] for file in group["files"]}
 
 
 def test_visual_groups_respects_the_cap(library_env):
@@ -1171,6 +1269,18 @@ def test_dedupe_router_endpoints(library_env, monkeypatch):
     assert combined.status_code == 200
     assert combined.json()["mode"] == "all"
     assert combined.json()["total_groups"] == 2
+
+    video_only = client.get(
+        "/api/dedupe/groups",
+        params={"auto_verify": "false", "include_images": "false"},
+    )
+    assert video_only.status_code == 200
+    assert video_only.json()["total_groups"] == 1
+    assert all(
+        file["type"] == "video"
+        for group in video_only.json()["groups"]
+        for file in group["files"]
+    )
 
     solo = str(library / "A" / "never-indexed.mp4")
     duo = str(library / "A" / "never-indexed-too.mp4")

@@ -48,7 +48,9 @@ import {
   IconButton,
   Progress,
   Spinner,
+  Switch,
 } from '../components/ui'
+import { defaultKeepPath } from '../lib/dedupe'
 import { resolutionLabel, formatBytes } from '../lib/format'
 
 function verificationLabel(verification: DedupeGroup['verification']): string {
@@ -91,9 +93,10 @@ export function DedupePage() {
   const [ignoredLimit, setIgnoredLimit] = useState(50)
   const [showIgnored, setShowIgnored] = useState(false)
   const [showRejected, setShowRejected] = useState(false)
+  const [includeImages, setIncludeImages] = useState(false)
 
-  const status = useDedupeStatus()
-  const groups = useDedupeGroups('all', limit, showRejected)
+  const status = useDedupeStatus(includeImages)
+  const groups = useDedupeGroups('all', limit, showRejected, includeImages)
   const ignored = useDedupeIgnored(ignoredLimit)
   const resolve = useDedupeResolve()
   const ignore = useDedupeIgnore()
@@ -158,7 +161,7 @@ export function DedupePage() {
         let guard = 0
         while (guard < 400) {
           guard += 1
-          const result = await api.dedupeHash(mode, 50)
+          const result = await api.dedupeHash(mode, 50, includeImages)
           total += result.hashed
           setHashingProgress(
             `${mode}: ${result.hashed} hashed · ${result.remaining} left`,
@@ -177,7 +180,7 @@ export function DedupePage() {
   }
 
   const keepFor = (group: DedupeGroup): string =>
-    keepChoice[group.id] ?? group.files[0]?.path ?? ''
+    keepChoice[group.id] ?? defaultKeepPath(group.files)
 
   const setKeep = (group: DedupeGroup, path: string) =>
     setKeepChoice((current) => ({ ...current, [group.id]: path }))
@@ -345,6 +348,19 @@ export function DedupePage() {
         <Badge variant="outline">
           {status.data?.ignored.toLocaleString() ?? 0} ignored pairs
         </Badge>
+        <label
+          htmlFor="dedupe-include-images"
+          className="flex cursor-pointer items-center gap-1.5"
+          title="Show image files in duplicate groups"
+        >
+          <Switch
+            id="dedupe-include-images"
+            checked={includeImages}
+            onCheckedChange={setIncludeImages}
+            aria-label="Show images"
+          />
+          Show images
+        </label>
         {data ? (
           <span className="tabular-nums">
             {data.total_groups.toLocaleString()} groups ·{' '}

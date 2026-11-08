@@ -12,8 +12,6 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-import zipfile
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -269,22 +267,6 @@ def test_convert_one_skips_an_oversized_image_without_touching_it(
     assert outcome["status"] == "skipped"
     assert source.read_bytes() == original
     assert not source.with_suffix(".webp").exists()
-
-
-def test_zip_webp_stream_returns_none_for_oversized_members(library_env, monkeypatch):
-    from media_library import zip_webp
-
-    monkeypatch.setattr(zip_webp, "_MAX_CONVERT_PIXELS", 10_000)
-    archive = library_env["library"] / "pics.zip"
-    with zipfile.ZipFile(archive, "w") as bundle:
-        info = zipfile.ZipInfo("huge.png")
-        buffer = BytesIO()
-        # A real encoded member whose decoded size exceeds the patched budget.
-        Image.new("RGB", (150, 150), "blue").save(buffer, format="PNG")
-        bundle.writestr(info, buffer.getvalue())
-
-    with zipfile.ZipFile(archive) as bundle, bundle.open("huge.png") as member:
-        assert zip_webp._webp_bytes_stream(member, quality=85) is None
 
 
 # ---------------------------------------------------------------------------

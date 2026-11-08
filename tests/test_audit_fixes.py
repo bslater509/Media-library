@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
 
-from media_library import auth, indexer, library, sorter, writes, zip_webp
+from media_library import auth, indexer, library, sorter, writes
 from media_library import config as v2_config
 from media_library.app import create_app
 from media_library.routers.media import _attachment_disposition
@@ -179,37 +178,6 @@ def test_finalize_upload_cleans_temp_file_when_copy_truncates(tmp_path, monkeypa
         writes.finalize_upload("uabcdef12345", "clip.mp4", str(library_dir), 10)
     assert caught.value.status == 500
     assert not list(library_dir.glob(".mllibtmp-*"))
-
-
-# --- zip_webp streaming conversion --------------------------------------
-
-
-def test_zip_webp_streaming_members_are_copied_and_converted(tmp_path, monkeypatch):
-    """skip_larger is honoured when converting through the streaming path."""
-    library_dir = tmp_path / "library" / "zips"
-    library_dir.mkdir(parents=True)
-    monkeypatch.setenv("LIBRARY_DIR", str(tmp_path / "library"))
-    v2_config.reload_settings()
-    archive = library_dir / "a.zip"
-    with zipfile.ZipFile(archive, "w") as bundle:
-        bundle.writestr("photo.png", os.urandom(64))
-        bundle.writestr("notes.txt", b"keep me")
-
-    seen: list[str] = []
-
-    def fake_stream(member, quality):
-        seen.append(member.name)
-        return b"w" * (1024 * 1024)
-
-    monkeypatch.setattr(zip_webp, "_webp_bytes_stream", fake_stream)
-    monkeypatch.setenv("WEBP_SKIP_LARGER", "true")
-    v2_config.reload_settings()
-    result = zip_webp.optimize_archive(str(archive))
-    assert result["changed"] is False
-    assert result["skipped"] == 1
-    assert seen == ["photo.png"]
-    with zipfile.ZipFile(archive) as bundle:
-        assert bundle.namelist() == ["photo.png", "notes.txt"]
 
 
 # --- real directory named *.zip ------------------------------------------

@@ -1,4 +1,4 @@
-"""Batch ZIP runner tests for v2 (no real archives)."""
+"""Batch ZIP runner tests (unpack only, no real archives)."""
 
 from __future__ import annotations
 
@@ -26,16 +26,17 @@ def runner():
     return ZipBatchRunner()
 
 
-def test_batch_compresses_every_path(monkeypatch, runner):
+def test_batch_unpacks_every_path(monkeypatch, runner):
     seen: list[str] = []
 
     def fake(path):
         seen.append(path)
-        return {"archive": path + ".zip"}
+        return {"folder": path[:-4]}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", fake)
-    status = runner.start("compress", ["/a", "/b", "/c"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", fake)
+    status = runner.start("unpack", ["/a.zip", "/b.zip", "/c.zip"])
     assert status["status"] == "running"
+    assert status["mode"] == "unpack"
     assert status["total"] == 3
 
     assert _wait(lambda: runner.status()["status"] == "completed")
@@ -43,32 +44,32 @@ def test_batch_compresses_every_path(monkeypatch, runner):
     assert final["succeeded"] == 3
     assert final["processed"] == 3
     assert final["percent"] == 100.0
-    assert seen == ["/a", "/b", "/c"]
+    assert seen == ["/a.zip", "/b.zip", "/c.zip"]
 
 
 def test_failures_are_reported_and_the_batch_continues(monkeypatch, runner):
     def fake(path):
-        if path == "/boom":
-            raise RuntimeError("cannot archive")
-        return {"archive": path + ".zip"}
+        if path == "/boom.zip":
+            raise RuntimeError("cannot unpack")
+        return {"folder": path[:-4]}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", fake)
-    runner.start("compress", ["/ok1", "/boom", "/ok2"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", fake)
+    runner.start("unpack", ["/ok1.zip", "/boom.zip", "/ok2.zip"])
     assert _wait(lambda: runner.status()["status"] == "completed")
     final = runner.status()
     assert final["succeeded"] == 2
     assert final["failed"] == 1
-    assert final["errors"][0]["path"] == "/boom"
-    assert "cannot archive" in final["errors"][0]["error"]
+    assert final["errors"][0]["path"] == "/boom.zip"
+    assert "cannot unpack" in final["errors"][0]["error"]
 
 
 def test_pause_and_resume(monkeypatch, runner):
     def slow(path):
         time.sleep(0.12)
-        return {"archive": path}
+        return {"folder": path}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", slow)
-    runner.start("compress", ["/1", "/2", "/3"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", slow)
+    runner.start("unpack", ["/1.zip", "/2.zip", "/3.zip"])
     assert _wait(lambda: runner.status()["processed"] >= 1)
     paused = runner.pause()
     assert paused["status"] == "paused"
@@ -85,10 +86,10 @@ def test_pause_and_resume(monkeypatch, runner):
 def test_cancel_stops_the_queue(monkeypatch, runner):
     def slow(path):
         time.sleep(0.15)
-        return {"archive": path}
+        return {"folder": path}
 
-    monkeypatch.setattr(zip_ops, "compress_folder", slow)
-    runner.start("compress", ["/1", "/2", "/3", "/4"])
+    monkeypatch.setattr(zip_ops, "unpack_archive", slow)
+    runner.start("unpack", ["/1.zip", "/2.zip", "/3.zip", "/4.zip"])
     assert _wait(lambda: runner.status()["status"] == "running")
     cancelled = runner.cancel()
     assert cancelled["status"] == "cancelled"
@@ -102,7 +103,7 @@ def test_only_one_batch_at_a_time(monkeypatch, runner):
 
     def blocking(path):
         blocker.wait(3)
-        return {"archive": path}
+        return {"folder": path}
 
     monkeypatch.setattr(zip_ops, "unpack_archive", blocking)
     runner.start("unpack", ["/one.zip"])
@@ -116,13 +117,40 @@ def test_only_one_batch_at_a_time(monkeypatch, runner):
 
 def test_invalid_mode_and_empty_queue(monkeypatch, runner):
     with pytest.raises(writes.WriteError) as caught:
-        runner.start("zap", ["/a"])
+        runner.start("zap", ["/a.zip"])
     assert caught.value.status == 400
 
-    monkeypatch.setattr(zip_ops, "archive_candidates", lambda folder: [])
+    with pytest.raises(writes.WriteError) as compress_mode:
+        runner.start("compress", ["/a.zip"])
+    assert compress_mode.value.status == 400
+
+    monkeypatch.setattr(zip_ops, "archives", list)
     with pytest.raises(writes.WriteError) as empty:
-        runner.start("compress")
+        runner.start("unpack")
     assert empty.value.status == 400
+
+
+def test_batch_defaults_to_the_indexed_archives(monkeypatch, runner):
+    monkeypatch.setattr(
+        zip_ops,
+        "archives",
+        lambda: [
+            {
+                "path": "/lib/one.zip",
+                "name": "one.zip",
+                "file_count": 1,
+                "size_formatted": "1 B",
+            }
+        ],
+    )
+
+    def fake(path):
+        return {"folder": path[:-4]}
+
+    monkeypatch.setattr(zip_ops, "unpack_archive", fake)
+    runner.start("unpack")
+    assert _wait(lambda: runner.status()["status"] == "completed")
+    assert runner.status()["processed"] == 1
 
 
 def test_router_wires_batch_control(monkeypatch, runner):

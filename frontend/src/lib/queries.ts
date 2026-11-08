@@ -32,9 +32,14 @@ export const queryKeys = {
   zipBatch: ['zip', 'batch'] as const,
   backupStatus: ['backups', 'status'] as const,
   emptyFolders: ['empty', 'folders'] as const,
-  dedupeStatus: ['dedupe', 'status'] as const,
-  dedupeGroups: (mode: string, limit: number, includeRejected = false) =>
-    ['dedupe', 'groups', mode, limit, includeRejected] as const,
+  dedupeStatus: (includeImages = true) =>
+    ['dedupe', 'status', includeImages] as const,
+  dedupeGroups: (
+    mode: string,
+    limit: number,
+    includeRejected = false,
+    includeImages = true,
+  ) => ['dedupe', 'groups', mode, limit, includeRejected, includeImages] as const,
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   dedupeVerifyStatus: ['dedupe', 'verify-visual', 'status'] as const,
   downloadStatus: ['downloads', 'status'] as const,
@@ -499,18 +504,24 @@ export function useDownloadClear() {
   })
 }
 
-export function useDedupeStatus() {
+export function useDedupeStatus(includeImages = true) {
   return useQuery({
-    queryKey: queryKeys.dedupeStatus,
-    queryFn: api.dedupeStatus,
+    queryKey: queryKeys.dedupeStatus(includeImages),
+    queryFn: () => api.dedupeStatus(includeImages),
     staleTime: 10_000,
   })
 }
 
-export function useDedupeGroups(mode: string, limit = 25, includeRejected = false) {
+export function useDedupeGroups(
+  mode: string,
+  limit = 25,
+  includeRejected = false,
+  includeImages = true,
+) {
   return useQuery({
-    queryKey: queryKeys.dedupeGroups(mode, limit, includeRejected),
-    queryFn: () => api.dedupeGroups(mode, limit, 0, includeRejected),
+    queryKey: queryKeys.dedupeGroups(mode, limit, includeRejected, includeImages),
+    queryFn: () =>
+      api.dedupeGroups(mode, limit, 0, includeRejected, includeImages),
     staleTime: 15_000,
   })
 }
@@ -526,8 +537,15 @@ export function useDedupeIgnored(limit = 50) {
 export function useDedupeHash() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ mode, limit = 50 }: { mode: string; limit?: number }) =>
-      api.dedupeHash(mode, limit),
+    mutationFn: ({
+      mode,
+      limit = 50,
+      includeImages = true,
+    }: {
+      mode: string
+      limit?: number
+      includeImages?: boolean
+    }) => api.dedupeHash(mode, limit, includeImages),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['dedupe'] })
     },
@@ -690,7 +708,7 @@ function useZipBatchInvalidate() {
 export function useZipBatchStart() {
   const invalidate = useZipBatchInvalidate()
   return useMutation({
-    mutationFn: (mode: 'compress' | 'unpack') => api.zipBatchStart(mode),
+    mutationFn: (mode: 'unpack') => api.zipBatchStart(mode),
     onSuccess: invalidate,
   })
 }
@@ -708,17 +726,6 @@ export function useZipBatchResume() {
 export function useZipBatchCancel() {
   const invalidate = useZipBatchInvalidate()
   return useMutation({ mutationFn: () => api.zipBatchCancel(), onSuccess: invalidate })
-}
-
-export function useZipCompress() {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: (path: string) => api.zipCompress(path),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['zip'] })
-      void invalidateLibrary(client)
-    },
-  })
 }
 
 export function useZipUnpack() {

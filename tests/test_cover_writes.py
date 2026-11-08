@@ -147,6 +147,32 @@ def test_rename_to_an_unknown_extension_types_other(writes_env):
     assert row == ("other", 0)
 
 
+def test_rename_keeps_the_five_frame_check(writes_env):
+    clip = writes_env.trip / "clip.mp4"
+    clip.write_bytes(b"x" * 16)
+    with _db() as conn:
+        _add_folder(conn, writes_env.trip)
+        _add_file(conn, clip)
+        conn.execute(
+            "INSERT INTO visual_frames "
+            "(path, mtime, size, duration, hashes, captured_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (str(clip), 1.0, 16, 100.0, '["aaaaaaaaaaaaaaaa"]', 1.0),
+        )
+
+    result = writes.rename_file(str(clip), "renamed.mp4")
+    renamed = result["path"]
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT path, hashes FROM visual_frames WHERE path = ?", (renamed,)
+        ).fetchone()
+        stale = conn.execute(
+            "SELECT COUNT(*) FROM visual_frames WHERE path = ?", (str(clip),)
+        ).fetchone()[0]
+    assert row == (renamed, '["aaaaaaaaaaaaaaaa"]')
+    assert stale == 0
+
+
 def test_toggle_favorite_refuses_an_unindexed_path(writes_env):
     with pytest.raises(WriteError) as excinfo:
         writes.toggle_favorite(str(writes_env.trip / "ghost.mp4"))

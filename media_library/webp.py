@@ -1,7 +1,8 @@
 """WebP optimisation for loose images.
 
-ZIP members are deliberately excluded: rewriting an archive is an archive-level
-operation, while loose images convert one file
+ZIP members are deliberately excluded: archives are browsed as virtual
+folders, and optimizing a member would mean rewriting the archive, while loose
+images convert one file
 at a time. Conversion is atomic, updates the index and moves the cached poster
 to the new key, and is safe to batch from the UI.
 """

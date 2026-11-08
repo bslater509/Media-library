@@ -33,8 +33,8 @@ router = APIRouter()
 
 
 @router.get("/dedupe/status", response_model=DedupeStatus)
-async def status() -> dict:
-    return await asyncio.to_thread(dedupe.status)
+async def status(include_images: bool = Query(True)) -> dict:
+    return await asyncio.to_thread(dedupe.status, include_images)
 
 
 @router.get("/dedupe/groups", response_model=DedupeGroups)
@@ -43,6 +43,7 @@ async def groups(
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     include_rejected: bool = Query(False),
+    include_images: bool = Query(True),
     auto_verify: bool = Query(True),
 ) -> dict:
     if mode not in ("all", "content", "visual"):
@@ -51,14 +52,14 @@ async def groups(
         raise HTTPException(status_code=400, detail="Unknown match mode")
     if mode == "all":
         result = await asyncio.to_thread(
-            dedupe.all_groups, limit, offset, include_rejected
+            dedupe.all_groups, limit, offset, include_rejected, include_images
         )
     else:
         worker = {
             "content": dedupe.content_groups,
             "visual": dedupe.visual_groups,
         }[mode]
-        result = await asyncio.to_thread(worker, limit, offset)
+        result = await asyncio.to_thread(worker, limit, offset, include_images)
     if auto_verify:
         await asyncio.to_thread(dedupe.auto_verify_groups, result["groups"])
     return result
@@ -101,7 +102,7 @@ async def hash_files(payload: DedupeHashRequest) -> dict:
         raise HTTPException(status_code=400, detail="Unknown match mode")
     worker = dedupe.hash_content if payload.mode == "content" else dedupe.hash_visual
     try:
-        return await asyncio.to_thread(worker, payload.limit)
+        return await asyncio.to_thread(worker, payload.limit, payload.include_images)
     except Exception as exc:
         raise as_http_error(exc) from exc
 

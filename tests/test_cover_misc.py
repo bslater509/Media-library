@@ -369,3 +369,30 @@ def test_lifespan_report_s_read_only_index_and_shutdown_snapshot_failure(
     with TestClient(create_app()) as probe:
         probe.get("/api/health")  # The missing index still answers 503.
     assert died["called"]
+
+
+def test_lifespan_removes_the_obsolete_custom_zip_staging(tmp_path, monkeypatch):
+    staging = tmp_path / "zips-legacy"
+    staging.mkdir()
+    (staging / "half-built.zip").write_bytes(b"PK\x03\x04")
+    monkeypatch.setenv("ZIP_STAGING_DIR", str(staging))
+    monkeypatch.setattr(backups, "auto_restore_if_missing", lambda: {"restored": False})
+    monkeypatch.setattr(backups, "create_snapshot", lambda: True)
+    with TestClient(create_app()):
+        pass
+    assert not staging.exists()
+
+
+def test_lifespan_removes_the_default_zip_staging(tmp_path, monkeypatch):
+    data_dir = tmp_path / "runtime"
+    staging = data_dir / "zip_staging"
+    staging.mkdir(parents=True)
+    (staging / "webp-staged.zip").write_bytes(b"PK\x03\x04")
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+    monkeypatch.setattr(backups, "auto_restore_if_missing", lambda: {"restored": False})
+    monkeypatch.setattr(backups, "create_snapshot", lambda: True)
+    v2_config.reload_settings()
+    with TestClient(create_app()):
+        pass
+    assert not staging.exists()
+    assert data_dir.exists()

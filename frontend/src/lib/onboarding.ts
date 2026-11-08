@@ -48,7 +48,7 @@ export function buildCapabilities(
     { key: 'downloads', label: 'URL / playlist downloads', available: !!flags.downloads },
     { key: 'dedupe', label: 'Duplicate detection', available: !!flags.dedupe },
     { key: 'webp', label: 'WebP optimizer', available: !!flags.webp },
-    { key: 'zip', label: 'ZIP browse, compress, unpack', available: !!flags.zip },
+    { key: 'zip', label: 'ZIP browse and unpack', available: !!flags.zip },
     { key: 'analytics', label: 'Analytics dashboard', available: !!flags.analytics },
     { key: 'backups', label: 'Library snapshots', available: !!flags.backups },
     { key: 'x265', label: 'In-place x265 / HEVC conversion', available: !!flags.x265 },
