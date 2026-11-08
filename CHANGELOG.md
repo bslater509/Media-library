@@ -71,6 +71,14 @@ snapshot metadata.
 
 ### Fixed
 
+- **Analytics goes horizontal on narrow viewports.** The card grids had no
+  column template below the `lg` breakpoint, so the implicit auto tracks took
+  their width from the chart canvases; a chart first painted at a wider
+  layout (viewport change, window resize, rotation) pinned the page open
+  sideways and the `ResizeObserver` could never shrink it back. The rows now
+  declare `grid-cols-1` (a `minmax(0, 1fr)` track) on mobile and the chart
+  container is `min-w-0`, so the container tracks the viewport and every
+  chart re-sizes with it.
 - A code audit's findings are fixed and pinned by tests (see
   ``tests/test_audit_round2.py``): batch moves fail one item instead of
   aborting the whole request on a rejected path; a suffix byte-range on an

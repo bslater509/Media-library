@@ -111,7 +111,10 @@ function Chart({ option, height = 320, onNode }: ChartProps) {
     }
   }, [onNode])
 
-  return <div ref={ref} className="w-full" style={{ height }} />
+  // min-w-0 lets the container shrink with its column so a canvas painted at
+  // an older (wider) layout width cannot pin the page open horizontally; the
+  // ResizeObserver then re-sizes the chart to the real container width.
+  return <div ref={ref} className="w-full min-w-0" style={{ height }} />
 }
 
 export function AnalyticsPage() {
@@ -320,7 +323,7 @@ export function AnalyticsPage() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
@@ -366,7 +369,7 @@ export function AnalyticsPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Media mix</CardTitle>
@@ -423,7 +426,7 @@ export function AnalyticsPage() {
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Largest files</CardTitle>
