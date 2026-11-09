@@ -298,9 +298,13 @@ export function DedupePage() {
     )
   }
 
-  /** The confirm dialog is only for groups no five-frame check has cleared. */
+  /**
+   * Only visual groups without a confirming five-frame check still ask:
+   * content groups are trusted from the quick_hash evidence.
+   */
   const needsConfirm = (group: DedupeGroup) =>
-    !group.verification || group.verification.confirmed !== true
+    group.match_type === 'visual' &&
+    (!group.verification || group.verification.confirmed !== true)
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-3 py-4 sm:px-5">
@@ -631,8 +635,8 @@ export function DedupePage() {
                       }}
                       title={
                         needsConfirm(group)
-                          ? 'Choose what to keep, then confirm'
-                          : '5-frame match verified — deletes immediately'
+                          ? 'No confirming frame check — asks before deleting'
+                          : 'Deletes immediately'
                       }
                     >
                       <Trash2 /> Delete {group.files.length - 1}
@@ -776,8 +780,9 @@ export function DedupePage() {
             <DialogBody className="flex flex-col gap-3">
               <p className="text-xs text-fg-muted">
                 Play the clips side by side, then choose the copy to keep. The
-                highlighted file is kept; the others are deleted after
-                confirmation unless a five-frame check has already matched.
+                highlighted file is kept; the others are deleted unless the
+                visual files still have no confirming frame check, in which
+                case a dialog asks first.
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {compareGroup.files.map((file) => {
@@ -927,18 +932,11 @@ export function DedupePage() {
                 </li>
               ))}
             </ul>
-            {confirm?.group.match_type === 'content' ? (
-              <p className="text-[11px] leading-5 text-fg-subtle">
-                Files in a content group are trusted from the hash match and are
-                deleted immediately — verify a pair explicitly if you want a
-                byte comparison first.
-              </p>
-            ) : (
-              <p className="text-[11px] leading-5 text-warning">
-                Visual duplicates are not byte-identical. Check the frame
-                comparison and play the clips before deleting.
-              </p>
-            )}
+            <p className="text-[11px] leading-5 text-warning">
+              Visual duplicates are not byte-identical, so this group has no
+              confirming five-frame check. Compare the files and play the clips
+              before deleting.
+            </p>
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setConfirm(null)}>

@@ -415,9 +415,10 @@ default keeps them. Any visual group can be double-checked
 against five sampled frames per video (10–90% of duration), and the result is
 cached in `visual_frames` for the file's lifetime. The client shows content and
 visual groups in one list and preselects the largest file as the copy to keep;
-a visual cluster already covered by a byte-identical group is folded into it;
-a visual group whose five-frame check confirmed (`confirmed === true`) deletes
-directly, skipping the confirmation dialog that other groups still get.
+a visual cluster already covered by a byte-identical group is folded into it.
+Byte-identical groups and visual groups whose five-frame check
+confirmed (`confirmed === true`) delete directly, skipping the confirmation
+dialog; visual groups without a confirming check still get it.
 Fetching groups auto-queues a five-frame check for every
 visual group on the page; a batch of checks runs on one daemon thread and
 exposes progress (group, file and sampled frame) at

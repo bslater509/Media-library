@@ -20,7 +20,9 @@ snapshot metadata.
   still performs a full byte comparison when you want one before deleting.
 - **Frame-verified visual duplicates skip the confirmation dialog.** A visual
   group whose five-frame check confirmed now deletes straight from the group's
-  Delete button; groups without a confirming check still ask.
+  Delete button; byte-identical groups do the same, trusted from `quick_hash`
+  evidence alone. Visual groups without a confirming check still ask in a
+  confirmation dialog first.
 
 ### Fixed
 
