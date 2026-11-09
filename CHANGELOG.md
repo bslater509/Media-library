@@ -18,6 +18,9 @@ snapshot metadata.
   re-reading every file in full first, which on a remote mount made deleting a
   large video's duplicate take minutes. The explicit `POST /dedupe/verify`
   still performs a full byte comparison when you want one before deleting.
+- **Frame-verified visual duplicates skip the confirmation dialog.** A visual
+  group whose five-frame check confirmed now deletes straight from the group's
+  Delete button; groups without a confirming check still ask.
 
 ### Fixed
 

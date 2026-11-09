@@ -272,6 +272,36 @@ export function DedupePage() {
     return confirm.group.files.filter((file) => file.path !== confirm.keep)
   }, [confirm])
 
+  const resolveGroup = (group: DedupeGroup, keep: string) => {
+    const deletes = group.files
+      .filter((file) => file.path !== keep)
+      .map((file) => file.path)
+    resolve.mutate(
+      {
+        keep,
+        deletes,
+        mode: group.match_type,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.mismatched.length) {
+            toast.error(`${result.mismatched.length} file(s) no longer exist`)
+          }
+          toast.success(
+            `${result.deleted.length} duplicate${result.deleted.length === 1 ? '' : 's'} deleted`,
+          )
+          setConfirm(null)
+        },
+        onError: (error) =>
+          toast.error(error instanceof Error ? error.message : 'Delete failed'),
+      },
+    )
+  }
+
+  /** The confirm dialog is only for groups no five-frame check has cleared. */
+  const needsConfirm = (group: DedupeGroup) =>
+    !group.verification || group.verification.confirmed !== true
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-3 py-4 sm:px-5">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -592,7 +622,18 @@ export function DedupePage() {
                     <Button
                       size="sm"
                       variant="danger"
-                      onClick={() => setConfirm({ group, keep })}
+                      onClick={() => {
+                        if (needsConfirm(group)) {
+                          setConfirm({ group, keep })
+                        } else {
+                          resolveGroup(group, keep)
+                        }
+                      }}
+                      title={
+                        needsConfirm(group)
+                          ? 'Choose what to keep, then confirm'
+                          : '5-frame match verified — deletes immediately'
+                      }
                     >
                       <Trash2 /> Delete {group.files.length - 1}
                     </Button>
@@ -735,8 +776,8 @@ export function DedupePage() {
             <DialogBody className="flex flex-col gap-3">
               <p className="text-xs text-fg-muted">
                 Play the clips side by side, then choose the copy to keep. The
-                highlighted file is kept; the others are deleted only after
-                confirmation.
+                highlighted file is kept; the others are deleted after
+                confirmation unless a five-frame check has already matched.
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {compareGroup.files.map((file) => {
@@ -908,31 +949,7 @@ export function DedupePage() {
               disabled={resolve.isPending}
               onClick={() => {
                 if (!confirm) return
-                const deletes = deletePreview.map((file) => file.path)
-                resolve.mutate(
-                  {
-                    keep: confirm.keep,
-                    deletes,
-                    mode: confirm.group.match_type,
-                  },
-                  {
-                    onSuccess: (result) => {
-                      if (result.mismatched.length) {
-                        toast.error(
-                          `${result.mismatched.length} file(s) no longer exist`,
-                        )
-                      }
-                      toast.success(
-                        `${result.deleted.length} duplicate${result.deleted.length === 1 ? '' : 's'} deleted`,
-                      )
-                      setConfirm(null)
-                    },
-                    onError: (error) =>
-                      toast.error(
-                        error instanceof Error ? error.message : 'Delete failed',
-                      ),
-                  },
-                )
+                resolveGroup(confirm.group, confirm.keep)
               }}
             >
               {resolve.isPending ? (
