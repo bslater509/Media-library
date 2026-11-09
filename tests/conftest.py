@@ -30,13 +30,26 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def isolated_index(tmp_path, monkeypatch):
-    """A fresh, schema-complete index and data directory for every test."""
+    """A fresh, schema-complete index and data directory for every test.
+
+    The library and incoming roots are pinned too: the repo ``.env`` points
+    them at a real remote mount, and a test that starts the app would otherwise
+    read that mount (and its snapshot) instead of the fixture, making results
+    depend on the developer's machine.
+    """
     db_path = tmp_path / "isolated_index.db"
     data_dir = tmp_path / "data"
     data_dir.mkdir()
+    library_dir = tmp_path / "isolated_library"
+    library_dir.mkdir()
+    incoming_dir = tmp_path / "isolated_incoming"
+    incoming_dir.mkdir()
 
     monkeypatch.setenv("DB_PATH", str(db_path))
     monkeypatch.setenv("DATA_DIR", str(data_dir))
+    monkeypatch.setenv("LIBRARY_DIR", str(library_dir))
+    monkeypatch.setenv("INCOMING_DIR", str(incoming_dir))
+    monkeypatch.setenv("SOURCE_DIR", str(incoming_dir))
     # Never start the developer's owned workers (crawler, probes, snapshots).
     monkeypatch.setenv("OWN_WORKERS", "false")
 

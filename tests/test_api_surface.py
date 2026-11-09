@@ -251,6 +251,34 @@ def test_startup_survives_a_failed_snapshot_check(monkeypatch):
         assert client.get("/api/health").status_code == 200
 
 
+def test_startup_logs_a_successful_auto_restore(monkeypatch, caplog):
+    """The lifespan announces a restored snapshot, not just a failed check.
+
+    This branch used to be covered only on a machine whose real library held a
+    snapshot, so CI reported the line as missing.
+    """
+    from media_library import app as app_module
+    from media_library import backups
+
+    monkeypatch.setattr(
+        backups,
+        "auto_restore_if_missing",
+        lambda: {
+            "restored": True,
+            "source": "snapshot",
+            "files": 12,
+            "folders": 3,
+        },
+    )
+    monkeypatch.setattr(backups, "create_snapshot", lambda: True)
+    with (
+        caplog.at_level("WARNING", logger="media_library.app"),
+        TestClient(app_module.create_app()) as client,
+    ):
+        assert client.get("/api/health").status_code == 200
+    assert "Restored the index from the snapshot" in caplog.text
+
+
 def test_startup_survives_a_failed_schema_creation(monkeypatch):
     from media_library import app as app_module
 
