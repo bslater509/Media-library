@@ -252,16 +252,17 @@ def test_hash_content_fills_missing_hashes_and_joins_the_group(dedupe_env):
     assert len(matching[0]["files"]) == 3
 
 
-def test_full_verification_rejects_a_head_only_match(dedupe_env):
+def test_resolve_trusts_the_hash_group(dedupe_env):
     assert dedupe.files_identical(str(dedupe_env["a"]), str(dedupe_env["b"]))
     assert not dedupe.files_identical(str(dedupe_env["ha"]), str(dedupe_env["hb"]))
 
+    # Resolve no longer re-compares bytes: group membership is the evidence.
     result = dedupe.resolve(
         str(dedupe_env["ha"]), [str(dedupe_env["hb"])], mode="content"
     )
-    assert result["deleted"] == []
-    assert result["mismatched"] == [str(dedupe_env["hb"])]
-    assert dedupe_env["hb"].is_file()
+    assert result["deleted"] == [str(dedupe_env["hb"])]
+    assert result["mismatched"] == []
+    assert not dedupe_env["hb"].is_file()
 
 
 def test_resolve_deletes_a_verified_duplicate(dedupe_env):

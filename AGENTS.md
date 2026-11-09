@@ -404,8 +404,10 @@ never rewritten in place; unpack first.
 - A per-archive lock serialises unpack and the member-cache purge.
 
 ### Dedupe
-Content groups come from identical sizes and `quick_hash`; every deletion is
-preceded by a full byte comparison. Visual clusters use complete linkage on the
+Content groups come from identical sizes and `quick_hash`; a resolve deletes on
+that evidence alone (no byte re-comparison, so deletion is instant on a slow
+mount). `POST /dedupe/verify` still offers the explicit full byte comparison.
+Visual clusters use complete linkage on the
 64-bit poster pHash (distance ≤ 2) capped at 12 files. `include_images=false`
 removes image rows from content groups, visual groups, status counts and hash
 batches (the client's Show images switch, off by default), while the API

@@ -11,6 +11,14 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Changed
+
+- **Duplicate deletion is instant.** Resolving a content group deletes on the
+  `quick_hash` evidence (same size, same first 128 KB) alone instead of
+  re-reading every file in full first, which on a remote mount made deleting a
+  large video's duplicate take minutes. The explicit `POST /dedupe/verify`
+  still performs a full byte comparison when you want one before deleting.
+
 ### Fixed
 
 - **Large gallery-dl downloads are no longer killed as "wedged".** The

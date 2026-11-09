@@ -888,8 +888,9 @@ export function DedupePage() {
             </ul>
             {confirm?.group.match_type === 'content' ? (
               <p className="text-[11px] leading-5 text-fg-subtle">
-                Each file is compared byte-for-byte with the keeper first. Anything
-                that differs is left untouched.
+                Files in a content group are trusted from the hash match and are
+                deleted immediately — verify a pair explicitly if you want a
+                byte comparison first.
               </p>
             ) : (
               <p className="text-[11px] leading-5 text-warning">
@@ -918,7 +919,7 @@ export function DedupePage() {
                     onSuccess: (result) => {
                       if (result.mismatched.length) {
                         toast.error(
-                          `${result.mismatched.length} file(s) differed and were kept`,
+                          `${result.mismatched.length} file(s) no longer exist`,
                         )
                       }
                       toast.success(

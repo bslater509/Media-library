@@ -8,8 +8,10 @@ two apps agree about what has already been hashed:
 - ``thumb_hash``: 16-hex DCT pHash of the cached poster (``blank_thumb`` /
   ``no_thumb`` sentinels).
 
-Content deletion is always preceded by a full byte-for-byte comparison; the
-128 KB head hash only narrows the candidates.
+Content deletion trusts the ``quick_hash`` grouping (same size + same first
+128 KB): no byte-for-byte re-comparison runs before a resolve, so deleting a
+content duplicate is immediate. ``files_identical`` remains available for the
+explicit ``/dedupe/verify`` double-check.
 """
 
 from __future__ import annotations
@@ -1147,9 +1149,6 @@ def resolve(keep: str, deletes: list[str], mode: str = "content") -> dict[str, A
         if path == keep_path:
             continue
         if not os.path.isfile(path):
-            mismatched.append(path)
-            continue
-        if mode == "content" and not files_identical(keep_path, path):
             mismatched.append(path)
             continue
         candidates.append(path)

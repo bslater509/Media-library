@@ -1146,8 +1146,11 @@ def test_resolve_matrix(library_env):
         mode="content",
     )
     assert result["kept"] == str(keep)
-    assert result["deleted"] == [str(copy)]
-    assert result["mismatched"] == [str(odd), ghost]
+    # Resolve trusts the hash grouping, so a different-content file listed in
+    # the group is deleted like any other candidate; only missing files
+    # mismatch.
+    assert result["deleted"] == [str(copy), str(odd)]
+    assert result["mismatched"] == [str(ghost)]
     assert result["failed"] == []
     assert not copy.exists()
     with sqlite3.connect(library_env["db_path"]) as conn:
