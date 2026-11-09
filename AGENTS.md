@@ -103,6 +103,12 @@ The suite is isolated: an autouse fixture points `DB_PATH`/`DATA_DIR` at a
 temporary directory and creates the schema with `schema.init_schema`, so no test
 can reach a real library or database.
 
+`pytest.ini` puts `-n auto` in `addopts`, so a full run uses every CPU
+(`pytest-xdist`); `.coveragerc` selects coverage's `sysmon` core on Python 3.12+.
+Both only change wall-clock time, never results. Pass `-n0` to run serially
+(useful under a debugger or when profiling), and remember that a subset run
+with `--no-cov` skips the 100% gate that only makes sense for the full suite.
+
 ### Rule 5 — Keep the live server on the current code
 Python modules and the app are assembled at process start, so any backend
 or asset change needs a restart:

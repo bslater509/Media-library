@@ -206,11 +206,15 @@ sudo systemctl enable --now media-library-watchdog.timer
 ## 🧪 Tests
 
 ```bash
-./venv/bin/pytest                      # backend
+./venv/bin/pytest                      # backend (parallel by default; -n0 for serial)
 npm test                               # client
 npm run build                          # typecheck + build
 ./venv/bin/ruff check . && ./venv/bin/ruff format --check .
 ```
+
+The backend suite spreads across every CPU with `pytest-xdist` and records
+coverage through `sys.monitoring` on Python 3.12+, which cuts a full run to a
+few seconds on a multicore machine without changing what is measured.
 
 ---
 

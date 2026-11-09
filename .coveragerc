@@ -2,6 +2,13 @@
 # (~--cov-fail-under=100~ in pytest.ini) is kept in step with these:
 # the ``__main__`` guard cannot run under test, so its body is excluded
 # from the 100% requirement rather than being declared reachable.
+
+[run]
+# Use PEP 669 sys.monitoring where the interpreter has it (3.12+): the same
+# line data at a fraction of the C-tracer cost. coverage warns and falls back
+# to the default core on an older interpreter, so the gate still works there.
+core = sysmon
+
 [report]
 exclude_also =
     if __name__ == .__main__.:

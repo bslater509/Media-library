@@ -13,6 +13,12 @@ snapshot metadata.
 
 ### Changed
 
+- **The backend test suite is parallel.** `pytest.ini` now starts one
+  `pytest-xdist` worker per CPU, and coverage uses Python 3.12+'s
+  `sys.monitoring` core instead of the C tracer. A full 844-test run drops
+  from about 77 s to roughly 16 s on an 8-core machine with the same 100%
+  coverage gate; `-n0` still forces a serial run.
+
 - **Duplicate deletion is instant.** Resolving a content group deletes on the
   `quick_hash` evidence (same size, same first 128 KB) alone instead of
   re-reading every file in full first, which on a remote mount made deleting a
