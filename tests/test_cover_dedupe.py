@@ -1400,6 +1400,42 @@ def test_dedupe_router_endpoints(library_env, monkeypatch):
         == 403
     )
 
+    view_x = library / "A" / "view-x.jpg"
+    view_y = library / "A" / "view-y.jpg"
+    view_x.write_bytes(b"visual-router-x" * 64)
+    view_y.write_bytes(b"visual-router-y" * 64)
+
+    batched = client.post(
+        "/api/dedupe/resolve/batch",
+        json={
+            "items": [
+                {
+                    "keep": str(library / "A" / "view-x.jpg"),
+                    "delete": [str(library / "A" / "view-y.jpg")],
+                    "mode": "visual",
+                },
+                {
+                    "keep": str(path_a),
+                    "delete": [str(library / "A" / "gone.mp4")],
+                    "mode": "content",
+                },
+            ]
+        },
+    )
+    assert batched.status_code == 200
+    summary = batched.json()
+    assert summary["attempted"] == 2
+    assert summary["failed"] == []
+    assert summary["resolved"] == 2
+    assert summary["deleted"] == [str(library / "A" / "view-y.jpg")]
+    assert summary["mismatched"] == [str(library / "A" / "gone.mp4")]
+    assert summary["failed"] == []
+    assert not (library / "A" / "view-y.jpg").is_file()
+
+    assert (
+        client.post("/api/dedupe/resolve/batch", json={"items": []}).status_code == 422
+    )
+
 
 def test_dedupe_router_error_translation(library_env, monkeypatch):
     client = TestClient(create_app())
@@ -1415,3 +1451,12 @@ def test_dedupe_router_error_translation(library_env, monkeypatch):
 
     monkeypatch.setattr(dedupe, "hash_visual", boom)
     assert client.post("/api/dedupe/hash", json={"mode": "visual"}).status_code == 500
+
+    monkeypatch.setattr(dedupe, "batch_resolve", boom)
+    assert (
+        client.post(
+            "/api/dedupe/resolve/batch",
+            json={"items": [{"keep": "a.mp4", "delete": ["b.mp4"], "mode": "content"}]},
+        ).status_code
+        == 500
+    )

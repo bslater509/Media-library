@@ -26,6 +26,7 @@ import {
   useDedupeIgnore,
   useDedupeReset,
   useDedupeResolve,
+  useDedupeResolveBatch,
   useDedupeStatus,
   useDedupeUnignore,
   useDedupeVerifyVisualStatus,
@@ -89,6 +90,8 @@ export function DedupePage() {
     null,
   )
   const [confirmReset, setConfirmReset] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkIncludeUnverified, setBulkIncludeUnverified] = useState(false)
   const [compareId, setCompareId] = useState<string | null>(null)
   const [ignoredLimit, setIgnoredLimit] = useState(50)
   const [showIgnored, setShowIgnored] = useState(false)
@@ -104,6 +107,7 @@ export function DedupePage() {
   const verifyStatus = useDedupeVerifyVisualStatus()
   const startChecks = useStartDedupeVerifyVisual()
   const reset = useDedupeReset()
+  const bulkResolve = useDedupeResolveBatch()
 
   const data = groups.data
   const unhashed =
@@ -267,6 +271,66 @@ export function DedupePage() {
     }
   }
 
+  /** Groups the bulk delete would resolve with the current switch state. */
+  const bulkStats = useMemo(() => {
+    const groups: DedupeGroup[] = []
+    let content = 0
+    let visualVerified = 0
+    let visualUnverified = 0
+    let files = 0
+    let bytes = 0
+    for (const group of data?.groups ?? []) {
+      const verified =
+        group.match_type === 'content' ||
+        group.verification?.confirmed === true
+      if (!verified && !bulkIncludeUnverified) continue
+      groups.push(group)
+      files += group.files.length - 1
+      bytes += group.reclaimable
+      if (group.match_type === 'content') content += 1
+      else if (group.verification?.confirmed === true) visualVerified += 1
+      else visualUnverified += 1
+    }
+    return { groups, content, visualVerified, visualUnverified, files, bytes }
+  }, [data?.groups, bulkIncludeUnverified])
+
+  const runBulk = async () => {
+    if (!bulkStats.groups.length) return
+    setBulkOpen(false)
+    try {
+      const result = await bulkResolve.mutateAsync(
+        bulkStats.groups.map((group) => {
+          const keep = keepFor(group)
+          return {
+            keep,
+            deletes: group.files
+              .filter((file) => file.path !== keep)
+              .map((file) => file.path),
+            mode: group.match_type,
+          }
+        }),
+      )
+      setKeepChoice({})
+      const summary = [
+        `resolved ${result.resolved}/${result.attempted} group(s)`,
+        `deleted ${result.deleted.length} file(s)`,
+      ]
+      if (result.failed.length || result.mismatched.length) {
+        if (result.failed.length) {
+          summary.push(`${result.failed.length} group(s) failed`)
+        }
+        if (result.mismatched.length) {
+          summary.push(`${result.mismatched.length} file(s) no longer exist`)
+        }
+        toast.warning(summary.join(' · '))
+      } else {
+        toast.success(summary.join(' · '))
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Bulk delete failed')
+    }
+  }
+
   const deletePreview = useMemo(() => {
     if (!confirm) return []
     return confirm.group.files.filter((file) => file.path !== confirm.keep)
@@ -355,6 +419,24 @@ export function DedupePage() {
           >
             {hashing ? <Loader2 className="size-4 animate-spin" /> : <Hash />}
             {hashing ? hashingProgress || 'Hashing…' : `Hash ${unhashed || ''}`.trim()}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => setBulkOpen(true)}
+            disabled={bulkResolve.isPending || !(data?.groups.length ?? 0)}
+            title={`Delete every resolvable duplicate group on this page${
+              formatBytes(bulkStats.bytes) !== '0 B'
+                ? ` (about ${formatBytes(bulkStats.bytes)} reclaimed)`
+                : ''
+            }`}
+          >
+            {bulkResolve.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Trash2 />
+            )}
+            Delete all
           </Button>
           <Button
             size="sm"
@@ -956,6 +1038,93 @@ export function DedupePage() {
                 <Trash2 />
               )}
               Delete duplicates
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={bulkOpen}
+        onOpenChange={(open) => (open ? undefined : setBulkOpen(false))}
+      >
+        <DialogContent aria-describedby={undefined} className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete all duplicates on this page?</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="flex flex-col gap-2">
+            <p className="text-sm text-fg-muted">
+              Resolves every group currently loaded, keeping the highlighted
+              copy of each — a keep choice you made on this page wins, the rest
+              keep their largest file.
+            </p>
+            <ul className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-[11px] text-fg-muted">
+              <li>
+                {bulkStats.content.toLocaleString()} byte-identical group
+                {bulkStats.content === 1 ? '' : 's'}
+              </li>
+              <li>
+                {bulkStats.visualVerified.toLocaleString()} visual group
+                {bulkStats.visualVerified === 1 ? '' : 's'} with a confirmed
+                5-frame match
+              </li>
+              <li
+                className={
+                  bulkStats.visualUnverified
+                    ? bulkIncludeUnverified
+                      ? ''
+                      : 'text-fg-subtle'
+                    : 'hidden'
+                }
+              >
+                {bulkStats.visualUnverified.toLocaleString()} visual group
+                {bulkStats.visualUnverified === 1 ? '' : 's'} without a
+                confirming frame check
+                {bulkIncludeUnverified ? '' : ' — not included'}
+              </li>
+            </ul>
+            {bulkStats.visualUnverified ? (
+              <label
+                htmlFor="dedupe-bulk-unverified"
+                className="flex cursor-pointer items-center gap-1.5"
+                title="Visual groups with no confirming frame check are riskier"
+              >
+                <Switch
+                  id="dedupe-bulk-unverified"
+                  checked={bulkIncludeUnverified}
+                  onCheckedChange={setBulkIncludeUnverified}
+                  aria-label="Include unverified visual groups"
+                />
+                Also delete the unverified visual group
+                {bulkStats.visualUnverified === 1 ? '' : 's'}
+              </label>
+            ) : null}
+            <p className="text-[11px] text-fg-subtle tabular-nums">
+              {bulkStats.groups.length.toLocaleString()} group
+              {bulkStats.groups.length === 1 ? '' : 's'} ·{' '}
+              {bulkStats.files.toLocaleString()} file
+              {bulkStats.files === 1 ? '' : 's'} ·{' '}
+              {formatBytes(bulkStats.bytes)} reclaimed
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulkOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={bulkResolve.isPending || !bulkStats.groups.length}
+              onClick={() => void runBulk()}
+            >
+              {bulkResolve.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 />
+              )}
+              {bulkResolve.isPending
+                ? 'Deleting…'
+                : `Delete ${bulkStats.files.toLocaleString()} file${
+                    bulkStats.files === 1 ? '' : 's'
+                  }`}
             </Button>
           </DialogFooter>
         </DialogContent>

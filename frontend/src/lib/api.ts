@@ -401,6 +401,20 @@ export interface DedupeResolveResult {
   mismatched: string[]
 }
 
+export interface DedupeResolveBatchItemInput {
+  keep: string
+  deletes: string[]
+  mode: string
+}
+
+export interface DedupeResolveBatchResult {
+  attempted: number
+  resolved: number
+  deleted: string[]
+  failed: Array<{ path: string; error: string }>
+  mismatched: string[]
+}
+
 export interface IgnoredPair {
   id: number
   path1: string
@@ -976,6 +990,15 @@ export const api = {
       keep,
       delete: deletes,
       mode,
+    }),
+
+  dedupeResolveBatch: (items: DedupeResolveBatchItemInput[]) =>
+    post<DedupeResolveBatchResult>('/dedupe/resolve/batch', {
+      items: items.map((item) => ({
+        keep: item.keep,
+        delete: item.deletes,
+        mode: item.mode,
+      })),
     }),
 
   dedupeVerifyVisual: (paths: string[]) =>

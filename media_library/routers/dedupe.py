@@ -15,6 +15,8 @@ from media_library.schemas import (
     DedupeIgnoreRequest,
     DedupeIgnoreResponse,
     DedupeResetResponse,
+    DedupeResolveBatchRequest,
+    DedupeResolveBatchResponse,
     DedupeResolveRequest,
     DedupeResolveResponse,
     DedupeStatus,
@@ -121,6 +123,15 @@ async def resolve(payload: DedupeResolveRequest) -> dict:
         return await asyncio.to_thread(
             dedupe.resolve, payload.keep, payload.delete, payload.mode
         )
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.post("/dedupe/resolve/batch", response_model=DedupeResolveBatchResponse)
+async def resolve_batch(payload: DedupeResolveBatchRequest) -> dict:
+    try:
+        items = [item.model_dump() for item in payload.items]
+        return await asyncio.to_thread(dedupe.batch_resolve, items)
     except Exception as exc:
         raise as_http_error(exc) from exc
 

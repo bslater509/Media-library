@@ -295,6 +295,65 @@ def test_resolve_deletes_a_verified_duplicate(dedupe_env):
         )
 
 
+def test_batch_resolve_resolves_independent_groups(dedupe_env):
+    result = dedupe.batch_resolve(
+        [
+            {
+                "keep": str(dedupe_env["a"]),
+                "delete": [str(dedupe_env["b"])],
+                "mode": "content",
+            },
+            {
+                "keep": str(dedupe_env["ha"]),
+                "delete": [str(dedupe_env["hb"])],
+                "mode": "content",
+            },
+        ]
+    )
+    assert result["attempted"] == 2
+    assert result["resolved"] == 2
+    assert sorted(result["deleted"]) == sorted(
+        [str(dedupe_env["b"]), str(dedupe_env["hb"])]
+    )
+    assert result["failed"] == []
+    assert dedupe_env["a"].is_file()
+    assert dedupe_env["ha"].is_file()
+    assert not dedupe_env["b"].is_file()
+    assert not dedupe_env["hb"].is_file()
+
+    with _db(dedupe_env) as conn:
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM files WHERE path IN (?, ?)",
+            (str(dedupe_env["b"]), str(dedupe_env["hb"])),
+        ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_batch_resolve_records_failed_groups_and_continues(dedupe_env):
+    result = dedupe.batch_resolve(
+        [
+            {
+                "keep": str(dedupe_env["library"] / "gone.jpg"),
+                "delete": [str(dedupe_env["b"])],
+                "mode": "content",
+            },
+            {
+                "keep": str(dedupe_env["a"]),
+                "delete": [str(dedupe_env["b"])],
+                "mode": "content",
+            },
+        ]
+    )
+    assert result["attempted"] == 2
+    assert result["resolved"] == 1
+    assert len(result["failed"]) == 1
+    assert result["failed"][0]["path"] == str(dedupe_env["library"] / "gone.jpg")
+    assert result["failed"][0]["error"] == "The file to keep was not found"
+    assert result["deleted"] == [str(dedupe_env["b"])]
+    assert dedupe_env["a"].is_file()
+    assert not dedupe_env["b"].is_file()
+
+
 def test_visual_groups_cluster_within_two_bits(dedupe_env):
     result = dedupe.visual_groups()
     groups = result["groups"]

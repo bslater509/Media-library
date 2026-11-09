@@ -1170,6 +1170,37 @@ def resolve(keep: str, deletes: list[str], mode: str = "content") -> dict[str, A
     }
 
 
+def batch_resolve(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Resolve several duplicate groups; every group is independent.
+
+    A group that fails (its kept file vanished, an invalid path) is recorded
+    into ``failed`` and the remaining groups still resolve, so one bad group
+    never blocks the rest of a bulk delete.
+    """
+    resolved = 0
+    deleted: list[str] = []
+    mismatched: list[str] = []
+    failed: list[dict[str, str]] = []
+    for item in items:
+        keep = str(item.get("keep", ""))
+        deletes = [str(path) for path in item.get("delete", [])]
+        mode = str(item.get("mode", "content"))
+        try:
+            result = resolve(keep, deletes, mode)
+            resolved += 1
+            deleted.extend(result["deleted"])
+            mismatched.extend(result["mismatched"])
+        except writes.WriteError as exc:
+            failed.append({"path": keep, "error": exc.message})
+    return {
+        "attempted": len(items),
+        "resolved": resolved,
+        "deleted": deleted,
+        "mismatched": mismatched,
+        "failed": failed,
+    }
+
+
 def ignore_pair(path1: str, path2: str, match_type: str = "content") -> dict[str, Any]:
     if match_type not in ("content", "visual"):
         raise writes.WriteError("Unknown match type", 400)

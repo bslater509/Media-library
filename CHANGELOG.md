@@ -35,6 +35,15 @@ snapshot metadata.
 
 ### Added
 
+- **Bulk delete for duplicates.** A "Delete all" action on the Duplicates page
+  resolves every resolvable group loaded on the page with one request:
+  `POST /dedupe/resolve/batch` takes up to 200 keep/delete sets, resolves each
+  group independently off the request thread, records per-group failures
+  (a vanished keep never blocks the rest) and returns one summary. The
+  confirm dialog shows what is included — byte-identical groups and
+  5-frame-confirmed visual groups — and an explicit switch adds visual groups
+  that still have no confirming frame check.
+
 - **Downloaded archives are kept and unpacked.** `.rar`, `.7z` and `.zip`
   containers no longer get dropped by the importer: they move to an `archives`
   folder inside the download destination as each one completes, and a RAR/7z

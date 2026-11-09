@@ -663,6 +663,24 @@ class DedupeResolveResponse(BaseModel):
     mismatched: list[str]
 
 
+class DedupeResolveBatchItem(BaseModel):
+    keep: str
+    delete: list[str] = Field(min_length=1, max_length=500)
+    mode: str = "content"
+
+
+class DedupeResolveBatchRequest(BaseModel):
+    items: list[DedupeResolveBatchItem] = Field(min_length=1, max_length=200)
+
+
+class DedupeResolveBatchResponse(BaseModel):
+    attempted: int
+    resolved: int
+    deleted: list[str]
+    mismatched: list[str]
+    failed: list[Failure]
+
+
 class DedupeIgnoreRequest(BaseModel):
     path1: str
     path2: str

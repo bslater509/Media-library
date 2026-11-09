@@ -8,7 +8,11 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
-import { api, type ConflictPolicy } from './api'
+import {
+  api,
+  type ConflictPolicy,
+  type DedupeResolveBatchItemInput,
+} from './api'
 
 export const queryKeys = {
   authSession: ['auth', 'session'] as const,
@@ -564,6 +568,18 @@ export function useDedupeResolve() {
       deletes: string[]
       mode: string
     }) => api.dedupeResolve(keep, deletes, mode),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['dedupe'] })
+      void invalidateLibrary(client)
+    },
+  })
+}
+
+export function useDedupeResolveBatch() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (items: DedupeResolveBatchItemInput[]) =>
+      api.dedupeResolveBatch(items),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['dedupe'] })
       void invalidateLibrary(client)

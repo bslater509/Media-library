@@ -418,7 +418,11 @@ visual groups in one list and preselects the largest file as the copy to keep;
 a visual cluster already covered by a byte-identical group is folded into it.
 Byte-identical groups and visual groups whose five-frame check
 confirmed (`confirmed === true`) delete directly, skipping the confirmation
-dialog; visual groups without a confirming check still get it.
+dialog; visual groups without a confirming check still get it. A bulk
+"Delete all" on the page posts every resolvable loaded group to
+`POST /dedupe/resolve/batch` (content and 5-frame-confirmed visual; unverified
+visual groups only with an explicit switch in the confirm dialog) and reports
+one summary with per-group failures.
 Fetching groups auto-queues a five-frame check for every
 visual group on the page; a batch of checks runs on one daemon thread and
 exposes progress (group, file and sampled frame) at
@@ -531,7 +535,9 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `GET /dedupe/status?include_images=` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&include_images=&auto_verify=` ·
 `POST /dedupe/hash` · `POST /dedupe/verify` · `POST /dedupe/verify-visual` ·
 `POST /dedupe/verify-visual/batch` · `GET /dedupe/verify-visual/status` ·
-`POST /dedupe/resolve` · `POST /dedupe/ignore` · `GET /dedupe/ignored` ·
+`POST /dedupe/resolve` · `POST /dedupe/resolve/batch` (up to 200 keep/delete
+sets in one off-thread pass; per-group failures recorded, the rest resolve) ·
+`POST /dedupe/ignore` · `GET /dedupe/ignored` ·
 `POST /dedupe/unignore` · `POST /dedupe/reset` ·
 `GET /analytics/overview?folder_limit=&file_limit=&refresh=` ·
 `GET /analytics/growth?days=30` (history, oldest first, plus live today counts) ·
