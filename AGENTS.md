@@ -17,9 +17,11 @@ at `/`.
   filenames *and* library-relative folder paths, justified natural-ratio tiles,
   fullscreen viewer with byte-range streaming, favorites, multi-select with
   bulk move/delete/rename/star/WebP.
-- **Sorter**: reviews an incoming folder at a few keystrokes (1–6 destinations,
+- **Sorter**: reviews a source folder at a few keystrokes (1–6 destinations,
   `/` to search a folder, `Enter` to move), with duplicate warnings, undo,
-  rename, delete and live transcoding for containers browsers cannot play.
+  rename, delete and live transcoding for containers browsers cannot play. The
+  folder defaults to the incoming folder and can be switched to any folder on
+  the system from the page (persisted in `SORTER_STATE`).
 - **Processing**: background poster and looping animated-WebP previews,
   metadata probing (dimensions, duration, codecs, fps, capture time), live
   transcoding for non-web containers, in-place x265 (HEVC) conversion, WebP
@@ -246,7 +248,7 @@ environment by their own modules, not through `config.py`'s `Settings`.
 | `DOWNLOAD_ARCHIVE_DIR` | `$DATA_DIR/download_archives` | Per-(URL, folder) resume ledgers; unused ones pruned after 30 days |
 | `DOWNLOAD_WORKER_CONCURRENCY` | `2` | Parallel downloads |
 | `DOWNLOAD_COOKIES_FILE` | *(empty)* | Netscape cookies for gated sites |
-| `SORTER_STATE` | `$DATA_DIR/sorter_state.json` | Recent sorter destinations |
+| `SORTER_STATE` | `$DATA_DIR/sorter_state.json` | Recent sorter destinations and the folder under review |
 | `ZIP_CACHE_DIR` | `$DATA_DIR/cache/zips` | Extracted archive members |
 | `ZIP_CACHE_MAX_SIZE_GB` | `5.0` | LRU ceiling for that cache |
 | `LIBRARY_BACKUP_DIR` | `$LIBRARY_DIR/.media_library_backup` | Snapshot location |
@@ -516,6 +518,8 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 
 ### Sorter (`routers/sorter.py`)
 `GET /sorter/config` · `GET /sorter/queue` · `POST /sorter/refresh` ·
+`POST /sorter/source` (choose the reviewed folder; null restores the incoming one) ·
+`GET /sorter/source/children?path=` (system folder browser for the chooser) ·
 `GET /sorter/destinations?q=&limit=` · `POST /sorter/folders` ·
 `POST /sorter/move` · `POST /sorter/undo` · `POST /sorter/rename` ·
 `POST /sorter/delete` · `GET /sorter/duplicate?path=` ·

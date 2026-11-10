@@ -30,6 +30,8 @@ export const queryKeys = {
   watchUnseen: (type: string) => ['history', 'unwatched', type] as const,
   sorterConfig: ['sorter', 'config'] as const,
   sorterQueue: ['sorter', 'queue'] as const,
+  sorterSourceChildren: (path: string | null) =>
+    ['sorter', 'source-children', path] as const,
   sorterDestinations: (query: string) => ['sorter', 'destinations', query] as const,
   webpStatus: ['webp', 'status'] as const,
   zipOverview: ['zip', 'overview'] as const,
@@ -365,6 +367,26 @@ export function useSorterConfig() {
   return useQuery({
     queryKey: queryKeys.sorterConfig,
     queryFn: api.sorterConfig,
+    staleTime: 10_000,
+  })
+}
+
+export function useSorterSetSource() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (path: string | null) => api.sorterSetSource(path),
+    // The queue is a different folder now, and the config carries the path.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['sorter'] })
+    },
+  })
+}
+
+export function useSorterSourceChildren(path: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.sorterSourceChildren(path),
+    queryFn: () => api.sorterSourceChildren(path ?? undefined),
+    enabled,
     staleTime: 10_000,
   })
 }

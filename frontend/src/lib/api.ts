@@ -266,6 +266,17 @@ export interface SorterConfig {
   undo_count: number
 }
 
+export interface SorterSourceChild {
+  name: string
+  path: string
+}
+
+export interface SorterSourceListing {
+  path: string
+  parent: string | null
+  children: SorterSourceChild[]
+}
+
 export interface DownloadFileProgress {
   name: string
   done: boolean
@@ -941,6 +952,14 @@ export const api = {
     post<{ cancelled: boolean }>('/uploads/cancel', { upload_id: uploadId }),
 
   sorterConfig: () => request<SorterConfig>('/sorter/config'),
+
+  sorterSetSource: (path: string | null) =>
+    post<SorterConfig>('/sorter/source', { path }),
+
+  sorterSourceChildren: (path?: string) =>
+    request<SorterSourceListing>('/sorter/source/children', {
+      path: path || undefined,
+    }),
 
   sorterQueue: () => request<SorterQueue>('/sorter/queue'),
 

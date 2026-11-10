@@ -27,6 +27,8 @@ import {
   useSorterMove,
   useSorterQueue,
   useSorterRename,
+  useSorterSetSource,
+  useSorterSourceChildren,
   useSorterUndo,
 } from '../lib/queries'
 import {
@@ -65,6 +67,7 @@ export function SorterPage() {
   const [renameItem, setRenameItem] = useState<SorterItem | null>(null)
   const [deleteItem, setDeleteItem] = useState<SorterItem | null>(null)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(false)
   const [sessionMoved, setSessionMoved] = useState(0)
   const [muted, setMuted] = useState(() => {
     try {
@@ -156,7 +159,7 @@ export function SorterPage() {
       // Radix menus) owns the keyboard: let it handle its keys and ignore
       // the sorter's, or a keystroke in the confirmation stack could queue
       // a move behind it.
-      if (event.defaultPrevented || renameItem || deleteItem || newFolderOpen)
+      if (event.defaultPrevented || renameItem || deleteItem || newFolderOpen || sourceOpen)
         return
       const target = event.target as HTMLElement | null
       const typing =
@@ -238,6 +241,7 @@ export function SorterPage() {
     recents,
     renameItem,
     skip,
+    sourceOpen,
   ])
 
   if (config.isLoading || queue.isLoading) {
@@ -253,13 +257,19 @@ export function SorterPage() {
       <div className="px-3 py-10 sm:px-5">
         <EmptyState
           icon={<Clapperboard />}
-          title="Incoming folder is not available"
+          title="Folder under review is not available"
           description={
             config.data?.source_dir
-              ? `${config.data.source_dir} is missing or unreachable. Set INCOMING_DIR (or SOURCE_DIR) and restart.`
-              : 'Set INCOMING_DIR (or SOURCE_DIR) to the folder the sorter should review.'
+              ? `${config.data.source_dir} is missing or unreachable. Pick another folder, or set INCOMING_DIR (or SOURCE_DIR) and restart.`
+              : 'Pick the folder the sorter should review.'
+          }
+          action={
+            <Button variant="secondary" onClick={() => setSourceOpen(true)}>
+              <FolderInput /> Choose a folder
+            </Button>
           }
         />
+        <SourceChooser open={sourceOpen} onOpenChange={setSourceOpen} />
       </div>
     )
   }
@@ -272,16 +282,22 @@ export function SorterPage() {
           title="Queue is empty"
           description={`Nothing waiting in ${config.data.source_dir}. New files appear here when you rescan.`}
           action={
-            <Button
-              variant="secondary"
-              onClick={() =>
-                void queue.refetch().then(() => toast.success('Queue refreshed'))
-              }
-            >
-              <RefreshCw /> Rescan
-            </Button>
+            <span className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void queue.refetch().then(() => toast.success('Queue refreshed'))
+                }
+              >
+                <RefreshCw /> Rescan
+              </Button>
+              <Button variant="ghost" onClick={() => setSourceOpen(true)}>
+                <FolderInput /> Review a different folder
+              </Button>
+            </span>
           }
         />
+        <SourceChooser open={sourceOpen} onOpenChange={setSourceOpen} />
       </div>
     )
   }
@@ -409,6 +425,24 @@ export function SorterPage() {
       </section>
 
       <aside className="flex w-full shrink-0 flex-col gap-3 border-t border-border bg-surface p-3 md:w-80 md:border-t-0 md:border-l">
+        <button
+          type="button"
+          onClick={() => setSourceOpen(true)}
+          title={config.data?.source_dir}
+          className="flex items-center gap-2 rounded-sm border border-border px-2 py-1.5 text-left hover:border-border-strong hover:bg-surface-2"
+        >
+          <FolderInput aria-hidden="true" className="size-4 shrink-0 text-fg-subtle" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] tracking-wide text-fg-subtle uppercase">
+              Reviewing
+            </span>
+            <span className="block truncate font-mono text-[11px] text-fg-muted">
+              {config.data?.source_dir}
+            </span>
+          </span>
+          <Pencil aria-hidden="true" className="size-3.5 shrink-0 text-fg-subtle" />
+        </button>
+
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-sm font-semibold">Destinations</p>
@@ -517,6 +551,8 @@ export function SorterPage() {
           </p>
         </div>
       </aside>
+
+      <SourceChooser open={sourceOpen} onOpenChange={setSourceOpen} />
 
       <SorterRenameDialog
         item={renameItem}
@@ -705,5 +741,149 @@ function NewFolderForm({
         </Button>
       </div>
     </div>
+  )
+}
+
+function SourceChooser({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const config = useSorterConfig()
+  const setSource = useSorterSetSource()
+  const [browse, setBrowse] = useState<string | null>(null)
+  const [typed, setTyped] = useState('')
+  const listing = useSorterSourceChildren(browse, open)
+
+  // Start one level above the folder currently under review.
+  useEffect(() => {
+    if (open && browse === null) {
+      const source = config.data?.source_dir
+      setBrowse(
+        source
+          ? source.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/'
+          : '/',
+      )
+    }
+  }, [open, browse, config.data?.source_dir])
+
+  useEffect(() => {
+    if (!open) {
+      setBrowse(null)
+      setTyped('')
+    }
+  }, [open])
+
+  const here = listing.data?.path ?? browse ?? '/'
+  const crumbs = useMemo(() => {
+    const parts = here.split('/').filter(Boolean)
+    return [
+      { name: '/', path: '/' },
+      ...parts.map((part, index) => ({
+        name: part,
+        path: `/${parts.slice(0, index + 1).join('/')}`,
+      })),
+    ]
+  }, [here])
+
+  const choose = (path: string | null) =>
+    setSource.mutate(path, {
+      onSuccess: (config) => {
+        toast.success(`Now reviewing ${config.source_dir}`)
+        onOpenChange(false)
+      },
+      onError: (error) =>
+        toast.error(
+          error instanceof Error ? error.message : 'Could not switch folders',
+        ),
+    })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent aria-describedby={undefined} className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Choose the folder to review</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-0.5 text-[11px]">
+            {crumbs.map((crumb, index) => (
+              <span key={crumb.path} className="flex items-center gap-0.5">
+                {index > 0 ? (
+                  <span aria-hidden="true" className="text-fg-subtle">
+                    /
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setBrowse(crumb.path)}
+                  className={cn(
+                    'rounded-sm px-1 py-0.5 font-mono hover:bg-surface-2',
+                    crumb.path === here ? 'bg-surface-2 text-fg' : 'text-fg-muted',
+                  )}
+                >
+                  {crumb.name}
+                </button>
+              </span>
+            ))}
+          </div>
+
+          <div className="flex max-h-64 min-h-20 flex-col gap-0.5 overflow-y-auto rounded-md border border-border p-1">
+            {listing.isFetching && !listing.data ? (
+              <span className="flex items-center gap-2 px-2 py-3 text-xs text-fg-subtle">
+                <Spinner /> Reading…
+              </span>
+            ) : null}
+            {listing.data?.children.length ? (
+              listing.data.children.map((child) => (
+                <button
+                  key={child.path}
+                  type="button"
+                  onClick={() => setBrowse(child.path)}
+                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
+                >
+                  <FolderInput aria-hidden="true" className="size-4 shrink-0 text-fg-subtle" />
+                  <span className="min-w-0 flex-1 truncate">{child.name}</span>
+                </button>
+              ))
+            ) : listing.data ? (
+              <p className="px-2 py-3 text-xs text-fg-subtle">No subfolders here.</p>
+            ) : null}
+          </div>
+
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (typed.trim()) setBrowse(typed.trim())
+            }}
+          >
+            <Input
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              placeholder="Or paste a folder path…"
+              aria-label="Folder path"
+              className="h-9 font-mono text-xs"
+            />
+            <Button type="submit" variant="secondary" disabled={!typed.trim()}>
+              Go
+            </Button>
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="ghost" disabled={setSource.isPending} onClick={() => choose(null)}>
+            Incoming folder
+          </Button>
+          <Button
+            disabled={!listing.data || setSource.isPending}
+            onClick={() => listing.data && choose(listing.data.path)}
+          >
+            {setSource.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            Use this folder
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

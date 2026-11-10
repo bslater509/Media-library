@@ -11,6 +11,16 @@ snapshot metadata.
 
 ## [Unreleased]
 
+### Added
+
+- **The Sorter can review any folder on the system.** A "Reviewing" picker on
+  the Sorter page (also offered when the incoming folder is missing or the
+  queue is empty) browses the system's folders read-only — breadcrumbs,
+  subfolders, or a pasted path — and switches the queue to it. The choice is
+  persisted in `SORTER_STATE`, survives a restart, and resets back to the
+  incoming folder with one button. New endpoints: `POST /api/sorter/source`
+  and `GET /api/sorter/source/children?path=`.
+
 ### Fixed
 
 - **Downloads no longer die on enormous file names.** A gallery-dl album

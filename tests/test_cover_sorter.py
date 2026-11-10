@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,8 @@ def sorter_env(tmp_path, monkeypatch):
             )
 
     sorter_service._undo_stack.clear()
+    sorter_service._source_override = None
+    sorter_service._source_loaded = False
     sorter_service.invalidate_queue()
     try:
         yield {
@@ -78,6 +81,8 @@ def sorter_env(tmp_path, monkeypatch):
         }
     finally:
         sorter_service._undo_stack.clear()
+        sorter_service._source_override = None
+        sorter_service._source_loaded = False
         sorter_service.invalidate_queue()
         v2_config.reload_settings()
 
@@ -612,3 +617,158 @@ def test_thumbnail_timeout_kills_the_process(sorter_env, monkeypatch):
     )
     assert response.status_code == 504
     assert process.killed is True
+
+
+# ---------------------------------------------------------------------------
+# Choosing the folder under review
+# ---------------------------------------------------------------------------
+
+
+def test_set_source_switches_the_reviewed_folder(sorter_env):
+    elsewhere = sorter_env["incoming"].parent / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "clip.webm").write_bytes(b"2" * 500)
+    (elsewhere / "readme.md").write_text("not a video")
+
+    body = (
+        sorter_env["client"]
+        .post("/api/sorter/source", json={"path": str(elsewhere)})
+        .json()
+    )
+    assert body["source_dir"] == str(elsewhere)
+    assert body["source_available"] is True
+
+    queue = sorter_env["client"].get("/api/sorter/queue").json()
+    assert queue["source_dir"] == str(elsewhere)
+    assert [item["name"] for item in queue["items"]] == ["clip.webm"]
+
+    state = json.loads(sorter_env["state"].read_text(encoding="utf-8"))
+    assert state["source"] == str(elsewhere)
+
+
+def test_set_source_null_restores_the_incoming_folder(sorter_env):
+    client = sorter_env["client"]
+    client.post("/api/sorter/source", json={"path": str(sorter_env["library"])})
+    body = client.post("/api/sorter/source", json={"path": None}).json()
+    assert body["source_dir"] == str(sorter_env["incoming"])
+    assert json.loads(sorter_env["state"].read_text(encoding="utf-8"))["source"] is None
+
+
+def test_set_source_rejects_a_missing_folder(sorter_env):
+    response = sorter_env["client"].post(
+        "/api/sorter/source", json={"path": "/no/such/folder"}
+    )
+    assert response.status_code == 404
+    assert sorter_env["client"].get("/api/sorter/config").json()["source_dir"] == str(
+        sorter_env["incoming"]
+    )
+
+
+def test_source_children_lists_folders_only_skipping_hidden(sorter_env):
+    base = sorter_env["incoming"].parent
+    (base / "Trips").mkdir()
+    (base / ".hidden-dir").mkdir()
+    (base / "notes.txt").write_text("a file")
+
+    listing = (
+        sorter_env["client"]
+        .get("/api/sorter/source/children", params={"path": str(base)})
+        .json()
+    )
+    assert listing["path"] == str(base)
+    assert listing["parent"] == str(base.parent)
+    # The fixture also drops data/ and the isolated roots into this folder;
+    # what matters is folders are listed and files and hidden names are not.
+    names = {child["name"] for child in listing["children"]}
+    assert "Trips" in names
+    assert ".hidden-dir" not in names
+    assert "notes.txt" not in names
+
+    default = sorter_env["client"].get("/api/sorter/source/children").json()
+    # No path: browse next to the folder currently under review.
+    assert default["path"] == str(base)
+
+    missing = sorter_env["client"].get(
+        "/api/sorter/source/children", params={"path": "/no/such/dir"}
+    )
+    assert missing.status_code == 404
+
+
+def test_load_source_once_tolerates_reentrancy(monkeypatch):
+    """A second thread sliding into the lock sees the load already done."""
+    sorter_service._source_loaded = False
+
+    def mark_loaded():
+        sorter_service._source_loaded = True
+        return {"recent_destinations": [], "source": None}
+
+    monkeypatch.setattr(sorter_service, "_read_state", mark_loaded)
+    sorter_service._load_source_once()
+    assert sorter_service._source_loaded is True
+    sorter_service._source_loaded = False
+
+
+def test_source_children_caps_the_listing(sorter_env):
+    base = sorter_env["incoming"].parent
+    for index in range(505):
+        (base / f"many-{index:03}").mkdir()
+
+    listing = (
+        sorter_env["client"]
+        .get("/api/sorter/source/children", params={"path": str(base)})
+        .json()
+    )
+    assert len(listing["children"]) == 500
+
+
+def test_source_children_reports_an_unreadable_folder(sorter_env, monkeypatch):
+    def boom(path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(sorter_service.os, "scandir", boom)
+    response = sorter_env["client"].get(
+        "/api/sorter/source/children",
+        params={"path": str(sorter_env["incoming"].parent)},
+    )
+    assert response.status_code == 403
+    assert "Could not read the folder" in response.json()["detail"]
+
+
+def test_load_source_once_second_thread_sees_the_load_done(monkeypatch):
+    """The double-checked flag: a thread sliding in behind the loader exits
+    at the inner check instead of reading the state file twice."""
+    inside = threading.Event()
+    release = threading.Event()
+
+    def slow_read_state():
+        inside.set()
+        assert release.wait(timeout=5)
+        return {"recent_destinations": [], "source": None}
+
+    monkeypatch.setattr(sorter_service, "_read_state", slow_read_state)
+    sorter_service._source_loaded = False
+    thread = threading.Thread(target=sorter_service._load_source_once, daemon=True)
+    thread.start()
+    assert inside.wait(timeout=5)
+
+    # Main slides in behind the lock; the timer lets the loader finish, and
+    # the main call wakes at the inner check instead of reading again.
+    threading.Timer(0.2, release.set).start()
+    sorter_service._load_source_once()
+    thread.join(timeout=5)
+    sorter_service._source_loaded = False
+
+
+def test_set_source_survives_an_unwritable_state_file(sorter_env, monkeypatch):
+    def full_disk(state):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(sorter_service, "_write_state", full_disk)
+    elsewhere = sorter_env["incoming"].parent / "elsewhere"
+    elsewhere.mkdir()
+    body = (
+        sorter_env["client"]
+        .post("/api/sorter/source", json={"path": str(elsewhere)})
+        .json()
+    )
+    assert body["source_dir"] == str(elsewhere)

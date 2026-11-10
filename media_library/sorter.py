@@ -11,6 +11,7 @@ incoming folder is scanned, one level deep.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import threading
@@ -29,9 +30,15 @@ from media_library.paths import (
     stable_id,
 )
 
+logger = logging.getLogger(__name__)
+
 _CACHE_TTL = 1.5
 _scan_lock = threading.Lock()
 _scan_cache: dict[str, Any] = {"key": None, "at": 0.0, "items": []}
+
+_source_lock = threading.Lock()
+_source_loaded = False
+_source_override: str | None = None
 
 _undo_lock = threading.Lock()
 _undo_stack: list[dict[str, Any]] = []
@@ -41,7 +48,91 @@ _state_lock = threading.Lock()
 
 
 def source_dir() -> str:
+    _load_source_once()
+    with _source_lock:
+        override = _source_override
+    if override:
+        return override
     return str(get_settings().source_dir)
+
+
+def _load_source_once() -> None:
+    """Pick up the folder chosen in a previous run from the state file."""
+    global _source_loaded, _source_override
+    if _source_loaded:
+        return
+    with _source_lock:
+        if _source_loaded:
+            return
+        _source_override = _read_state().get("source")
+        _source_loaded = True
+
+
+def set_source(path: str | None) -> str:
+    """Choose the folder the sorter reviews; None restores the configured one."""
+    global _source_override, _source_loaded
+    if path is None or not path.strip():
+        with _source_lock:
+            _source_override = None
+            _source_loaded = True
+        with _state_lock:
+            state = _read_state()
+            state["source"] = None
+            _write_state(state)
+        invalidate_queue()
+        return source_dir()
+    target = os.path.abspath(os.path.normpath(path.strip()))
+    if not os.path.isdir(target):
+        raise writes.WriteError("Folder not found", 404)
+    with _source_lock:
+        _source_override = target
+        # The choice is authoritative now; a later lazy load must not
+        # overwrite it with the (older) state file.
+        _source_loaded = True
+    try:
+        with _state_lock:
+            state = _read_state()
+            state["source"] = target
+            _write_state(state)
+    except OSError:
+        # The choice still applies to this process; a full or broken data
+        # disk must not stop the folder from being reviewed.
+        logger.warning("[sorter] Could not persist the source folder", exc_info=True)
+    invalidate_queue()
+    return target
+
+
+def list_source_children(path: str | None) -> dict[str, Any]:
+    """Subfolders of a system folder, for picking the folder to review.
+
+    One level, folders only, hidden names skipped. There is no containment
+    check on purpose: the chooser browses the whole system, read-only.
+    """
+    if path is None or not path.strip():
+        base = os.path.dirname(source_dir().rstrip("/")) or "/"
+    else:
+        base = os.path.abspath(os.path.normpath(path.strip()))
+    if not os.path.isdir(base):
+        raise writes.WriteError("Folder not found", 404)
+    children: list[dict[str, str]] = []
+    try:
+        with os.scandir(base) as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if not entry.is_dir():
+                    continue
+                children.append({"name": entry.name, "path": entry.path})
+                if len(children) >= 500:
+                    break
+    except OSError as exc:
+        raise writes.WriteError("Could not read the folder", 403) from exc
+    children.sort(key=lambda item: item["name"].lower())
+    return {
+        "path": base,
+        "parent": None if base == "/" else os.path.dirname(base),
+        "children": children,
+    }
 
 
 def _resolve_source_dir() -> str:
@@ -180,15 +271,19 @@ def _state_file() -> Path:
 def _read_state() -> dict[str, Any]:
     path = _state_file()
     if not path.is_file():
-        return {"recent_destinations": []}
+        return {"recent_destinations": [], "source": None}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"recent_destinations": []}
+        return {"recent_destinations": [], "source": None}
     recent = data.get("recent_destinations")
     if not isinstance(recent, list):
-        return {"recent_destinations": []}
-    return {"recent_destinations": [str(item) for item in recent if item]}
+        recent = []
+    source = data.get("source")
+    return {
+        "recent_destinations": [str(item) for item in recent if item],
+        "source": str(source) if isinstance(source, str) and source else None,
+    }
 
 
 def _write_state(state: dict[str, Any]) -> None:
@@ -375,7 +470,7 @@ def sorter_config() -> dict[str, Any]:
     settings = get_settings()
     return {
         "source_dir": source_dir(),
-        "source_available": os.path.isdir(settings.source_dir),
+        "source_available": os.path.isdir(source_dir()),
         "library_root": str(settings.library_dir),
         "recent_destinations": recent_destinations(),
         "queue_count": len(scan_queue()),

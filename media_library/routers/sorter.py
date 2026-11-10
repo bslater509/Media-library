@@ -27,6 +27,8 @@ from media_library.schemas import (
     SorterPathRequest,
     SorterQueueResponse,
     SorterRenameRequest,
+    SorterSourceListing,
+    SorterSourceRequest,
 )
 from media_library.transcode_stream import build_command, relay
 
@@ -36,6 +38,25 @@ router = APIRouter()
 @router.get("/sorter/config", response_model=SorterConfigResponse)
 async def config() -> dict:
     return await asyncio.to_thread(sorter.sorter_config)
+
+
+@router.post("/sorter/source", response_model=SorterConfigResponse)
+async def set_source(payload: SorterSourceRequest) -> dict:
+    """Choose the folder the sorter reviews (null restores the incoming one)."""
+    try:
+        await asyncio.to_thread(sorter.set_source, payload.path)
+        return await asyncio.to_thread(sorter.sorter_config)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.get("/sorter/source/children", response_model=SorterSourceListing)
+async def source_children(path: str | None = Query(None)) -> dict:
+    """Subfolders of a system folder, for the source chooser (read-only)."""
+    try:
+        return await asyncio.to_thread(sorter.list_source_children, path)
+    except Exception as exc:
+        raise as_http_error(exc) from exc
 
 
 @router.get("/sorter/duplicate", response_model=SorterDuplicateResponse)

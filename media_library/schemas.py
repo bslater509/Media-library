@@ -420,6 +420,21 @@ class SorterFolderRequest(BaseModel):
     name: str
 
 
+class SorterSourceRequest(BaseModel):
+    path: str | None = None
+
+
+class SorterSourceChild(BaseModel):
+    name: str
+    path: str
+
+
+class SorterSourceListing(BaseModel):
+    path: str
+    parent: str | None = None
+    children: list[SorterSourceChild]
+
+
 # --- downloads -------------------------------------------------------------
 
 
