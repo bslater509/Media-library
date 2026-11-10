@@ -314,6 +314,34 @@ export interface DownloadHistory {
   offset: number
 }
 
+export interface ToolInfo {
+  key: 'ytdlp' | 'gallery_dl'
+  name: string
+  version: string | null
+  latest: string | null
+  update_available: boolean
+  check_error: string | null
+}
+
+export interface ToolUpdateJob {
+  status: 'running' | 'success' | 'failed' | 'cancelled'
+  tools: string[]
+  phase: string
+  progress: number
+  log: string[]
+  error: string | null
+  versions: Record<string, string | null>
+  cancel_requested: boolean
+  started_at: number
+  finished_at: number | null
+}
+
+export interface ToolStatus {
+  tools: ToolInfo[]
+  checking: boolean
+  update: ToolUpdateJob | null
+}
+
 export interface DownloadEnqueueResponse {
   jobs: DownloadJob[]
   rejected: Array<{ url: string; error: string }>
@@ -944,6 +972,13 @@ export const api = {
     `${API_BASE}/backups/download?kind=${kind}`,
 
   downloadStatus: () => request<DownloadStatus>('/downloads/status'),
+
+  toolStatus: (refresh = false) =>
+    request<ToolStatus>('/tools/status', { refresh: refresh || undefined }),
+
+  toolUpdate: (tools: string[]) => post<ToolUpdateJob>('/tools/update', { tools }),
+
+  toolUpdateCancel: () => post<{ cancelled: boolean }>('/tools/update/cancel', {}),
 
   downloadQueue: (urls: string[], destination: string) =>
     post<DownloadEnqueueResponse>('/downloads/queue', { urls, destination }),

@@ -29,7 +29,7 @@ VERSION_REPORTERS = (
 
 
 def test_version_is_the_release_version():
-    assert __version__ == "3.2.0"
+    assert __version__ == "3.3.0"
 
 
 def test_package_json_matches_python_version():

@@ -1020,3 +1020,39 @@ class VerifyDismissResponse(BaseModel):
     path: str
     dismissed: int
     issues: list[str]
+
+
+class ToolUpdateRequest(BaseModel):
+    tools: list[Literal["ytdlp", "gallery_dl"]] = Field(min_length=1, max_length=2)
+
+
+class ToolInfo(BaseModel):
+    key: str
+    name: str
+    version: str | None = None
+    latest: str | None = None
+    update_available: bool = False
+    check_error: str | None = None
+
+
+class ToolUpdateJob(BaseModel):
+    status: str
+    tools: list[str]
+    phase: str
+    progress: float
+    log: list[str]
+    error: str | None = None
+    versions: dict[str, str | None] = {}
+    cancel_requested: bool = False
+    started_at: float
+    finished_at: float | None = None
+
+
+class ToolStatusResponse(BaseModel):
+    tools: list[ToolInfo]
+    checking: bool = False
+    update: ToolUpdateJob | None = None
+
+
+class ToolUpdateCancelResponse(BaseModel):
+    cancelled: bool

@@ -182,6 +182,8 @@ media-library/
 │   ├── dedupe.py              # quick hash, pHash, resolve
 │   ├── downloads.py           # yt-dlp / gallery-dl manager
 │   ├── sorter.py              # incoming queue, destinations, moves, undo
+│   ├── tools.py               # downloader tool versions, PyPI update checks,
+│   │                          # in-place pip updates with streamed progress
 │   ├── zipfs.py / zip_ops.py / zip_batch.py
 │   ├── cleanup.py             # empty-folder cleanup
 │   ├── analytics.py           # index-only rollups
@@ -191,7 +193,7 @@ media-library/
 │   └── routers/               # auth, system, library, media, favorites, manage,
 │                              # uploads, sorter, downloads, analytics, dedupe,
 │                              # webp, cleanup, zip, zip_batch, backups, x265,
-│                              # history
+│                              # history, tools
 │
 ├── frontend/                  # React client source
 │   ├── index.html             # Vite entry (build only; not served directly)
@@ -360,6 +362,7 @@ daemon thread that pauses between items.
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup, and a signal-killed downloader puts the job back to queued instead of finishing it. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination/`archives` names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count`. Archive containers are kept in `<destination>/archives` and RAR/7z sets are unpacked there with the system `7z`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
+| Tool updates | `tools.py`: reads the installed yt-dlp / gallery-dl versions from distribution metadata (never importing them in-process), checks PyPI for newer releases at most once a day on a daemon thread, and runs one `pip install --upgrade` at a time with parsed phases (resolving → downloading → installing → verifying), a 30-min watchdog and cancel. In-memory like the x265 queue: a restart stops it and forgets the last result. |
 
 Progress is exposed by `/api/system/status` (index, workers, runtime ownership)
 and the per-feature status routes. x265 and ZIP batches are also in-memory: a
@@ -522,6 +525,13 @@ duplicates acked, gaps 409) · `POST /uploads/finalize` (refuses a size mismatch
 `POST /downloads/queue` · `GET /downloads/status` ·
 `GET /downloads/history?limit=&offset=` · `POST /downloads/cancel` ·
 `POST /downloads/retry` · `POST /downloads/clear-history`
+
+### Downloader tools (`routers/tools.py`)
+`GET /tools/status?refresh=` (installed + latest versions, update job;
+the PyPI check runs at most daily on a thread) ·
+`POST /tools/update` (pip upgrade for `ytdlp`/`gallery_dl`, one at a time;
+503 read-only, 409 while one runs) ·
+`POST /tools/update/cancel`
 
 ### Thumbnails (`routers/media.py`)
 `GET /thumbnails?path=&kind=static|animated` · `GET /thumbnails/exists?path=` ·

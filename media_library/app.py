@@ -40,6 +40,7 @@ from media_library.routers import manage as manage_router
 from media_library.routers import media as media_router
 from media_library.routers import sorter as sorter_router
 from media_library.routers import system as system_router
+from media_library.routers import tools as tools_router
 from media_library.routers import uploads as uploads_router
 from media_library.routers import verify as verify_router
 from media_library.routers import webp as webp_router
@@ -158,6 +159,7 @@ def api_router() -> APIRouter:
     router.include_router(uploads_router.router, tags=["uploads"])
     router.include_router(sorter_router.router, tags=["sorter"])
     router.include_router(downloads_router.router, tags=["downloads"])
+    router.include_router(tools_router.router, tags=["tools"])
     router.include_router(analytics_router.router, tags=["analytics"])
     router.include_router(dedupe_router.router, tags=["dedupe"])
     router.include_router(webp_router.router, tags=["webp"])

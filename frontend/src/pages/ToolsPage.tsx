@@ -10,6 +10,7 @@ import {
   HardDrive,
   ImageDown,
   Loader2,
+  Package,
   RefreshCw,
   Wrench,
 } from 'lucide-react'
@@ -20,6 +21,10 @@ import {
   useGenerateAnimatedBatch,
   useIndexStatus,
   useIndexSync,
+  useToolStatus,
+  useToolUpdate,
+  useToolUpdateCancel,
+  useToolUpdateCheck,
 } from '../lib/queries'
 import { formatDuration } from '../lib/format'
 import {
@@ -222,6 +227,200 @@ function IndexCard() {
   )
 }
 
+const UPDATE_PHASES: Record<string, string> = {
+  starting: 'Starting pip…',
+  resolving: 'Resolving packages',
+  downloading: 'Downloading packages',
+  installing: 'Installing',
+  verifying: 'Verifying versions',
+  done: 'Finished',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+
+function DownloaderToolsCard() {
+  const status = useToolStatus()
+  const check = useToolUpdateCheck()
+  const update = useToolUpdate()
+  const cancel = useToolUpdateCancel()
+  const tools = status.data?.tools ?? []
+  const job = status.data?.update ?? null
+  const running = job?.status === 'running'
+  const started = update.isPending || running
+
+  const startUpdate = (key: 'ytdlp' | 'gallery_dl') =>
+    update.mutate([key], {
+      onError: (error) =>
+        toast.error(
+          error instanceof Error ? error.message : 'Could not start the update',
+        ),
+    })
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Package aria-hidden="true" className="size-4 text-fg-subtle" />
+            Downloader tools
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={started || check.isPending}
+            onClick={() =>
+              check.mutate(undefined, {
+                onError: (error) =>
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : 'Could not check for updates',
+                  ),
+              })
+            }
+          >
+            <RefreshCw className={status.data?.checking ? 'animate-spin' : ''} />
+            Check now
+          </Button>
+        </div>
+      </CardHeader>
+      <CardBody className="flex flex-col gap-3">
+        <p className="text-xs leading-5 text-fg-muted">
+          yt-dlp and gallery-dl fetch URL and playlist downloads. New releases
+          are looked up on PyPI once a day; installing one runs pip on the
+          server and downloads keep working with the old version until it
+          finishes.
+        </p>
+
+        <div className="flex flex-col divide-y">
+          {tools.map((tool) => {
+            const badge = tool.check_error
+              ? { text: 'Check failed', variant: 'warning' as const }
+              : tool.version == null
+                ? { text: 'Not installed', variant: 'danger' as const }
+                : tool.update_available
+                  ? { text: 'Update available', variant: 'accent' as const }
+                  : tool.latest
+                    ? { text: 'Up to date', variant: 'success' as const }
+                    : { text: 'Checking…', variant: 'outline' as const }
+            return (
+              <div
+                key={tool.key}
+                className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-medium text-fg">
+                      {tool.name}
+                    </span>
+                    <Badge variant={badge.variant}>{badge.text}</Badge>
+                  </div>
+                  <div className="mt-0.5 font-mono text-[10px] text-fg-subtle">
+                    {tool.version == null
+                      ? 'not installed'
+                      : tool.update_available && tool.latest
+                        ? `${tool.version} → ${tool.latest}`
+                        : tool.version}
+                  </div>
+                </div>
+                {tool.update_available && !started ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => startUpdate(tool.key)}
+                  >
+                    Update
+                  </Button>
+                ) : null}
+              </div>
+            )
+          })}
+          {!status.data ? (
+            <p className="py-2 text-xs text-fg-subtle">Reading versions…</p>
+          ) : null}
+        </div>
+
+        {status.data?.tools?.some((tool) => tool.check_error) ? (
+          <p className="text-[11px] leading-5 text-warning">
+            {status.data.tools
+              .filter((tool) => tool.check_error)
+              .map((tool) => tool.check_error)
+              .join(' · ')}
+          </p>
+        ) : null}
+
+        {job ? (
+          <div className="flex flex-col gap-2 rounded-md bg-surface-2/60 p-2.5">
+            <div className="flex items-center justify-between gap-2 text-[10px] text-fg-subtle">
+              <span className="min-w-0 truncate font-mono">
+                {job.tools
+                  .map((key) => tools.find((tool) => tool.key === key)?.name ?? key)
+                  .join(', ')}{' '}
+                · {UPDATE_PHASES[job.phase] ?? job.phase}
+              </span>
+              <span className="shrink-0 font-mono">
+                {Math.round(job.progress)}%
+              </span>
+            </div>
+            {running ? (
+              <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-500"
+                  style={{ width: `${Math.max(job.progress, 4)}%` }}
+                />
+              </div>
+            ) : null}
+            {job.status === 'failed' && job.error ? (
+              <p className="text-[11px] leading-5 text-danger">{job.error}</p>
+            ) : null}
+            {job.status === 'success' ? (
+              <p className="text-[11px] leading-5 text-success">
+                Updated to{' '}
+                {Object.entries(job.versions)
+                  .map(([key, version]) => `${key} ${version ?? '?'}`)
+                  .join(', ')}
+                . Running downloads keep the old version until the service
+                restarts.
+              </p>
+            ) : null}
+            {job.status === 'cancelled' ? (
+              <p className="text-[11px] leading-5 text-fg-muted">
+                Update cancelled.
+              </p>
+            ) : null}
+            {job.log.length ? (
+              <pre className="max-h-40 overflow-y-auto rounded-md bg-surface-2 p-2 font-mono text-[10px] leading-4 text-fg-muted">
+                {job.log.slice(-60).join('\n')}
+              </pre>
+            ) : null}
+            {running ? (
+              <div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancel.isPending || job.cancel_requested}
+                  onClick={() =>
+                    cancel.mutate(undefined, {
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : 'Could not cancel the update',
+                        ),
+                    })
+                  }
+                >
+                  {job.cancel_requested ? 'Cancelling…' : 'Cancel'}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </CardBody>
+    </Card>
+  )
+}
+
 export function ToolsPage() {
   const status = useDedupeStatus()
   const animated = useAnimatedStatus()
@@ -297,6 +496,8 @@ export function ToolsPage() {
       </div>
 
       <IndexCard />
+
+      <DownloaderToolsCard />
 
       <Card>
         <CardHeader>

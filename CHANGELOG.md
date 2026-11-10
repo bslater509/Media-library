@@ -9,7 +9,19 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
-## [Unreleased]
+## [3.3.0] - 2026-11-10
+
+### Added
+
+- **Downloader updates from the Tools page.** The Tools page shows the
+  installed and latest yt-dlp / gallery-dl versions and flags a newer release
+  (looked up on PyPI at most once a day, never in a request path). An Update
+  button runs `pip install --upgrade` as one server-side subprocess with
+  streamed phases and progress, the pip log, a cancel button and the pip
+  error on failure; running downloads keep the old version until each
+  subprocess starts. New endpoints: `GET /api/tools/status?refresh=`,
+  `POST /api/tools/update` and `POST /api/tools/update/cancel` — the update
+  state is in-memory, one at a time, and 503 while the index is read-only.
 
 ### Changed
 

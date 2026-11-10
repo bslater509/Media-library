@@ -47,6 +47,7 @@ export const queryKeys = {
   dedupeIgnored: (limit: number) => ['dedupe', 'ignored', limit] as const,
   dedupeVerifyStatus: ['dedupe', 'verify-visual', 'status'] as const,
   downloadStatus: ['downloads', 'status'] as const,
+  toolStatus: ['tools', 'status'] as const,
   downloadHistory: (limit: number) => ['downloads', 'history', limit] as const,
 }
 
@@ -448,6 +449,49 @@ export function useDownloadStatus() {
     refetchInterval: (query) =>
       query.state.data?.status === 'active' ? 1000 : 5000,
     staleTime: 0,
+  })
+}
+
+export function useToolStatus() {
+  return useQuery({
+    queryKey: queryKeys.toolStatus,
+    queryFn: () => api.toolStatus(),
+    // Live while a PyPI check or an update runs; quiet afterwards.
+    refetchInterval: (query) =>
+      query.state.data?.checking || query.state.data?.update?.status === 'running'
+        ? 1500
+        : 60_000,
+    staleTime: 0,
+  })
+}
+
+export function useToolUpdateCheck() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.toolStatus(true),
+    onSuccess: (status) => {
+      client.setQueryData(queryKeys.toolStatus, status)
+    },
+  })
+}
+
+export function useToolUpdate() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (tools: string[]) => api.toolUpdate(tools),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.toolStatus })
+    },
+  })
+}
+
+export function useToolUpdateCancel() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.toolUpdateCancel(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.toolStatus })
+    },
   })
 }
 
