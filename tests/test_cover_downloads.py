@@ -442,6 +442,38 @@ def test_download_retries_a_name_too_long_album_with_truncated_names(download_en
     assert Path(job["files"][0]).name == "truncated-name.jpg"
 
 
+def test_download_retries_the_fallback_album_with_truncated_names(download_env):
+    """A bunkr-style URL: yt-dlp first, gallery-dl fallback, then the
+    name-truncating retry — the retry must key on the job's downloader, not
+    the URL's first choice."""
+    manager = DownloadManager()
+    calls: list[tuple[str, bool]] = []
+
+    async def run(job, downloader, staging, name_limit=False):
+        calls.append((downloader, name_limit))
+        if downloader == "yt-dlp":
+            return 1, ["ERROR: Unsupported URL: https://bunkr.ph/a/JlJMOsew"]
+        if not name_limit:
+            return 1, ["[download][error] File name too long: 'x'"]
+        _write_media(staging, "truncated-name.mp4")
+        return 0, ["truncated-name.mp4"]
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(
+            ["https://bunkr.ph/a/JlJMOsew"], str(download_env["inbox"])
+        )
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == [("yt-dlp", False), ("gallery-dl", False), ("gallery-dl", True)]
+    job = manager.history[0]
+    assert job["status"] == "completed"
+    assert Path(job["files"][0]).name == "truncated-name.mp4"
+
+
 def test_download_does_not_retry_other_gallery_dl_failures(download_env):
     manager = DownloadManager()
     calls: list[bool] = []
@@ -789,6 +821,46 @@ def test_name_limit_retry_reports_a_terminated_downloader(download_env):
     assert not manager.history
     job = next(iter(manager.jobs.values()))
     assert job["status"] == "queued"
+
+
+def test_apply_line_survives_a_name_too_long_warning(download_env):
+    """gallery-dl echoes its own ENAMETOOLONG as a line holding the staging
+    path; parsing the name out and stat-ing it raised the same error again,
+    which used to kill the whole fold (and the job) from our side."""
+    manager = DownloadManager()
+    job = manager._new_job("https://gofile.io/d/abc", "unused")
+    job["downloader"] = "gallery-dl"
+    staging = download_env["staging"]
+    long_name = "Katarina " + "ÑÐ¸Ñ" * 80 + "-TReIjTE6.mp4.part"
+    line = f"[download][warning] OSError: [Errno 36] File name too long: '{staging / long_name}'"
+
+    manager._apply_line(job, line, staging)  # must not raise
+
+    row = job["file_progress"][0]
+    assert row["name"] == Path(line).name
+    assert row["done"] is False
+
+
+def test_run_kills_the_downloader_when_the_fold_blows_up(download_env, monkeypatch):
+    staging = download_env["staging"]
+    _commands, processes = _stub_subprocess(
+        monkeypatch, [[b"https://gofile.io/d/abc line\n"]]
+    )
+    manager = DownloadManager()
+    job = manager._new_job("https://gofile.io/d/abc", "unused")
+    job["downloader"] = "gallery-dl"
+
+    def boom(job, line, staging):
+        raise RuntimeError("fold blew up")
+
+    monkeypatch.setattr(manager, "_apply_line", boom)
+
+    async def scenario():
+        await manager.run(job, "gallery-dl", staging)
+
+    with pytest.raises(RuntimeError, match="fold blew up"):
+        asyncio.run(scenario())
+    assert processes[0].killed is True
 
 
 def test_gallery_dl_required_but_missing_fails(download_env, monkeypatch):

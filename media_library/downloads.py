@@ -719,7 +719,7 @@ class DownloadManager:
 
         if (
             code != 0
-            and downloader == "gallery-dl"
+            and job["downloader"] == "gallery-dl"
             and not job.get("_name_retry")
             and _name_too_long(lines)
         ):
@@ -730,7 +730,7 @@ class DownloadManager:
             job["_name_retry"] = True
             job["percent"] = 0.0
             code, lines = await self._run_and_list(
-                job, downloader, staging, name_limit=True
+                job, job["downloader"], staging, name_limit=True
             )
             if job.get("_cancel"):
                 raise asyncio.CancelledError
@@ -956,6 +956,13 @@ class DownloadManager:
                 if job.get("_cancel"):
                     process.kill()
                     break
+        except BaseException:
+            # The fold itself blew up (or the task was cancelled): never leave
+            # the downloader running detached, writing into an orphaned
+            # staging directory nobody is reading.
+            process.kill()
+            await process.wait()
+            raise
         finally:
             job.pop("_process", None)
         code = await process.wait()
@@ -1213,7 +1220,15 @@ class DownloadManager:
             # Pipe output prints a member once it is done (success) or skipped
             # by the archive (# path). A path that is neither is a line from a
             # start message, so it must not be handed to the library yet.
-            if skipped or (staging / name).is_file():
+            # gallery-dl also echoes its own failures here — a member whose
+            # name exceeds the filesystem's cap makes a plain is_file() raise
+            # ENAMETOOLONG on the impossible name, so stat defensively: the
+            # member simply never landed.
+            try:
+                landed = (staging / name).is_file()
+            except OSError:
+                landed = False
+            if skipped or landed:
                 row["done"] = True
             if skipped:
                 job["_skipped"] = job.get("_skipped", 0) + 1
