@@ -408,6 +408,81 @@ def test_download_uses_gallery_dl_directly(download_env, monkeypatch):
     assert all(job["status"] == "completed" for job in manager.history)
 
 
+def test_download_retries_a_name_too_long_album_with_truncated_names(download_env):
+    manager = DownloadManager()
+    calls: list[bool] = []
+
+    async def run(job, downloader, staging, name_limit=False):
+        calls.append(name_limit)
+        if not name_limit:
+            return (
+                1,
+                [
+                    "Katarina Meis kassandra nude public panties street casting",
+                    (
+                        "OSError: [Errno 36] File name too long: "
+                        "'/data/staging/Katarina Meis ...'"
+                    ),
+                ],
+            )
+        _write_media(staging, "truncated-name.jpg")
+        return 0, ["truncated-name.jpg"]
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://gofile.io/d/abc"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == [False, True]
+    job = manager.history[0]
+    assert job["status"] == "completed"
+    assert Path(job["files"][0]).name == "truncated-name.jpg"
+
+
+def test_download_does_not_retry_other_gallery_dl_failures(download_env):
+    manager = DownloadManager()
+    calls: list[bool] = []
+
+    async def run(job, downloader, staging, name_limit=False):
+        calls.append(name_limit)
+        return 1, ["[gofile][error] something else went wrong"]
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://gofile.io/d/abc"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == [False]
+    assert manager.history[0]["status"] == "failed"
+
+
+def test_name_too_long_detection():
+    assert downloads_module._name_too_long(
+        ["[downloads.error] OSError: [Errno 36] File name too long: 'x'"]
+    )
+    assert downloads_module._name_too_long(["[ss] File name too long: 'y'"])
+    assert not downloads_module._name_too_long(["[gofile][error] nope"])
+    assert not downloads_module._name_too_long([])
+
+
+def test_gallery_dl_command_adds_the_name_limit_only_when_asked(download_env):
+    manager = DownloadManager()
+    job = manager._new_job("https://gofile.io/d/abc", "unused")
+    staging = download_env["staging"]
+
+    plain = manager._gallery_dl_command(job, staging)
+    assert "filename={filename[b:180]}.{extension}" not in plain
+
+    limited = manager._gallery_dl_command(job, staging, name_limit=True)
+    assert "filename={filename[b:180]}.{extension}" in limited
+
+
 def test_download_falls_back_when_ytdlp_hits_unsupported(download_env):
     manager = DownloadManager()
     down: list[str] = []
@@ -665,6 +740,55 @@ def test_cancel_flag_after_gallery_fallback_marks_the_job_cancelled(download_env
 
     assert down == ["yt-dlp", "gallery-dl"]
     assert manager.history[0]["status"] == "cancelled"
+
+
+def test_name_limit_retry_notices_cancellation(download_env):
+    manager = DownloadManager()
+    calls: list[bool] = []
+
+    async def run(job, downloader, staging, name_limit=False):
+        calls.append(name_limit)
+        if not name_limit:
+            return 1, ["OSError: [Errno 36] File name too long: 'x'"]
+        job["_cancel"] = True  # cancellation noticed after the retry ends
+        return 0, []
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://gofile.io/d/abc"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == [False, True]
+    assert manager.history[0]["status"] == "cancelled"
+
+
+def test_name_limit_retry_reports_a_terminated_downloader(download_env):
+    manager = DownloadManager()
+    calls: list[bool] = []
+
+    async def run(job, downloader, staging, name_limit=False):
+        calls.append(name_limit)
+        if not name_limit:
+            return 1, ["OSError: [Errno 36] File name too long: 'x'"]
+        return -9, []
+
+    manager.run = run  # type: ignore[method-assign]
+
+    async def scenario():
+        await manager.enqueue(["https://gofile.io/d/abc"], str(download_env["inbox"]))
+        await manager.wait_idle()
+
+    asyncio.run(scenario())
+
+    assert calls == [False, True]
+    # An interrupted downloader keeps the job queued for the next run rather
+    # than calling the album failed.
+    assert not manager.history
+    job = next(iter(manager.jobs.values()))
+    assert job["status"] == "queued"
 
 
 def test_gallery_dl_required_but_missing_fails(download_env, monkeypatch):

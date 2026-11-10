@@ -112,6 +112,11 @@ def tools_available() -> dict[str, bool]:
     }
 
 
+def _name_too_long(lines: list[str]) -> bool:
+    """The downloader hit the filesystem's 255-byte filename cap."""
+    return any("File name too long" in line or "Errno 36" in line for line in lines)
+
+
 def parse_progress_line(line: str) -> dict[str, Any] | None:
     """Parse one yt-dlp ``--progress-template`` JSON line."""
     if not line.startswith("{"):
@@ -712,6 +717,26 @@ class DownloadManager:
             if code < 0:
                 raise _Interrupted(f"gallery-dl was terminated (signal {-code})")
 
+        if (
+            code != 0
+            and downloader == "gallery-dl"
+            and not job.get("_name_retry")
+            and _name_too_long(lines)
+        ):
+            # gallery-dl died because a member's own title is too long for
+            # the filesystem (ENAMETOOLONG). Retry the album once with a
+            # byte-truncated name template; the download archive keeps the
+            # members that landed, so only the rejected ones are refetched.
+            job["_name_retry"] = True
+            job["percent"] = 0.0
+            code, lines = await self._run_and_list(
+                job, downloader, staging, name_limit=True
+            )
+            if job.get("_cancel"):
+                raise asyncio.CancelledError
+            if code < 0:
+                raise _Interrupted(f"gallery-dl was terminated (signal {-code})")
+
         imported, skipped = await self.import_staged(
             staging, job["destination"], skip=job["_imported"]
         )
@@ -746,15 +771,26 @@ class DownloadManager:
         job["finished_at"] = time.time()
 
     async def _run_and_list(
-        self, job: dict[str, Any], downloader: str, staging: Path
+        self,
+        job: dict[str, Any],
+        downloader: str,
+        staging: Path,
+        *,
+        name_limit: bool = False,
     ) -> tuple[int, list[str]]:
         """Run the downloader, with the album listing running alongside it."""
         listing = (
             asyncio.create_task(self._prelist(job, staging))
-            if downloader == "gallery-dl"
+            # A name-truncating retry lists nothing: the first pass already
+            # filled the queue and truncated names would duplicate the rows.
+            if downloader == "gallery-dl" and not name_limit
             else None
         )
         try:
+            if name_limit:
+                # Only the retry passes this keyword, so test doubles with
+                # the plain three-argument signature keep working.
+                return await self.run(job, downloader, staging, name_limit=True)
             return await self.run(job, downloader, staging)
         finally:
             if listing is not None:
@@ -853,13 +889,18 @@ class DownloadManager:
         job["percent"] = round(min(99.0, 100.0 * done / len(rows)), 1)
 
     async def run(
-        self, job: dict[str, Any], downloader: str, staging: Path
+        self,
+        job: dict[str, Any],
+        downloader: str,
+        staging: Path,
+        *,
+        name_limit: bool = False,
     ) -> tuple[int, list[str]]:
         """Run one downloader, folding its output into the job. Overridable in tests."""
         command = (
             self._ytdlp_command(job, staging)
             if downloader == "yt-dlp"
-            else self._gallery_dl_command(job, staging)
+            else self._gallery_dl_command(job, staging, name_limit=name_limit)
         )
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -1224,7 +1265,12 @@ class DownloadManager:
         return command
 
     def _gallery_dl_command(
-        self, job: dict[str, Any], staging: Path, *, simulate: bool = False
+        self,
+        job: dict[str, Any],
+        staging: Path,
+        *,
+        simulate: bool = False,
+        name_limit: bool = False,
     ) -> list[str]:
         command = [sys.executable, "-m", "gallery_dl"]
         if simulate:
@@ -1242,6 +1288,13 @@ class DownloadManager:
             "-o",
             "directory=[]",
         ]
+        if name_limit:
+            # gallery-dl names each member after its own (possibly enormous)
+            # title and the filesystem refuses names past 255 bytes. The
+            # formatter's byte-bounded slice keeps the name under the cap and
+            # passes short names through unchanged; only the ENAMETOOLONG
+            # retry passes run with this.
+            command += ["-o", "filename={filename[b:180]}.{extension}"]
         cookies = get_settings().download_cookies_file
         if cookies and os.path.isfile(cookies):
             command += ["--cookies", cookies]

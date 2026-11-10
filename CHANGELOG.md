@@ -9,6 +9,17 @@ The version lives in exactly one place — `media_library/__init__.py`'s
 `__version__` — and is reported by the API, the served pages and the backup
 snapshot metadata.
 
+## [Unreleased]
+
+### Fixed
+
+- **Downloads no longer die on enormous file names.** A gallery-dl album
+  whose member title is longer than the filesystem's 255-byte filename cap
+  (ENAMETOOLONG) used to fail the whole job every time. The manager now
+  retries the album once with a byte-truncated filename template, so the
+  rejected member lands under a shortened name while everything already
+  fetched is kept (the per-URL download archive skips it).
+
 ## [3.3.0] - 2026-11-10
 
 ### Added
