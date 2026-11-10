@@ -381,6 +381,12 @@ def test_tools_status_route_reports_versions_and_releases(client, monkeypatch):
             },
         }
     )
+    # Pinned so the assertion does not depend on the venv the suite runs in.
+    monkeypatch.setattr(
+        tools,
+        "installed_versions",
+        lambda: {"ytdlp": "2026.8.19", "gallery_dl": "1.32.16"},
+    )
     body = client.get("/api/tools/status").json()
     assert [tool["key"] for tool in body["tools"]] == ["ytdlp", "gallery_dl"]
     ytdlp = body["tools"][0]
