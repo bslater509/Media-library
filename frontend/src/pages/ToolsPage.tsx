@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { WebMP4Card } from '../components/manage/WebMP4Card'
 import { Link } from 'react-router'
 import {
   Archive,
@@ -498,6 +499,7 @@ export function ToolsPage() {
       <IndexCard />
 
       <DownloaderToolsCard />
+      <WebMP4Card />
 
       <Card>
         <CardHeader>

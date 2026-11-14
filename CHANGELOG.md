@@ -13,6 +13,12 @@ snapshot metadata.
 
 ### Added
 
+- Tools → **Convert to web MP4**: library-wide preview and explicit replacement
+  confirmation, actual codec checks, lossless stream copying where compatible,
+  H.264/AAC conversion otherwise, full output decode verification, safe index
+  rollback, conflict protection, progress, cancellation and per-file failures.
+  Compatible MP4s stay untouched; archive members require unpacking first.
+
 - Library folder and selection actions to regenerate video thumbnails at 20%
   into each clip, with confirmation, background progress and per-file failures.
   New posters also use 20% instead of the first second to skip shared intros.

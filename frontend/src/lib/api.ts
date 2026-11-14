@@ -8,6 +8,27 @@
 
 export const API_BASE = '/api'
 
+export interface WebMP4Preview {
+  token: string
+  total: number
+  archives: number
+  sample: { path: string; ext: string | null; video_codec: string | null; audio_codec: string | null }[]
+}
+
+export interface WebMP4Status {
+  status: string
+  total: number
+  processed: number
+  converted: number
+  skipped: number
+  failed: number
+  current: string | null
+  percent: number
+  phase: string
+  errors: { path: string; error: string }[]
+  cancel_requested: boolean
+}
+
 export interface PosterBatchStatus {
   status: string
   active: string | null
@@ -845,6 +866,11 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 }
 
 export const api = {
+  webMP4Preview: () => request<WebMP4Preview>('/transcode/web-mp4/preview'),
+  webMP4Status: () => request<WebMP4Status>('/transcode/web-mp4/status'),
+  webMP4Start: (token: string) =>
+    post<WebMP4Status>('/transcode/web-mp4/start', { token, confirm_replace: true }),
+  webMP4Cancel: () => post<WebMP4Status>('/transcode/web-mp4/cancel', {}),
   regeneratePosters: (scope: { paths?: string[]; folder?: string }) =>
     post<PosterBatchStatus>('/thumbnails/poster/batch', scope),
   posterBatchStatus: () => request<PosterBatchStatus>('/thumbnails/poster/status'),

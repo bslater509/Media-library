@@ -18,6 +18,35 @@ import { activityInterval } from './activity'
 
 const activityKey = ['activity'] as const
 
+export function useWebMP4Status() {
+  return useQuery({
+    queryKey: ['web-mp4'],
+    queryFn: api.webMP4Status,
+    refetchInterval: (query) => query.state.data?.status === 'running' ? 2_000 : 10_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+export function useWebMP4Preview() {
+  return useMutation({ mutationFn: api.webMP4Preview })
+}
+
+export function useWebMP4Start() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: api.webMP4Start,
+    onSuccess: (data) => client.setQueryData(['web-mp4'], data),
+  })
+}
+
+export function useWebMP4Cancel() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: api.webMP4Cancel,
+    onSuccess: (data) => client.setQueryData(['web-mp4'], data),
+  })
+}
+
 export function useActivity(open: boolean) {
   return useQuery({
     queryKey: activityKey,

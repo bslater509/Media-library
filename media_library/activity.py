@@ -196,6 +196,7 @@ def summary() -> dict[str, Any]:
     """Combine cheap memory snapshots; never call feature filesystem status APIs."""
     from media_library import animated, dedupe, indexer, tools, zip_batch
     from media_library.routers.downloads import manager
+    from media_library.routers.web_mp4 import manager as web_mp4_manager
     from media_library.routers.x265 import manager as x265_manager
 
     with _lock:
@@ -272,6 +273,19 @@ def summary() -> dict[str, Any]:
                 if batch["status"] == "paused"
                 else []
             ),
+        )
+    )
+    mp4 = web_mp4_manager.snapshot()
+    items.append(
+        item(
+            "web-mp4",
+            "Web MP4 replacement",
+            "/tools",
+            mp4["status"],
+            current=mp4["current"],
+            detail=f"{mp4['processed']} / {mp4['total']} checked · {mp4['converted']} replaced · {mp4['failed']} failed",
+            percent=mp4["percent"] if mp4["current"] else None,
+            error=mp4["errors"][-1]["error"] if mp4["errors"] else None,
         )
     )
     conversions = x265_manager.status()

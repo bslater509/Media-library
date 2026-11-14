@@ -44,6 +44,7 @@ from media_library.routers import system as system_router
 from media_library.routers import tools as tools_router
 from media_library.routers import uploads as uploads_router
 from media_library.routers import verify as verify_router
+from media_library.routers import web_mp4 as web_mp4_router
 from media_library.routers import webp as webp_router
 from media_library.routers import x265 as x265_router
 from media_library.routers import zip as zip_router
@@ -131,6 +132,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await web_mp4_router.manager.shutdown()
         # Stop the downloaders first: the queue file is already written and
         # the snapshot below can take minutes.
         try:
@@ -171,6 +173,7 @@ def api_router() -> APIRouter:
     router.include_router(zip_batch_router.router, tags=["zip"])
     router.include_router(backups_router.router, tags=["backups"])
     router.include_router(x265_router.router, tags=["x265"])
+    router.include_router(web_mp4_router.router, tags=["web-mp4"])
     return router
 
 

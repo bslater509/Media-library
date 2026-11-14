@@ -364,6 +364,7 @@ daemon thread that pauses between items.
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `poster_batch` queue | Explicit folder/selection poster regeneration at 20% of duration, serial daemon independent of `OWN_WORKERS`; memory-only progress at `/api/thumbnails/poster/status`, respects browsing priority between videos. Restart clears pending work. |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
+| `WebMP4Manager` (`web_mp4.py`) | Explicit serial library-wide H.264/AAC MP4 replacement, independent of `OWN_WORKERS`. SQLite-only preview (first 50 paths/codec hints), one-use 15-minute confirmation token, actual FFprobe codec/pixel-format/audio checks per file. Compatible MP4s skip; H.264/yuv420p and AAC stereo streams copy where possible, otherwise libx264 medium CRF 18 / AAC 192k stereo. Output is staged beside the source and fully decoded before replacement. Conflicts, changed sources and failures preserve originals; a hidden `.mllibtmp-*.original` retains the source through the index transaction and is restored on failure. Crash leftovers are deliberately not GC'd: recover them manually with the service stopped. Progress/cancel/errors at `/api/transcode/web-mp4/status` and global Activity (cancel on Tools). Browsing priority defers between files. Restart cancels the memory-only batch; rerun to check remaining files. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup, and a signal-killed downloader puts the job back to queued instead of finishing it. When a gallery-dl job dies because a member's own title exceeds the filesystem's 255-byte filename cap (ENAMETOOLONG), the album is retried once with a byte-bounded filename template (`{filename[b:180]}.{extension}`), so the rejected member lands under a truncated name. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination/`archives` names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count` (their output template byte-trims the title already). Archive containers are kept in `<destination>/archives` and RAR/7z sets are unpacked there with the system `7z`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 | Tool updates | `tools.py`: reads the installed yt-dlp / gallery-dl versions from distribution metadata (never importing them in-process), checks PyPI for newer releases at most once a day on a daemon thread, and runs one `pip install --upgrade` at a time with parsed phases (resolving → downloading → installing → verifying), a 30-min watchdog and cancel. In-memory like the x265 queue: a restart stops it and forgets the last result. |
@@ -448,6 +449,25 @@ clearing independent five-frame evidence or changing videos.
   audio else AAC 192k, commits atomically (`.mp4` sibling for non-MP4 sources),
   rewrites the row (`video_codec='hevc'`, hashes cleared, `has_thumb=0`) and
   deletes the stale poster.
+
+### Web-compatible MP4 replacement
+Tools → **Convert to web MP4** previews every indexed loose video (archive
+members excluded), then requires explicit destructive confirmation. Actual
+codecs are probed even for `.mp4`: H.264/yuv420p video with AAC audio of at
+most two channels (or no audio) is the broad-browser target. Single-video files
+only; unknown duration/probe failures are rejected. Non-MP4 compatible streams
+are remuxed; incompatible streams are re-encoded. Audio tracks are retained,
+subtitles/attachments are dropped; re-encoding is lossy, so keep a separate
+original-media backup (snapshots contain index/artwork only).
+Each new MP4 passes codec/audio-count/duration checks and a full error-fatal
+FFmpeg decode before replacement. The source's size/mtime must still match.
+Existing sibling MP4s are never overwritten (atomic no-clobber installation;
+filesystems without that operation or hard-link support fail safely). Filesystem changes
+precede a guarded index transaction; SQL failure restores the original.
+Favorites, watch history and lifetime five-frame evidence follow renamed paths;
+posters/previews and content/poster hashes are regenerated, stale issue/ignored
+pair rows are removed. Disk space is required for sibling output. Cancelling
+stops FFmpeg and removes temporary output; an ongoing commit finishes safely.
 
 ### WebP
 Loose images convert one file at a time (atomic `.tmp` → `os.replace`), poster
@@ -607,6 +627,13 @@ queues indexed videos only, 503 when writes disabled) ·
 `POST /zip/batch/start|pause|resume|cancel` · `GET /zip/batch/status` ·
 `POST /transcode/x265` · `GET /transcode/x265/status?path=` ·
 `POST /transcode/x265/cancel`
+
+Web MP4 (`routers/web_mp4.py`): `GET /transcode/web-mp4/preview` (SQLite-only
+snapshot, token/total/archive count/first 50 entries) ·
+`POST /transcode/web-mp4/start` (`token`, `confirm_replace: true`; 409 expired
+preview or active batch, 503 writes disabled) · `GET /transcode/web-mp4/status`
+(memory-only totals, phase/current-file percent, latest 100 failures) ·
+`POST /transcode/web-mp4/cancel` (stop remaining files; finish any active commit).
 
 ### Dedupe, analytics, cleanup, backups
 `GET /dedupe/status?include_images=` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&include_images=&auto_verify=` ·

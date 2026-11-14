@@ -44,6 +44,17 @@ client at `/`, backed by a single SQLite index.
   queue survives a restart, a failed album resumes where it stopped, and every
   album member shows up in the queue (done or pending) before it downloads.
   RAR/7z containers are kept in an `archives` subfolder and unpacked there.
+- **Web MP4 tool** — Tools → Convert to web MP4 previews the indexed library,
+  then checks actual codecs and replaces incompatible loose videos with
+  H.264/AAC MP4. Compatible streams are remuxed, compatible MP4s skipped.
+  New files pass a full decode verification before originals are removed;
+  conflicts/failures preserve originals. Progress, recent failures and cancel
+  are on Tools, with a summary in Activity. Archives need unpacking first.
+  Re-encoding is lossy and subtitles/attachments are dropped: back up original
+  media separately (library snapshots do not contain videos). Output needs
+  free space beside the source. Restart stops the batch; rerun to continue.
+  A crash may leave a hidden `.mllibtmp-*.original` backup; recover it manually
+  with the service stopped rather than deleting it.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and
   files, media mix, reclaimable space, quality histogram, health pills, and a
   daily growth history recorded automatically (chart library size over time).
