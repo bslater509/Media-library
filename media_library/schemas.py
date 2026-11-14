@@ -945,6 +945,7 @@ class WebMP4Status(BaseModel):
     checked: int = Field(default=0, ge=0)
     unchecked: int = Field(default=0, ge=0)
     conversion_pending: int = Field(default=0, ge=0)
+    failure_log_error: str | None = None
 
 
 class X265Job(BaseModel):

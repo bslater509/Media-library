@@ -13,6 +13,12 @@ snapshot metadata.
 
 ### Added
 
+- Persistent web MP4 failure history with paths, timestamps, stages, source
+  fingerprints and actual FFprobe diagnostics, downloadable from Tools for later
+  inspection/retesting. Retained recent errors are imported on first upgrade;
+  history survives new batches and restarts. Probe failures now explain missing
+  MP4 metadata instead of displaying only a generic subprocess exception.
+
 - Web MP4 progress now persists across restarts, including the exact unfinished
   queue, counters, errors and codec-check cache. Previously running batches
   resume automatically; cancelled batches can be resumed explicitly. Four

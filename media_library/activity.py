@@ -287,7 +287,8 @@ def summary() -> dict[str, Any]:
             percent=mp4["percent"]
             if mp4["current"] and mp4["phase"] in ("converting", "verifying")
             else None,
-            error=mp4["errors"][-1]["error"] if mp4["errors"] else None,
+            error=mp4.get("failure_log_error")
+            or (mp4["errors"][-1]["error"] if mp4["errors"] else None),
         )
     )
     conversions = x265_manager.status()

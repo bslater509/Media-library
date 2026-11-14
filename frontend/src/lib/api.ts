@@ -35,6 +35,7 @@ export interface WebMP4Status {
   checked: number
   unchecked: number
   conversion_pending: number
+  failure_log_error: string | null
 }
 
 export interface PosterBatchStatus {
@@ -880,6 +881,7 @@ export const api = {
     post<WebMP4Status>('/transcode/web-mp4/start', { token, confirm_replace: true }),
   webMP4Cancel: () => post<WebMP4Status>('/transcode/web-mp4/cancel', {}),
   webMP4Resume: () => post<WebMP4Status>('/transcode/web-mp4/resume', {}),
+  webMP4FailureLogUrl: () => `${API_BASE}/transcode/web-mp4/failures/log`,
   regeneratePosters: (scope: { paths?: string[]; folder?: string }) =>
     post<PosterBatchStatus>('/thumbnails/poster/batch', scope),
   posterBatchStatus: () => request<PosterBatchStatus>('/thumbnails/poster/status'),

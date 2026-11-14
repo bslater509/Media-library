@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Film, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { webMP4Progress } from '../../lib/web-mp4'
+import { api } from '../../lib/api'
 import {
   useWebMP4Cancel,
   useWebMP4Preview,
@@ -97,6 +98,16 @@ export function WebMP4Card() {
           </div>
         ) : null}
         {status.error ? <p className="text-xs text-danger">{status.error.message}</p> : null}
+        {data?.failure_log_error ? (
+          <p role="alert" className="text-xs text-danger">{data.failure_log_error}. Recent errors remain in the queue state.</p>
+        ) : null}
+        <p className="text-xs text-fg-muted">
+          Failures are retained in a persistent server log across batches and
+          restarts, including file paths, stages and probe diagnostics.{' '}
+          <a className="text-accent hover:underline" href={api.webMP4FailureLogUrl()} download>
+            Download failure log
+          </a>
+        </p>
         <p className="text-[11px] text-fg-subtle">
           Four checkers scan independently of the single converter, so a long
           encode does not stop library checking. The replacement percentage is

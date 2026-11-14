@@ -181,6 +181,7 @@ media-library/
 │   ├── activity.py            # memory-only telemetry + cooperative browsing priority
 │   ├── transcode_stream.py    # live fragmented-MP4 pipe
 │   ├── x265.py                # in-place HEVC queue
+│   ├── web_mp4.py / web_mp4_log.py # independent checking/replacement + failure history
 │   ├── webp.py                # WebP optimisation
 │   ├── dedupe.py              # quick hash, pHash, resolve
 │   ├── downloads.py           # yt-dlp / gallery-dl manager
@@ -487,6 +488,18 @@ Legacy `processed` still counts terminal file outcomes (converted/skipped/failed
 not checks. Tools shows separate checking and replacement sections; each
 replacement percentage belongs only to its current encoding/verification phase.
 Activity uses the actual `checked` count and backlog, not `processed`.
+`web_mp4_log.py` retains an append-only, private
+`$DATA_DIR/web_mp4_failures.jsonl` independently of queue history and the latest
+100 GUI errors. Each failure records its original path, checking/conversion
+stage, UTC occurrence/recording timestamps, diagnostic text and source
+size/mtime_ns when available. FFprobe errors include captured stderr rather
+than only a command/exit-code exception; missing `moov` metadata is explained in
+the GUI. On first startup with this feature, retained recent queue errors are
+backfilled with unknown occurrence time and `origin=restored_recent` (older
+rolled-off errors cannot be recovered). Appends are serialized off-loop and
+fsynced; the log survives new batches, cancellation and restarts. Log-write
+failure is visible as `failure_log_error`; recent errors still enter queue state.
+Tools offers an authenticated, no-cache NDJSON download for inspection/retesting.
 
 ### WebP
 Loose images convert one file at a time (atomic `.tmp` → `os.replace`), poster
@@ -657,6 +670,9 @@ failures, `checking`, `checker_concurrency`, `cached`, `remaining`,
 unfinished paths; finish any active commit) · `POST /transcode/web-mp4/resume`
 (resume a previously confirmed unfinished batch with its counters; 409 active
 or nothing unfinished, 503 writes disabled or cannot save state).
+`GET /transcode/web-mp4/failures/log` downloads the persistent NDJSON failure
+history (404 before one exists, `Cache-Control: no-store`); status also includes
+`failure_log_error` when initializing/appending that log fails.
 
 ### Dedupe, analytics, cleanup, backups
 `GET /dedupe/status?include_images=` · `GET /dedupe/groups?mode=all|content|visual&limit=&offset=&include_rejected=&include_images=&auto_verify=` ·

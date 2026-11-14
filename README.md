@@ -56,6 +56,10 @@ client at `/`, backed by a single SQLite index.
   converter: a slow encode never blocks checking the rest of the library.
   Tools shows separate library-check progress, the replacement backlog and the
   current file's encoding/verification percentage; Activity shows the same totals.
+  Failures are retained across batches and restarts in
+  `$DATA_DIR/web_mp4_failures.jsonl`, with paths, timestamps, failure stages and
+  actual FFprobe diagnostics. Tools → Download failure log exports it for later
+  testing. The first upgrade also preserves the latest recoverable queue errors.
   Progress and the exact remaining queue are saved locally and resume after a
   restart; cancelled batches have a Resume button. Unchanged files reuse saved
   codec checks after a size/mtime check. A crash may repeat checks since the last

@@ -29,6 +29,7 @@ it('previews without writing and sends explicit confirmation with the preview to
   await api.webMP4Resume()
   expect(String(fetcher.mock.calls[4][0])).toContain('/transcode/web-mp4/resume')
   expect(fetcher.mock.calls[4][1].method).toBe('POST')
+  expect(api.webMP4FailureLogUrl()).toBe('/api/transcode/web-mp4/failures/log')
 })
 
 it('shows independent check totals, queued replacements and per-phase encoding', () => {

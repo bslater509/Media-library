@@ -17,7 +17,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from media_library import activity, writes
+from media_library import activity, web_mp4_log, writes
 from media_library.cache import animated_path, thumbnail_path
 from media_library.config import get_settings
 from media_library.db import DatabaseReadOnlyError, reader, writer, writes_available
@@ -26,22 +26,46 @@ from media_library.schemas import WebMP4Status
 from media_library.x265 import X265Manager
 
 
+class ProbeFailure(writes.WriteError):
+    def __init__(self, message: str, diagnostic: str) -> None:
+        super().__init__(message)
+        self.diagnostic = diagnostic
+        self.fingerprint: list[int] | None = None
+
+
 def probe(path: str) -> dict[str, Any]:
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            path,
-        ],
-        capture_output=True,
-        timeout=60,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+                path,
+            ],
+            capture_output=True,
+            timeout=60,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        diagnostic = (exc.stderr or b"").decode("utf-8", "replace").strip()[-16000:]
+        if "moov atom not found" in diagnostic.lower():
+            message = "Unreadable MP4: moov atom not found (missing metadata); original preserved"
+        else:
+            message = f"FFprobe rejected this file (exit {exc.returncode}): {diagnostic[-2000:] or 'no diagnostic'}"
+        raise ProbeFailure(message, diagnostic) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ProbeFailure(
+            "FFprobe timed out reading this file; original preserved",
+            f"Probe exceeded 60 seconds. {(exc.stderr or b'').decode('utf-8', 'replace')[-16000:]}",
+        ) from exc
+    except OSError as exc:
+        raise ProbeFailure(
+            "FFprobe could not read this file; original preserved", str(exc)
+        ) from exc
     payload = json.loads(result.stdout)
     videos = [
         stream
@@ -318,6 +342,7 @@ class WebMP4Manager(X265Manager):
             "cached": 0,
             "remaining": 0,
             "persistence_error": None,
+            "failure_log_error": None,
         }
         self._preview: dict[str, Any] | None = None
         self._start_lock = asyncio.Lock()
@@ -373,6 +398,7 @@ class WebMP4Manager(X265Manager):
                 )
                 return self.snapshot()
             if payload is None:
+                await self._seed_failures([])
                 return self.snapshot()
             self._remaining = payload["remaining"]
             self._unchecked = payload["unchecked"]
@@ -380,6 +406,7 @@ class WebMP4Manager(X265Manager):
             self._prepared = {}
             self._cache = payload["cache"]
             self.state.update(payload["state"], current=None, checking=[], percent=0.0)
+            await self._seed_failures(self.state["errors"])
             if self.state["status"] == "running" and self.state["cancel_requested"]:
                 self.state["status"] = "cancelled"
             if self._remaining and self.state["status"] in ("running", "paused"):
@@ -465,6 +492,7 @@ class WebMP4Manager(X265Manager):
                 "cached": 0,
                 "remaining": len(preview["paths"]),
                 "persistence_error": None,
+                "failure_log_error": None,
             }
             self._remaining = list(preview["paths"])
             self._unchecked = list(preview["paths"])
@@ -515,6 +543,33 @@ class WebMP4Manager(X265Manager):
                 self.state["errors"] + [{"path": path, "error": str(error)}]
             )[-100:]
 
+    async def _seed_failures(self, errors: list[dict[str, str]]) -> None:
+        try:
+            await asyncio.to_thread(web_mp4_log.seed_recent, list(errors))
+            self.state["failure_log_error"] = None
+        except OSError:
+            self.state["failure_log_error"] = (
+                "Cannot initialize the persistent failure log"
+            )
+
+    async def _log_failure(self, path: str, stage: str, exc: Exception) -> None:
+        cached = self._cache.get(path)
+        record = web_mp4_log.event(
+            path,
+            stage,
+            str(exc),
+            diagnostic=getattr(exc, "diagnostic", None),
+            fingerprint=getattr(exc, "fingerprint", None)
+            or (cached.get("fingerprint") if isinstance(cached, dict) else None),
+        )
+        try:
+            await asyncio.to_thread(web_mp4_log.append, record)
+            self.state["failure_log_error"] = None
+        except OSError:
+            self.state["failure_log_error"] = (
+                "Cannot append to the persistent failure log"
+            )
+
     @staticmethod
     def _can_skip(prepared: dict[str, Any]) -> bool:
         return (
@@ -561,6 +616,7 @@ class WebMP4Manager(X265Manager):
                     except Exception as exc:
                         if stopping():
                             break
+                        await self._log_failure(path, "checking", exc)
                         self._unchecked.remove(path)
                         self._finish(path, "failed", exc)
                     finally:
@@ -593,6 +649,7 @@ class WebMP4Manager(X265Manager):
                     except Exception as exc:
                         if stopping():
                             break
+                        await self._log_failure(path, self.state["phase"], exc)
                         self._finish(path, "failed", exc)
                     finally:
                         self.active = None
@@ -656,7 +713,11 @@ class WebMP4Manager(X265Manager):
                 for key in ("video", "audio", "duration", "format")
             )
         )
-        info = cached["info"] if hit else await asyncio.to_thread(probe, source)
+        try:
+            info = cached["info"] if hit else await asyncio.to_thread(probe, source)
+        except ProbeFailure as exc:
+            exc.fingerprint = list(before)
+            raise
         self._cache[source] = {"fingerprint": list(before), "info": info}
         return {"source": source, "before": before, "info": info, "cached": hit}
 
