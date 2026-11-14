@@ -20,6 +20,15 @@ def path():
     return config.get_settings().data_dir / "web_mp4_state.json"
 
 
+def prepared(cached=False):
+    return {
+        "source": "queued.mkv",
+        "before": (0, 0),
+        "info": info("hevc"),
+        "cached": cached,
+    }
+
+
 def payload(manager, remaining):
     manager._remaining = list(remaining)
     manager.state["total"] = manager.state["processed"] + len(remaining)
@@ -96,7 +105,7 @@ def test_restore_resumes_exact_remaining_without_rechecking_completed(monkeypatc
         manager.state.update(status="running", processed=7, skipped=7)
         web_mp4.save_state(payload(manager, ["pending-b", "pending-a"]))
         restored = web_mp4.WebMP4Manager()
-        restored._check = AsyncMock(return_value={"cached": True})
+        restored._check = AsyncMock(return_value=prepared(True))
         restored._convert = AsyncMock(return_value="skipped")
         state = await restored.restore()
         assert state["processed"] == 7 and state["remaining"] == 2
@@ -121,7 +130,7 @@ def test_cancelled_queue_needs_manual_resume(monkeypatch):
         restored = web_mp4.WebMP4Manager()
         assert (await restored.restore())["status"] == "cancelled"
         assert restored._task is None
-        restored._check = AsyncMock(return_value={"cached": False})
+        restored._check = AsyncMock(return_value=prepared())
         restored._convert = AsyncMock(return_value="skipped")
         await restored.resume()
         await restored._task
@@ -178,7 +187,7 @@ def test_four_parallel_checks_but_one_conversion():
                 four_started.set()
             await gate.wait()
             checks -= 1
-            return {"cached": False}
+            return prepared()
 
         async def convert(path, prepared):
             nonlocal conversions, max_conversions
@@ -206,7 +215,7 @@ def test_cancelling_full_pipeline_does_not_deadlock():
     async def run():
         manager = web_mp4.WebMP4Manager()
         started = asyncio.Event()
-        manager._check = AsyncMock(return_value={"cached": False})
+        manager._check = AsyncMock(return_value=prepared())
 
         async def convert(path, prepared):
             started.set()
@@ -233,7 +242,7 @@ def test_shutdown_saves_paused_queue_and_restores_it():
     async def run():
         manager = web_mp4.WebMP4Manager()
         started = asyncio.Event()
-        manager._check = AsyncMock(return_value={"cached": False})
+        manager._check = AsyncMock(return_value=prepared())
 
         async def convert(path, prepared):
             started.set()
@@ -248,7 +257,7 @@ def test_shutdown_saves_paused_queue_and_restores_it():
         await manager.shutdown()
         assert web_mp4.load_state()["state"]["status"] == "paused"
         restored = web_mp4.WebMP4Manager()
-        restored._check = AsyncMock(return_value={"cached": False})
+        restored._check = AsyncMock(return_value=prepared())
         restored._convert = AsyncMock(return_value="skipped")
         await restored.restore()
         await restored._task
@@ -271,12 +280,13 @@ def test_persistence_throttle_and_failure_stops_work(monkeypatch):
             await manager._launch()
         assert manager._task is None and manager.state["status"] == "error"
         manager._last_save = 0
-        manager._check = AsyncMock(return_value={"cached": False})
+        manager._check = AsyncMock(return_value=prepared())
         manager._convert = AsyncMock(return_value="skipped")
         await manager._batch(["one", "two"])
         assert manager.state["status"] == "error"
-        assert manager.state["processed"] == 1
-        assert manager._remaining == ["two"]
+        assert manager.state["processed"] == 0
+        assert manager._remaining == ["one", "two"]
+        manager._convert.assert_not_called()
 
     asyncio.run(run())
 
@@ -330,15 +340,15 @@ def test_checker_failures_are_counted_and_remaining_paths_preserved():
 def test_cancellation_at_consumer_priority_boundary(monkeypatch):
     async def run():
         manager = web_mp4.WebMP4Manager()
-        prepared = False
+        has_result = False
 
         async def check(path):
-            nonlocal prepared
-            prepared = True
-            return {"cached": False}
+            nonlocal has_result
+            has_result = True
+            return prepared()
 
         async def wait(*args):
-            return not prepared
+            return not has_result
 
         manager._check = check
         monkeypatch.setattr(web_mp4.activity, "wait_turn_async", wait)
@@ -367,3 +377,154 @@ def test_startup_restore_failure_does_not_stop_the_app(monkeypatch):
     monkeypatch.setattr(routes, "manager", manager)
     with TestClient(create_app()) as client:
         assert client.get("/api/health").status_code == 200
+
+
+@pytest.mark.parametrize("compatible_tail", [False, True])
+def test_entire_library_is_checked_while_first_encode_is_blocked(compatible_tail):
+    async def run():
+        manager = web_mp4.WebMP4Manager()
+        count = 40  # deliberately larger than the old eight-result buffer
+        first_started = asyncio.Event()
+        checked_all = asyncio.Event()
+        release_encode = asyncio.Event()
+        checked_paths = []
+
+        async def check(path):
+            # Ensure the first conversion is running before later checks finish.
+            if path != "first.mkv":
+                await first_started.wait()
+            checked_paths.append(path)
+            if len(checked_paths) == count:
+                checked_all.set()
+            return {
+                **prepared(),
+                "source": path,
+                "info": info()
+                if compatible_tail and path.endswith(".mp4")
+                else info("hevc"),
+            }
+
+        async def convert(path, metadata):
+            manager.state.update(phase="converting", percent=23.0)
+            first_started.set()
+            await release_encode.wait()
+            return "converted"
+
+        manager._check = check
+        manager._convert = convert
+        manager.state.update(total=count, status="running")
+        tail = [f"{n}.mp4" if compatible_tail else f"{n}.mkv" for n in range(count - 1)]
+        task = asyncio.create_task(manager._batch(["first.mkv", *tail]))
+        await asyncio.wait_for(checked_all.wait(), 3)
+        snapshot = manager.snapshot()
+        assert snapshot["checked"] == count and snapshot["unchecked"] == 0
+        assert snapshot["percent"] == 23.0 and snapshot["current"] == "first.mkv"
+        assert snapshot["converted"] == 0 and not task.done()
+        assert snapshot["conversion_pending"] == (1 if compatible_tail else count)
+        assert snapshot["skipped"] == (count - 1 if compatible_tail else 0)
+        await manager._persist(force=True)
+        saved = web_mp4.load_state()
+        assert saved["unchecked"] == []
+        assert len(saved["ready"]) == snapshot["conversion_pending"]
+        release_encode.set()
+        await asyncio.wait_for(task, 3)
+        assert manager.state["processed"] == count
+
+    asyncio.run(run())
+
+
+def test_saved_replacement_backlog_resumes_without_rechecking():
+    async def run():
+        manager = web_mp4.WebMP4Manager()
+        manager.state.update(status="paused", processed=7, skipped=7, total=10)
+        manager._remaining = ["a", "b", "c"]
+        manager._ready = ["a", "b", "c"]
+        await manager._persist(force=True)
+        restored = web_mp4.WebMP4Manager()
+        restored._check = AsyncMock(
+            side_effect=AssertionError("Must not recheck ready queue")
+        )
+        restored._convert = AsyncMock(return_value="converted")
+        state = await restored.restore()
+        assert state["checked"] == 10 and state["conversion_pending"] == 3
+        await restored._task
+        restored._check.assert_not_called()
+        assert restored.state["processed"] == 10 and restored.state["converted"] == 3
+
+    asyncio.run(run())
+
+
+def test_bad_split_queues_are_rejected():
+    data = payload(web_mp4.WebMP4Manager(), ["a", "b"])
+    data.update(version=2, unchecked=["a"], ready=["other"])
+    path().write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="checking/conversion"):
+        web_mp4.load_state()
+
+
+@pytest.mark.parametrize("probe_error", [False, True])
+def test_cancellation_during_check_does_not_finish_the_file(probe_error):
+    async def run():
+        manager = web_mp4.WebMP4Manager()
+        manager.state["total"] = 1
+
+        async def check(path):
+            manager.cancel_batch()
+            if probe_error:
+                raise OSError("Stopped read")
+            return prepared()
+
+        manager._check = check
+        await manager._batch(["pending"])
+        assert manager.state["processed"] == 0
+        assert manager.snapshot()["unchecked"] == 1
+        assert web_mp4.load_state()["remaining"] == ["pending"]
+
+    asyncio.run(run())
+
+
+def test_cancellation_just_before_a_ready_conversion(monkeypatch):
+    async def run():
+        manager = web_mp4.WebMP4Manager()
+        manager.state["total"] = 1
+        manager._ready = ["pending"]
+        manager._convert = AsyncMock(return_value="converted")
+
+        async def wait(*args):
+            manager.cancel_batch()
+            return True
+
+        monkeypatch.setattr(web_mp4.activity, "wait_turn_async", wait)
+        await manager._batch(["pending"])
+        manager._convert.assert_not_called()
+        assert manager.snapshot()["conversion_pending"] == 1
+
+    asyncio.run(run())
+
+
+def test_checkpoint_failure_stops_a_running_encode_and_preserves_both_queues():
+    async def run():
+        manager = web_mp4.WebMP4Manager()
+        manager.state["total"] = 10
+        started = asyncio.Event()
+        manager._check = AsyncMock(return_value=prepared())
+
+        async def convert(path, metadata):
+            started.set()
+            while not manager.state["cancel_requested"]:
+                await asyncio.sleep(0)
+            raise web_mp4.writes.WriteError("Cancelled")
+
+        async def fail_persist(**kwargs):
+            await started.wait()
+            manager.state["persistence_error"] = "Cannot save MP4 resume state"
+            raise web_mp4.writes.WriteError("Cannot save MP4 resume state", 503)
+
+        manager._persist = fail_persist
+        manager._convert = convert
+        await asyncio.wait_for(manager._batch([str(n) for n in range(10)]), 3)
+        assert manager.state["status"] == "error" and manager.state["processed"] == 0
+        assert len(manager._unchecked) + len(manager._ready) == 10
+        assert manager.snapshot()["remaining"] == 10
+
+    asyncio.run(run())

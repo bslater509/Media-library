@@ -52,7 +52,10 @@ client at `/`, backed by a single SQLite index.
   are on Tools, with a summary in Activity. Archives need unpacking first.
   Re-encoding is lossy and subtitles/attachments are dropped: back up original
   media separately (library snapshots do not contain videos). Output needs
-  free space beside the source. Four parallel checkers feed one serial converter.
+  free space beside the source. Four checkers scan independently of the single
+  converter: a slow encode never blocks checking the rest of the library.
+  Tools shows separate library-check progress, the replacement backlog and the
+  current file's encoding/verification percentage; Activity shows the same totals.
   Progress and the exact remaining queue are saved locally and resume after a
   restart; cancelled batches have a Resume button. Unchanged files reuse saved
   codec checks after a size/mtime check. A crash may repeat checks since the last

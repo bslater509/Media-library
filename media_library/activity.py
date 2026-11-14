@@ -283,8 +283,10 @@ def summary() -> dict[str, Any]:
             "/tools",
             mp4["status"],
             current=mp4["current"],
-            detail=f"{mp4['processed']} / {mp4['total']} checked · {mp4['converted']} replaced · {mp4['failed']} failed",
-            percent=mp4["percent"] if mp4["current"] else None,
+            detail=f"{mp4['checked']} / {mp4['total']} checked · {mp4['conversion_pending']} awaiting replacement (including active) · {mp4['converted']} replaced · {mp4['failed']} failed",
+            percent=mp4["percent"]
+            if mp4["current"] and mp4["phase"] in ("converting", "verifying")
+            else None,
             error=mp4["errors"][-1]["error"] if mp4["errors"] else None,
         )
     )

@@ -32,6 +32,9 @@ export interface WebMP4Status {
   cached: number
   remaining: number
   persistence_error: string | null
+  checked: number
+  unchecked: number
+  conversion_pending: number
 }
 
 export interface PosterBatchStatus {

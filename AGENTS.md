@@ -364,7 +364,7 @@ daemon thread that pauses between items.
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
 | `poster_batch` queue | Explicit folder/selection poster regeneration at 20% of duration, serial daemon independent of `OWN_WORKERS`; memory-only progress at `/api/thumbnails/poster/status`, respects browsing priority between videos. Restart clears pending work. |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
-| `WebMP4Manager` (`web_mp4.py`) | Explicit library-wide H.264/AAC MP4 replacement, independent of `OWN_WORKERS`. Four parallel FFprobe checkers, at most eight buffered results, one conversion/verification/commit at a time. SQLite-only preview (first 50 paths/codec hints), one-use 15-minute confirmation token. Compatible MP4s skip; compatible streams copy, otherwise libx264 medium CRF 18 / AAC 192k stereo. Sibling staging and full output decode before replacement; conflicts/changed sources/failures preserve originals. Hidden `.mllibtmp-*.original` backups survive the index transaction and restore on failure; crash leftovers are never GC'd. `$DATA_DIR/web_mp4_state.json` atomically stores the exact unfinished paths, cumulative counters/errors and size/mtime-nanosecond-keyed probe cache at most once per two seconds, plus forced saves before launch/cancel and at completion/shutdown. Shutdown pauses and startup resumes previously running queues; manually cancelled queues need explicit resume. Disk-save failure stops work and surfaces `persistence_error`. Browsing priority defers new checks and conversions. Status/parallel checks/cache hits/remaining count at `/api/transcode/web-mp4/status`, summary in Activity, cancel/resume on Tools. |
+| `WebMP4Manager` (`web_mp4.py`) | Explicit library-wide H.264/AAC MP4 replacement, independent of `OWN_WORKERS`. Four independent FFprobe checkers can finish the entire confirmed library during one slow encode; compatible files/errors finish immediately, incompatible paths enter a durable replacement backlog. One conversion/verification/commit at a time. SQLite-only preview (first 50 paths/codec hints), one-use 15-minute confirmation token. Compatible streams copy, otherwise libx264 medium CRF 18 / AAC 192k stereo. Sibling staging and full output decode before replacement; conflicts/changed sources/failures preserve originals. Hidden `.mllibtmp-*.original` backups survive the index transaction and restore on failure; crash leftovers are never GC'd. `$DATA_DIR/web_mp4_state.json` v2 atomically stores unfinished paths split into `unchecked` and `ready`, cumulative counters/errors and size/mtime-nanosecond-keyed probe cache at most once per two seconds, plus forced saves before launch/cancel and at completion/shutdown. V1 checkpoints migrate without resetting progress. Shutdown pauses and startup resumes previously running queues; manually cancelled queues need explicit resume. Disk-save failure stops both lanes and surfaces `persistence_error`; cancelling a save waits for its thread before writing a final checkpoint. Browsing priority defers new checks and conversions. Status/check progress/replacement backlog/current phase/cache hits at `/api/transcode/web-mp4/status`, summary in Activity, cancel/resume on Tools. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup, and a signal-killed downloader puts the job back to queued instead of finishing it. When a gallery-dl job dies because a member's own title exceeds the filesystem's 255-byte filename cap (ENAMETOOLONG), the album is retried once with a byte-bounded filename template (`{filename[b:180]}.{extension}`), so the rejected member lands under a truncated name. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination/`archives` names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count` (their output template byte-trims the title already). Archive containers are kept in `<destination>/archives` and RAR/7z sets are unpacked there with the system `7z`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
 | Tool updates | `tools.py`: reads the installed yt-dlp / gallery-dl versions from distribution metadata (never importing them in-process), checks PyPI for newer releases at most once a day on a daemon thread, and runs one `pip install --upgrade` at a time with parsed phases (resolving → downloading → installing → verifying), a 30-min watchdog and cancel. In-memory like the x265 queue: a restart stops it and forgets the last result. |
@@ -471,13 +471,22 @@ Favorites, watch history and lifetime five-frame evidence follow renamed paths;
 posters/previews and content/poster hashes are regenerated, stale issue/ignored
 pair rows are removed. Disk space is required for sibling output. Cancelling
 stops FFmpeg and removes temporary output; an ongoing commit finishes safely.
-Four parallel checkers validate paths/stat originals and reuse cached FFprobe
+Four independent parallel checkers validate paths/stat originals and reuse cached FFprobe
 results only when actual size/mtime_ns still match. Conversion stays serial;
 queued conversion inputs are rechecked if their fingerprint changed. A resumed
 batch retains its confirmed remaining path list and counters (not a new scan).
 New scans reuse the persisted probe cache but still stat each source once.
 Read-only startup loads progress paused without launching writes; corrupt or
 wrong-library state is reported instead of overwritten/automatically resumed.
+Checking never waits behind an encode: compatible files and failed checks are
+recorded immediately, and incompatible paths accumulate in the confirmed batch's
+durable replacement backlog. The active replacement remains in `ready` until its
+result is committed. Status `checked` counts completed checks, `unchecked` counts
+pending/active checks, and `conversion_pending` includes the active replacement.
+Legacy `processed` still counts terminal file outcomes (converted/skipped/failed),
+not checks. Tools shows separate checking and replacement sections; each
+replacement percentage belongs only to its current encoding/verification phase.
+Activity uses the actual `checked` count and backlog, not `processed`.
 
 ### WebP
 Loose images convert one file at a time (atomic `.tmp` → `os.replace`), poster
@@ -644,7 +653,7 @@ snapshot, token/total/archive count/first 50 entries) ·
 preview or active batch, 503 writes disabled) · `GET /transcode/web-mp4/status`
 (memory snapshot of persisted totals, phase/current-file percent, latest 100
 failures, `checking`, `checker_concurrency`, `cached`, `remaining`,
-`persistence_error`) · `POST /transcode/web-mp4/cancel` (save cancellation and
+`persistence_error`, `checked`, `unchecked`, `conversion_pending`) · `POST /transcode/web-mp4/cancel` (save cancellation and
 unfinished paths; finish any active commit) · `POST /transcode/web-mp4/resume`
 (resume a previously confirmed unfinished batch with its counters; 409 active
 or nothing unfinished, 503 writes disabled or cannot save state).

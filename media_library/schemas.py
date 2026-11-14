@@ -942,6 +942,9 @@ class WebMP4Status(BaseModel):
     cached: int = Field(ge=0)
     remaining: int = Field(ge=0)
     persistence_error: str | None
+    checked: int = Field(default=0, ge=0)
+    unchecked: int = Field(default=0, ge=0)
+    conversion_pending: int = Field(default=0, ge=0)
 
 
 class X265Job(BaseModel):

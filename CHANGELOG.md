@@ -54,6 +54,12 @@ snapshot metadata.
 
 ### Fixed
 
+- Web MP4 checking no longer stalls behind a slow conversion. Four checkers
+  independently scan the full confirmed batch and persist a replacement backlog.
+  Tools and Activity now show actual checked totals separately from terminal
+  outcomes, queued replacements and the active file's per-phase progress.
+  Existing checkpoints migrate without losing completed work.
+
 - **Independent desktop sidebar scrolling.** The sidebar stays pinned to the
   viewport while its folder list scrolls separately from the main page.
   Navigation and Settings remain visible, and reaching the folder list's edge

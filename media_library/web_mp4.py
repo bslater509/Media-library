@@ -13,6 +13,7 @@ import os
 import subprocess
 import time
 import uuid
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -262,7 +263,7 @@ def load_state() -> dict[str, Any] | None:
     payload["state"] = state
     remaining = payload["remaining"]
     if (
-        payload["version"] != 1
+        payload["version"] not in (1, 2)
         or payload["library_root"] != str(get_settings().library_dir)
         or not isinstance(remaining, list)
         or not all(isinstance(path, str) for path in remaining)
@@ -275,6 +276,23 @@ def load_state() -> dict[str, Any] | None:
         or state["converted"] + state["skipped"] + state["failed"] != state["processed"]
     ):
         raise ValueError("Invalid MP4 resume state or library root mismatch")
+    unchecked = (
+        payload["remaining"] if payload["version"] == 1 else payload["unchecked"]
+    )
+    ready = [] if payload["version"] == 1 else payload["ready"]
+    if (
+        not isinstance(unchecked, list)
+        or not isinstance(ready, list)
+        or not all(isinstance(path, str) for path in unchecked + ready)
+        or Counter(unchecked + ready) != Counter(remaining)
+    ):
+        raise ValueError("Invalid MP4 checking/conversion queues")
+    payload.update(unchecked=unchecked, ready=ready)
+    state.update(
+        checked=state["total"] - len(unchecked),
+        unchecked=len(unchecked),
+        conversion_pending=len(ready),
+    )
     return payload
 
 
@@ -305,6 +323,9 @@ class WebMP4Manager(X265Manager):
         self._start_lock = asyncio.Lock()
         self._save_lock = asyncio.Lock()
         self._remaining: list[str] = []
+        self._unchecked: list[str] = []
+        self._ready: list[str] = []
+        self._prepared: dict[str, dict[str, Any]] = {}
         self._cache: dict[str, Any] = {}
         self._last_save = 0.0
         self._shutdown = False
@@ -317,15 +338,24 @@ class WebMP4Manager(X265Manager):
         if not force and time.monotonic() - self._last_save < _SAVE_INTERVAL:
             return
         payload = {
-            "version": 1,
+            "version": 2,
             "library_root": str(get_settings().library_dir),
             "state": self.snapshot(),
             "remaining": list(self._remaining),
             "cache": dict(self._cache),
+            "unchecked": list(self._unchecked),
+            "ready": list(self._ready),
         }
         payload["state"]["persistence_error"] = None
         try:
-            await asyncio.to_thread(save_state, payload)
+            saving = asyncio.create_task(asyncio.to_thread(save_state, payload))
+            try:
+                await asyncio.shield(saving)
+            except asyncio.CancelledError:
+                # Keep the save lock until the thread has actually finished:
+                # an older checkpoint must never overwrite the final cancel.
+                await saving
+                raise
         except OSError as exc:
             self.state["persistence_error"] = "Cannot save MP4 resume state"
             raise writes.WriteError(self.state["persistence_error"], 503) from exc
@@ -345,6 +375,9 @@ class WebMP4Manager(X265Manager):
             if payload is None:
                 return self.snapshot()
             self._remaining = payload["remaining"]
+            self._unchecked = payload["unchecked"]
+            self._ready = payload["ready"]
+            self._prepared = {}
             self._cache = payload["cache"]
             self.state.update(payload["state"], current=None, checking=[], percent=0.0)
             if self.state["status"] == "running" and self.state["cancel_requested"]:
@@ -434,6 +467,9 @@ class WebMP4Manager(X265Manager):
                 "persistence_error": None,
             }
             self._remaining = list(preview["paths"])
+            self._unchecked = list(preview["paths"])
+            self._ready = []
+            self._prepared = {}
             await self._launch()
             return self.snapshot()
 
@@ -443,6 +479,9 @@ class WebMP4Manager(X265Manager):
             "errors": list(self.state["errors"]),
             "checking": list(self.state["checking"]),
             "remaining": len(self._remaining),
+            "checked": self.state["total"] - len(self._unchecked),
+            "unchecked": len(self._unchecked),
+            "conversion_pending": len(self._ready),
         }
 
     def cancel_batch(self) -> dict[str, Any]:
@@ -467,74 +506,119 @@ class WebMP4Manager(X265Manager):
         if self._task:
             await self._task
 
+    def _finish(self, path: str, outcome: str, error: Exception | None = None) -> None:
+        self.state[outcome] += 1
+        self.state["processed"] += 1
+        self._remaining.remove(path)
+        if error:
+            self.state["errors"] = (
+                self.state["errors"] + [{"path": path, "error": str(error)}]
+            )[-100:]
+
+    @staticmethod
+    def _can_skip(prepared: dict[str, Any]) -> bool:
+        return (
+            prepared["source"].lower().endswith(".mp4")
+            and compatible(prepared["info"])
+            and "mp4" in prepared["info"]["format"]
+        )
+
     async def _batch(self, paths: list[str]) -> None:
-        # At most four probes and eight buffered results, never one task per file.
+        # Four checkers can finish the entire confirmed library independently
+        # of a slow encode. Only paths/metadata accumulate, never extra encoders.
         self._remaining = list(paths)
-        pending = iter(paths)
-        results: asyncio.Queue = asyncio.Queue(maxsize=_CHECKERS * 2)
+        if not self._unchecked and not self._ready:
+            self._unchecked = list(paths)
+        pending = iter(list(self._unchecked))
+        changed = asyncio.Event()
+
+        def stopping() -> bool:
+            return bool(
+                self.state["cancel_requested"] or self.state["persistence_error"]
+            )
 
         async def checker() -> None:
             try:
                 for path in pending:
-                    if not await activity.wait_turn_async(
-                        "web-mp4", lambda: self.state["cancel_requested"]
-                    ):
+                    if not await activity.wait_turn_async("web-mp4", stopping):
+                        break
+                    if stopping():
                         break
                     self.state["checking"].append(path)
                     try:
                         prepared = await self._check(path)
-                        result = (path, prepared, None)
+                        if stopping():
+                            break
+                        skip = self._can_skip(prepared)
+                        cached = int(prepared["cached"])
+                        self._unchecked.remove(path)
+                        self.state["cached"] += cached
+                        if skip:
+                            self._finish(path, "skipped")
+                        else:
+                            self._prepared[path] = prepared
+                            self._ready.append(path)
                     except Exception as exc:
-                        result = (path, None, exc)
+                        if stopping():
+                            break
+                        self._unchecked.remove(path)
+                        self._finish(path, "failed", exc)
                     finally:
                         self.state["checking"].remove(path)
-                    await results.put(result)
+                        changed.set()
+                    await self._persist()
             except asyncio.CancelledError:
                 return
-            await results.put(None)
+            finally:
+                changed.set()
+
+        async def converter() -> None:
+            try:
+                while not stopping():
+                    if not self._ready:
+                        if all(worker.done() for worker in workers):
+                            break
+                        changed.clear()
+                        await changed.wait()
+                        continue
+                    if not await activity.wait_turn_async("web-mp4", stopping):
+                        break
+                    if stopping():
+                        break
+                    path = self._ready[0]  # includes the active file until committed
+                    self.state.update(current=path, phase="preparing", percent=0.0)
+                    try:
+                        outcome = await self._convert(path, self._prepared.get(path))
+                        self._finish(path, outcome)
+                    except Exception as exc:
+                        if stopping():
+                            break
+                        self._finish(path, "failed", exc)
+                    finally:
+                        self.active = None
+                        self.state.update(current=None, phase="checking", percent=0.0)
+                    self._ready.remove(path)
+                    self._prepared.pop(path, None)
+                    await self._persist()
+            finally:
+                if stopping():
+                    for worker in workers:
+                        worker.cancel()
 
         workers = [asyncio.create_task(checker()) for _ in range(_CHECKERS)]
+        conversion = asyncio.create_task(converter())
         try:
-            finished = 0
-            while finished < len(workers):
-                result = await results.get()
-                if result is None:
-                    finished += 1
-                    continue
-                if not await activity.wait_turn_async(
-                    "web-mp4", lambda: self.state["cancel_requested"]
-                ):
-                    break
-                if self.state["cancel_requested"]:
-                    break
-                path, prepared, error = result
-                self.state.update(current=path, phase="checking", percent=0.0)
-                try:
-                    if error:
-                        raise error
-                    outcome = await self._convert(path, prepared)
-                    self.state[outcome] += 1
-                    self.state["cached"] += int(prepared["cached"])
-                except Exception as exc:
-                    if self.state["cancel_requested"]:
-                        break
-                    self.state["failed"] += 1
-                    self.state["errors"] = (
-                        self.state["errors"] + [{"path": path, "error": str(exc)}]
-                    )[-100:]
-                finally:
-                    self.active = None
-                self.state["processed"] += 1
-                self._remaining.remove(path)
-                await self._persist()
+            await asyncio.gather(*workers, conversion)
         except writes.WriteError:
-            self.state["status"] = "error"
+            # A failed checkpoint stops both lanes. Let an atomic commit finish;
+            # cancel_batch kills FFmpeg only outside that safe boundary.
+            self.cancel_batch()
         finally:
-            # Cancel blocked producers as well as checks in flight. Probe threads
-            # are read-only and have their own 60-second subprocess deadline.
             for worker in workers:
                 worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
+            changed.set()
+            await asyncio.gather(conversion, return_exceptions=True)
             self.state.update(
                 status=(
                     "error"
@@ -582,11 +666,7 @@ class WebMP4Manager(X265Manager):
         if self.state["cancel_requested"]:
             raise writes.WriteError("Cancelled")
         target = str(Path(source).with_suffix(".mp4"))
-        if (
-            source.lower().endswith(".mp4")
-            and compatible(info)
-            and "mp4" in info["format"]
-        ):
+        if self._can_skip(checked):
             return "skipped"
         if prepared and await asyncio.to_thread(_fingerprint, source) != before:
             # Recheck only a queued conversion: a compatible skip performs no
@@ -613,7 +693,8 @@ class WebMP4Manager(X265Manager):
                 raise writes.WriteError(
                     "\n".join(lines[-5:]) or "FFmpeg conversion failed"
                 )
-            self.state["phase"] = "verifying"
+            job["percent"] = 0.0
+            self.state.update(phase="verifying", percent=0.0)
             output = await asyncio.to_thread(probe, temp)
             if (
                 not compatible(output)
