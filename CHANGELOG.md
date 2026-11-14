@@ -23,6 +23,11 @@ snapshot metadata.
 
 ### Fixed
 
+- **Cached artwork no longer waits for the remote drive.** Grid posters, folder
+  covers and animated previews use a cache-only URL, avoiding remote source
+  path checks on cache hits. Missing artwork falls back to validated generation;
+  remote validation runs off the event loop so it cannot freeze other requests.
+
 - **Downloads no longer die on enormous file names.** A gallery-dl album
   whose member title is longer than the filesystem's 255-byte filename cap
   (ENAMETOOLONG) used to fail the whole job every time. The manager now

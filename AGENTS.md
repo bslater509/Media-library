@@ -376,6 +376,12 @@ queue (finished history is still memory-only) and resume after a restart.
 ## 7. Media pipelines
 
 ### Posters and animated previews
+- Library file and folder-cover URLs use `GET /api/thumbnails/cache/{key}?path=&kind=`.
+  The strict 24-hex key addresses local artwork only: hits do not query SQLite
+  or resolve/stat the remote original. A miss falls back to the path-based
+  endpoint's full validation/generation, off the event loop, with `private,
+  no-cache` so a changed source is not cached under an obsolete key. Hits use
+  private immutable caching; `thumb_mtime` versions poster selections.
 - Poster: FFmpeg `-ss 1 -frames:v 1`, 360 px, atomic replace; Pillow fallback
   for images. Generated on demand for a tile/viewer, and by the sweep in bulk.
   The Pillow fallback registers the `pillow-heif` opener once per process, so
@@ -538,6 +544,8 @@ the PyPI check runs at most daily on a thread) ·
 `POST /tools/update/cancel`
 
 ### Thumbnails (`routers/media.py`)
+`GET /thumbnails/cache/{key}?path=&kind=static|animated` (local cache-only hit;
+fully validated path-based fallback on miss) ·
 `GET /thumbnails?path=&kind=static|animated` · `GET /thumbnails/exists?path=` ·
 `GET /thumbnails/candidates?path=&interval=&count=` ·
 `GET /thumbnails/frame?path=&timestamp=` · `POST /thumbnails/poster` ·

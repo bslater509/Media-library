@@ -130,7 +130,7 @@ def test_browse_returns_folders_files_and_crumbs(v2_env):
     assert entry["type"] == "video"
     assert entry["width"] == 1920
     assert entry["playable"] is True
-    assert entry["thumb_url"].startswith("/api/thumbnails?path=")
+    assert entry["thumb_url"].startswith("/api/thumbnails/cache/")
     assert len(entry["id"]) == 16
     assert [c["name"] for c in folder["breadcrumbs"]] == ["library", "Iceland 2023"]
 

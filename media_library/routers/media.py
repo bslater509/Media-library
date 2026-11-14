@@ -281,7 +281,7 @@ async def get_thumbnail(path: str, kind: str = "static"):
         raise HTTPException(status_code=400, detail="A path is required")
     # Clamp first, like every media read: an index row from another library
     # root must never turn this endpoint into an arbitrary-file reader.
-    path = resolve_library_path(path)
+    path = await asyncio.to_thread(resolve_library_path, path)
     # _row_stat opens SQLite: keep it off the event loop.
     mtime, size, _file_type, _has_thumb = await asyncio.to_thread(_row_stat, path)
     key = _thumb_key(path, mtime, size)
@@ -292,7 +292,7 @@ async def get_thumbnail(path: str, kind: str = "static"):
     else:
         candidate = settings.thumbnail_dir / f"thumb_{key}.jpg"
         media_type = "image/jpeg"
-    if not candidate.is_file():
+    if not await asyncio.to_thread(candidate.is_file):
         if kind == "static" and _file_type in ("image", "video"):
             try:
                 candidate = await asyncio.to_thread(
@@ -309,6 +309,36 @@ async def get_thumbnail(path: str, kind: str = "static"):
         candidate,
         media_type=media_type,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@router.get("/thumbnails/cache/{key}", response_class=FileResponse)
+async def get_cached_thumbnail(key: str, path: str, kind: str = "static"):
+    """Serve only fixed-name local artwork; validate the source on cache miss.
+
+    The opaque key cannot address the library or arbitrary local files. A hit
+    needs neither SQLite nor realpath/lstat of a remote original. Keep the
+    path-based endpoint as the fully validated fallback for evicted artwork.
+    """
+    if re.fullmatch(r"[0-9a-f]{24}", key) is None:
+        raise HTTPException(status_code=404, detail="Invalid thumbnail key")
+    root = get_settings().thumbnail_dir
+    animated_kind = kind == "animated"
+    candidate = (
+        root / "animated" / f"anim_{key}.webp"
+        if animated_kind
+        else root / f"thumb_{key}.jpg"
+    )
+    if not await asyncio.to_thread(candidate.is_file):
+        # The regenerated key may have changed since this URL was issued.
+        # Do not cache that response under the obsolete immutable URL.
+        response = await get_thumbnail(path, kind)
+        response.headers["Cache-Control"] = "private, no-cache"
+        return response
+    return FileResponse(
+        candidate,
+        media_type="image/webp" if animated_kind else "image/jpeg",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
 
 

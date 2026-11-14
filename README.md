@@ -23,6 +23,8 @@ client at `/`, backed by a single SQLite index.
   warning, undo, rename, delete and live transcoding for MKV/AVI/WMV.
 - **Artwork** — background posters and looping animated WebP previews, plus a
   poster chooser that samples frames across a clip and can set any of them.
+  Cached artwork is served locally without checking originals on a remote
+  drive; missing posters are generated on demand.
 - **Processing** — metadata probing (dimensions, duration, codecs, fps, capture
   time), in-place x265 (HEVC) conversion with live progress, WebP optimisation,
   content and visual dedupe with side-by-side playback, an optional images

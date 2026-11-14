@@ -16,6 +16,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from media_library.cache import cache_key
 from media_library.config import get_settings
 from media_library.db import reader
 from media_library.paths import (
@@ -38,8 +39,13 @@ _SORTS = {
 }
 
 
-def _thumb_url(path: str, version: float | None) -> str:
-    url = f"/api/thumbnails?path={quote_path(path)}"
+def _thumb_url(
+    path: str, version: float | None, mtime: float, size: int, *, animated: bool = False
+) -> str:
+    key = cache_key(path, float(mtime or 0), int(size or 0))
+    url = f"/api/thumbnails/cache/{key}?path={quote_path(path)}"
+    if animated:
+        url += "&kind=animated"
     if version:
         url += f"&v={int(version)}"
     return url
@@ -82,9 +88,9 @@ def _file_entry(row: sqlite3.Row) -> dict[str, Any]:
         else False,
         "needs_transcode": bool(row["needs_transcode"]),
         "playable": playable,
-        "thumb_url": _thumb_url(path, thumb_mtime),
+        "thumb_url": _thumb_url(path, thumb_mtime, row["mtime"], row["size"]),
         "animated_url": (
-            f"/api/thumbnails?path={quote_path(path)}&kind=animated"
+            _thumb_url(path, None, row["mtime"], row["size"], animated=True)
             if is_video
             else None
         ),
@@ -107,8 +113,10 @@ def _folder_entry(row: sqlite3.Row) -> dict[str, Any]:
         "total_size": row["total_size"] or 0,
         "size_formatted": format_size(row["total_size"]),
         "cover_thumb_url": (
-            _thumb_url(cover, row["cover_mtime"])
-            if cover and row["cover_mtime"]
+            _thumb_url(
+                cover, row["cover_thumb_mtime"], row["cover_mtime"], row["cover_size"]
+            )
+            if cover
             else None
         ),
         "cover_width": row["cover_w"] if "cover_w" in row.keys() else None,
@@ -121,6 +129,8 @@ SELECT fo.path, fo.name, fo.file_count, fo.subfolder_count, fo.is_zip,
        fo.total_size,
        cov.path  AS cover_path,
        cov.mtime AS cover_mtime,
+       cov.size AS cover_size,
+       cov.thumb_mtime AS cover_thumb_mtime,
        cov.width AS cover_w,
        cov.height AS cover_h
 FROM folders fo
