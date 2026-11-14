@@ -43,6 +43,13 @@ client at `/`, backed by a single SQLite index.
   Likely damaged files are flagged by the verification queue.
 - **Snapshots** — hot SQLite snapshots plus a poster archive with automatic
   startup restore, and snapshots are never taken over a running import.
+- **Activity** — a global header panel for downloads, indexing, metadata,
+  artwork, conversions, duplicate checks, ZIP batches, snapshots and tool
+  updates, with progress, errors and supported cancel/pause/resume/retry
+  controls. **Prioritize browsing** defers automatic heavy work and queued
+  jobs after current items finish; playback and explicit actions remain
+  available. The toggle is shared across devices and resets on server restart.
+  Polling uses local memory only, not remote-drive checks.
 - **Access control** — optional shared password (`APP_PASSWORD`) with a
   stateless signed cookie; no accounts, no session store.
 

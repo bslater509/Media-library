@@ -10,9 +10,48 @@ import {
 } from '@tanstack/react-query'
 import {
   api,
+  type ActivityAction,
   type ConflictPolicy,
   type DedupeResolveBatchItemInput,
 } from './api'
+import { activityInterval } from './activity'
+
+const activityKey = ['activity'] as const
+
+export function useActivity(open: boolean) {
+  return useQuery({
+    queryKey: activityKey,
+    queryFn: api.activity,
+    refetchInterval: (query) => activityInterval(open, query.state.data),
+    refetchIntervalInBackground: false,
+    staleTime: 1_000,
+  })
+}
+
+export function useActivityPriority() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: api.activityPriority,
+    onSuccess: (data) => {
+      client.setQueryData(activityKey, data)
+      void client.invalidateQueries({ queryKey: ['index'] })
+    },
+  })
+}
+
+export function useActivityAction() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: ActivityAction }) =>
+      api.activityAction(id, action),
+    onSuccess: (data) => {
+      client.setQueryData(activityKey, data)
+      for (const key of ['downloads', 'tools', 'zip', 'animated', 'x265']) {
+        void client.invalidateQueries({ queryKey: [key] })
+      }
+    },
+  })
+}
 
 export const queryKeys = {
   authSession: ['auth', 'session'] as const,

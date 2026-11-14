@@ -18,6 +18,38 @@ class Breadcrumb(BaseModel):
     raw_name: str | None = None
 
 
+class ActivityItem(BaseModel):
+    id: str
+    label: str
+    href: str
+    state: str
+    current: str | None = None
+    detail: str = ""
+    error: str | None = None
+    percent: float | None = None
+    controls: list[Literal["pause", "resume", "cancel", "retry"]] = Field(
+        default_factory=list
+    )
+    job_id: str | None = None
+    updated_at: float | None = None
+
+
+class ActivityResponse(BaseModel):
+    prioritize_browsing: bool
+    active_count: int
+    failure_count: int
+    items: list[ActivityItem]
+
+
+class ActivityPriorityRequest(BaseModel):
+    prioritize_browsing: bool
+
+
+class ActivityActionRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    action: Literal["pause", "resume", "cancel", "retry"]
+
+
 class FolderEntry(BaseModel):
     name: str
     raw_name: str
@@ -127,6 +159,7 @@ class IndexStatus(BaseModel):
 
 
 class StatusResponse(BaseModel):
+    prioritize_browsing: bool = False
     version: str
     database: str
     index: IndexStatus

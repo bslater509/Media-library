@@ -158,7 +158,18 @@ class X265Manager:
             return 0.0
 
     async def _loop(self) -> None:
+        from media_library import activity
+
         while self.queued:
+            pending = self.queued[0]
+            key = f"x265:{pending['id']}"
+            if not await activity.wait_turn_async(
+                key,
+                lambda pending=pending: (
+                    not self.queued or self.queued[0] is not pending
+                ),
+            ):
+                continue
             job = self.queued.pop(0)
             self.active = job
             try:

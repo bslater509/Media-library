@@ -17,6 +17,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Any
 
+from media_library import activity
 from media_library.config import get_settings
 from media_library.db import reader, writer
 from media_library.paths import is_zip_member
@@ -160,6 +161,7 @@ def probe_media(path: str):
     return None
 
 
+@activity.tracked("metadata")
 def probe_batch(limit: int = 20) -> dict[str, Any]:
     with reader() as conn:
         rows = conn.execute(
@@ -171,6 +173,8 @@ def probe_batch(limit: int = 20) -> dict[str, Any]:
     failed = 0
     transient = 0
     for row in rows:
+        if not activity.checkpoint("metadata", row["path"]):
+            break
         path = row["path"]
         if is_zip_member(path):
             with writer() as conn, conn:
@@ -238,7 +242,8 @@ class MetadataWorker:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                result = probe_batch(self.batch)
+                with activity.background(self._stop):
+                    result = probe_batch(self.batch)
             except Exception:
                 result = {"remaining": 0}
             if not result.get("remaining"):

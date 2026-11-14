@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from media_library import __version__, auth, backups
 from media_library.config import BASE_DIR, get_settings, reload_settings
 from media_library.db import is_available, writes_available
+from media_library.routers import activity as activity_router
 from media_library.routers import analytics as analytics_router
 from media_library.routers import auth as auth_router
 from media_library.routers import backups as backups_router
@@ -151,6 +152,7 @@ def api_router() -> APIRouter:
     router = APIRouter(prefix="/api")
     router.include_router(auth_router.router, tags=["auth"])
     router.include_router(system_router.router, tags=["system"])
+    router.include_router(activity_router.router, tags=["system"])
     router.include_router(library_router.router, tags=["library"])
     router.include_router(media_router.router, tags=["media"])
     router.include_router(favorites_router.router, tags=["favorites"])

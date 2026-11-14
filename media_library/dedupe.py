@@ -27,7 +27,7 @@ from collections import defaultdict, deque
 from collections.abc import Callable
 from typing import Any
 
-from media_library import writes
+from media_library import activity, writes
 from media_library.cache import thumbnail_path
 from media_library.db import reader, writer
 from media_library.library import shape_file_row
@@ -489,6 +489,7 @@ def start_visual_checks(groups: list[list[str]]) -> dict[str, Any]:
 def _verify_loop() -> None:
     global _verify_thread
     while True:
+        activity.wait_turn("duplicate-checks", lambda: not _verify_queue)
         with _verify_lock:
             if not _verify_queue:
                 _verify_state.update(
@@ -1035,6 +1036,7 @@ def status(include_images: bool = True) -> dict[str, Any]:
     }
 
 
+@activity.tracked("content-hashes")
 def hash_content(limit: int = 50, include_images: bool = True) -> dict[str, Any]:
     """Hash up to ``limit`` candidate files that have no quick hash yet."""
     hashed = 0
@@ -1064,6 +1066,8 @@ def hash_content(limit: int = 50, include_images: bool = True) -> dict[str, Any]
         ).fetchall()
     updates: list[tuple[str, str]] = []
     for row in rows:
+        if not activity.checkpoint("content-hashes", row["path"]):
+            break
         path = row["path"]
         if is_zip_member(path):
             continue
@@ -1089,6 +1093,7 @@ def hash_content(limit: int = 50, include_images: bool = True) -> dict[str, Any]
     return {"hashed": hashed, "failed": failed, "remaining": remaining or 0}
 
 
+@activity.tracked("visual-hashes")
 def hash_visual(limit: int = 50, include_images: bool = True) -> dict[str, Any]:
     """Compute pHashes for up to ``limit`` files that have a cached poster."""
     image_filter = "" if include_images else " AND type != 'image'"
@@ -1101,6 +1106,8 @@ def hash_visual(limit: int = 50, include_images: bool = True) -> dict[str, Any]:
     updates: list[tuple[str, str]] = []
     hashed = 0
     for row in rows:
+        if not activity.checkpoint("visual-hashes", row["path"]):
+            break
         thumb = thumbnail_path(
             row["path"], float(row["mtime"] or 0), int(row["size"] or 0)
         )

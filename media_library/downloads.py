@@ -597,10 +597,18 @@ class DownloadManager:
         task.add_done_callback(self._tasks.discard)
 
     async def _execute_job(self, job_id: str) -> None:
+        from media_library import activity
+
         job = self.jobs.get(job_id)
         if not job:
             return
         async with self._semaphore():
+            await activity.wait_turn_async(
+                f"download:{job_id}",
+                lambda: job.get("status") == "cancelled" or self._closing,
+            )
+            if self._closing:
+                return
             if job.get("status") == "cancelled":
                 self._finish(job)
                 return

@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from media_library import writes, zip_ops
+from media_library import activity, writes, zip_ops
 
 
 class ZipBatchRunner:
@@ -79,6 +79,8 @@ class ZipBatchRunner:
         self, queue: list[str], operation: Callable[[str], dict[str, Any]]
     ) -> None:
         for path in queue:
+            if not activity.wait_turn("zip", self._cancel.is_set):
+                break
             while self._pause.is_set() and not self._cancel.is_set():
                 time.sleep(0.2)
             if self._cancel.is_set():

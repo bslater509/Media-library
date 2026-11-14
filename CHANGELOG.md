@@ -13,6 +13,19 @@ snapshot metadata.
 
 ### Added
 
+- **Global background Activity panel.** A header button on every app page
+  shows active/queued work, recent results and failures, current files,
+  measurable progress, links to detailed feature pages and supported
+  pause/resume/cancel/retry controls. Its consolidated status endpoint reads
+  memory only and slows polling when closed/idle.
+- **Prioritize browsing.** A process-wide toggle cooperatively defers automatic
+  heavy sweeps and queued downloads, encodes, previews, visual-check groups and
+  ZIP batches at safe boundaries. In-flight work finishes without interrupting
+  writes; explicit actions stay available. Priority resets on restart.
+  New routes: `GET /api/system/activity`,
+  `POST /api/system/activity/priority` and
+  `POST /api/system/activity/action`.
+
 - **The Sorter can review any folder on the system.** A "Reviewing" picker on
   the Sorter page (also offered when the incoming folder is missing or the
   queue is empty) browses the system's folders read-only — breadcrumbs,

@@ -8,7 +8,7 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException, Response
 
-from media_library import __version__, build_info, indexer, library, runtime
+from media_library import __version__, activity, build_info, indexer, library, runtime
 from media_library.config import get_settings
 from media_library.db import is_available, reader, writes_available
 from media_library.schemas import (
@@ -144,6 +144,7 @@ async def status() -> dict:
             "indexer": "owned" if settings.own_workers else "off",
         },
         "indexer": indexer.status(),
+        "prioritize_browsing": activity.priority(),
     }
 
 

@@ -8,6 +8,29 @@
 
 export const API_BASE = '/api'
 
+export type ActivityAction = 'pause' | 'resume' | 'cancel' | 'retry'
+
+export interface ActivityItem {
+  id: string
+  label: string
+  href: string
+  state: string
+  current: string | null
+  detail: string
+  error: string | null
+  percent: number | null
+  controls: ActivityAction[]
+  job_id: string | null
+  updated_at: number | null
+}
+
+export interface ActivitySummary {
+  prioritize_browsing: boolean
+  active_count: number
+  failure_count: number
+  items: ActivityItem[]
+}
+
 export interface Breadcrumb {
   name: string
   path: string
@@ -1132,6 +1155,12 @@ export const api = {
     post<AnimatedStatus>('/thumbnails/animated/batch', input),
 
   animatedStatus: () => request<AnimatedStatus>('/thumbnails/animated/status'),
+
+  activity: () => request<ActivitySummary>('/system/activity'),
+  activityPriority: (prioritize_browsing: boolean) =>
+    post<ActivitySummary>('/system/activity/priority', { prioritize_browsing }),
+  activityAction: (id: string, action: ActivityAction) =>
+    post<ActivitySummary>('/system/activity/action', { id, action }),
 
   cancelAnimated: () => post<AnimatedStatus>('/thumbnails/animated/cancel', {}),
 

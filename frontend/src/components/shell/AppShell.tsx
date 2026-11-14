@@ -29,6 +29,7 @@ import { Sidebar, MobileSidebarContent } from './Sidebar'
 import { MobileNav } from './MobileNav'
 import { CommandPalette } from './CommandPalette'
 import { ShortcutsDialog } from './ShortcutsDialog'
+import { ActivityPanel } from './ActivityPanel'
 
 export function AppShell() {
   const setPaletteOpen = usePaletteStore((state) => state.setOpen)
@@ -102,6 +103,7 @@ export function AppShell() {
               <Keyboard />
             </IconButton>
             <ThemeMenu />
+            <ActivityPanel />
           </div>
         </header>
 

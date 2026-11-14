@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from media_library import thumbnails
+from media_library import activity, thumbnails
 from media_library.db import reader, writer
 from media_library.paths import is_zip_member
 from media_library.thumbnails import generate_thumbnail
@@ -17,6 +17,7 @@ class ThumbnailSweep:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
+    @activity.tracked("posters")
     def run_once(self) -> dict[str, int]:
         with reader() as conn:
             rows = conn.execute(
@@ -28,6 +29,8 @@ class ThumbnailSweep:
         generated = 0
         failed = 0
         for row in rows:
+            if not activity.checkpoint("posters", row["path"]):
+                break
             path = row["path"]
             if is_zip_member(path):
                 with writer() as conn, conn:
@@ -71,7 +74,8 @@ class ThumbnailSweep:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                result = self.run_once()
+                with activity.background(self._stop):
+                    result = self.run_once()
             except Exception:
                 result = {"remaining": 0}
             if not result.get("remaining"):

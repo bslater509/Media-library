@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from media_library import writes
+from media_library import activity, writes
 from media_library.cache import animated_path, thumbnail_path
 from media_library.config import get_settings
 from media_library.db import reader, writer
@@ -209,6 +209,7 @@ def _convert_one(path: str, quality: int, skip_larger: bool) -> dict[str, Any]:
     }
 
 
+@activity.tracked("webp")
 def optimize_batch(
     limit: int = 20,
     folder: str | None = None,
@@ -232,8 +233,10 @@ def optimize_batch(
     saved = 0
     errors: list[dict[str, str]] = []
 
-    with _lock:
-        for row in rows:
+    for row in rows:
+        if not activity.checkpoint("webp", row["path"]):
+            break
+        with _lock:
             outcome = _convert_one(
                 row["path"], settings.webp_quality, settings.webp_skip_larger
             )

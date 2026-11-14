@@ -178,6 +178,7 @@ media-library/
 │   ├── cache.py               # cache keys + orphaned-artwork sweep
 │   ├── animated.py            # animated preview queue
 │   ├── runtime.py             # owned background threads
+│   ├── activity.py            # memory-only telemetry + cooperative browsing priority
 │   ├── transcode_stream.py    # live fragmented-MP4 pipe
 │   ├── x265.py                # in-place HEVC queue
 │   ├── webp.py                # WebP optimisation
@@ -195,7 +196,7 @@ media-library/
 │   └── routers/               # auth, system, library, media, favorites, manage,
 │                              # uploads, sorter, downloads, analytics, dedupe,
 │                              # webp, cleanup, zip, zip_batch, backups, x265,
-│                              # history, tools
+│                              # history, tools, activity
 │
 ├── frontend/                  # React client source
 │   ├── index.html             # Vite entry (build only; not served directly)
@@ -371,6 +372,33 @@ and the per-feature status routes. x265 and ZIP batches are also in-memory: a
 restart stops their jobs and clears their history. Downloads persist their
 queue (finished history is still memory-only) and resume after a restart.
 
+`activity.py` combines **in-memory-only** worker telemetry at
+`GET /api/system/activity`; polling never inspects the remote filesystem,
+discovers downloader executables, or runs database counts. Owned metadata,
+posters, WebP, content/visual hashes, snapshots, verification and growth rollups
+record their active item/last result/error there; crawler, animated previews,
+five-frame checks, downloads, x265, ZIP batches and tool updates reuse their
+existing memory snapshots. Feature pages remain the detailed source of truth.
+The Activity header button is present on every app page and polls every 2 s
+while open, 5 s with active work and 30 s while idle, stopping interval polling
+when the browser is hidden. Recent download/encode history is bounded to 20
+entries per queue.
+
+`POST /api/system/activity/priority` toggles process-wide, **in-memory** browsing
+priority (off after a restart; shared across devices). Automatic crawler folders,
+metadata/poster/WebP/hash items, and automatic snapshots defer at cooperative
+boundaries; queued download/encode jobs, animated previews, five-frame groups
+and ZIP archives wait before starting their next item. Current operations finish
+without killing FFmpeg or interrupting atomic writes; an album already running
+finishes as one download job. Explicit synchronous actions (manual crawl,
+snapshot, poster selection, WebP requests) and lightweight verification/growth
+SQL work remain available. Waits hold no database transaction, worker queue lock
+or WebP conversion lock and owned worker stops/cancelled queues can wake out of
+them. Tool installation already requested by the user is not deferred.
+`POST /api/system/activity/action` exposes only existing supported controls:
+download cancel/retry, x265 cancel, ZIP pause/resume/cancel, queued-preview clear,
+and tool-update cancel. Clearing previews lets the current preview finish.
+
 ---
 
 ## 7. Media pipelines
@@ -496,6 +524,9 @@ unavailable / read-only).
 | `GET /health` | Public liveness probe: status, version, database, commit; 503 when the index is unreadable |
 | `GET /system/info` | Version, library root, counts, capability flags |
 | `GET /system/status` | Counts, runtime mode, crawler state |
+| `GET /system/activity` | Memory-only global activity rows, active/error counts and browsing priority |
+| `POST /system/activity/priority` | `{prioritize_browsing: bool}`; process-wide cooperative scheduling, reset on restart |
+| `POST /system/activity/action` | `{id, action: pause\|resume\|cancel\|retry}`; existing controls only; 404 unknown row, 409 unavailable action |
 | `GET /system/index/status` | Owned runtime + crawler counters |
 | `POST /system/index/sync?full=` | Start a crawl (default `full=true` re-reads every folder; `full=false` keeps the incremental `dir_mtime` skip); 409 unless `OWN_WORKERS` |
 | `GET /system/onboarding` | First-run tour payload (paths, counts, tools, backup) |
@@ -594,7 +625,9 @@ Zustand stores (`lib/stores.ts`). `lib/api.ts` is the only place the API base
   multi-select and bulk actions, uploads with resume (`lib/upload.ts`).
 - **Polish**: theme (light/dark/system, accent), command palette (cmdk),
   onboarding tour (`lib/onboarding.ts`, dismissal in `localStorage`), Sonner
-  toasts, `@fontsource` variable fonts.
+  toasts, `@fontsource` variable fonts. Global header Activity panel with
+  progress/errors, supported queue controls, links to feature details, and a
+  manual process-wide "Prioritize browsing" toggle.
 - **Sorter**: queue with preloading, 1–6 destination keys, search, create-and-
   move, undo, rename, delete, duplicate warning.
 - **Numbers**: every dashboard figure comes from `/api/analytics/overview`.

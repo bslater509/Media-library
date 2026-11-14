@@ -29,6 +29,7 @@ import threading
 import time
 from typing import Any
 
+from media_library import activity
 from media_library.db import reader, writer
 from media_library.paths import is_zip_member
 from media_library.writes import WriteError
@@ -239,6 +240,7 @@ class VerifyWorker:
                 break
 
     # -- the pass -----------------------------------------------------------
+    @activity.tracked("verification")
     def run_pass(self) -> dict[str, Any]:
         """Cover the library once: flag, clear and prune issue rows."""
         started = time.time()
@@ -253,6 +255,8 @@ class VerifyWorker:
         after = ""
         try:
             while True:
+                if not activity.checkpoint("verification"):
+                    break
                 rows = _batch(after, self.batch)
                 if not rows:
                     break

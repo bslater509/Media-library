@@ -145,6 +145,12 @@ def _update(**changes: Any) -> None:
         _state.update(changes)
 
 
+def activity_status() -> dict[str, Any]:
+    """Memory-only queue telemetry, without the library-wide SQL count."""
+    with _lock:
+        return dict(_state)
+
+
 def status() -> dict[str, Any]:
     with reader() as conn:
         counts = conn.execute(
@@ -223,8 +229,11 @@ def _ensure_thread() -> None:
 
 
 def _loop() -> None:
+    from media_library import activity
+
     global _thread
     while True:
+        activity.wait_turn("animated", lambda: not _queue)
         with _lock:
             if not _queue:
                 _state.update(status="idle", active=None, queued=0)

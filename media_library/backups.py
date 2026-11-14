@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from media_library import __version__, writes
+from media_library import __version__, activity, writes
 from media_library.config import get_settings
 from media_library.db import reader
 
@@ -90,6 +90,7 @@ def _thumbnail_files() -> list[Path]:
     return sorted(root.glob("thumb_*.jpg"))
 
 
+@activity.tracked("backups")
 def create_snapshot() -> dict[str, Any]:
     """Write a consistent DB copy and a poster tarball, then swap them in."""
     if not _lock.acquire(blocking=False):
@@ -104,6 +105,7 @@ def create_snapshot() -> dict[str, Any]:
         staged_db = staging / f"{_DB}.{uuid.uuid4().hex}.tmp"
         staged_tar = staging / f"{_TAR}.{uuid.uuid4().hex}.tmp"
 
+        activity.report_current("backups", "Copying and compacting the index")
         source = sqlite3.connect(settings.db_path, timeout=30.0)
         try:
             destination = sqlite3.connect(staged_db)
@@ -117,6 +119,7 @@ def create_snapshot() -> dict[str, Any]:
         finally:
             source.close()
 
+        activity.report_current("backups", "Checking snapshot integrity")
         check = sqlite3.connect(staged_db)
         try:
             integrity = check.execute("PRAGMA integrity_check").fetchone()[0]
@@ -131,6 +134,7 @@ def create_snapshot() -> dict[str, Any]:
         thumbnails = _thumbnail_files()
         with tarfile.open(staged_tar, "w") as archive:
             for path in thumbnails:
+                activity.report_current("backups", path.name)
                 try:
                     archive.add(path, arcname=path.name)
                 except OSError:
@@ -155,6 +159,7 @@ def create_snapshot() -> dict[str, Any]:
                 )
             os.replace(temp, final)
 
+        activity.report_current("backups", "Publishing snapshot")
         commit(staged_db, target_dir / _DB)
         commit(staged_tar, target_dir / _TAR)
         meta_temp = target_dir / f".tmp-{uuid.uuid4().hex}-{_META}"

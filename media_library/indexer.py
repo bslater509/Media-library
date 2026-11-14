@@ -24,7 +24,7 @@ import time
 import zipfile
 from typing import Any
 
-from media_library import cache, writes, zip_ops
+from media_library import activity, cache, writes, zip_ops
 from media_library.config import get_settings
 from media_library.db import reader, writer
 from media_library.paths import format_size
@@ -501,6 +501,8 @@ def crawl(force_full: bool = False, *, lock_held: bool = False) -> dict[str, Any
         scanned = 0
         skipped = 0
         while queue:
+            if not activity.checkpoint("indexing"):
+                break
             folder = queue.pop()
             if folder in seen:
                 continue
@@ -619,7 +621,8 @@ class CrawlerThread:
     def _loop(self) -> None:
         while not self._stop.wait(5):
             try:
-                crawl()
+                with activity.background(self._stop):
+                    crawl()
             except Exception:
                 pass
             if self._stop.wait(self.interval):

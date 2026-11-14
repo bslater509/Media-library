@@ -11,7 +11,7 @@ import gc
 import logging
 import threading
 
-from media_library import backups, dedupe, growth, verify, webp
+from media_library import activity, backups, dedupe, growth, verify, webp
 from media_library.config import get_settings
 from media_library.indexer import CrawlerThread
 from media_library.probe import MetadataWorker
@@ -57,7 +57,12 @@ class _BatchSweep:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
-                result = self.step()
+                with activity.background(self._stop):
+                    if not activity.wait_turn(
+                        self.name.removesuffix("-sweep"), self._stop.is_set
+                    ):
+                        break
+                    result = self.step()
             except Exception as exc:
                 logger.warning("[api] %s batch failed: %s", self.name, exc)
                 result = None
@@ -89,6 +94,8 @@ class _BackupWatcher:
         if _backup_stop.wait(self.first_delay):
             return
         while not _backup_stop.is_set():
+            if not activity.wait_turn("backups", _backup_stop.is_set):
+                break
             try:
                 backups.create_snapshot()
             except Exception as exc:
@@ -177,4 +184,5 @@ def runtime_status() -> dict[str, object]:
         "verify": bool(_verify),
         "backups": bool(_backups),
         "growth": bool(_growth),
+        "prioritize_browsing": activity.priority(),
     }

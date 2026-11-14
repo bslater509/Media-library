@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from media_library import activity
 from media_library.db import DatabaseReadOnlyError, reader, writer
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def live_counts() -> dict[str, int]:
         return sample_counts(conn)
 
 
+@activity.tracked("growth")
 def record_today(now: float | None = None) -> dict[str, Any]:
     """Compute today's rollup and upsert the day's row.
 
