@@ -221,6 +221,7 @@ def test_image_poster_converts_exotic_colour_modes(thumbs_env, tmp_path):
 
 
 def test_video_poster_retry_succeeds(tmp_path, monkeypatch):
+    monkeypatch.setattr(thumbnails, "_probe_duration", lambda path: 100.0)
     temp = tmp_path / "poster.jpg"
     calls: list[list[str]] = []
 
@@ -234,6 +235,7 @@ def test_video_poster_retry_succeeds(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     thumbnails._video_poster(str(tmp_path / "in.mp4"), temp)
     assert len(calls) == 2
+    assert calls[0][calls[0].index("-ss") + 1] == "20.000"
     assert temp.is_file()
 
 

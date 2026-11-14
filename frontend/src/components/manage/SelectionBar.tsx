@@ -1,6 +1,7 @@
 import {
   FolderInput,
   ImageDown,
+  RefreshCw,
   Pencil,
   Star,
   Trash2,
@@ -22,6 +23,7 @@ interface SelectionBarProps {
   onRename: () => void
   onWebp: () => void
   onDelete: () => void
+  onRegeneratePosters?: () => void
 }
 
 /**
@@ -42,6 +44,7 @@ export function SelectionBar({
   onRename,
   onWebp,
   onDelete,
+  onRegeneratePosters,
 }: SelectionBarProps) {
   return (
     <div
@@ -95,6 +98,16 @@ export function SelectionBar({
       >
         <ImageDown />
       </IconButton>
+      {onRegeneratePosters ? (
+        <IconButton
+          aria-label="Regenerate selected video thumbnails"
+          title="Regenerate video thumbnails"
+          onClick={onRegeneratePosters}
+          disabled={busy}
+        >
+          <RefreshCw />
+        </IconButton>
+      ) : null}
       <IconButton
         aria-label="Delete selected files"
         title="Delete"

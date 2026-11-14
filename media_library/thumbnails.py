@@ -103,7 +103,16 @@ def _image_poster(source: str, temp: Path) -> None:
 def _video_poster(source: str, temp: Path) -> None:
     import subprocess
 
-    for seek in ("00:00:01", "00:00:00"):
+    from media_library.db import reader
+
+    with reader() as conn:
+        row = conn.execute(
+            "SELECT duration FROM files WHERE path = ?", (source,)
+        ).fetchone()
+    duration = row["duration"] if row else None
+    duration = duration or _probe_duration(source)
+    seek_later = f"{duration * 0.2:.3f}" if duration and duration > 0 else "00:00:01"
+    for seek in (seek_later, "00:00:00"):
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -297,7 +306,11 @@ def set_poster(path: str, timestamp: float) -> dict:
     stamp = time.time()
     with writer() as conn, conn:
         conn.execute(
-            "UPDATE files SET has_thumb = 1, thumb_mtime = ? WHERE path = ?",
-            (stamp, path),
+            "UPDATE files SET has_thumb = 1, thumb_mtime = ?, thumb_hash = NULL "
+            "WHERE path = ? AND mtime = ? AND size = ?",
+            (stamp, path, mtime, size),
         )
+    from media_library.dedupe import invalidate_merged_cache
+
+    invalidate_merged_cache()
     return {"path": path, "timestamp": timestamp, "thumb_mtime": stamp}

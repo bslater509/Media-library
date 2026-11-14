@@ -8,6 +8,16 @@
 
 export const API_BASE = '/api'
 
+export interface PosterBatchStatus {
+  status: string
+  active: string | null
+  queued: number
+  completed: number
+  failed: number
+  error: string | null
+  added: number
+}
+
 export type ActivityAction = 'pause' | 'resume' | 'cancel' | 'retry'
 
 export interface ActivityItem {
@@ -835,6 +845,9 @@ async function post<T>(path: string, body: unknown, init?: RequestInit): Promise
 }
 
 export const api = {
+  regeneratePosters: (scope: { paths?: string[]; folder?: string }) =>
+    post<PosterBatchStatus>('/thumbnails/poster/batch', scope),
+  posterBatchStatus: () => request<PosterBatchStatus>('/thumbnails/poster/status'),
   authSession: () => request<AuthSession>('/auth/session'),
 
   authLogin: (password: string) =>

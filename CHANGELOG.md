@@ -13,6 +13,11 @@ snapshot metadata.
 
 ### Added
 
+- Library folder and selection actions to regenerate video thumbnails at 20%
+  into each clip, with confirmation, background progress and per-file failures.
+  New posters also use 20% instead of the first second to skip shared intros.
+  Replacing a poster refreshes its visual hash and browser cache version.
+
 - **Global background Activity panel.** A header button on every app page
   shows active/queued work, recent results and failures, current files,
   measurable progress, links to detailed feature pages and supported

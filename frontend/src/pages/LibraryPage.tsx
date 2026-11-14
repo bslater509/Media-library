@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
   AlertTriangle,
+  Image,
   Archive,
   ArchiveRestore,
   ChevronLeft,
@@ -19,7 +20,7 @@ import {
   UploadCloud,
   ZoomIn,
 } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { FileEntry, FolderEntry } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -107,6 +108,38 @@ export function LibraryPage() {
   const webpOptimize = useWebpOptimize()
   const generateAnimatedBatch = useGenerateAnimatedBatch()
   const queryClient = useQueryClient()
+  const [posterScope, setPosterScope] = useState<{ paths?: string[]; folder?: string } | null>(null)
+  const [posterBusy, setPosterBusy] = useState(false)
+  const posterStatus = useQuery({
+    queryKey: ['poster-batch'],
+    queryFn: api.posterBatchStatus,
+    refetchInterval: (q) => q.state.data?.status === 'running' ? 2000 : 15000,
+  })
+  const posterProgress = posterStatus.data
+  const previousPosterProgress = useRef<string>('')
+  useEffect(() => {
+    if (!posterProgress) return
+    const progress = `${posterProgress.completed}:${posterProgress.failed}`
+    if (previousPosterProgress.current && previousPosterProgress.current !== progress) {
+      void invalidateLibrary(queryClient)
+    }
+    previousPosterProgress.current = progress
+  }, [posterProgress, queryClient])
+
+  const regeneratePosters = async () => {
+    if (!posterScope) return
+    setPosterBusy(true)
+    try {
+      const result = await api.regeneratePosters(posterScope)
+      queryClient.setQueryData(['poster-batch'], result)
+      toast.success(`${result.added} video thumbnails queued`)
+      setPosterScope(null)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not regenerate thumbnails')
+    } finally {
+      setPosterBusy(false)
+    }
+  }
 
   // A palette result can deep-link straight into the viewer.
   useEffect(() => {
@@ -500,6 +533,14 @@ export function LibraryPage() {
                 <Clapperboard />
               </IconButton>
             ) : null}
+            <IconButton
+              aria-label="Regenerate video thumbnails for this folder"
+              title="Regenerate video thumbnails"
+              disabled={!currentPath}
+              onClick={() => currentPath && setPosterScope({ folder: currentPath })}
+            >
+              <Image />
+            </IconButton>
             {first?.is_zip ? (
               <IconButton
                 aria-label="Unpack this archive"
@@ -709,6 +750,31 @@ export function LibraryPage() {
         )}
       </div>
 
+      {posterProgress && (posterProgress.status === 'running' || posterProgress.failed > 0) ? (
+        <p role="status" className="px-5 py-2 text-sm text-muted">
+          Thumbnails: {posterProgress.completed} regenerated, {posterProgress.queued} queued,
+          {' '}{posterProgress.failed} failed.
+          {posterProgress.error ? ` Last error: ${posterProgress.error}` : ''}
+        </p>
+      ) : null}
+      {posterScope ? (
+        <Dialog open onOpenChange={(open) => !open && !posterBusy && setPosterScope(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Regenerate video thumbnails?</DialogTitle></DialogHeader>
+            <DialogBody>
+              Replace existing thumbnails, including manually chosen posters, with a frame
+              20% into each video. {posterScope.paths
+                ? `This affects ${posterScope.paths.length} selected videos.`
+                : 'This affects every video directly in this folder, including those not loaded on screen. Subfolders and images are unchanged.'}
+              {' '}Videos are not modified. Processing continues if you leave this page.
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="ghost" disabled={posterBusy} onClick={() => setPosterScope(null)}>Cancel</Button>
+              <Button disabled={posterBusy} onClick={() => void regeneratePosters()}>Regenerate thumbnails</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {selectedPaths.size > 0 ? (
         <SelectionBar
           count={selectedFiles.length}
@@ -727,6 +793,9 @@ export function LibraryPage() {
           onRename={() => setBulkRenameOpen(true)}
           onWebp={runWebpBatch}
           onDelete={() => setDeleteTargets(selectedFiles)}
+          onRegeneratePosters={selectedFiles.some((file) => file.type === 'video')
+            ? () => setPosterScope({ paths: selectedFiles.filter((file) => file.type === 'video').map((file) => file.path) })
+            : undefined}
         />
       ) : null}
 

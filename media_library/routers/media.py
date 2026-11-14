@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
-from media_library import animated, thumbnails, zipfs
+from media_library import animated, poster_batch, thumbnails, zipfs
 from media_library.cache import cache_key
 from media_library.config import get_settings
 from media_library.db import reader, writes_available
@@ -27,6 +27,8 @@ from media_library.schemas import (
     AnimatedBatchRequest,
     AnimatedRequest,
     AnimatedStatus,
+    PosterBatchRequest,
+    PosterBatchStatus,
     PosterRequest,
     PosterResponse,
     ThumbnailCandidates,
@@ -390,6 +392,23 @@ async def thumbnail_animated(payload: AnimatedRequest) -> dict:
     except Exception as exc:
         raise as_http_error(exc) from exc
     return {**animated.status(), "added": added}
+
+
+@router.post("/thumbnails/poster/batch", response_model=PosterBatchStatus)
+async def thumbnail_poster_batch(payload: PosterBatchRequest) -> dict:
+    if not writes_available():
+        raise HTTPException(status_code=503, detail="Writes are disabled")
+    try:
+        return await asyncio.to_thread(
+            poster_batch.enqueue, payload.paths, payload.folder
+        )
+    except Exception as exc:
+        raise as_http_error(exc) from exc
+
+
+@router.get("/thumbnails/poster/status", response_model=PosterBatchStatus)
+async def thumbnail_poster_status() -> dict:
+    return poster_batch.status()
 
 
 @router.post("/thumbnails/animated/batch", response_model=AnimatedStatus)

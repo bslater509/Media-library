@@ -23,6 +23,11 @@ client at `/`, backed by a single SQLite index.
   warning, undo, rename, delete and live transcoding for MKV/AVI/WMV.
 - **Artwork** — background posters and looping animated WebP previews, plus a
   poster chooser that samples frames across a clip and can set any of them.
+  New video posters use a frame 20% into the clip to skip opening titles.
+  The library's “Regenerate video thumbnails” toolbar action replaces posters
+  for the current folder; selection mode offers the same action for selected
+  videos. Confirmation includes manually chosen posters. Progress runs in the
+  background, and failures leave existing thumbnails intact.
   Cached artwork is served locally without checking originals on a remote
   drive; missing posters are generated on demand.
 - **Processing** — metadata probing (dimensions, duration, codecs, fps, capture

@@ -208,6 +208,21 @@ class PosterResponse(BaseModel):
     thumb_mtime: float
 
 
+class PosterBatchRequest(BaseModel):
+    paths: list[str] | None = Field(default=None, max_length=5000)
+    folder: str | None = None
+
+
+class PosterBatchStatus(BaseModel):
+    added: int = 0
+    status: str
+    active: str | None = None
+    queued: int
+    completed: int
+    failed: int
+    error: str | None = None
+
+
 class AnimatedRequest(BaseModel):
     path: str
 

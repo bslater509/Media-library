@@ -362,6 +362,7 @@ daemon thread that pauses between items.
 | `VerifyWorker` | Index-only sweep that flags `zero_size`, `probe_failed` (0×0) and `thumb_failed` (`has_thumb = -1`) rows into `file_issues`, prunes rows whose `files` row is gone; keyset-paginated batches of 200 paths with a pause between batches, the next full pass ~30 min after the last or immediately on `POST /api/verify/rescan`. ZIP members are never flagged. |
 | `GrowthWorker` | Upserts the daily `growth_history` row at process start and on UTC day rollover (wake-up check ~25 min); read-only mode is tolerated by logging into its worker state. |
 | `animated` queue | On-demand generation of looping WebP previews (browse asks for one, one job at a time). |
+| `poster_batch` queue | Explicit folder/selection poster regeneration at 20% of duration, serial daemon independent of `OWN_WORKERS`; memory-only progress at `/api/thumbnails/poster/status`, respects browsing priority between videos. Restart clears pending work. |
 | `x265` queue | Serial in-place HEVC re-encodes with live progress and cancel. |
 | `DownloadManager` | Up to `DOWNLOAD_WORKER_CONCURRENCY` yt-dlp/gallery-dl jobs, 500-entry history. The queue itself (queued and running jobs, with their `file_progress` rows) is written atomically to `DOWNLOAD_STATE` — at most once per 10 s while it changes — and restored as queued on the next start; shutdown flushes it and leaves a running job's staging in place (the job keeps its id, so completed members are imported by the next run). Each job carries a per-(URL, destination, downloader) `--download-archive`, so a retried album skips members it already fetched; finished files that a failed/cancelled job left in staging are imported before cleanup, and a signal-killed downloader puts the job back to queued instead of finishing it. When a gallery-dl job dies because a member's own title exceeds the filesystem's 255-byte filename cap (ENAMETOOLONG), the album is retried once with a byte-bounded filename template (`{filename[b:180]}.{extension}`), so the rejected member lands under a truncated name. gallery-dl jobs also run a `--simulate` listing alongside the download, which fills `file_progress` with every album member (existing destination/`archives` names marked done) so the client shows the whole queue; yt-dlp jobs stay incremental and report `playlist_index`/`playlist_count` (their output template byte-trims the title already). Archive containers are kept in `<destination>/archives` and RAR/7z sets are unpacked there with the system `7z`. |
 | ZIP batch runner | Unpacks one archive at a time; pause takes effect between items. |
@@ -410,7 +411,9 @@ and tool-update cancel. Clearing previews lets the current preview finish.
   endpoint's full validation/generation, off the event loop, with `private,
   no-cache` so a changed source is not cached under an obsolete key. Hits use
   private immutable caching; `thumb_mtime` versions poster selections.
-- Poster: FFmpeg `-ss 1 -frames:v 1`, 360 px, atomic replace; Pillow fallback
+- Poster: FFmpeg seeks to 20% of the indexed duration (FFprobe fallback when
+  unknown; 1 second if unavailable, then frame zero on extraction failure),
+  `-frames:v 1`, 360 px, atomic replace; Pillow fallback
   for images. Generated on demand for a tile/viewer, and by the sweep in bulk.
   The Pillow fallback registers the `pillow-heif` opener once per process, so
   iOS-captured HEIC/HEIF files get posters, probed dimensions and WebP
@@ -421,7 +424,19 @@ and tool-update cancel. Clearing previews lets the current preview finish.
   (hover on desktop, visible tiles on touch).
 - The candidate-frame cache is binned per video so it can be swept.
 
+Library toolbar and selection actions explicitly regenerate posters at 20% for
+all videos directly in the current folder (not subfolders or just loaded tiles)
+or selected videos. Confirmation warns that manual posters are replaced.
+`poster_batch.py` owns a serial, in-memory daemon queue, available even without
+owned workers; restart clears it. It cooperatively respects browsing priority
+between videos. `GET /api/thumbnails/poster/status` exposes current path,
+queued/completed/failed counts and last error; the library polls progress and
+refreshes tiles. Failure preserves the old poster. Poster replacements version
+`thumb_mtime`, clear `thumb_hash` and invalidate the merged dedupe cache without
+clearing independent five-frame evidence or changing videos.
+
 ### Playback and transcoding
+
 - `/api/media` streams with HTTP 206 ranges (1 MB chunks), ETag/304 and HEAD.
 - Containers the browser cannot play are streamed through
   `/api/media/transcode` as fragmented MP4 (`libx264 -preset ultrafast
@@ -580,6 +595,9 @@ fully validated path-based fallback on miss) ·
 `GET /thumbnails?path=&kind=static|animated` · `GET /thumbnails/exists?path=` ·
 `GET /thumbnails/candidates?path=&interval=&count=` ·
 `GET /thumbnails/frame?path=&timestamp=` · `POST /thumbnails/poster` ·
+`POST /thumbnails/poster/batch` (`paths` up to 5000 or `folder`, exactly one;
+queues indexed videos only, 503 when writes disabled) ·
+`GET /thumbnails/poster/status` (memory-only regeneration queue) ·
 `POST /thumbnails/animated` · `POST /thumbnails/animated/batch` ·
 `GET /thumbnails/animated/status` · `POST /thumbnails/animated/cancel`
 
