@@ -32,7 +32,7 @@ export function Sidebar() {
   const activePath = params.get('path')
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:flex">
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface md:sticky md:top-0 md:flex md:h-dvh md:self-start">
       <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
         <span className="flex size-8 items-center justify-center rounded-md bg-accent-soft text-accent">
           <Clapperboard aria-hidden="true" className="size-4" />
@@ -66,7 +66,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-2">
         <p className="px-2.5 pt-3 pb-1.5 text-[10px] font-semibold tracking-wider text-fg-subtle uppercase">
           Folders
         </p>

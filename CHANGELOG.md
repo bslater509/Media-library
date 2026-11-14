@@ -41,6 +41,11 @@ snapshot metadata.
 
 ### Fixed
 
+- **Independent desktop sidebar scrolling.** The sidebar stays pinned to the
+  viewport while its folder list scrolls separately from the main page.
+  Navigation and Settings remain visible, and reaching the folder list's edge
+  no longer scrolls the page. Mobile navigation is unchanged.
+
 - **Cached artwork no longer waits for the remote drive.** Grid posters, folder
   covers and animated previews use a cache-only URL, avoiding remote source
   path checks on cache hits. Missing artwork falls back to validated generation;

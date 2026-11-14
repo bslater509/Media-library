@@ -14,7 +14,9 @@ client at `/`, backed by a single SQLite index.
 - **Library** — indexed browsing of the folder tree, multi-word search over
   filenames *and* library-relative folder paths, justified natural-ratio tiles,
   a fullscreen viewer with byte-range streaming, favorites, and multi-select
-  bulk move / delete / rename / star / WebP.
+  bulk move / delete / rename / star / WebP. On desktop the sidebar stays
+  pinned, with an independently scrolling folder list and always-visible
+  navigation and Settings.
 - **Watch history** — a server-side record of what you actually watched: a
   Continue-watching rail on the Library page, resume-at-position playback, and
   a View history page split into Continue / Recently viewed / Never watched.

@@ -646,6 +646,10 @@ Zustand stores (`lib/stores.ts`). `lib/api.ts` is the only place the API base
   toasts, `@fontsource` variable fonts. Global header Activity panel with
   progress/errors, supported queue controls, links to feature details, and a
   manual process-wide "Prioritize browsing" toggle.
+  On desktop (`md` and up), the sidebar sticks to the viewport at `100dvh`;
+  its folder list scrolls independently with scroll chaining contained, keeping
+  navigation and Settings visible. Main content retains document scrolling
+  and the sticky header; mobile navigation is unchanged.
 - **Sorter**: queue with preloading, 1–6 destination keys, search, create-and-
   move, undo, rename, delete, duplicate warning.
 - **Numbers**: every dashboard figure comes from `/api/analytics/overview`.
