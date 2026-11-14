@@ -60,6 +60,12 @@ snapshot metadata.
 
 ### Fixed
 
+- Web MP4 replacement now works on rclone/pCloud mounts that reject no-overwrite
+  rename flags, using an exclusive destination reservation with ownership checks
+  and rollback protection. A longer fallback probe handles delayed video streams
+  that previously caused false verification failures; unknown-pixel-format cache
+  entries are refreshed.
+
 - Web MP4 checking no longer stalls behind a slow conversion. Four checkers
   independently scan the full confirmed batch and persist a replacement backlog.
   Tools and Activity now show actual checked totals separately from terminal

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import errno
 import json
 import os
 import subprocess
@@ -33,13 +34,18 @@ class ProbeFailure(writes.WriteError):
         self.fingerprint: list[int] | None = None
 
 
-def probe(path: str) -> dict[str, Any]:
+def probe(path: str, *, deep: bool = False) -> dict[str, Any]:
     try:
         result = subprocess.run(
             [
                 "ffprobe",
                 "-v",
                 "error",
+                *(
+                    ["-analyzeduration", "20000000", "-probesize", "20000000"]
+                    if deep
+                    else []
+                ),
                 "-show_streams",
                 "-show_format",
                 "-of",
@@ -76,6 +82,10 @@ def probe(path: str) -> dict[str, Any]:
     if len(videos) != 1:
         raise writes.WriteError("Expected exactly one video stream; original preserved")
     video = videos[0]
+    if not video.get("pix_fmt") and not deep:
+        # A long audio-only lead-in can exhaust FFprobe's default analysis
+        # window before its first video packet. Do not misclassify valid MP4s.
+        return probe(path, deep=True)
     duration = float(
         payload.get("format", {}).get("duration") or video.get("duration") or 0
     )
@@ -155,17 +165,59 @@ def _fingerprint(path: str) -> tuple[int, int]:
     return stat.st_size, stat.st_mtime_ns
 
 
+def _reservation_matches(target: str, token: bytes) -> bool:
+    try:
+        with open(target, "rb") as handle:
+            return handle.read(len(token) + 1) == token
+    except FileNotFoundError:
+        return False
+
+
+def _reserved_install(temp: str, target: str) -> None:
+    """FUSE fallback: exclusively claim the name, then replace only our claim.
+
+    rclone rejects renameat2 flags and hard links. O_EXCL still refuses an
+    existing destination; a token catches a replaced/modified reservation.
+    The media itself is installed by atomic ordinary rename, never copied into
+    a publicly visible partial MP4. Non-cooperating external writers must not
+    modify the destination during this short commit boundary.
+    """
+    token = uuid.uuid4().hex.encode("ascii")
+    claimed = False
+    try:
+        with open(target, "xb") as handle:
+            claimed = True
+            handle.write(token)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if not _reservation_matches(target, token):
+            raise writes.WriteError("MP4 destination changed during commit", 409)
+        os.replace(temp, target)
+        claimed = False
+    finally:
+        if claimed and _reservation_matches(target, token):
+            os.unlink(target)
+
+
 def _install(temp: str, target: str) -> None:
-    """Atomic no-clobber rename; fail closed on filesystems lacking support."""
+    """Native no-clobber install, with an exclusive-reservation FUSE fallback."""
+    unsupported = {errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP}
     libc = ctypes.CDLL(None, use_errno=True)
     rename = getattr(libc, "renameat2", None)
     if rename is None:
-        # Portable no-clobber fallback, only for filesystems with hard links.
-        os.link(temp, target)
+        try:
+            os.link(temp, target)
+        except OSError as exc:
+            if exc.errno not in unsupported | {errno.EPERM}:
+                raise
+            _reserved_install(temp, target)
+            return
         os.unlink(temp)
     elif rename(-100, os.fsencode(temp), -100, os.fsencode(target), 1) != 0:
         error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), target)
+        if error not in unsupported:
+            raise OSError(error, os.strerror(error), target)
+        _reserved_install(temp, target)
 
 
 def commit(
@@ -197,8 +249,7 @@ def commit(
     os.replace(source, backup)
     installed = False
     try:
-        # Unlike exists()+replace(), this cannot overwrite a concurrently
-        # created destination (including an upload or another converter).
+        # Refuse an existing destination, including another app writer's claim.
         _install(temp, target)
         installed = True
         stat = os.stat(target)
@@ -239,7 +290,9 @@ def commit(
     except BaseException:
         if installed:
             os.unlink(target)
-        os.replace(backup, source)
+        # Never roll back over an unexpected file created at the source path.
+        # A restore conflict leaves the original in its .original backup.
+        _install(backup, source)
         raise
     # An unlink failure must not roll back an already committed database.
     try:
@@ -712,6 +765,8 @@ class WebMP4Manager(X265Manager):
                 key in cached["info"]
                 for key in ("video", "audio", "duration", "format")
             )
+            and isinstance(cached["info"]["video"], dict)
+            and bool(cached["info"]["video"].get("pix_fmt"))
         )
         try:
             info = cached["info"] if hit else await asyncio.to_thread(probe, source)

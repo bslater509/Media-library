@@ -60,6 +60,11 @@ client at `/`, backed by a single SQLite index.
   `$DATA_DIR/web_mp4_failures.jsonl`, with paths, timestamps, failure stages and
   actual FFprobe diagnostics. Tools → Download failure log exports it for later
   testing. The first upgrade also preserves the latest recoverable queue errors.
+  Replacement supports rclone/pCloud mounts using an exclusive destination
+  reservation when native no-overwrite rename is unavailable. Existing
+  destinations and changed reservations are refused; external tools should not
+  write the same destination during a commit. Files with long audio lead-ins
+  get a longer metadata probe before being classified as incompatible.
   Progress and the exact remaining queue are saved locally and resume after a
   restart; cancelled batches have a Resume button. Unchanged files reuse saved
   codec checks after a size/mtime check. A crash may repeat checks since the last

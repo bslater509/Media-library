@@ -465,8 +465,15 @@ subtitles/attachments are dropped; re-encoding is lossy, so keep a separate
 original-media backup (snapshots contain index/artwork only).
 Each new MP4 passes codec/audio-count/duration checks and a full error-fatal
 FFmpeg decode before replacement. The source's size/mtime must still match.
-Existing sibling MP4s are never overwritten (atomic no-clobber installation;
-filesystems without that operation or hard-link support fail safely). Filesystem changes
+Existing sibling MP4s are refused. Installation uses native atomic no-clobber
+rename or hard links where supported. rclone/FUSE mounts that reject those
+operations use an exclusively created, random-token destination reservation,
+verify that claim, then atomically rename the verified output over that claim.
+This is not an unguarded exists-then-overwrite fallback: pre-existing files and
+changed reservations fail safely; other external writers must not modify the
+destination during the brief reserved commit boundary. Rollback also refuses
+an unexpected source-path occupant and retains the original hidden backup on
+such a conflict. Filesystem changes
 precede a guarded index transaction; SQL failure restores the original.
 Favorites, watch history and lifetime five-frame evidence follow renamed paths;
 posters/previews and content/poster hashes are regenerated, stale issue/ignored
@@ -474,7 +481,12 @@ pair rows are removed. Disk space is required for sibling output. Cancelling
 stops FFmpeg and removes temporary output; an ongoing commit finishes safely.
 Four independent parallel checkers validate paths/stat originals and reuse cached FFprobe
 results only when actual size/mtime_ns still match. Conversion stays serial;
-queued conversion inputs are rechecked if their fingerprint changed. A resumed
+queued conversion inputs are rechecked if their fingerprint changed.
+If FFprobe's initial analysis cannot determine the video pixel format, one
+bounded retry increases analysis to 20 seconds / 20 MB, handling long audio-only
+lead-ins without falsely rejecting otherwise compatible H.264/AAC MP4s.
+Cached probes with unknown pixel format are refreshed rather than trusted.
+A resumed
 batch retains its confirmed remaining path list and counters (not a new scan).
 New scans reuse the persisted probe cache but still stat each source once.
 Read-only startup loads progress paused without launching writes; corrupt or
