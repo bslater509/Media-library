@@ -500,6 +500,15 @@ Legacy `processed` still counts terminal file outcomes (converted/skipped/failed
 not checks. Tools shows separate checking and replacement sections; each
 replacement percentage belongs only to its current encoding/verification phase.
 Activity uses the actual `checked` count and backlog, not `processed`.
+Tools leads with a dedicated current-video panel: filename, prominent percentage,
+and explicit 1-of-3 conversion → 2-of-3 verification → 3-of-3 replacement steps.
+Verification explains its separate percentage; preparing/committing show no
+invented percentage. Completed scanning is compactly labeled as a compatibility
+check, not completed conversion. Waiting count excludes the active video.
+Individual file failures appear under "files need attention — batch continues"
+while running, with plain-language reasons and collapsed technical diagnostics;
+they are not styled as an active batch failure. Actual status-refresh or
+progress-saving errors remain separately labeled alerts.
 `web_mp4_log.py` retains an append-only, private
 `$DATA_DIR/web_mp4_failures.jsonl` independently of queue history and the latest
 100 GUI errors. Each failure records its original path, checking/conversion

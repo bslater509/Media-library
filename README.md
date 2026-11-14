@@ -56,6 +56,9 @@ client at `/`, backed by a single SQLite index.
   converter: a slow encode never blocks checking the rest of the library.
   Tools shows separate library-check progress, the replacement backlog and the
   current file's encoding/verification percentage; Activity shows the same totals.
+  The current video has a prominent percentage and three labeled steps
+  (convert, verify, replace). Individual skipped-file errors are explained
+  separately from actual batch or connection problems.
   Failures are retained across batches and restarts in
   `$DATA_DIR/web_mp4_failures.jsonl`, with paths, timestamps, failure stages and
   actual FFprobe diagnostics. Tools → Download failure log exports it for later

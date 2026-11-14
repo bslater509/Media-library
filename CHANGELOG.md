@@ -60,6 +60,11 @@ snapshot metadata.
 
 ### Fixed
 
+- Clarified web MP4 progress: a prominent current-video panel explains conversion,
+  verification and replacement, separately from completed library checking.
+  Skipped-file errors now have plain-language reasons and explicitly indicate
+  that the running batch continues; raw diagnostics are collapsed by default.
+
 - Web MP4 replacement now works on rclone/pCloud mounts that reject no-overwrite
   rename flags, using an exclusive destination reservation with ownership checks
   and rollback protection. A longer fallback probe handles delayed video streams

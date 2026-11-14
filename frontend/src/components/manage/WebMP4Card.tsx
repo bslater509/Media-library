@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Film, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { webMP4Progress } from '../../lib/web-mp4'
 import { api } from '../../lib/api'
+import { WebMP4Progress } from './WebMP4Progress'
 import {
   useWebMP4Cancel,
   useWebMP4Preview,
@@ -24,7 +24,6 @@ export function WebMP4Card() {
   const [open, setOpen] = useState(false)
   const data = status.data
   const running = data?.status === 'running'
-  const progress = data ? webMP4Progress(data) : null
   const onError = (error: Error) => toast.error(error.message)
 
   return (
@@ -41,63 +40,20 @@ export function WebMP4Card() {
         </div>
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
+        {data && data.status !== 'idle' ? <WebMP4Progress data={data} /> : null}
         <p className="text-xs leading-5 text-fg-muted">
           Check every indexed video and replace incompatible files with H.264,
           8-bit MP4 and AAC stereo audio. Compatible MP4s stay untouched; compatible
           streams are copied without re-encoding. Each new file is fully decoded
           to verify it before replacement. Archives must be unpacked first.
         </p>
-        <p className="text-xs leading-5 text-warning">
+        {!running ? <p className="text-xs leading-5 text-warning">
           Replacement is permanent. Re-encoding can reduce quality, use more space,
           and take a long time. Subtitles, attachments and extra tracks other than
           audio are not kept. Back up original media first: library snapshots
           contain only the index and artwork.
-        </p>
-        {data && progress && data.status !== 'idle' ? (
-          <div aria-live="polite" className="flex flex-col gap-2 text-xs text-fg-muted">
-            <div className="flex flex-col gap-1.5 rounded-md bg-surface-2 p-3">
-              <p className="font-medium text-fg">Library check · {progress.checkLabel}</p>
-              <progress aria-label="Library checking progress" className="h-2 w-full accent-accent"
-                value={progress.checked} max={data.total || 1} />
-              <p>{progress.unchecked.toLocaleString()} waiting to be checked · {data.checking?.length ?? 0} / {data.checker_concurrency} checkers active · {data.cached ?? 0} cached checks</p>
-              {progress.checkingDone ? (
-                <p className="text-success">
-                  Checking complete.{progress.pending ? ' Replacements are still running or queued below.' : ''}
-                </p>
-              ) : null}
-            </div>
-            <p className="font-medium text-fg">Replacements · {progress.queueLabel}</p>
-            <p>{progress.outcomeLabel}</p>
-            {data.persistence_error ? (
-              <p role="alert" className="text-danger">{data.persistence_error}. Work stops until progress can be saved.</p>
-            ) : null}
-            {data.current ? (
-              <>
-                <p className="break-all font-mono text-[10px]">
-                  {progress.phase}{progress.showPhaseProgress ? ` · ${Math.round(data.percent)}% of this phase` : '…'} · {data.current}
-                </p>
-                {progress.showPhaseProgress ? (
-                  <progress aria-label="Current replacement phase progress" className="h-2 w-full accent-accent" value={data.percent} max={100} />
-                ) : null}
-              </>
-            ) : null}
-            {data.errors.length ? (
-              <details>
-                <summary className="cursor-pointer text-warning">
-                  Recent failures ({data.errors.length}; latest 100 retained)
-                </summary>
-                <ul className="mt-2 max-h-48 overflow-auto">
-                  {data.errors.map((error, index) => (
-                    <li key={`${error.path}-${index}`} className="mb-2 break-all">
-                      {error.path}: {error.error}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-          </div>
-        ) : null}
-        {status.error ? <p className="text-xs text-danger">{status.error.message}</p> : null}
+        </p> : null}
+        {status.error ? <p role="alert" className="text-xs text-danger">Could not refresh conversion status: {status.error.message}</p> : null}
         {data?.failure_log_error ? (
           <p role="alert" className="text-xs text-danger">{data.failure_log_error}. Recent errors remain in the queue state.</p>
         ) : null}
