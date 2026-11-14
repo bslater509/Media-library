@@ -130,6 +130,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("[api] Could not restore the download queue")
     try:
+        await web_mp4_router.manager.restore()
+    except Exception:
+        logger.exception("[api] Could not restore the web MP4 queue")
+    try:
         yield
     finally:
         await web_mp4_router.manager.shutdown()

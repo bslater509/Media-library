@@ -289,11 +289,12 @@ def test_batch_cancel_boundaries(monkeypatch):
             web_mp4.activity, "wait_turn_async", AsyncMock(return_value=True)
         )
 
-        async def convert(path):
+        async def convert(path, prepared=None):
             manager.cancel_batch()
             raise web_mp4.writes.WriteError("Cancelled")
 
         manager._convert = convert
+        manager._check = AsyncMock(return_value={"cached": False})
         await manager._batch(["one"])
         assert manager.state["status"] == "cancelled" and manager.state["failed"] == 0
 
@@ -364,6 +365,7 @@ def test_batch_counts_and_failures(monkeypatch):
         manager._convert = AsyncMock(
             side_effect=["converted", "skipped", RuntimeError("broken")]
         )
+        manager._check = AsyncMock(return_value={"cached": False})
         await manager.start(preview["token"])
         await manager._task
         state = manager.snapshot()
@@ -388,7 +390,7 @@ def test_cancel_and_shutdown(monkeypatch):
         manager._convert = convert
         manager._task = asyncio.create_task(manager._batch(["a", "b"]))
         await manager.shutdown()
-        assert manager.state["status"] == "cancelled"
+        assert manager.state["status"] == "paused"
         assert manager.state["processed"] == 0
         manager.active = {"_cancel": False}
 

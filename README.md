@@ -52,7 +52,11 @@ client at `/`, backed by a single SQLite index.
   are on Tools, with a summary in Activity. Archives need unpacking first.
   Re-encoding is lossy and subtitles/attachments are dropped: back up original
   media separately (library snapshots do not contain videos). Output needs
-  free space beside the source. Restart stops the batch; rerun to continue.
+  free space beside the source. Four parallel checkers feed one serial converter.
+  Progress and the exact remaining queue are saved locally and resume after a
+  restart; cancelled batches have a Resume button. Unchanged files reuse saved
+  codec checks after a size/mtime check. A crash may repeat checks since the last
+  two-second checkpoint; an interrupted encode restarts that file.
   A crash may leave a hidden `.mllibtmp-*.original` backup; recover it manually
   with the service stopped rather than deleting it.
 - **Analytics** — an index-only dashboard: storage treemap, largest folders and

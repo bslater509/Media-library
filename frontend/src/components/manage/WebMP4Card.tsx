@@ -6,6 +6,7 @@ import {
   useWebMP4Preview,
   useWebMP4Start,
   useWebMP4Status,
+  useWebMP4Resume,
 } from '../../lib/queries'
 import {
   Badge, Button, Card, CardBody, CardHeader, CardTitle,
@@ -17,6 +18,7 @@ export function WebMP4Card() {
   const preview = useWebMP4Preview()
   const start = useWebMP4Start()
   const cancel = useWebMP4Cancel()
+  const resume = useWebMP4Resume()
   const [open, setOpen] = useState(false)
   const data = status.data
   const running = data?.status === 'running'
@@ -52,8 +54,14 @@ export function WebMP4Card() {
           <div aria-live="polite" className="flex flex-col gap-2 text-xs text-fg-muted">
             <p>
               {data.processed} / {data.total} checked · {data.converted} replaced ·{' '}
-              {data.skipped} already compatible · {data.failed} failed
+              {data.skipped} already compatible · {data.failed} failed · {data.cached ?? 0} cached checks
             </p>
+            {data.checking?.length ? (
+              <p>{data.checking.length} / {data.checker_concurrency} parallel checkers active</p>
+            ) : null}
+            {data.persistence_error ? (
+              <p role="alert" className="text-danger">{data.persistence_error}. Work stops until progress can be saved.</p>
+            ) : null}
             {data.current ? (
               <>
                 <p className="break-all font-mono text-[10px]">
@@ -80,11 +88,19 @@ export function WebMP4Card() {
         ) : null}
         {status.error ? <p className="text-xs text-danger">{status.error.message}</p> : null}
         <p className="text-[11px] text-fg-subtle">
-          One file at a time. Browsing priority defers the next file. Restart stops
-          the batch; run it again to check remaining files. Existing MP4 filename
+          Four parallel checkers; one conversion at a time. Browsing priority
+          defers new work. Progress is saved locally; running batches resume after
+          restart. Cancelled batches can be resumed below. Unchanged files reuse
+          cached codec checks. Existing MP4 filename
           conflicts and unreadable files are left untouched.
         </p>
-        <div>
+        <div className="flex flex-wrap gap-2">
+          {!running && (data?.remaining ?? 0) > 0 ? (
+            <Button size="sm" variant="secondary" disabled={resume.isPending || start.isPending}
+              onClick={() => resume.mutate(undefined, { onError })}>
+              Resume {data?.remaining} remaining videos
+            </Button>
+          ) : null}
           {running ? (
             <Button size="sm" variant="secondary"
               disabled={cancel.isPending || data.cancel_requested}
@@ -115,6 +131,7 @@ export function WebMP4Card() {
               Originals are removed after verification. Re-encoding is lossy;
               subtitles and attachments are dropped. Keep a separate media backup.
               Temporary output needs free space in the source folder.
+              {(data?.remaining ?? 0) > 0 ? ' Starting a new batch replaces the saved queue and resets its counters; use Resume to keep existing progress.' : ''}
             </p>
             <div className="mt-3 max-h-52 overflow-auto text-xs">
               <p className="mb-2 text-fg-subtle">First 50 videos (indexed codec hints):</p>

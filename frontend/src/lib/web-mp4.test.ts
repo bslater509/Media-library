@@ -24,4 +24,7 @@ it('previews without writing and sends explicit confirmation with the preview to
   expect(String(fetcher.mock.calls[2][0])).toContain('/transcode/web-mp4/status')
   await api.webMP4Cancel()
   expect(fetcher.mock.calls[3][1].method).toBe('POST')
+  await api.webMP4Resume()
+  expect(String(fetcher.mock.calls[4][0])).toContain('/transcode/web-mp4/resume')
+  expect(fetcher.mock.calls[4][1].method).toBe('POST')
 })

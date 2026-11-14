@@ -925,6 +925,25 @@ class OnboardingInfo(BaseModel):
     tools: dict[str, bool]
 
 
+class WebMP4Status(BaseModel):
+    status: Literal["idle", "running", "paused", "completed", "cancelled", "error"]
+    total: int = Field(ge=0)
+    processed: int = Field(ge=0)
+    converted: int = Field(ge=0)
+    skipped: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    current: str | None
+    percent: float
+    phase: str
+    errors: list[dict[str, str]]
+    cancel_requested: bool
+    checking: list[str]
+    checker_concurrency: int = Field(ge=1, le=4)
+    cached: int = Field(ge=0)
+    remaining: int = Field(ge=0)
+    persistence_error: str | None
+
+
 class X265Job(BaseModel):
     id: str
     source_path: str

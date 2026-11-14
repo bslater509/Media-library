@@ -27,6 +27,11 @@ export interface WebMP4Status {
   phase: string
   errors: { path: string; error: string }[]
   cancel_requested: boolean
+  checking: string[]
+  checker_concurrency: number
+  cached: number
+  remaining: number
+  persistence_error: string | null
 }
 
 export interface PosterBatchStatus {
@@ -871,6 +876,7 @@ export const api = {
   webMP4Start: (token: string) =>
     post<WebMP4Status>('/transcode/web-mp4/start', { token, confirm_replace: true }),
   webMP4Cancel: () => post<WebMP4Status>('/transcode/web-mp4/cancel', {}),
+  webMP4Resume: () => post<WebMP4Status>('/transcode/web-mp4/resume', {}),
   regeneratePosters: (scope: { paths?: string[]; folder?: string }) =>
     post<PosterBatchStatus>('/thumbnails/poster/batch', scope),
   posterBatchStatus: () => request<PosterBatchStatus>('/thumbnails/poster/status'),

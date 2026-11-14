@@ -47,6 +47,14 @@ export function useWebMP4Cancel() {
   })
 }
 
+export function useWebMP4Resume() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: api.webMP4Resume,
+    onSuccess: (data) => client.setQueryData(['web-mp4'], data),
+  })
+}
+
 export function useActivity(open: boolean) {
   return useQuery({
     queryKey: activityKey,

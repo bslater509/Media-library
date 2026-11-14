@@ -13,6 +13,13 @@ snapshot metadata.
 
 ### Added
 
+- Web MP4 progress now persists across restarts, including the exact unfinished
+  queue, counters, errors and codec-check cache. Previously running batches
+  resume automatically; cancelled batches can be resumed explicitly. Four
+  bounded parallel checkers speed up checking while conversion remains serial.
+  Unchanged files reuse cached probes; checkpoint failures stop further work
+  and are shown on Tools.
+
 - Tools → **Convert to web MP4**: library-wide preview and explicit replacement
   confirmation, actual codec checks, lossless stream copying where compatible,
   H.264/AAC conversion otherwise, full output decode verification, safe index
